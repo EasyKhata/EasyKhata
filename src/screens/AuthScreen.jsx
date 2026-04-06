@@ -33,20 +33,26 @@ export default function AuthScreen() {
     }, 400);
   }
 
-  function handleRegister() {
-    setError(""); setLoading(true);
-    const code = passcode.join("");
-    const conf = confirmPasscode.join("");
-    if (!phone.replace(/\D/g,"")) { setError("Enter your phone number."); setLoading(false); return; }
-    if (!name.trim()) { setError("Enter your full name."); setLoading(false); return; }
-    if (code.length < 6) { setError("Set a 6-digit passcode."); setLoading(false); return; }
-    if (code !== conf) { setError("Passcodes don't match."); setLoading(false); return; }
-    setTimeout(() => {
-      const res = register(phone.replace(/\D/g,""), name.trim(), code);
-      if (res.error) setError(res.error);
-      setLoading(false);
-    }, 400);
-  }
+async function handleRegister() {
+  setError(""); 
+  setLoading(true);
+
+  const code = passcode.join("");
+  const conf = confirmPasscode.join("");
+
+  if (!phone.replace(/\D/g,"")) { setError("Enter your phone number."); setLoading(false); return; }
+  if (!name.trim()) { setError("Enter your full name."); setLoading(false); return; }
+  if (code.length < 6) { setError("Set a 6-digit passcode."); setLoading(false); return; }
+  if (code !== conf) { setError("Passcodes don't match."); setLoading(false); return; }
+
+  setTimeout(async () => {
+    const res = await register(name.trim(), phone.replace(/\D/g,""), code);
+
+    if (res.error) setError(res.error);
+
+    setLoading(false);
+  }, 400);
+}
 
   function handleForgot() {
     setError(""); setInfo("");

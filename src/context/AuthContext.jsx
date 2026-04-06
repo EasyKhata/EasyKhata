@@ -1,5 +1,12 @@
 import React,{ createContext, useContext, useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser } from "../utils/storage";
+import { auth } from "../firebase";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  onAuthStateChanged,
+  signOut
+} from "firebase/auth";
 
 const AuthContext = createContext();
 
@@ -39,76 +46,84 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
 useEffect(() => {
-  initAdmin();
+  const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    if (firebaseUser) {
+      const phone = firebaseUser.email.replace("@ledger.app", "");
 
-  const userId = getCurrentUser(); // ✅ new method
+      setUser({
+        id: firebaseUser.uid,
+        phone,
+        role: "user"
+      });
 
-  if (userId) {
-    const users = getStore("ledger_users", []);
-    const found = users.find(u => u.id === userId);
-
-    if (found && !found.blocked) {
-      setUser(found);
-    } else if (found?.blocked) {
-      setUser(found);
+      setCurrentUser(firebaseUser.uid);
+    } else {
+      setUser(null);
     }
-  }
 
-  setLoading(false);
+    setLoading(false);
+  });
+
+  return () => unsubscribe();
 }, []);
 
   function getAllUsers() { return getStore("ledger_users", []); }
   function saveUsers(users) { setStore("ledger_users", users); }
 
-  function login(phone, passcode) {
-    const users = getAllUsers();
-    const found = users.find(u => u.phone === phone);
-    if (!found) return { error: "No account found with this phone number." };
-    if (found.blocked) return { error: "Your account has been blocked. Contact admin." };
-    
-    // check passcode or temp password
-    const validPasscode = found.passcode === passcode;
-    const validTemp = found.tempPassword && found.tempPassword === passcode;
-    
-    if (!validPasscode && !validTemp) return { error: "Incorrect passcode." };
-    
-    // If used temp, force clear it
-    if (validTemp) {
-      const updated = users.map(u => u.id === found.id ? { ...u, tempPassword: null } : u);
-      saveUsers(updated);
-      const fresh = { ...found, tempPassword: null };
-      setUser(fresh);
-      setStore("ledger_session", { id: fresh.id });
-      return { success: true, user: fresh };
-    }
-    
-    setUser(found);
-    //setStore("ledger_session", { id: found.id });
-    setCurrentUser(found.id);
-    return { success: true, user: found };
-  }
+async function login(phone, passcode) {
+  try {
+    const email = `${phone}@ledger.app`; // fake email system
+    const userCred = await signInWithEmailAndPassword(auth, email, passcode);
 
-  function register(phone, name, passcode) {
-    const users = getAllUsers();
-    if (users.find(u => u.phone === phone)) return { error: "An account with this phone number already exists." };
-    if (passcode.length !== 6 || !/^\d+$/.test(passcode)) return { error: "Passcode must be exactly 6 digits." };
-    
+    const user = {
+      id: userCred.user.uid,
+      phone,
+      role: "user"
+    };
+
+    setUser(user);
+    setCurrentUser(user.id);
+
+    return { success: true, user };
+
+  } catch (err) {
+    return { error: "Invalid credentials" };
+  }
+}
+
+async function register(name, phone, passcode) {
+  try {
+    console.log("PHONE:", phone);
+    console.log("NAME:", name);
+    console.log("EMAIL:", `${phone}@ledger.app`);
+    console.log("Passcode",passcode)
+    const email = `${phone}@ledger.app`;
+    const finalPasscode = Array.isArray(passcode)
+    ? passcode.join("")
+    : passcode;
+    const userCred = await createUserWithEmailAndPassword(auth, email, finalPasscode);
+
     const newUser = {
-      id: `user_${Date.now()}`,
+      id: userCred.user.uid,
       phone,
       name,
-      email: "",
-      role: "user",
-      passcode,
-      blocked: false,
-      createdAt: new Date().toISOString(),
-      tempPassword: null,
+      role: "user"
     };
-    saveUsers([...users, newUser]);
+
     setUser(newUser);
     setCurrentUser(newUser.id);
+
     return { success: true, user: newUser };
-  }
+
+  } catch (err) {
+  console.error("REGISTER ERROR FULL:", err);
+  console.error("ERROR CODE:", err.code);
+  console.error("ERROR MESSAGE:", err.message);
+
+  return { error: err.message };
+}
+
+}
 
   function requestTempPassword(phone) {
     const users = getAllUsers();
@@ -118,10 +133,11 @@ useEffect(() => {
     return { success: true, message: "Request noted. Admin will issue a temp password. Try again in a moment." };
   }
 
-  function logout() {
-    setUser(null);
-    clearCurrentUser();
-  }
+function logout() {
+  signOut(auth);
+  setUser(null);
+  clearCurrentUser();
+}
 
   function updateProfile(updates) {
     const users = getAllUsers();

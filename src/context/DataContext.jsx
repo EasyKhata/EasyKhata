@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useAuth } from "./AuthContext";
 import { getUserData, setUserData } from "../utils/storage";
+import { db } from "../firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const DataContext = createContext();
 
@@ -22,13 +24,34 @@ export function DataProvider({ children }) {
   const [loaded, setLoaded] = useState(false);
 
   // Load data
-  useEffect(() => {
-    if (!user) return;
 
-    const stored = getUserData(user.id, "appData");
-    setData(stored ? { ...EMPTY_DATA, ...stored } : EMPTY_DATA);
-    setLoaded(true);
-  }, [user?.id]);
+    //const stored = getUserData(user.id, "appData");
+    async function loadData() {
+  if (!user) return;
+
+  try {
+    // 🔥 Try Firebase first
+    const ref = doc(db, "users", user.id);
+    const snap = await getDoc(ref);
+
+    if (snap.exists()) {
+      setData(snap.data());
+    } else {
+      // fallback to localStorage
+      const local = getUserData(user.id, "appData");
+      setData(local || EMPTY_DATA);
+    }
+  } catch (err) {
+    console.log("Firebase error, using local:", err);
+    const local = getUserData(user.id, "appData");
+    setData(local || EMPTY_DATA);
+  }
+
+  setLoaded(true);
+}
+  useEffect(() => {
+  loadData();
+}, [user?.id]);
 
   // Save data
   const update = useCallback((updater) => {
@@ -38,6 +61,7 @@ export function DataProvider({ children }) {
         : { ...prev, ...updater };
 
       setUserData(user.id, "appData", next);
+      setDoc(doc(db, "users", user.id), next);
       return next;
     });
   }, [user?.id]);
