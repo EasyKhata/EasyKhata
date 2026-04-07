@@ -1,18 +1,19 @@
 import React,{ useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Input, Field } from "../components/UI";
+import { isValidEmail } from "../utils/validator";
 
 export default function AuthScreen() {
-  const { login, register, requestTempPassword } = useAuth();
+  const { login, register, forgotPassword, resendVerification } = useAuth();
   const [screen, setScreen] = useState("login"); // login | register | forgot
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [passcode, setPasscode] = useState(["","","","","",""]);
-  const [confirmPasscode, setConfirmPasscode] = useState(["","","","","",""]);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   function handlePasscodeKey(e, idx, arr, setArr) {
     const val = e.target.value.replace(/\D/g, "").slice(-1);
@@ -26,64 +27,81 @@ async function handleLogin() {
   setError("");
   setLoading(true);
 
-  const code = passcode.join("");
+  const code = password;
 
-  if (!email.trim()) {
-    setError("Enter your email.");
-    setLoading(false);
-    return;
+  function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+  if (!isValidEmail(email)) {
+    setError("Enter valid email.");
+    return setLoading(false);
   }
 
   if (code.length < 6) {
-    setError("Enter valid passcode.");
-    setLoading(false);
-    return;
+    setError("Enter valid password.");
+    return setLoading(false);
   }
 
   const res = await login(email.trim(), code);
 
-  if (res?.error) {
-    setError(res.error);
-  }
-
+if (res?.error && res.error.includes("verify")) {
+  setInfo("Didn't receive email? Click below to resend.");
+}
   setLoading(false);
 }
 
 async function handleRegister() {
-  setError(""); 
+  setError("");
   setLoading(true);
 
-  const code = passcode.join("");
-  const conf = confirmPasscode.join("");
+  const finalPass = password;
 
-  if (!phone.replace(/\D/g,"")) { setError("Enter your phone number."); setLoading(false); return; }
-  if (!name.trim()) { setError("Enter your full name."); setLoading(false); return; }
-  if (code.length < 6) { setError("Set a 6-digit passcode."); setLoading(false); return; }
-  if (code !== conf) { setError("Passcodes don't match."); setLoading(false); return; }
+  if (!name.trim()) {
+    setError("Enter your full name.");
+    return setLoading(false);
+  }
 
-  setTimeout(async () => {
-    const res = await register(
-  name.trim(),
-  email.trim(),
-  phone.replace(/\D/g,""),
-  code
-);
+  if (!isValidEmail(email)) {
+    setError("Enter a valid email address.");
+    return setLoading(false);
+  }
 
-    if (res.error) setError(res.error);
+  if (!phone || phone.length < 10) {
+    setError("Enter valid phone number.");
+    return setLoading(false);
+  }
 
-    setLoading(false);
-    
-  }, 400);
-  
+  if (finalPass.length < 6) {
+    setError("Password must be at least 6 characters.");
+    return setLoading(false);
+  }
+
+  if (password !== confirmPassword) {
+  setError("Passwords do not match.");
+  return setLoading(false);
 }
 
-  function handleForgot() {
-    setError(""); setInfo("");
-    if (!phone.replace(/\D/g,"")) { setError("Enter your registered phone number."); return; }
-    const res = requestTempPassword(phone.replace(/\D/g,""));
-    if (res.error) setError(res.error);
-    else setInfo(res.message);
+  const res = await register(name, email.trim(), phone, finalPass);
+
+  if (res?.error) setError(res.error);
+
+  setLoading(false);
+}
+
+  async function handleForgot() {
+  setError("");
+
+  if (!isValidEmail(email)) {
+    setError("Enter valid email.");
+    return;
   }
+
+  const res = await forgotPassword(email);
+
+  if (res?.error) setError(res.error);
+  else alert("Password reset email sent!");
+}
 
   const PasscodeBoxes = ({ arr, setArr, prefix }) => (
     <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
@@ -124,14 +142,19 @@ async function handleRegister() {
               />
             </Field>
             <Field label="6-Digit Passcode" required>
-              <PasscodeBoxes arr={passcode} setArr={setPasscode} prefix="pc" />
+              <Input
+                type="password"
+                placeholder="Enter password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
             </Field>
             {error && <p style={{ color: "var(--danger)", fontSize: 14, marginBottom: 16, textAlign: "center" }}>{error}</p>}
             <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleLogin} disabled={loading}>
               {loading ? "Signing in…" : "Sign In →"}
             </button>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <button onClick={() => { setScreen("register"); setError(""); setPasscode(["","","","","",""]); }}
+              <button onClick={() => { setScreen("register"); setError(""); setPassword([]); }}
                 style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font)" }}>Create account</button>
               <button onClick={() => { setScreen("forgot"); setError(""); setInfo(""); }}
                 style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)" }}>Forgot passcode?</button>
@@ -146,7 +169,7 @@ async function handleRegister() {
               <Input placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} />
             </Field>
             <Field label="Phone Number" required>
-              <Input type="tel" placeholder="e.g. 9391559067" value={phone} onChange={e => setPhone(e.target.value)} />
+              <Input type="tel" placeholder="e.g. 9XXXXXXXXX" value={phone} onChange={e => setPhone(e.target.value)} />
             </Field>
             <Field label="Email Address" required>
               <Input
@@ -157,16 +180,26 @@ async function handleRegister() {
               />
             </Field>
             <Field label="Set 6-Digit Passcode" required>
-              <PasscodeBoxes arr={passcode} setArr={setPasscode} prefix="pc" />
+              <Input
+                type="password"
+                placeholder="Enter password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+              />
             </Field>
             <Field label="Confirm Passcode" required>
-              <PasscodeBoxes arr={confirmPasscode} setArr={setConfirmPasscode} prefix="cpc" />
+              <Input
+                type="password"
+                placeholder="Enter password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+              />
             </Field>
             {error && <p style={{ color: "var(--danger)", fontSize: 14, marginBottom: 16, textAlign: "center" }}>{error}</p>}
             <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
               {loading ? "Creating account…" : "Create Account →"}
             </button>
-            <button onClick={() => { setScreen("login"); setError(""); setPasscode(["","","","","",""]); setConfirmPasscode(["","","","","",""]); }}
+            <button onClick={() => { setScreen("login"); setError(""); setPassword([]); setConfirmPassword([]); }}
               style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>
               Already have an account? Sign in
             </button>
@@ -176,13 +209,18 @@ async function handleRegister() {
         {/* ── FORGOT ── */}
         {screen === "forgot" && (
           <div className="fade-in">
-            <Field label="Registered Phone Number" required>
-              <Input type="tel" placeholder="e.g. 9391559067" value={phone} onChange={e => setPhone(e.target.value)} />
+            <Field label="Registered Email" required>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
             </Field>
             {error && <p style={{ color: "var(--danger)", fontSize: 14, marginBottom: 16 }}>{error}</p>}
             {info && <div style={{ background: "var(--accent-deep)", border: "1px solid var(--accent)", borderRadius: 12, padding: "14px 16px", fontSize: 14, color: "var(--accent-text)", marginBottom: 16, lineHeight: 1.5 }}>{info}</div>}
             <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleForgot}>
-              Request Temp Password
+              Send reset link
             </button>
             <button onClick={() => { setScreen("login"); setError(""); setInfo(""); }}
               style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>

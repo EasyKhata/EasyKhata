@@ -214,9 +214,9 @@ function handleImport(e) {
   // ── Account Profile ──
   if (screen === "account") return (
     <Modal title="Account Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
-      <Field label="Business Name" required><Input placeholder="e.g. Deepak Reddy Yasa" value={accForm.name||""} onChange={e=>setAccForm(f=>({...f,name:e.target.value}))} /></Field>
+      <Field label="Business Name" required><Input placeholder="e.g. Type to Enter" value={accForm.name||""} onChange={e=>setAccForm(f=>({...f,name:e.target.value}))} /></Field>
       <Field label="Address"><Textarea placeholder="Full address including state, PIN" value={accForm.address||""} onChange={e=>setAccForm(f=>({...f,address:e.target.value}))} /></Field>
-      <Field label="GSTIN"><Input placeholder="e.g. 36AHLPY1235B1ZE" value={accForm.gstin||""} onChange={e=>setAccForm(f=>({...f,gstin:e.target.value}))} /></Field>
+      <Field label="GSTIN"><Input placeholder="e.g. 36XXXXXXXXXXXXX" value={accForm.gstin||""} onChange={e=>setAccForm(f=>({...f,gstin:e.target.value}))} /></Field>
       <Field label="Phone"><Input type="tel" placeholder="+91-9391559067" value={accForm.phone||""} onChange={e=>setAccForm(f=>({...f,phone:e.target.value}))} /></Field>
       <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email||""} onChange={e=>setAccForm(f=>({...f,email:e.target.value}))}/></Field>
       <Field label="Show HSN/SAC on Invoices">
@@ -264,7 +264,7 @@ function handleImport(e) {
       <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email||""} onChange={e=>setCustForm(f=>({...f,email:e.target.value}))} /></Field>
       <Field label="Phone"><Input type="tel" placeholder="+1 555 000 0000" value={custForm?.phone||""} onChange={e=>setCustForm(f=>({...f,phone:e.target.value}))} /></Field>
       <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address||""} onChange={e=>setCustForm(f=>({...f,address:e.target.value}))} /></Field>
-      <Field label="GSTIN (optional)"><Input placeholder="e.g. 36AHLPY1235B1ZE" value={custForm?.gstin||""} onChange={e=>setCustForm(f=>({...f,gstin:e.target.value}))} /></Field>
+      <Field label="GSTIN (optional)"><Input placeholder="e.g. 36XXXXXXXXXX" value={custForm?.gstin||""} onChange={e=>setCustForm(f=>({...f,gstin:e.target.value}))} /></Field>
     </Modal>
   );
 
