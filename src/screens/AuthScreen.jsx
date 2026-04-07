@@ -12,6 +12,7 @@ export default function AuthScreen() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
 
   function handlePasscodeKey(e, idx, arr, setArr) {
     const val = e.target.value.replace(/\D/g, "").slice(-1);
@@ -21,17 +22,32 @@ export default function AuthScreen() {
       document.getElementById(`${arr === passcode ? "pc" : "cpc"}-${idx - 1}`)?.focus();
   }
 
-  function handleLogin() {
-    setError(""); setLoading(true);
-    const code = passcode.join("");
-    if (!phone.replace(/\D/g,"")) { setError("Enter your phone number."); setLoading(false); return; }
-    if (code.length < 6) { setError("Enter your 6-digit passcode."); setLoading(false); return; }
-    setTimeout(() => {
-      const res = login(phone.replace(/\D/g,""), code);
-      if (res.error) setError(res.error);
-      setLoading(false);
-    }, 400);
+async function handleLogin() {
+  setError("");
+  setLoading(true);
+
+  const code = passcode.join("");
+
+  if (!email.trim()) {
+    setError("Enter your email.");
+    setLoading(false);
+    return;
   }
+
+  if (code.length < 6) {
+    setError("Enter valid passcode.");
+    setLoading(false);
+    return;
+  }
+
+  const res = await login(email.trim(), code);
+
+  if (res?.error) {
+    setError(res.error);
+  }
+
+  setLoading(false);
+}
 
 async function handleRegister() {
   setError(""); 
@@ -46,12 +62,19 @@ async function handleRegister() {
   if (code !== conf) { setError("Passcodes don't match."); setLoading(false); return; }
 
   setTimeout(async () => {
-    const res = await register(name.trim(), phone.replace(/\D/g,""), code);
+    const res = await register(
+  name.trim(),
+  email.trim(),
+  phone.replace(/\D/g,""),
+  code
+);
 
     if (res.error) setError(res.error);
 
     setLoading(false);
+    
   }, 400);
+  
 }
 
   function handleForgot() {
@@ -92,8 +115,13 @@ async function handleRegister() {
         {/* ── LOGIN ── */}
         {screen === "login" && (
           <div className="fade-in">
-            <Field label="Phone Number" required>
-              <Input type="tel" placeholder="e.g. 9391559067" value={phone} onChange={e => setPhone(e.target.value)} />
+            <Field label="Email Address" required>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
             </Field>
             <Field label="6-Digit Passcode" required>
               <PasscodeBoxes arr={passcode} setArr={setPasscode} prefix="pc" />
@@ -119,6 +147,14 @@ async function handleRegister() {
             </Field>
             <Field label="Phone Number" required>
               <Input type="tel" placeholder="e.g. 9391559067" value={phone} onChange={e => setPhone(e.target.value)} />
+            </Field>
+            <Field label="Email Address" required>
+              <Input
+                type="email"
+                placeholder="your@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+              />
             </Field>
             <Field label="Set 6-Digit Passcode" required>
               <PasscodeBoxes arr={passcode} setArr={setPasscode} prefix="pc" />

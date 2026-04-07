@@ -1,13 +1,16 @@
-import React,{ useState } from "react";
+import React,{ useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
+import {  doc, updateDoc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
+
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DeleteBtn, CURRENCIES } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
 
 
 export default function SettingsSection() {
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, setUser } = useAuth();
   const { account, saveAccount, currency, setCurrency, customers, addCustomer, updateCustomer, removeCustomer } = useData();
   const { theme, toggle } = useTheme();
 
@@ -19,10 +22,62 @@ export default function SettingsSection() {
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
 
-  function saveAcc() {
-    saveAccount(accForm);
-    setScreen("main");
+useEffect(() => {
+  const loadProfile = async () => {
+    if (!user?.id) return;
+
+    try {
+      const snap = await getDoc(doc(db, "users", user.id));
+
+      if (snap.exists()) {
+        const data = snap.data();
+
+        setAccForm({
+          name: data.name || "",
+          email: data.email || "",
+          phone: data.phone || "",
+          address: data.address || "",
+          gstin: data.gstin || "",
+          showHSN: data.showHSN || false
+        });
+      }
+    } catch (err) {
+      console.error("LOAD PROFILE ERROR:", err);
+    }
+  };
+
+  loadProfile();
+}, [user]);
+
+const saveAcc = async () => {
+  try {
+    if (!user?.id) {
+      alert("User not loaded");
+      return;
+    }
+
+    await updateDoc(doc(db, "users", user.id), {
+      name: accForm.name || "",
+      email: accForm.email || "",
+      phone: accForm.phone || "",
+      address: accForm.address || "",
+      gstin: accForm.gstin || "",
+      showHSN: accForm.showHSN || false
+    });
+
+    // 🔥 update UI instantly
+    setUser(prev => ({
+      ...prev,
+      ...accForm
+    }));
+
+    alert("Profile updated successfully");
+
+  } catch (err) {
+    console.error("SAVE ERROR:", err);
+    alert("Failed to update profile");
   }
+};
 
   function openNewCust() {
     setCustForm({ name:"", email:"", phone:"", address:"", gstin:"" });
@@ -108,13 +163,13 @@ function handleImport(e) {
         <Avatar name={user?.name || "?"} size={52} fontSize={20} />
         <div>
           <div style={{ fontSize:18, fontWeight:700, color:"var(--text)" }}>{user?.name}</div>
-          <div style={{ fontSize:13, color:"var(--text-sec)" }}>+{user?.phone}</div>
+          <div style={{ fontSize:13, color:"var(--text-sec)" }}>{user?.phone}</div>
         </div>
       </div>
 
       <div style={{ marginBottom:10 }}><div className="section-label">Business</div>
         <div className="card">
-          <MenuRow icon="🏢" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() => { setAccForm(account || { name:"", address:"", gstin:"", phone:"", email:"", showHSN:true }); setScreen("account"); }} />
+          <MenuRow icon="🏢" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() =>  setScreen("account") }/>
           <MenuRow icon="👥" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />
           <MenuRow icon="💱" label="Currency" sub={`${currency?.flag} ${currency?.code} — ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
         </div>
@@ -163,7 +218,7 @@ function handleImport(e) {
       <Field label="Address"><Textarea placeholder="Full address including state, PIN" value={accForm.address||""} onChange={e=>setAccForm(f=>({...f,address:e.target.value}))} /></Field>
       <Field label="GSTIN"><Input placeholder="e.g. 36AHLPY1235B1ZE" value={accForm.gstin||""} onChange={e=>setAccForm(f=>({...f,gstin:e.target.value}))} /></Field>
       <Field label="Phone"><Input type="tel" placeholder="+91-9391559067" value={accForm.phone||""} onChange={e=>setAccForm(f=>({...f,phone:e.target.value}))} /></Field>
-      <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email||""} onChange={e=>setAccForm(f=>({...f,email:e.target.value}))} /></Field>
+      <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email||""} onChange={e=>setAccForm(f=>({...f,email:e.target.value}))}/></Field>
       <Field label="Show HSN/SAC on Invoices">
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 16px", background:"var(--surface-high)", borderRadius:12 }}>
           <span style={{ fontSize:15, color:"var(--text)" }}>Include HSN/SAC column</span>
