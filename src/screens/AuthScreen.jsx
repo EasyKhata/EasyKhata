@@ -25,29 +25,41 @@ export default function AuthScreen() {
 
 async function handleLogin() {
   setError("");
+  setInfo("");   // ✅ clear previous info
   setLoading(true);
 
   const code = password;
 
   function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
 
   if (!isValidEmail(email)) {
     setError("Enter valid email.");
     return setLoading(false);
   }
 
-  if (code.length < 6) {
+  if (!code || code.length < 6) {
     setError("Enter valid password.");
     return setLoading(false);
   }
 
   const res = await login(email.trim(), code);
 
-if (res?.error && res.error.includes("verify")) {
-  setInfo("Didn't receive email? Click below to resend.");
-}
+  // 🔥 HANDLE ALL ERRORS
+  if (res?.error) {
+    setError(res.error);
+
+    // ✅ special case: email verification
+    if (res.error.toLowerCase().includes("verify")) {
+      setInfo("Didn't receive email? Click below to resend.");
+    }
+
+    setLoading(false);
+    return; // ❗ IMPORTANT
+  }
+
+  // ✅ success case
   setLoading(false);
 }
 

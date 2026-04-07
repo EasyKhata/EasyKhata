@@ -35,7 +35,24 @@ export function DataProvider({ children }) {
     const snap = await getDoc(ref);
 
     if (snap.exists()) {
-      setData(snap.data());
+      const dbData = snap.data();
+
+setData({
+  income: dbData.income || [],
+  expenses: dbData.expenses || [],
+  invoices: dbData.invoices || [],
+  customers: dbData.customers || [],
+  currency: dbData.currency || EMPTY_DATA.currency,
+
+  // 🔥 CRITICAL FIX
+  account: dbData.account || {
+    name: dbData.name || "",
+    email: dbData.email || "",
+    phone: dbData.phone || "",
+    address: dbData.address || "",
+    gstin: dbData.gstin || ""
+  }
+});
     } else {
       // fallback to localStorage
       const local = getUserData(user.id, "appData");
