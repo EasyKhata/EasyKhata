@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
 import { Modal, Field, Input, FAB, DeleteBtn, fmtMoney, fmtDate, invoiceTotal, monthKey, MONTHS, Avatar } from "../components/UI";
+import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
 const blankForm = (year, month) => ({
   label: "",
@@ -16,6 +17,7 @@ export default function IncomeSection({ year, month }) {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(blankForm(year, month));
+  const [formError, setFormError] = useState("");
 
   const invIncome = d.invoices.filter(i => i.date?.slice(0, 7) === mk);
   const manIncome = d.income.filter(i => i.month === mk);
@@ -25,6 +27,7 @@ export default function IncomeSection({ year, month }) {
   function openNew() {
     setEditId(null);
     setForm(blankForm(year, month));
+    setFormError("");
     setShowForm(true);
   }
 
@@ -36,6 +39,7 @@ export default function IncomeSection({ year, month }) {
       date: income.date || `${year}-${String(month + 1).padStart(2, "0")}-01`,
       note: income.note || ""
     });
+    setFormError("");
     setShowForm(true);
   }
 
@@ -43,9 +47,23 @@ export default function IncomeSection({ year, month }) {
     setShowForm(false);
     setEditId(null);
     setForm(blankForm(year, month));
+    setFormError("");
   }
 
   function save() {
+    if (!hasMinLength(form.label, 2)) {
+      setFormError("Add a clear income description so you can recognize it later.");
+      return;
+    }
+    if (!isPositiveAmount(form.amount)) {
+      setFormError("Enter an amount greater than 0.");
+      return;
+    }
+    if (!isValidDateValue(form.date)) {
+      setFormError("Choose the date when this income was received.");
+      return;
+    }
+
     const payload = {
       label: form.label.trim(),
       amount: Number(form.amount),
@@ -117,7 +135,12 @@ export default function IncomeSection({ year, month }) {
       <FAB bg="var(--accent)" shadow="rgba(126,232,162,0.35)" onClick={openNew} />
 
       {showForm && (
-        <Modal title={editId ? "Edit Income" : "Add Income"} onClose={closeForm} onSave={save} canSave={!!form.label.trim() && Number(form.amount) > 0}>
+        <Modal title={editId ? "Edit Income" : "Add Income"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!form.label.trim() && Number(form.amount) > 0}>
+          {formError && (
+            <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+              {formError}
+            </div>
+          )}
           <Field label="Description" required><Input placeholder="e.g. Consulting fee" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} /></Field>
           <Field label={`Amount (${sym})`} required hint="Enter the amount received."><Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} /></Field>
           <Field label="Date Received" required><Input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></Field>

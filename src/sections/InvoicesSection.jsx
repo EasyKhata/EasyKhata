@@ -2,6 +2,7 @@ import React,{ useState } from "react";
 import { useData } from "../context/DataContext";
 import { Modal, Field, Input, Textarea, Select, FAB, Avatar, DeleteBtn, fmtMoney, fmtDate, invoiceTotal, monthKey, MONTHS, uid } from "../components/UI";
 import { downloadInvoice } from "../utils/invoiceGen";
+import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
 export default function InvoicesSection({ year, month }) {
   const d = useData();
@@ -10,6 +11,7 @@ export default function InvoicesSection({ year, month }) {
   const [showForm, setShowForm] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [formError, setFormError] = useState("");
 
   const blankForm = () => ({
     number: `INV-${String(d.invoices.length + 1).padStart(3, "0")}`,
@@ -29,11 +31,36 @@ export default function InvoicesSection({ year, month }) {
   const monthInv = d.invoices.filter(i => i.date?.slice(0, 7) === mk);
   const total = monthInv.reduce((s, i) => s + invoiceTotal(i.items), 0);
 
-  function openNew() { setForm(blankForm()); setEditInv(null); setShowForm(true); }
-  function openEdit(inv) { setForm({ ...inv, items: inv.items.map(i => ({ ...i })), shipSameAsBill: inv.shipSameAsBill ?? true }); setEditInv(inv); setDetail(null); setShowForm(true); }
+  function openNew() { setForm(blankForm()); setEditInv(null); setFormError(""); setShowForm(true); }
+  function openEdit(inv) { setForm({ ...inv, items: inv.items.map(i => ({ ...i })), shipSameAsBill: inv.shipSameAsBill ?? true }); setEditInv(inv); setDetail(null); setFormError(""); setShowForm(true); }
 
   function saveInv() {
     if (!form) return;
+    if (!hasMinLength(form.number, 2)) {
+      setFormError("Add a valid invoice number.");
+      return;
+    }
+    if (!isValidDateValue(form.date)) {
+      setFormError("Choose a valid invoice date.");
+      return;
+    }
+    if (form.dueDate && !isValidDateValue(form.dueDate)) {
+      setFormError("Choose a valid due date or leave it empty.");
+      return;
+    }
+    if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
+      setFormError("Select a customer or enter the bill-to name.");
+      return;
+    }
+    if (!form.items.length) {
+      setFormError("Add at least one line item.");
+      return;
+    }
+    const invalidItem = form.items.find(item => !hasMinLength(item.desc, 2) || !isPositiveAmount(item.qty) || !isPositiveAmount(item.rate));
+    if (invalidItem) {
+      setFormError("Each line item needs a description, quantity, and rate greater than 0.");
+      return;
+    }
     const customer = d.customers.find(c => c.id === form.customerId);
     const inv = {
       ...form,
@@ -45,6 +72,7 @@ export default function InvoicesSection({ year, month }) {
     };
     if (editInv) d.updateInvoice(inv);
     else d.addInvoice(inv);
+    setFormError("");
     setShowForm(false); setForm(null); setEditInv(null);
   }
 
@@ -158,6 +186,11 @@ export default function InvoicesSection({ year, month }) {
       {/* Create/Edit Form */}
       {showForm && form && (
         <Modal title={editInv ? "Edit Invoice" : "New Invoice"} onClose={() => { setShowForm(false); setForm(null); setEditInv(null); }} onSave={saveInv} canSave={!!(form.customerId || form.billTo?.name)} accentColor="var(--blue)">
+          {formError && (
+            <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
+              {formError}
+            </div>
+          )}
           <Field label="Invoice Number"><Input value={form.number} onChange={e => setForm(f=>({...f,number:e.target.value}))} /></Field>
 
           {/* Customer */}

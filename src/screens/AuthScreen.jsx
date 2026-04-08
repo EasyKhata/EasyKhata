@@ -40,6 +40,11 @@ export default function AuthScreen() {
       return;
     }
 
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+
     setLoading(true);
     const res = await login(cleanEmail, password);
     setLoading(false);
