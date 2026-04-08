@@ -3,6 +3,7 @@ import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
+import { PLAN_LABELS, PLANS } from "../utils/subscription";
 
 export default function AdminPanel() {
   const { user } = useAuth();
@@ -103,6 +104,19 @@ export default function AdminPanel() {
     alert("User profile removed from Firestore and auth cleanup has been queued.");
   }
 
+  async function updateUserPlan(member, plan) {
+    await updateDoc(doc(db, "users", member.id), {
+      plan,
+      subscriptionStatus: "active"
+    });
+    fetchUsers();
+  }
+
+  async function updateSubscriptionStatus(member, subscriptionStatus) {
+    await updateDoc(doc(db, "users", member.id), { subscriptionStatus });
+    fetchUsers();
+  }
+
   if (loading) {
     return <SectionSkeleton rows={5} showHero={false} />;
   }
@@ -169,17 +183,38 @@ export default function AdminPanel() {
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
                     {member.role === "admin" && <span className="pill" style={{ background: "var(--purple-deep)", color: "var(--purple)" }}>Admin</span>}
+                    {member.role !== "admin" && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>{PLAN_LABELS[member.plan || PLANS.FREE] || "Free"}</span>}
                     {member.blocked && <span className="pill" style={{ background: "var(--danger-deep)", color: "var(--danger)" }}>Blocked</span>}
                     {member.sharedLedgerId && <span className="pill" style={{ background: "var(--gold-deep)", color: "var(--gold)" }}>Shared Ledger</span>}
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
                   <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
-                    {member.phone || "No phone"}{member.sharedLedgerId ? ` · Ledger ${member.sharedLedgerId}` : ""}
+                    {member.phone || "No phone"} · {(member.subscriptionStatus || "active")} plan{member.sharedLedgerId ? ` · Ledger ${member.sharedLedgerId}` : ""}
                   </div>
                 </div>
               </div>
               {member.id !== user.id && (
-                <div style={{ display: "flex", gap: 8, flexShrink: 0, marginTop: 2 }}>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0, marginTop: 2, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <select
+                    className="input-field"
+                    value={member.plan || PLANS.FREE}
+                    onChange={event => updateUserPlan(member, event.target.value)}
+                    style={{ width: 100, padding: "8px 10px", fontSize: 12, borderRadius: 10 }}
+                  >
+                    <option value={PLANS.FREE}>Free</option>
+                    <option value={PLANS.PRO}>Pro</option>
+                    <option value={PLANS.BUSINESS}>Business</option>
+                  </select>
+                  <select
+                    className="input-field"
+                    value={member.subscriptionStatus || "active"}
+                    onChange={event => updateSubscriptionStatus(member, event.target.value)}
+                    style={{ width: 110, padding: "8px 10px", fontSize: 12, borderRadius: 10 }}
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="trial">Trial</option>
+                  </select>
                   <button
                     className="btn-secondary"
                     style={{ padding: "8px 12px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }}

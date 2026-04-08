@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, Toggle, FAB, DeleteBtn, fmtMoney, fmtDate, monthKey, MONTHS, ProgressBar, EmptyState, SectionSkeleton } from "../components/UI";
+import { Modal, Field, Input, Select, Toggle, FAB, DeleteBtn, fmtMoney, fmtDate, monthKey, MONTHS, ProgressBar, EmptyState, SectionSkeleton, UpgradeModal } from "../components/UI";
 import { calculateDashboard } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
+import { useAuth } from "../context/AuthContext";
+import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 
 const CATS = ["Operations", "Tools", "Marketing", "Payroll", "Utilities", "Travel", "Other"];
 
@@ -18,12 +20,14 @@ const blankForm = (year, month) => ({
 
 export default function ExpensesSection({ year, month }) {
   const d = useData();
+  const { user } = useAuth();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [form, setForm] = useState(blankForm(year, month));
   const [budgetDraft, setBudgetDraft] = useState(() =>
     CATS.reduce((map, category) => ({ ...map, [category]: String(d.budgets?.[category] || "") }), {})
@@ -61,6 +65,10 @@ export default function ExpensesSection({ year, month }) {
   }
 
   function openBudgetEditor() {
+    if (!canUseFeature(user, "budgets")) {
+      setUpgradeInfo(getUpgradeCopy("budgets"));
+      return;
+    }
     setBudgetDraft(CATS.reduce((map, category) => ({ ...map, [category]: String(d.budgets?.[category] || "") }), {}));
     setShowBudgetForm(true);
   }
@@ -270,6 +278,8 @@ export default function ExpensesSection({ year, month }) {
           ))}
         </Modal>
       )}
+
+      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>
   );
 }

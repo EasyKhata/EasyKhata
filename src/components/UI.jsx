@@ -251,6 +251,23 @@ export function EmptyState({ title, message, actionLabel, onAction, accentColor 
   );
 }
 
+export function UpgradeModal({ open, title, message, onClose }) {
+  if (!open) return null;
+  return (
+    <Modal title={title || "Upgrade Required"} onClose={onClose} onSave={onClose} saveLabel="Close" accentColor="var(--gold)">
+      <div className="card" style={{ padding: 18 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Premium Feature</div>
+        <div style={{ fontSize: 14, color: "var(--text-sec)", lineHeight: 1.7 }}>
+          {message || "This feature is not available on your current plan. Contact admin to upgrade your account."}
+        </div>
+        <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 12, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13 }}>
+          Contact admin to upgrade from Free to Pro or Business.
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export function MonthNav({ year, month, onChange }) {
   const prev = () => {
     let nextMonth = month - 1;

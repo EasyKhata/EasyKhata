@@ -16,6 +16,8 @@ import {
   EmptyState,
   SectionSkeleton
 } from "../components/UI";
+import { UpgradeModal } from "../components/UI";
+import { useAuth } from "../context/AuthContext";
 import { downloadInvoice } from "../utils/invoiceGen";
 import {
   getInvoiceDueMessage,
@@ -26,6 +28,7 @@ import {
   invoiceGrandTotal
 } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
+import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 
 function emptyItem() {
   return { id: uid(), desc: "", subDesc: "", hsn: "", qty: 1, rate: "", taxRate: 18 };
@@ -54,12 +57,14 @@ function getTaxBreakdown(invoice) {
 
 export default function InvoicesSection({ year, month }) {
   const d = useData();
+  const { user } = useAuth();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
 
   const blankForm = () => ({
     number: getNextInvoiceNumber(d.invoices),
@@ -95,6 +100,10 @@ export default function InvoicesSection({ year, month }) {
   }
 
   function openNew() {
+    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: d.invoices.length })) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+      return;
+    }
     setForm(blankForm());
     setEditInv(null);
     setDetail(null);
@@ -118,6 +127,14 @@ export default function InvoicesSection({ year, month }) {
     setDetail(null);
     setFormError("");
     setShowForm(true);
+  }
+
+  function handleDownloadPdf(invoice) {
+    if (!canUseFeature(user, "invoicePdf")) {
+      setUpgradeInfo(getUpgradeCopy("invoicePdf"));
+      return;
+    }
+    downloadInvoice(invoice, d.account, sym);
   }
 
   function closeForm() {
@@ -373,7 +390,7 @@ export default function InvoicesSection({ year, month }) {
               <button onClick={() => updateInvoiceStatus(invoice, computedStatus === "paid" ? "pending" : "paid")} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: computedStatus === "paid" ? "var(--gold-deep)" : "var(--accent)", color: computedStatus === "paid" ? "var(--gold)" : "#0C0C10" }}>
                 {computedStatus === "paid" ? "Mark Pending" : "Mark Paid"}
               </button>
-              <button onClick={() => downloadInvoice(invoice, d.account, sym)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--blue)", color: "#fff" }}>
+              <button onClick={() => handleDownloadPdf(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--blue)", color: "#fff" }}>
                 Download PDF
               </button>
             </div>
@@ -553,6 +570,8 @@ export default function InvoicesSection({ year, month }) {
           </Modal>
         );
       })()}
+
+      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>
   );
 }

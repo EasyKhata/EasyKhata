@@ -4,11 +4,12 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney } from "../components/UI";
+import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport } from "../utils/reportGen";
 import { isStrongPassword } from "../utils/validator";
+import { canUseFeature, getUpgradeCopy, PLAN_LABELS } from "../utils/subscription";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
@@ -26,6 +27,7 @@ export default function SettingsSection() {
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
 
   const customerInsights = useMemo(
     () => calculateCustomerInsights({ customers, invoices }),
@@ -104,6 +106,10 @@ export default function SettingsSection() {
 
   function saveCust() {
     if (!custForm?.name.trim()) return;
+    if (!editCust && !canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
+      setUpgradeInfo(getUpgradeCopy("customerCreate"));
+      return;
+    }
     if (editCust) updateCustomer({ ...custForm, id: editCust.id });
     else addCustomer(custForm);
     setScreen("customers");
@@ -157,11 +163,19 @@ export default function SettingsSection() {
   }
 
   function handleReportDownload() {
+    if (!canUseFeature(user, "reports")) {
+      setUpgradeInfo(getUpgradeCopy("reports"));
+      return;
+    }
     const now = new Date();
     downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets }, now.getFullYear(), now.getMonth(), currency?.symbol || "Rs");
   }
 
   async function handleCreateSharedLedger() {
+    if (!canUseFeature(user, "sharedLedger")) {
+      setUpgradeInfo(getUpgradeCopy("sharedLedger"));
+      return;
+    }
     const res = await createSharedLedger(sharedLedgerForm.name);
     if (res?.error) {
       alert(res.error);
@@ -173,6 +187,10 @@ export default function SettingsSection() {
   }
 
   async function handleJoinSharedLedger() {
+    if (!canUseFeature(user, "sharedLedger")) {
+      setUpgradeInfo(getUpgradeCopy("sharedLedger"));
+      return;
+    }
     const res = await joinSharedLedger(sharedLedgerForm.code);
     if (res?.error) {
       alert(res.error);
@@ -204,6 +222,10 @@ export default function SettingsSection() {
   }
 
   async function saveNotificationSettings() {
+    if (!canUseFeature(user, "notifications")) {
+      setUpgradeInfo(getUpgradeCopy("notifications"));
+      return;
+    }
     let nextPrefs = { ...notificationForm };
 
     if (nextPrefs.browserEnabled && typeof window !== "undefined" && "Notification" in window) {
@@ -244,6 +266,7 @@ export default function SettingsSection() {
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{user?.phone}</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Plan: {PLAN_LABELS[user?.plan || "free"] || "Free"}</div>
           </div>
         </div>
 
@@ -553,17 +576,20 @@ export default function SettingsSection() {
   }
 
   return (
-    <Modal title="Change Password" onClose={() => setScreen("main")} onSave={handleChangePassword} canSave={true}>
-      <Field label="Current Password">
-        <Input type="password" autoComplete="current-password" placeholder="Enter your current password" value={passForm.current} onChange={e => setPassForm(f => ({ ...f, current: e.target.value }))} />
-      </Field>
-      <Field label="New Password" hint="Use at least 6 characters.">
-        <Input type="password" autoComplete="new-password" placeholder="Create a new password" value={passForm.next} onChange={e => setPassForm(f => ({ ...f, next: e.target.value }))} />
-      </Field>
-      <Field label="Confirm New Password">
-        <Input type="password" autoComplete="new-password" placeholder="Re-enter the new password" value={passForm.confirm} onChange={e => setPassForm(f => ({ ...f, confirm: e.target.value }))} />
-      </Field>
-      {passError && <p style={{ color: "var(--danger)", fontSize: 14, marginTop: 8, textAlign: "center" }}>{passError}</p>}
-    </Modal>
+    <>
+      <Modal title="Change Password" onClose={() => setScreen("main")} onSave={handleChangePassword} canSave={true}>
+        <Field label="Current Password">
+          <Input type="password" autoComplete="current-password" placeholder="Enter your current password" value={passForm.current} onChange={e => setPassForm(f => ({ ...f, current: e.target.value }))} />
+        </Field>
+        <Field label="New Password" hint="Use at least 6 characters.">
+          <Input type="password" autoComplete="new-password" placeholder="Create a new password" value={passForm.next} onChange={e => setPassForm(f => ({ ...f, next: e.target.value }))} />
+        </Field>
+        <Field label="Confirm New Password">
+          <Input type="password" autoComplete="new-password" placeholder="Re-enter the new password" value={passForm.confirm} onChange={e => setPassForm(f => ({ ...f, confirm: e.target.value }))} />
+        </Field>
+        {passError && <p style={{ color: "var(--danger)", fontSize: 14, marginTop: 8, textAlign: "center" }}>{passError}</p>}
+      </Modal>
+      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
+    </>
   );
 }
