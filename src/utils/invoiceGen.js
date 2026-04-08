@@ -1,163 +1,178 @@
-import { invoiceTotal, fmtDate, fmtMoney } from "../components/UI";
+import { jsPDF } from "jspdf";
+import { fmtDate } from "../components/UI";
 
-export function downloadInvoice(inv, account, sym) {
-  const total = invoiceTotal(inv.items);
-  const igstTotal = inv.items.reduce((s, it) => {
-    const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0);
-    const igst = amt * (Number(it.igst) || 0) / 100;
-    return s + igst;
-  }, 0);
-  const taxable = total;
-  const grandTotal = total + igstTotal;
+function toNumber(value) {
+  return Number(value) || 0;
+}
 
+function getTaxBreakdown(invoice) {
+  return (invoice?.items || []).reduce(
+    (totals, item) => {
+      const taxable = toNumber(item.qty) * toNumber(item.rate);
+      const rate = toNumber(item.taxRate ?? item.igst);
+      const taxAmount = (taxable * rate) / 100;
+
+      totals.taxable += taxable;
+      if (invoice?.taxMode === "split") {
+        totals.cgst += taxAmount / 2;
+        totals.sgst += taxAmount / 2;
+      } else {
+        totals.igst += taxAmount;
+      }
+
+      return totals;
+    },
+    { taxable: 0, cgst: 0, sgst: 0, igst: 0 }
+  );
+}
+
+function fmtCurrency(value, symbol) {
+  return `${symbol}${toNumber(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function line(doc, label, y, value, options = {}) {
+  doc.text(String(label || ""), 16, y, options);
+  doc.text(String(value || ""), 194, y, { align: "right", ...options });
+}
+
+export function downloadInvoice(invoice, account, sym) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
+  const tax = getTaxBreakdown(invoice);
+  const total = tax.taxable + tax.cgst + tax.sgst + tax.igst;
+  const customerName = invoice.billTo?.name || invoice.customer?.name || "--";
 
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${inv.number}</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; background: #fff; color: #111; padding: 40px; font-size: 13px; }
-  .page { max-width: 800px; margin: 0 auto; }
-  
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #111; }
-  .biz-name { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
-  .biz-details { font-size: 12px; color: #555; line-height: 1.7; }
-  .gstin { font-weight: 700; color: #111; }
-  
-  .inv-title { font-size: 26px; font-weight: 800; letter-spacing: 1px; text-align: right; margin-bottom: 8px; }
-  .inv-meta { text-align: right; font-size: 12px; color: #555; line-height: 1.7; }
-  .inv-num { font-size: 14px; font-weight: 700; color: #111; }
-  
-  .addresses { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px; }
-  .addr-block { padding: 16px; background: #f8f8f8; border-radius: 6px; }
-  .addr-label { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #999; margin-bottom: 8px; }
-  .addr-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
-  .addr-details { font-size: 12px; color: #555; line-height: 1.7; }
-  
-  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-  thead { background: #111; color: #fff; }
-  th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; }
-  th.ar, td.ar { text-align: right; }
-  td { padding: 12px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
-  .item-desc { font-weight: 600; }
-  .item-sub { font-size: 11px; color: #888; margin-top: 2px; }
-  
-  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 28px; }
-  .totals-table { width: 300px; }
-  .totals-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 13px; border-bottom: 1px solid #eee; }
-  .totals-row.grand { border-top: 2px solid #111; border-bottom: none; padding-top: 12px; font-size: 16px; font-weight: 800; }
-  
-  .notes-section { margin-bottom: 24px; }
-  .notes-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: #999; margin-bottom: 8px; }
-  .notes-box { background: #f8f8f8; border-radius: 6px; padding: 14px; font-size: 13px; color: #555; line-height: 1.6; }
-  
-  .terms { font-size: 12px; color: #777; line-height: 1.7; border-top: 1px solid #eee; padding-top: 20px; }
-  .terms-title { font-weight: 700; color: #555; margin-bottom: 4px; }
-  
-  .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #bbb; border-top: 1px solid #eee; padding-top: 20px; }
-  
-  @media print {
-    body { padding: 20px; }
-    @page { margin: 15mm; }
+  let y = 18;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(acc.name || "Your Business", 16, y);
+  doc.setFontSize(18);
+  doc.text("INVOICE", 194, y, { align: "right" });
+
+  y += 8;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const businessLines = [
+    acc.address,
+    acc.gstin ? `GSTIN: ${acc.gstin}` : "",
+    acc.phone,
+    acc.email
+  ].filter(Boolean);
+  businessLines.forEach(text => {
+    doc.text(String(text), 16, y);
+    y += 5;
+  });
+
+  let metaY = 26;
+  const metaLines = [
+    `Invoice: ${invoice.number || "--"}`,
+    `Issued: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
+    invoice.dueDate ? `Due: ${fmtDate(invoice.dueDate)}` : "",
+    invoice.status === "paid" && invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
+  ].filter(Boolean);
+  metaLines.forEach(text => {
+    doc.text(text, 194, metaY, { align: "right" });
+    metaY += 5;
+  });
+
+  y = Math.max(y, metaY) + 8;
+  doc.setDrawColor(220);
+  doc.line(16, y, 194, y);
+  y += 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Bill To", 16, y);
+  doc.text("Ship To", 106, y);
+  y += 6;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  const billLines = [
+    customerName,
+    invoice.billTo?.address || invoice.customer?.address || "",
+    invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
+  ].filter(Boolean);
+  const shipLines = [
+    invoice.shipTo?.name || customerName,
+    invoice.shipTo?.address || invoice.customer?.address || ""
+  ].filter(Boolean);
+
+  const blockHeight = Math.max(billLines.length, shipLines.length) * 5;
+  billLines.forEach((text, index) => doc.text(String(text), 16, y + index * 5));
+  shipLines.forEach((text, index) => doc.text(String(text), 106, y + index * 5));
+  y += blockHeight + 8;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFillColor(22, 22, 28);
+  doc.rect(16, y, 178, 8, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.text("#", 18, y + 5.3);
+  doc.text("Description", 28, y + 5.3);
+  if (acc.showHSN !== false) doc.text("HSN", 112, y + 5.3);
+  doc.text("Qty", acc.showHSN !== false ? 132 : 122, y + 5.3, { align: "right" });
+  doc.text("Rate", acc.showHSN !== false ? 152 : 147, y + 5.3, { align: "right" });
+  doc.text(invoice.taxMode === "split" ? "GST" : "IGST", acc.showHSN !== false ? 170 : 168, y + 5.3, { align: "right" });
+  doc.text("Amount", 192, y + 5.3, { align: "right" });
+  doc.setTextColor(20, 20, 20);
+  y += 12;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  (invoice.items || []).forEach((item, index) => {
+    const taxable = toNumber(item.qty) * toNumber(item.rate);
+    const rate = toNumber(item.taxRate ?? item.igst);
+    const descriptionLines = doc.splitTextToSize(item.subDesc ? `${item.desc}\n${item.subDesc}` : item.desc || "--", 72);
+    const rowHeight = Math.max(7, descriptionLines.length * 4.6);
+
+    doc.text(String(index + 1), 18, y);
+    doc.text(descriptionLines, 28, y);
+    if (acc.showHSN !== false) doc.text(item.hsn || "--", 112, y);
+    doc.text(String(item.qty || 0), acc.showHSN !== false ? 132 : 122, y, { align: "right" });
+    doc.text(fmtCurrency(item.rate, sym), acc.showHSN !== false ? 152 : 147, y, { align: "right" });
+    doc.text(`${rate.toFixed(2)}%`, acc.showHSN !== false ? 170 : 168, y, { align: "right" });
+    doc.text(fmtCurrency(taxable, sym), 192, y, { align: "right" });
+    y += rowHeight;
+  });
+
+  y += 4;
+  doc.line(120, y, 194, y);
+  y += 7;
+  doc.setFontSize(10);
+  line(doc, "Taxable Value", y, fmtCurrency(tax.taxable, sym));
+  y += 6;
+  if (invoice.taxMode === "split") {
+    line(doc, "CGST", y, fmtCurrency(tax.cgst, sym));
+    y += 6;
+    line(doc, "SGST", y, fmtCurrency(tax.sgst, sym));
+    y += 6;
+  } else {
+    line(doc, "IGST", y, fmtCurrency(tax.igst, sym));
+    y += 6;
   }
-</style>
-</head>
-<body>
-<div class="page">
-  <!-- Header -->
-  <div class="header">
-    <div>
-      <div class="biz-name">${acc.name || "Your Business"}</div>
-      <div class="biz-details">
-        ${acc.address ? acc.address.replace(/\n/g, "<br>") : ""}
-        ${acc.gstin ? `<br><span class="gstin">GSTIN: ${acc.gstin}</span>` : ""}
-        ${acc.phone ? `<br>${acc.phone}` : ""}
-        ${acc.email ? `<br>${acc.email}` : ""}
-      </div>
-    </div>
-    <div>
-      <div class="inv-title">INVOICE</div>
-      <div class="inv-meta">
-        <div class="inv-num">Invoice Number: ${inv.number}</div>
-        <div>Date: ${fmtDate(inv.date)}</div>
-        ${inv.dueDate ? `<div>Due Date: ${fmtDate(inv.dueDate)}</div>` : ""}
-      </div>
-    </div>
-  </div>
 
-  <!-- Addresses -->
-  <div class="addresses">
-    <div class="addr-block">
-      <div class="addr-label">Bill To</div>
-      <div class="addr-name">${inv.billTo?.name || inv.customer?.name || "—"}</div>
-      <div class="addr-details">
-        ${(inv.billTo?.address || inv.customer?.address || "").replace(/\n/g, "<br>")}
-        ${inv.billTo?.gstin || inv.customer?.gstin ? `<br><strong>GSTIN:</strong> ${inv.billTo?.gstin || inv.customer?.gstin}` : ""}
-      </div>
-    </div>
-    <div class="addr-block">
-      <div class="addr-label">Ship To</div>
-      <div class="addr-name">${inv.shipTo?.name || inv.customer?.name || "—"}</div>
-      <div class="addr-details">
-        ${(inv.shipTo?.address || inv.customer?.address || "").replace(/\n/g, "<br>")}
-      </div>
-    </div>
-  </div>
+  doc.setFont("helvetica", "bold");
+  line(doc, "Grand Total", y, fmtCurrency(total, sym));
+  y += 10;
 
-  <!-- Items Table -->
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Item &amp; Description</th>
-        ${acc.showHSN !== false ? "<th>HSN/SAC</th>" : ""}
-        <th class="ar">Qty</th>
-        <th class="ar">Rate</th>
-        <th class="ar">IGST</th>
-        <th class="ar">Amount</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${inv.items.map((it, i) => {
-        const amt = (Number(it.qty) || 0) * (Number(it.rate) || 0);
-        return `<tr>
-          <td>${i + 1}</td>
-          <td><div class="item-desc">${it.desc || "—"}</div>${it.subDesc ? `<div class="item-sub">${it.subDesc}</div>` : ""}</td>
-          ${acc.showHSN !== false ? `<td>${it.hsn || ""}</td>` : ""}
-          <td class="ar">${it.qty}</td>
-          <td class="ar">${sym}${Number(it.rate || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-          <td class="ar">${Number(it.igst || 0).toFixed(2)}%</td>
-          <td class="ar">${sym}${amt.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
-        </tr>`;
-      }).join("")}
-    </tbody>
-  </table>
+  doc.setFont("helvetica", "normal");
+  if (invoice.notes) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Notes", 16, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.text(doc.splitTextToSize(invoice.notes, 178), 16, y);
+    y += 12;
+  }
 
-  <!-- Totals -->
-  <div class="totals-section">
-    <div class="totals-table">
-      <div class="totals-row"><span>Taxable Value</span><span>${sym}${taxable.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
-      <div class="totals-row"><span>IGST</span><span>${sym}${igstTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
-      <div class="totals-row grand"><span>Total</span><span>${sym}${grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
-    </div>
-  </div>
+  if (invoice.terms) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Terms", 16, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.text(doc.splitTextToSize(invoice.terms, 178), 16, y);
+  }
 
-  ${inv.notes ? `<div class="notes-section"><div class="notes-label">Notes</div><div class="notes-box">${inv.notes}</div></div>` : ""}
-
-  ${inv.terms ? `<div class="terms"><div class="terms-title">Terms &amp; Conditions</div>${inv.terms}</div>` : ""}
-
-  <div class="footer">Thank you for your business.</div>
-</div>
-</body>
-</html>`;
-
-  const blob = new Blob([html], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `${inv.number}.html`; a.click();
-  URL.revokeObjectURL(url);
+  doc.save(`${invoice.number || "invoice"}.pdf`);
 }

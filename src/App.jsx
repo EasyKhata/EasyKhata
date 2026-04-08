@@ -4,6 +4,7 @@ import MainApp from "./screens/MainApp";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
+import { DashboardSkeleton } from "./components/UI";
 import "./index.css";
 
 function AppRouter() {
@@ -11,8 +12,8 @@ function AppRouter() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)" }}>
-        <div className="spinner" />
+      <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+        <DashboardSkeleton />
       </div>
     );
   }
