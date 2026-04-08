@@ -4,6 +4,14 @@ export const PLANS = {
   BUSINESS: "business"
 };
 
+export const SUBSCRIPTION_STATUS = {
+  ACTIVE: "active",
+  INACTIVE: "inactive",
+  TRIAL: "trial"
+};
+
+export const DEFAULT_TRIAL_DAYS = 7;
+
 export const PLAN_LABELS = {
   free: "Free",
   pro: "Pro",
@@ -24,9 +32,34 @@ export function getUserPlan(user) {
   return user?.plan || PLANS.FREE;
 }
 
+export function getTrialEndDate(days = DEFAULT_TRIAL_DAYS) {
+  const next = new Date();
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
+}
+
+export function formatSubscriptionDate(value) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function isTrialActive(user) {
+  if (isAdminUser(user)) return true;
+  if ((user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE) !== SUBSCRIPTION_STATUS.TRIAL) return false;
+  if (!user?.subscriptionEndsAt) return true;
+  const endAt = new Date(user.subscriptionEndsAt);
+  if (Number.isNaN(endAt.getTime())) return true;
+  return endAt.getTime() >= Date.now();
+}
+
 export function isSubscriptionActive(user) {
   if (isAdminUser(user)) return true;
-  return (user?.subscriptionStatus || "active") === "active";
+  const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+  if (status === SUBSCRIPTION_STATUS.ACTIVE) return true;
+  if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user);
+  return false;
 }
 
 export function canUseFeature(user, feature, usage = {}) {
@@ -103,4 +136,39 @@ export function getUpgradeCopy(feature) {
         message: "This feature is part of a higher plan. Contact admin to upgrade your account."
       };
   }
+}
+
+export function getPlanSummary(user) {
+  const plan = getUserPlan(user);
+  const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+
+  if (isAdminUser(user)) {
+    return {
+      title: "Owner access",
+      message: "You have full admin access across all plan features."
+    };
+  }
+
+  if (status === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user)) {
+    const ends = formatSubscriptionDate(user?.subscriptionEndsAt);
+    return {
+      title: `${PLAN_LABELS[plan] || "Plan"} trial`,
+      message: ends ? `Trial access is active until ${ends}.` : "Trial access is active for a limited period."
+    };
+  }
+
+  if (status === SUBSCRIPTION_STATUS.INACTIVE) {
+    return {
+      title: `${PLAN_LABELS[plan] || "Plan"} inactive`,
+      message: "Premium features are paused right now. Contact admin to reactivate this plan."
+    };
+  }
+
+  return {
+    title: `${PLAN_LABELS[plan] || "Free"} plan`,
+    message:
+      plan === PLANS.FREE
+        ? "Basic bookkeeping is active. Upgrade to unlock premium invoicing, reports, alerts, and analytics."
+        : `${PLAN_LABELS[plan] || "Plan"} access is active.`
+  };
 }

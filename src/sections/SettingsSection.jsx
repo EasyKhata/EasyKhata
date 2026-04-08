@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal } from "../components/UI";
+import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal, EmptyState } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport } from "../utils/reportGen";
 import { isStrongPassword } from "../utils/validator";
-import { canUseFeature, getUpgradeCopy, PLAN_LABELS } from "../utils/subscription";
+import { canUseFeature, DEFAULT_TRIAL_DAYS, formatSubscriptionDate, getPlanSummary, getUpgradeCopy, PLAN_LABELS, PLANS } from "../utils/subscription";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
@@ -24,10 +24,12 @@ export default function SettingsSection() {
   const [goalForm, setGoalForm] = useState({ monthlySavings: goals?.monthlySavings || "" });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
+  const [planRequestForm, setPlanRequestForm] = useState({ targetPlan: PLANS.PRO, note: "" });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const planSummary = getPlanSummary(user);
 
   const customerInsights = useMemo(
     () => calculateCustomerInsights({ customers, invoices }),
@@ -245,6 +247,35 @@ export default function SettingsSection() {
     setScreen("main");
   }
 
+  async function submitPlanRequest() {
+    const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
+    try {
+      await setDoc(doc(db, "plan_requests", user.id), {
+        userId: user.id,
+        userName: user?.name || "",
+        userEmail: user?.email || "",
+        currentPlan: user?.plan || PLANS.FREE,
+        requestedPlan: targetPlan,
+        status: "pending",
+        trialDays: DEFAULT_TRIAL_DAYS,
+        note: planRequestForm.note.trim(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+
+      alert(`Your ${PLAN_LABELS[targetPlan] || "plan"} request has been sent to admin. Trial requests default to ${DEFAULT_TRIAL_DAYS} days unless changed by admin.`);
+      setPlanRequestForm({ targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO, note: "" });
+      setScreen("main");
+    } catch (err) {
+      console.error("Plan request error:", err);
+      if (err?.code === "permission-denied") {
+        alert("Plan requests are blocked by Firestore rules right now. Please allow the plan_requests collection before using this feature.");
+        return;
+      }
+      alert(err?.message || "We couldn't send your plan request right now. Please try again.");
+    }
+  }
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger }) => (
     <div onClick={onClick} className="card-row" style={{ cursor: "pointer" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -266,9 +297,25 @@ export default function SettingsSection() {
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{user?.phone}</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Plan: {PLAN_LABELS[user?.plan || "free"] || "Free"}</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.title}</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.message}</div>
+            {user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+            )}
           </div>
         </div>
+
+        {user?.role !== "admin" && (
+          <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
+              Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, and advanced insights. Business is reserved for bigger collaboration features. Trial access is currently set to {DEFAULT_TRIAL_DAYS} days by default.
+            </div>
+            <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
+              Request Plan Upgrade
+            </button>
+          </div>
+        )}
 
         <div style={{ marginBottom: 10 }}>
           <div className="section-label">Business</div>
@@ -352,9 +399,7 @@ export default function SettingsSection() {
     return (
       <Modal title="Customers" onClose={() => setScreen("main")} onSave={openNewCust} saveLabel="+ Add">
         {customerInsights.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-sec)" }}>No customers yet</div>
-          </div>
+          <EmptyState title="No customers yet" message="Add your first customer to start creating invoices and tracking balances." accentColor="var(--blue)" />
         ) : (
           <div className="card">
             {customerInsights.map(customer => (
@@ -570,6 +615,52 @@ export default function SettingsSection() {
             checked={Boolean(notificationForm?.spendingSpike)}
             onChange={() => setNotificationForm(current => ({ ...current, spendingSpike: !current.spendingSpike }))}
           />
+        </div>
+      </Modal>
+    );
+  }
+
+  if (screen === "plan-request") {
+    return (
+      <Modal title="Request Plan Upgrade" onClose={() => setScreen("main")} onSave={submitPlanRequest} saveLabel="Send Request">
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <Field label="Requested Plan" required hint="Choose the plan you want admin to enable on your account.">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                [PLANS.PRO, "Pro"],
+                [PLANS.BUSINESS, "Business"]
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setPlanRequestForm(current => ({ ...current, targetPlan: value }))}
+                  style={{
+                    padding: "12px 14px",
+                    background: planRequestForm.targetPlan === value ? "var(--surface-pop)" : "var(--surface-high)",
+                    borderColor: planRequestForm.targetPlan === value ? "var(--accent)" : "var(--border)",
+                    color: planRequestForm.targetPlan === value ? "var(--text)" : "var(--text-sec)"
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Message to Admin" hint="Optional note like urgent reporting needs, invoice volume, or trial request.">
+            <Textarea
+              placeholder="Example: I need invoice PDF export and reports for my business this week."
+              value={planRequestForm.note}
+              onChange={event => setPlanRequestForm(current => ({ ...current, note: event.target.value }))}
+            />
+          </Field>
+        </div>
+
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How this works</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Your request goes to admin for approval. If admin enables a trial, the default trial period is {DEFAULT_TRIAL_DAYS} days unless they set a different end date manually in Firebase later.
+          </div>
         </div>
       </Modal>
     );
