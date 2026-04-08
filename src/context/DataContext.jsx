@@ -87,8 +87,10 @@ export function DataProvider({ children }) {
   const updateCustomer = c => update(d => ({ ...d, customers: d.customers.map(x => (x.id === c.id ? c : x)) }));
   const removeCustomer = id => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
   const addIncome = i => update(d => ({ ...d, income: [{ ...i, id: uid() }, ...d.income] }));
+  const updateIncome = income => update(d => ({ ...d, income: d.income.map(i => (i.id === income.id ? income : i)) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
   const addExpense = e => update(d => ({ ...d, expenses: [{ ...e, id: uid() }, ...d.expenses] }));
+  const updateExpense = expense => update(d => ({ ...d, expenses: d.expenses.map(e => (e.id === expense.id ? expense : e)) }));
   const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
   const addInvoice = inv => update(d => ({ ...d, invoices: [{ ...inv, id: uid() }, ...d.invoices] }));
   const updateInvoice = inv => update(d => ({ ...d, invoices: d.invoices.map(i => (i.id === inv.id ? inv : i)) }));
@@ -107,9 +109,11 @@ export function DataProvider({ children }) {
         removeCustomer,
         income: data.income,
         addIncome,
+        updateIncome,
         removeIncome,
         expenses: data.expenses,
         addExpense,
+        updateExpense,
         removeExpense,
         invoices: data.invoices,
         addInvoice,

@@ -6,6 +6,7 @@ import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
+import { isStrongPassword } from "../utils/validator";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
@@ -16,7 +17,7 @@ export default function SettingsSection() {
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true });
-  const [passForm, setPassForm] = useState({ current: ["", "", "", "", "", ""], next: ["", "", "", "", "", ""], confirm: ["", "", "", "", "", ""] });
+  const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
 
@@ -60,7 +61,7 @@ export default function SettingsSection() {
       return;
     }
 
-    alert("Profile updated successfully");
+    alert("Your profile has been updated.");
     setScreen("main");
   };
 
@@ -83,64 +84,30 @@ export default function SettingsSection() {
     setScreen("customers");
   }
 
-  function PasscodeBoxes({ arr, setArr, prefix }) {
-    function handleKey(e, i) {
-      const val = e.target.value.replace(/\D/g, "").slice(-1);
-      const next = [...arr];
-      next[i] = val;
-      setArr(next);
-      if (val && i < 5) document.getElementById(`${prefix}-${i + 1}`)?.focus();
-      if (!val && e.nativeEvent.inputType === "deleteContentBackward" && i > 0) {
-        document.getElementById(`${prefix}-${i - 1}`)?.focus();
-      }
-    }
-
-    return (
-      <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-        {arr.map((d, i) => (
-          <input
-            key={i}
-            id={`${prefix}-${i}`}
-            type="password"
-            inputMode="numeric"
-            maxLength={1}
-            value={d}
-            onChange={e => handleKey(e, i)}
-            className="otp-box"
-            style={{ borderColor: d ? "var(--accent)" : undefined }}
-          />
-        ))}
-      </div>
-    );
-  }
-
   async function handleChangePassword() {
     setPassError("");
-    const currentPassword = passForm.current.join("");
-    const nextPassword = passForm.next.join("");
-    const confirmPassword = passForm.confirm.join("");
 
-    if (currentPassword.length < 6) {
-      setPassError("Current password must be at least 6 characters.");
+    if (!passForm.current) {
+      setPassError("Please enter your current password.");
       return;
     }
-    if (nextPassword.length < 6) {
-      setPassError("New password must be at least 6 characters.");
+    if (!isStrongPassword(passForm.next)) {
+      setPassError("Password must be at least 6 characters long.");
       return;
     }
-    if (nextPassword !== confirmPassword) {
-      setPassError("New passwords don't match.");
+    if (passForm.next !== passForm.confirm) {
+      setPassError("Your new password and confirmation do not match.");
       return;
     }
 
-    const res = await changePassword(currentPassword, nextPassword);
+    const res = await changePassword(passForm.current, passForm.next);
     if (res?.error) {
       setPassError(res.error);
       return;
     }
 
-    setPassForm({ current: ["", "", "", "", "", ""], next: ["", "", "", "", "", ""], confirm: ["", "", "", "", "", ""] });
-    alert("Passcode updated successfully!");
+    setPassForm({ current: "", next: "", confirm: "" });
+    alert("Your password has been updated.");
     setScreen("main");
   }
 
@@ -202,9 +169,9 @@ export default function SettingsSection() {
             </div>
             <MenuRow
               icon="P"
-              label="Change Passcode"
+              label="Change Password"
               onClick={() => {
-                setPassForm({ current: ["", "", "", "", "", ""], next: ["", "", "", "", "", ""], confirm: ["", "", "", "", "", ""] });
+                setPassForm({ current: "", next: "", confirm: "" });
                 setPassError("");
                 setScreen("passcode");
               }}
@@ -246,10 +213,7 @@ export default function SettingsSection() {
         <Field label="Show HSN/SAC on Invoices">
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "var(--surface-high)", borderRadius: 12 }}>
             <span style={{ fontSize: 15, color: "var(--text)" }}>Include HSN/SAC column</span>
-            <button
-              onClick={() => setAccForm(f => ({ ...f, showHSN: !f.showHSN }))}
-              style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: accForm.showHSN ? "var(--accent)" : "var(--border)" }}
-            >
+            <button onClick={() => setAccForm(f => ({ ...f, showHSN: !f.showHSN }))} style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: accForm.showHSN ? "var(--accent)" : "var(--border)" }}>
               <div style={{ position: "absolute", top: 3, left: accForm.showHSN ? undefined : 3, right: accForm.showHSN ? 3 : undefined, width: 22, height: 22, borderRadius: 11, background: "#fff", transition: "all 0.3s" }} />
             </button>
           </div>
@@ -301,15 +265,15 @@ export default function SettingsSection() {
   }
 
   return (
-    <Modal title="Change Passcode" onClose={() => setScreen("main")} onSave={handleChangePassword} canSave={true}>
-      <Field label="Current Passcode">
-        <PasscodeBoxes arr={passForm.current} setArr={v => setPassForm(f => ({ ...f, current: v }))} prefix="cur" />
+    <Modal title="Change Password" onClose={() => setScreen("main")} onSave={handleChangePassword} canSave={true}>
+      <Field label="Current Password">
+        <Input type="password" autoComplete="current-password" placeholder="Enter your current password" value={passForm.current} onChange={e => setPassForm(f => ({ ...f, current: e.target.value }))} />
       </Field>
-      <Field label="New Passcode">
-        <PasscodeBoxes arr={passForm.next} setArr={v => setPassForm(f => ({ ...f, next: v }))} prefix="nxt" />
+      <Field label="New Password" hint="Use at least 6 characters.">
+        <Input type="password" autoComplete="new-password" placeholder="Create a new password" value={passForm.next} onChange={e => setPassForm(f => ({ ...f, next: e.target.value }))} />
       </Field>
-      <Field label="Confirm New Passcode">
-        <PasscodeBoxes arr={passForm.confirm} setArr={v => setPassForm(f => ({ ...f, confirm: v }))} prefix="cnf" />
+      <Field label="Confirm New Password">
+        <Input type="password" autoComplete="new-password" placeholder="Re-enter the new password" value={passForm.confirm} onChange={e => setPassForm(f => ({ ...f, confirm: e.target.value }))} />
       </Field>
       {passError && <p style={{ color: "var(--danger)", fontSize: 14, marginTop: 8, textAlign: "center" }}>{passError}</p>}
     </Modal>

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   EmailAuthProvider,
   createUserWithEmailAndPassword,
@@ -19,6 +19,7 @@ const AuthContext = createContext();
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const registrationInProgressRef = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
@@ -31,6 +32,12 @@ export function AuthProvider({ children }) {
 
       try {
         if (!firebaseUser.emailVerified) {
+          if (registrationInProgressRef.current) {
+            clearCurrentUser();
+            setUser(null);
+            setLoading(false);
+            return;
+          }
           await signOut(auth);
           clearCurrentUser();
           setUser(null);
@@ -101,6 +108,7 @@ export function AuthProvider({ children }) {
   }
 
   async function register(name, email, phone, password) {
+    registrationInProgressRef.current = true;
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCred.user.uid;
@@ -138,34 +146,67 @@ export function AuthProvider({ children }) {
 
       return {
         success: true,
-        message: "Account created. Please verify your email before login."
+        message: "Your account is ready. Please verify your email before signing in."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
-        return { error: "User already exists. Please login." };
+        return { error: "An account with this email already exists. Please sign in instead." };
       }
-      return { error: err.message };
+      if (err.code === "auth/invalid-email") {
+        return { error: "Please enter a valid email address." };
+      }
+      if (err.code === "auth/weak-password") {
+        return { error: "Password must be at least 6 characters long." };
+      }
+      if (err.code === "auth/too-many-requests") {
+        return { error: "Too many attempts were made. Please wait a little and try again." };
+      }
+      return { error: err.message || "We couldn't create your account right now. Please try again." };
+    } finally {
+      registrationInProgressRef.current = false;
     }
   }
 
   async function forgotPassword(email) {
     try {
       await sendPasswordResetEmail(auth, email);
-      return { success: true };
+      return { success: true, message: "Password reset instructions have been sent to your email." };
     } catch (err) {
-      return { error: "Failed to send reset email" };
+      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-email") {
+        return { error: "We couldn't find an account with that email address." };
+      }
+      return { error: "We couldn't send the reset email right now. Please try again shortly." };
     }
   }
 
-  async function resendVerification() {
+  async function resendVerification(email, password) {
     try {
-      if (!auth.currentUser) {
-        return { error: "No user logged in" };
+      let verificationUser = auth.currentUser;
+
+      if (!verificationUser) {
+        if (!email || !password) {
+          return { error: "Enter your email and password to resend the verification email." };
+        }
+        const userCred = await signInWithEmailAndPassword(auth, email, password);
+        verificationUser = userCred.user;
       }
-      await sendEmailVerification(auth.currentUser);
-      return { success: true };
+
+      if (verificationUser.emailVerified) {
+        return { error: "This email address is already verified. Please sign in." };
+      }
+
+      await sendEmailVerification(verificationUser);
+      await signOut(auth);
+      clearCurrentUser();
+      return { success: true, message: "We've sent a fresh verification email. Please check your inbox and spam folder." };
     } catch (err) {
-      return { error: "Failed to resend email" };
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") {
+        return { error: "Your password didn't match our records. Please try again." };
+      }
+      if (err.code === "auth/too-many-requests") {
+        return { error: "Too many attempts were made. Please wait a little and try again." };
+      }
+      return { error: "We couldn't resend the verification email right now. Please try again shortly." };
     }
   }
 
@@ -195,12 +236,12 @@ export function AuthProvider({ children }) {
       return { success: true };
     } catch (err) {
       if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-        return { error: "Current password is incorrect." };
+        return { error: "Your current password is incorrect." };
       }
       if (err.code === "auth/weak-password") {
-        return { error: "New password must be at least 6 characters." };
+        return { error: "Password must be at least 6 characters long." };
       }
-      return { error: err.message || "Failed to update password." };
+      return { error: err.message || "We couldn't update your password right now. Please try again." };
     }
   }
 
