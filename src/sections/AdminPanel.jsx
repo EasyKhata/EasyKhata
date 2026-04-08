@@ -3,35 +3,71 @@ import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
-import { PLAN_LABELS, PLANS } from "../utils/subscription";
+import {
+  DEFAULT_TRIAL_DAYS,
+  PLAN_LABELS,
+  PLANS,
+  SUBSCRIPTION_STATUS,
+  formatSubscriptionDate,
+  getTrialEndDate
+} from "../utils/subscription";
+
+const REQUEST_FILTERS = [
+  ["pending", "Pending"],
+  ["approved", "Approved"],
+  ["rejected", "Rejected"],
+  ["all", "All"]
+];
 
 export default function AdminPanel() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [requestsEnabled, setRequestsEnabled] = useState(true);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [userFilter, setUserFilter] = useState("all");
+  const [requestFilter, setRequestFilter] = useState("pending");
   const [loading, setLoading] = useState(true);
 
   if (user?.role !== "admin") {
     return <div style={{ padding: 20 }}>Access denied.</div>;
   }
 
-  async function fetchUsers() {
+  async function fetchAdminData() {
     setLoading(true);
     try {
-      const snapshot = await getDocs(collection(db, "users"));
-      const list = snapshot.docs.map(item => ({
+      const usersSnapshot = await getDocs(collection(db, "users"));
+      const nextUsers = usersSnapshot.docs.map(item => ({
         id: item.id,
         ...item.data()
       }));
-      setUsers(list);
+      setUsers(nextUsers);
+
+      try {
+        const requestsSnapshot = await getDocs(collection(db, "plan_requests"));
+        const nextRequests = requestsSnapshot.docs
+          .map(item => ({
+            id: item.id,
+            ...item.data()
+          }))
+          .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+        setRequests(nextRequests);
+        setRequestsEnabled(true);
+      } catch (err) {
+        console.error("Plan request load error:", err);
+        setRequests([]);
+        setRequestsEnabled(false);
+      }
+    } catch (err) {
+      console.error("Admin user load error:", err);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    fetchUsers();
+    fetchAdminData();
   }, []);
 
   const filteredUsers = useMemo(() => {
@@ -39,19 +75,24 @@ export default function AdminPanel() {
       const haystack = `${member.name || ""} ${member.email || ""} ${member.phone || ""}`.toLowerCase();
       const matchesSearch = haystack.includes(search.trim().toLowerCase());
       const matchesFilter =
-        filter === "all" ||
-        (filter === "blocked" && member.blocked) ||
-        (filter === "active" && !member.blocked) ||
-        (filter === "shared" && member.sharedLedgerId);
+        userFilter === "all" ||
+        (userFilter === "blocked" && member.blocked) ||
+        (userFilter === "active" && !member.blocked) ||
+        (userFilter === "shared" && member.sharedLedgerId) ||
+        (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS));
       return matchesSearch && matchesFilter;
     });
-  }, [filter, search, users]);
+  }, [search, userFilter, users]);
+
+  const filteredRequests = useMemo(() => {
+    return requests.filter(item => requestFilter === "all" || (item.status || "pending") === requestFilter);
+  }, [requestFilter, requests]);
 
   const stats = {
-    total: users.length,
-    blocked: users.filter(member => member.blocked).length,
-    shared: users.filter(member => member.sharedLedgerId).length,
-    admins: users.filter(member => member.role === "admin").length
+    totalUsers: users.length,
+    premiumUsers: users.filter(item => item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS).length,
+    blockedUsers: users.filter(item => item.blocked).length,
+    pendingRequests: requests.filter(item => (item.status || "pending") === "pending").length
   };
 
   async function toggleBlock(id, blocked) {
@@ -60,11 +101,8 @@ export default function AdminPanel() {
       return;
     }
 
-    await updateDoc(doc(db, "users", id), {
-      blocked: !blocked
-    });
-
-    fetchUsers();
+    await updateDoc(doc(db, "users", id), { blocked: !blocked });
+    fetchAdminData();
   }
 
   async function deleteUserRecord(member) {
@@ -100,44 +138,177 @@ export default function AdminPanel() {
     });
 
     await deleteDoc(doc(db, "users", member.id));
-    fetchUsers();
+    fetchAdminData();
     alert("User profile removed from Firestore and auth cleanup has been queued.");
   }
 
   async function updateUserPlan(member, plan) {
-    await updateDoc(doc(db, "users", member.id), {
+    const updates = {
       plan,
-      subscriptionStatus: "active"
-    });
-    fetchUsers();
+      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE
+    };
+
+    if (plan === PLANS.FREE) {
+      updates.subscriptionEndsAt = "";
+    }
+
+    await updateDoc(doc(db, "users", member.id), updates);
+    fetchAdminData();
   }
 
   async function updateSubscriptionStatus(member, subscriptionStatus) {
-    await updateDoc(doc(db, "users", member.id), { subscriptionStatus });
-    fetchUsers();
+    const updates = { subscriptionStatus };
+    if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
+      updates.subscriptionEndsAt = getTrialEndDate(DEFAULT_TRIAL_DAYS);
+    }
+    if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
+      updates.subscriptionEndsAt = "";
+    }
+    await updateDoc(doc(db, "users", member.id), updates);
+    fetchAdminData();
+  }
+
+  async function updateRequestStatus(request, status, plan = request.requestedPlan) {
+    const requestRef = doc(db, "plan_requests", request.id);
+    const updates = {
+      status,
+      reviewedBy: user.id,
+      reviewedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (status === "approved") {
+      await updateDoc(doc(db, "users", request.userId), {
+        plan,
+        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+        subscriptionEndsAt: ""
+      });
+    }
+
+    if (status === "trial") {
+      await updateDoc(doc(db, "users", request.userId), {
+        plan,
+        subscriptionStatus: SUBSCRIPTION_STATUS.TRIAL,
+        subscriptionEndsAt: getTrialEndDate(request.trialDays || DEFAULT_TRIAL_DAYS)
+      });
+      updates.status = "approved";
+      updates.approvalType = "trial";
+    }
+
+    await setDoc(requestRef, updates, { merge: true });
+    fetchAdminData();
   }
 
   if (loading) {
-    return <SectionSkeleton rows={5} showHero={false} />;
+    return <SectionSkeleton rows={6} showHero={false} />;
   }
 
   return (
-    <div style={{ padding: "20px 18px 100px" }}>
+    <div style={{ padding: "20px 18px 110px" }}>
       <div className="section-label">Admin Overview</div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+      <div className="desktop-grid-2" style={{ marginBottom: 18 }}>
         {[
-          ["Users", stats.total, "var(--blue)"],
-          ["Blocked", stats.blocked, "var(--danger)"],
-          ["Shared", stats.shared, "var(--gold)"],
-          ["Admins", stats.admins, "var(--accent)"]
+          ["Total Users", stats.totalUsers, "var(--blue)"],
+          ["Premium Users", stats.premiumUsers, "var(--accent)"],
+          ["Blocked Users", stats.blockedUsers, "var(--danger)"],
+          ["Pending Requests", stats.pendingRequests, "var(--gold)"]
         ].map(([label, value, color]) => (
-          <div key={label} className="card" style={{ padding: "16px 14px", borderColor: `${color}33` }}>
+          <div key={label} className="card" style={{ padding: "16px 14px", borderColor: `${color}33`, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>{label}</div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 26, color: "var(--text)" }}>{value}</div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--text)" }}>{value}</div>
           </div>
         ))}
       </div>
 
+      <div className="section-label">Plan Requests</div>
+      <div className="card" style={{ padding: 14, marginBottom: 18 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {REQUEST_FILTERS.map(([value, label]) => (
+            <button
+              key={value}
+              className="btn-secondary"
+              style={{
+                padding: "8px 12px",
+                fontSize: 12,
+                background: requestFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
+                color: requestFilter === value ? "var(--text)" : "var(--text-sec)"
+              }}
+              onClick={() => setRequestFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        {!requestsEnabled ? (
+          <EmptyState
+            title="Plan requests are locked by Firestore rules"
+            message="User data is still loading correctly, but the plan request collection is not readable yet. Add rules for plan_requests to enable this section."
+            accentColor="var(--gold)"
+          />
+        ) : filteredRequests.length === 0 ? (
+          <EmptyState title="No plan requests" message="Customer upgrade and trial requests will appear here once they are submitted from Settings." accentColor="var(--gold)" />
+        ) : (
+          filteredRequests.map(request => (
+            <div key={request.id} className="card-row" style={{ alignItems: "flex-start", gap: 14 }}>
+              <Avatar name={request.userName || request.userEmail || "?"} size={42} fontSize={14} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
+                  <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
+                    {PLAN_LABELS[request.currentPlan || PLANS.FREE] || "Free"} to {PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"}
+                  </span>
+                  <span
+                    className="pill"
+                    style={{
+                      background:
+                        (request.status || "pending") === "approved"
+                          ? "var(--accent-deep)"
+                          : (request.status || "pending") === "rejected"
+                            ? "var(--danger-deep)"
+                            : "var(--gold-deep)",
+                      color:
+                        (request.status || "pending") === "approved"
+                          ? "var(--accent)"
+                          : (request.status || "pending") === "rejected"
+                            ? "var(--danger)"
+                            : "var(--gold)"
+                    }}
+                  >
+                    {request.approvalType === "trial" ? "Trial approved" : request.status || "pending"}
+                  </span>
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                  Requested on {formatSubscriptionDate(request.createdAt) || "--"} {request.trialDays ? `- Default trial ${request.trialDays} days` : ""}
+                </div>
+                {request.note && (
+                  <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
+                    {request.note}
+                  </div>
+                )}
+                {(request.status || "pending") === "pending" && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updateRequestStatus(request, "approved")}>
+                      Approve
+                    </button>
+                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--gold)" }} onClick={() => updateRequestStatus(request, "trial")}>
+                      Start {request.trialDays || DEFAULT_TRIAL_DAYS}-Day Trial
+                    </button>
+                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => updateRequestStatus(request, "rejected")}>
+                      Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="section-label">User Management</div>
       <div className="card" style={{ padding: 14, marginBottom: 18 }}>
         <input
           className="input-field"
@@ -149,8 +320,9 @@ export default function AdminPanel() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {[
             ["all", "All"],
-            ["active", "Active"],
+            ["active", "Unblocked"],
             ["blocked", "Blocked"],
+            ["premium", "Premium"],
             ["shared", "Shared"]
           ].map(([value, label]) => (
             <button
@@ -159,10 +331,10 @@ export default function AdminPanel() {
               style={{
                 padding: "8px 12px",
                 fontSize: 12,
-                background: filter === value ? "var(--surface-pop)" : "var(--surface-high)",
-                color: filter === value ? "var(--text)" : "var(--text-sec)"
+                background: userFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
+                color: userFilter === value ? "var(--text)" : "var(--text-sec)"
               }}
-              onClick={() => setFilter(value)}
+              onClick={() => setUserFilter(value)}
             >
               {label}
             </button>
@@ -170,76 +342,80 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      <div className="section-label">User Management</div>
       <div className="card">
         {filteredUsers.length === 0 ? (
           <EmptyState title="No matching users" message="Try changing the search or filter to find the account you want." accentColor="var(--blue)" />
         ) : (
           filteredUsers.map(member => (
             <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-                <Avatar name={member.name || member.email || "?"} size={42} fontSize={14} />
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
-                    {member.role === "admin" && <span className="pill" style={{ background: "var(--purple-deep)", color: "var(--purple)" }}>Admin</span>}
-                    {member.role !== "admin" && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>{PLAN_LABELS[member.plan || PLANS.FREE] || "Free"}</span>}
-                    {member.blocked && <span className="pill" style={{ background: "var(--danger-deep)", color: "var(--danger)" }}>Blocked</span>}
-                    {member.sharedLedgerId && <span className="pill" style={{ background: "var(--gold-deep)", color: "var(--gold)" }}>Shared Ledger</span>}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
-                    {member.phone || "No phone"} · {(member.subscriptionStatus || "active")} plan{member.sharedLedgerId ? ` · Ledger ${member.sharedLedgerId}` : ""}
-                  </div>
+              <Avatar name={member.name || member.email || "?"} size={42} fontSize={14} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
+                  {member.role === "admin" && <span className="pill" style={{ background: "var(--purple-deep)", color: "var(--purple)" }}>Admin</span>}
+                  {member.role !== "admin" && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>{PLAN_LABELS[member.plan || PLANS.FREE] || "Free"}</span>}
+                  {member.blocked && <span className="pill" style={{ background: "var(--danger-deep)", color: "var(--danger)" }}>Blocked</span>}
+                  {member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL && (
+                    <span className="pill" style={{ background: "var(--gold-deep)", color: "var(--gold)" }}>
+                      Trial {member.subscriptionEndsAt ? `until ${formatSubscriptionDate(member.subscriptionEndsAt)}` : ""}
+                    </span>
+                  )}
                 </div>
+                <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
+                  {member.phone || "No phone"} - {(member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE)} access
+                  {member.sharedLedgerId ? ` - Shared ledger ${member.sharedLedgerId}` : ""}
+                </div>
+                {member.id !== user.id && (
+                  <div className="desktop-grid-3" style={{ marginTop: 12 }}>
+                    <select
+                      className="input-field"
+                      value={member.plan || PLANS.FREE}
+                      onChange={event => updateUserPlan(member, event.target.value)}
+                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
+                    >
+                      <option value={PLANS.FREE}>Free</option>
+                      <option value={PLANS.PRO}>Pro</option>
+                      <option value={PLANS.BUSINESS}>Business</option>
+                    </select>
+                    <select
+                      className="input-field"
+                      value={member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE}
+                      onChange={event => updateSubscriptionStatus(member, event.target.value)}
+                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
+                    >
+                      <option value={SUBSCRIPTION_STATUS.ACTIVE}>Active</option>
+                      <option value={SUBSCRIPTION_STATUS.INACTIVE}>Inactive</option>
+                      <option value={SUBSCRIPTION_STATUS.TRIAL}>Trial</option>
+                    </select>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                      <button
+                        className="btn-secondary"
+                        style={{ padding: "8px 12px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }}
+                        onClick={() => toggleBlock(member.id, member.blocked)}
+                      >
+                        {member.blocked ? "Unblock" : "Block"}
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)", borderColor: "var(--danger)44" }}
+                        onClick={() => deleteUserRecord(member)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              {member.id !== user.id && (
-                <div style={{ display: "flex", gap: 8, flexShrink: 0, marginTop: 2, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <select
-                    className="input-field"
-                    value={member.plan || PLANS.FREE}
-                    onChange={event => updateUserPlan(member, event.target.value)}
-                    style={{ width: 100, padding: "8px 10px", fontSize: 12, borderRadius: 10 }}
-                  >
-                    <option value={PLANS.FREE}>Free</option>
-                    <option value={PLANS.PRO}>Pro</option>
-                    <option value={PLANS.BUSINESS}>Business</option>
-                  </select>
-                  <select
-                    className="input-field"
-                    value={member.subscriptionStatus || "active"}
-                    onChange={event => updateSubscriptionStatus(member, event.target.value)}
-                    style={{ width: 110, padding: "8px 10px", fontSize: 12, borderRadius: 10 }}
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="trial">Trial</option>
-                  </select>
-                  <button
-                    className="btn-secondary"
-                    style={{ padding: "8px 12px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }}
-                    onClick={() => toggleBlock(member.id, member.blocked)}
-                  >
-                    {member.blocked ? "Unblock" : "Block"}
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)", borderColor: "var(--danger)44" }}
-                    onClick={() => deleteUserRecord(member)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
             </div>
           ))
         )}
       </div>
 
       <div className="card" style={{ marginTop: 18, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Authentication cleanup note</div>
-        <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
-          This panel can remove Firestore profile data and queue a cleanup request, but deleting a user from Firebase Authentication still requires an admin backend such as Cloud Functions or the Firebase Admin SDK.
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How subscription requests work</div>
+        <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7 }}>
+          Customers now request Pro or Business access from Settings. You can approve the plan directly, start a default {DEFAULT_TRIAL_DAYS}-day trial, or reject the request. Authentication cleanup for deleted users still needs a trusted backend later.
         </div>
       </div>
     </div>

@@ -75,31 +75,33 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
 
   const modalNode = (
     <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
-      <div className="modal-header">
-        <button onClick={onClose} className="btn-secondary" style={{ padding: "9px 16px", fontSize: 14 }}>
-          x Cancel
-        </button>
-        <span style={{ fontFamily: "var(--serif)", fontSize: 19, color: "var(--text)" }}>{title}</span>
-        <button
-          onClick={() => canSave && onSave()}
-          disabled={!canSave}
-          style={{
-            background: canSave ? btnBg : "var(--surface-high)",
-            border: "none",
-            borderRadius: 12,
-            padding: "9px 18px",
-            fontSize: 14,
-            fontWeight: 700,
-            color: canSave ? "#0C0C10" : "var(--text-dim)",
-            cursor: canSave ? "pointer" : "not-allowed",
-            fontFamily: "var(--font)",
-            transition: "all 0.2s"
-          }}
-        >
-          {saveLabel}
-        </button>
+      <div className="modal-surface">
+        <div className="modal-header">
+          <button onClick={onClose} className="btn-secondary" style={{ padding: "9px 16px", fontSize: 14 }}>
+            x Cancel
+          </button>
+          <span style={{ fontFamily: "var(--serif)", fontSize: 19, color: "var(--text)", textAlign: "center" }}>{title}</span>
+          <button
+            onClick={() => canSave && onSave()}
+            disabled={!canSave}
+            style={{
+              background: canSave ? btnBg : "var(--surface-high)",
+              border: "none",
+              borderRadius: 12,
+              padding: "9px 18px",
+              fontSize: 14,
+              fontWeight: 700,
+              color: canSave ? "#0C0C10" : "var(--text-dim)",
+              cursor: canSave ? "pointer" : "not-allowed",
+              fontFamily: "var(--font)",
+              transition: "all 0.2s"
+            }}
+          >
+            {saveLabel}
+          </button>
+        </div>
+        <div className="modal-body">{children}</div>
       </div>
-      <div className="modal-body">{children}</div>
     </div>
   );
 
@@ -261,7 +263,7 @@ export function UpgradeModal({ open, title, message, onClose }) {
           {message || "This feature is not available on your current plan. Contact admin to upgrade your account."}
         </div>
         <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 12, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13 }}>
-          Contact admin to upgrade from Free to Pro or Business.
+          Open Settings and use "Request Plan Upgrade" to ask admin for Pro or Business access.
         </div>
       </div>
     </Modal>

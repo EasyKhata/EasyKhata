@@ -111,7 +111,7 @@ export default function MainApp() {
   }
 
   return (
-    <div style={{ background: "var(--bg)", minHeight: "100vh", maxWidth: 480, margin: "0 auto", position: "relative" }}>
+    <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px 0", fontSize: 13, fontWeight: 700 }}>
         <span style={{ color: "var(--text)" }}>
           {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
