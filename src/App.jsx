@@ -1,3 +1,4 @@
+import React from "react";
 import AuthScreen from "./screens/AuthScreen";
 import MainApp from "./screens/MainApp";
 import { ThemeProvider } from "./context/ThemeContext";
