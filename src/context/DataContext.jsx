@@ -1,12 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { useAuth } from "./AuthContext";
-import { getUserData, setUserData } from "../utils/storage";
-import { db } from "../firebase";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { getUserData, setUserData } from "../utils/storage";
+import { useAuth } from "./AuthContext";
 
 const DataContext = createContext();
 
-function uid() { return Math.random().toString(36).slice(2, 9); }
+function uid() {
+  return Math.random().toString(36).slice(2, 9);
+}
 
 const EMPTY_DATA = {
   income: [],
@@ -14,120 +16,107 @@ const EMPTY_DATA = {
   invoices: [],
   customers: [],
   account: null,
-  currency: { code: "INR", symbol: "₹", name: "Indian Rupee", flag: "🇮🇳" },
+  currency: { code: "INR", symbol: "Rs", name: "Indian Rupee", flag: "IN" }
 };
 
 export function DataProvider({ children }) {
   const { user } = useAuth();
-
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
 
-  // Load data
-
-    //const stored = getUserData(user.id, "appData");
-    async function loadData() {
-  if (!user) return;
-
-  try {
-    // 🔥 Try Firebase first
-    const ref = doc(db, "users", user.id);
-    const snap = await getDoc(ref);
-
-    if (snap.exists()) {
-      const dbData = snap.data();
-
-setData({
-  income: dbData.income || [],
-  expenses: dbData.expenses || [],
-  invoices: dbData.invoices || [],
-  customers: dbData.customers || [],
-  currency: dbData.currency || EMPTY_DATA.currency,
-
-  // 🔥 CRITICAL FIX
-  account: dbData.account || {
-    name: dbData.name || "",
-    email: dbData.email || "",
-    phone: dbData.phone || "",
-    address: dbData.address || "",
-    gstin: dbData.gstin || ""
-  }
-});
-    } else {
-      // fallback to localStorage
-      const local = getUserData(user.id, "appData");
-      setData(local || EMPTY_DATA);
-    }
-  } catch (err) {
-    console.log("Firebase error, using local:", err);
-    const local = getUserData(user.id, "appData");
-    setData(local || EMPTY_DATA);
-  }
-
-  setLoaded(true);
-}
   useEffect(() => {
-  loadData();
-}, [user?.id]);
+    async function loadData() {
+      if (!user?.id) {
+        setData(EMPTY_DATA);
+        setLoaded(true);
+        return;
+      }
 
-  // Save data
-  const update = useCallback((updater) => {
-    setData(prev => {
-      const next = typeof updater === "function"
-        ? updater(prev)
-        : { ...prev, ...updater };
+      setLoaded(false);
 
-      setUserData(user.id, "appData", next);
-      setDoc(doc(db, "users", user.id), next);
-      return next;
-    });
+      try {
+        const snap = await getDoc(doc(db, "users", user.id));
+        if (snap.exists()) {
+          const dbData = snap.data();
+          setData({
+            income: dbData.income || [],
+            expenses: dbData.expenses || [],
+            invoices: dbData.invoices || [],
+            customers: dbData.customers || [],
+            currency: dbData.currency || EMPTY_DATA.currency,
+            account: dbData.account || {
+              name: dbData.name || "",
+              email: dbData.email || "",
+              phone: dbData.phone || "",
+              address: dbData.address || "",
+              gstin: dbData.gstin || "",
+              showHSN: dbData.showHSN || false
+            }
+          });
+        } else {
+          setData(getUserData(user.id, "appData") || EMPTY_DATA);
+        }
+      } catch (err) {
+        console.log("Firebase error, using local:", err);
+        setData(getUserData(user.id, "appData") || EMPTY_DATA);
+      } finally {
+        setLoaded(true);
+      }
+    }
+
+    loadData();
   }, [user?.id]);
 
-  // Currency
-  const setCurrency = (cur) => update(d => ({ ...d, currency: cur }));
+  const update = useCallback(
+    updater => {
+      if (!user?.id) return;
 
-  // Account
-  const saveAccount = (acc) => update(d => ({ ...d, account: acc }));
+      setData(prev => {
+        const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+        setUserData(user.id, "appData", next);
+        setDoc(doc(db, "users", user.id), next, { merge: true });
+        return next;
+      });
+    },
+    [user?.id]
+  );
 
-  // Customers
-  const addCustomer = (c) => update(d => ({ ...d, customers: [...d.customers, { ...c, id: uid() }] }));
-  const updateCustomer = (c) => update(d => ({ ...d, customers: d.customers.map(x => x.id === c.id ? c : x) }));
-  const removeCustomer = (id) => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
-
-  // Income
-  const addIncome = (i) => update(d => ({ ...d, income: [{ ...i, id: uid() }, ...d.income] }));
-  const removeIncome = (id) => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
-
-  // Expenses
-  const addExpense = (e) => update(d => ({ ...d, expenses: [{ ...e, id: uid() }, ...d.expenses] }));
-  const removeExpense = (id) => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
-
-  // Invoices
-  const addInvoice = (inv) => update(d => ({ ...d, invoices: [{ ...inv, id: uid() }, ...d.invoices] }));
-  const updateInvoice = (inv) => update(d => ({ ...d, invoices: d.invoices.map(i => i.id === inv.id ? inv : i) }));
-  const removeInvoice = (id) => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
+  const setCurrency = cur => update(d => ({ ...d, currency: cur }));
+  const saveAccount = acc => update(d => ({ ...d, account: acc }));
+  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, { ...c, id: uid() }] }));
+  const updateCustomer = c => update(d => ({ ...d, customers: d.customers.map(x => (x.id === c.id ? c : x)) }));
+  const removeCustomer = id => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
+  const addIncome = i => update(d => ({ ...d, income: [{ ...i, id: uid() }, ...d.income] }));
+  const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
+  const addExpense = e => update(d => ({ ...d, expenses: [{ ...e, id: uid() }, ...d.expenses] }));
+  const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
+  const addInvoice = inv => update(d => ({ ...d, invoices: [{ ...inv, id: uid() }, ...d.invoices] }));
+  const updateInvoice = inv => update(d => ({ ...d, invoices: d.invoices.map(i => (i.id === inv.id ? inv : i)) }));
+  const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
   return (
-    <DataContext.Provider value={{
-      ...data,
-      loaded,
-      setCurrency,
-      saveAccount,
-      customers: data.customers,
-      addCustomer,
-      updateCustomer,
-      removeCustomer,
-      income: data.income,
-      addIncome,
-      removeIncome,
-      expenses: data.expenses,
-      addExpense,
-      removeExpense,
-      invoices: data.invoices,
-      addInvoice,
-      updateInvoice,
-      removeInvoice,
-    }}>
+    <DataContext.Provider
+      value={{
+        ...data,
+        loaded,
+        setCurrency,
+        saveAccount,
+        customers: data.customers,
+        addCustomer,
+        updateCustomer,
+        removeCustomer,
+        income: data.income,
+        addIncome,
+        removeIncome,
+        expenses: data.expenses,
+        addExpense,
+        removeExpense,
+        invoices: data.invoices,
+        addInvoice,
+        updateInvoice,
+        removeInvoice
+      }}
+    >
       {children}
     </DataContext.Provider>
   );
