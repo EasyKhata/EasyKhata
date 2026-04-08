@@ -21,6 +21,59 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const registrationInProgressRef = useRef(false);
 
+  async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
+    const userRef = doc(db, "users", firebaseUser.uid);
+    const snap = await getDoc(userRef);
+    const existing = snap.exists() ? snap.data() : {};
+    const baseName = profileOverrides.name || existing?.name || firebaseUser.displayName || "";
+    const baseEmail = profileOverrides.email || existing?.email || firebaseUser.email || "";
+    const basePhone = profileOverrides.phone || existing?.phone || "";
+
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        name: baseName,
+        email: baseEmail,
+        phone: basePhone,
+        role: "user",
+        plan: "free",
+        subscriptionStatus: "active",
+        subscriptionEndsAt: "",
+        blocked: false,
+        sharedLedgerId: "",
+        sharedLedgerRole: "",
+        createdAt: new Date().toISOString(),
+        income: [],
+        expenses: [],
+        invoices: [],
+        customers: [],
+        account: {
+          name: baseName,
+          email: baseEmail,
+          phone: basePhone,
+          address: "",
+          gstin: "",
+          showHSN: false
+        },
+        currency: {
+          code: "INR",
+          symbol: "Rs",
+          name: "Indian Rupee",
+          flag: "IN"
+        }
+      });
+      return;
+    }
+
+    const updates = {};
+    if (!existing?.name && baseName) updates.name = baseName;
+    if (!existing?.email && baseEmail) updates.email = baseEmail;
+    if (!existing?.phone && basePhone) updates.phone = basePhone;
+
+    if (Object.keys(updates).length > 0) {
+      await updateDoc(userRef, updates);
+    }
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
@@ -33,9 +86,6 @@ export function AuthProvider({ children }) {
       try {
         if (!firebaseUser.emailVerified) {
           if (registrationInProgressRef.current) {
-            clearCurrentUser();
-            setUser(null);
-            setLoading(false);
             return;
           }
           await signOut(auth);
@@ -54,6 +104,9 @@ export function AuthProvider({ children }) {
           email: profile?.email || firebaseUser.email || "",
           phone: profile?.phone || "",
           role: profile?.role || "user",
+          plan: profile?.plan || "free",
+          subscriptionStatus: profile?.subscriptionStatus || "active",
+          subscriptionEndsAt: profile?.subscriptionEndsAt || "",
           blocked: Boolean(profile?.blocked),
           sharedLedgerId: profile?.sharedLedgerId || "",
           sharedLedgerRole: profile?.sharedLedgerRole || ""
@@ -80,6 +133,7 @@ export function AuthProvider({ children }) {
         return { error: "Please verify your email before logging in." };
       }
 
+      await ensureUserProfile(userCred.user);
       const snap = await getDoc(doc(db, "users", userCred.user.uid));
       const profile = snap.exists() ? snap.data() : {};
 
@@ -95,6 +149,9 @@ export function AuthProvider({ children }) {
         email: profile?.email || email,
         phone: profile?.phone || "",
         role: profile?.role || "user",
+        plan: profile?.plan || "free",
+        subscriptionStatus: profile?.subscriptionStatus || "active",
+        subscriptionEndsAt: profile?.subscriptionEndsAt || "",
         blocked: Boolean(profile?.blocked),
         sharedLedgerId: profile?.sharedLedgerId || "",
         sharedLedgerRole: profile?.sharedLedgerRole || ""
@@ -115,38 +172,8 @@ export function AuthProvider({ children }) {
     registrationInProgressRef.current = true;
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = userCred.user.uid;
-
-      await setDoc(doc(db, "users", uid), {
-        name,
-        email,
-        phone,
-        role: "user",
-        blocked: false,
-        sharedLedgerId: "",
-        sharedLedgerRole: "",
-        createdAt: new Date().toISOString(),
-        income: [],
-        expenses: [],
-        invoices: [],
-        customers: [],
-        account: {
-          name,
-          email,
-          phone,
-          address: "",
-          gstin: "",
-          showHSN: false
-        },
-        currency: {
-          code: "INR",
-          symbol: "Rs",
-          name: "Indian Rupee",
-          flag: "IN"
-        }
-      });
-
       await sendEmailVerification(userCred.user);
+      await ensureUserProfile(userCred.user, { name, email, phone });
       await signOut(auth);
       clearCurrentUser();
 
@@ -166,6 +193,9 @@ export function AuthProvider({ children }) {
       }
       if (err.code === "auth/too-many-requests") {
         return { error: "Too many attempts were made. Please wait a little and try again." };
+      }
+      if (err.code === "permission-denied") {
+        return { error: "Your verification email was sent, but we could not finish setting up the account. Please update Firestore rules and try signing in again after verification." };
       }
       return { error: err.message || "We couldn't create your account right now. Please try again." };
     } finally {

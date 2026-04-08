@@ -2,9 +2,12 @@ import React from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, ProgressBar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
 import { calculateDashboard, getInvoiceStatusColor, getInvoiceStatusLabel } from "../utils/analytics";
+import { useAuth } from "../context/AuthContext";
+import { canUseFeature } from "../utils/subscription";
 
 export default function Dashboard({ year, month, onNav }) {
   const data = useData();
+  const { user } = useAuth();
   const sym = data.currency?.symbol || "Rs";
 
   if (!data.loaded) {
@@ -12,6 +15,7 @@ export default function Dashboard({ year, month, onNav }) {
   }
 
   const stats = calculateDashboard(data, year, month);
+  const showAdvanced = canUseFeature(user, "smartDashboard");
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of income this month.";
@@ -68,7 +72,9 @@ export default function Dashboard({ year, month, onNav }) {
         <div style={{ marginBottom: 22 }}>
           <div className="section-label">Smart Alerts</div>
           <div className="card">
-            {stats.alertItems.length === 0 ? (
+            {!showAdvanced ? (
+              <EmptyState title="Upgrade to unlock smart alerts" message="Pro plan adds due reminders, budget warnings, spending spikes, and stronger financial guidance." accentColor="var(--gold)" />
+            ) : stats.alertItems.length === 0 ? (
               <EmptyState title="All clear for now" message="No urgent alerts right now. Your cash flow and collections look steady." />
             ) : (
               stats.alertItems.map((alert, index) => {
@@ -91,6 +97,9 @@ export default function Dashboard({ year, month, onNav }) {
         <div style={{ marginBottom: 22 }}>
           <div className="section-label">Cash Flow Trend</div>
           <div className="card" style={{ padding: "18px" }}>
+            {!showAdvanced ? (
+              <EmptyState title="Cash flow trend is on Pro" message="Upgrade to Pro to see your six-month cash flow trend and business runway insights." accentColor="var(--blue)" />
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
               {stats.cashFlow.map(item => (
                 <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -103,6 +112,7 @@ export default function Dashboard({ year, month, onNav }) {
                 </div>
               ))}
             </div>
+            )}
           </div>
         </div>
 
@@ -110,7 +120,9 @@ export default function Dashboard({ year, month, onNav }) {
           <div>
             <div className="section-label">Top Expense Categories</div>
             <div className="card">
-              {stats.topExpenseCategories.length === 0 ? (
+              {!showAdvanced ? (
+                <EmptyState title="Category insights are on Pro" message="Upgrade to Pro to see top expense categories and smarter spending analysis." accentColor="var(--danger)" />
+              ) : stats.topExpenseCategories.length === 0 ? (
                 <EmptyState title="No expenses yet" message="Add your first expense entry to unlock category insights and spending trends." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
               ) : (
                 stats.topExpenseCategories.map(category => (
@@ -126,7 +138,9 @@ export default function Dashboard({ year, month, onNav }) {
           <div>
             <div className="section-label">Top Customers</div>
             <div className="card">
-              {stats.topCustomers.length === 0 ? (
+              {!showAdvanced ? (
+                <EmptyState title="Customer intelligence is on Pro" message="Upgrade to Pro to see top customers, open balances, and payment patterns." accentColor="var(--blue)" />
+              ) : stats.topCustomers.length === 0 ? (
                 <EmptyState title="No customer revenue yet" message="Create invoices for your customers to see top accounts and open balances here." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
               ) : (
                 stats.topCustomers.map(customer => (
@@ -148,7 +162,9 @@ export default function Dashboard({ year, month, onNav }) {
           <div>
             <div className="section-label">High-Risk Customers</div>
             <div className="card">
-              {stats.highRiskCustomers.length === 0 ? (
+              {!showAdvanced ? (
+                <EmptyState title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." accentColor="var(--gold)" />
+              ) : stats.highRiskCustomers.length === 0 ? (
                 <EmptyState title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." accentColor="var(--accent)" />
               ) : (
                 stats.highRiskCustomers.map(customer => (
