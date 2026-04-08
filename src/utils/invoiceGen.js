@@ -1,11 +1,42 @@
 import { jsPDF } from "jspdf";
 import { fmtDate } from "../components/UI";
 
+const PAGE = {
+  width: 210,
+  height: 297,
+  left: 16,
+  right: 194,
+  top: 18,
+  bottom: 280
+};
+
 function toNumber(value) {
   return Number(value) || 0;
 }
 
-function getTaxBreakdown(invoice) {
+function safeText(value) {
+  return String(value ?? "")
+    .replace(/[^\x20-\x7E\n]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function money(value, symbol) {
+  const prefix = symbol === "Rs" ? "Rs " : `${symbol}`;
+  return `${prefix}${toNumber(value).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}`;
+}
+
+function moneyPlain(value) {
+  return toNumber(value).toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function taxBreakdown(invoice) {
   return (invoice?.items || []).reduce(
     (totals, item) => {
       const taxable = toNumber(item.qty) * toNumber(item.rate);
@@ -13,166 +44,220 @@ function getTaxBreakdown(invoice) {
       const taxAmount = (taxable * rate) / 100;
 
       totals.taxable += taxable;
-      if (invoice?.taxMode === "split") {
+      if ((invoice?.taxMode || "split") === "split") {
         totals.cgst += taxAmount / 2;
         totals.sgst += taxAmount / 2;
       } else {
         totals.igst += taxAmount;
       }
-
       return totals;
     },
     { taxable: 0, cgst: 0, sgst: 0, igst: 0 }
   );
 }
 
-function fmtCurrency(value, symbol) {
-  return `${symbol}${toNumber(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function ensureSpace(doc, y, needed) {
+  if (y + needed <= PAGE.bottom) return y;
+  doc.addPage();
+  return PAGE.top;
 }
 
-function line(doc, label, y, value, options = {}) {
-  doc.text(String(label || ""), 16, y, options);
-  doc.text(String(value || ""), 194, y, { align: "right", ...options });
+function drawRule(doc, y) {
+  doc.setDrawColor(225);
+  doc.line(PAGE.left, y, PAGE.right, y);
+}
+
+function drawLabelValue(doc, y, label, value, opts = {}) {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(opts.size || 10.5);
+  doc.setTextColor(85, 85, 95);
+  doc.text(safeText(label), PAGE.left, y);
+  doc.setTextColor(20, 20, 28);
+  doc.text(safeText(value), PAGE.right, y, { align: "right" });
+}
+
+function drawWrappedBlock(doc, x, y, width, title, lines) {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(110, 110, 120);
+  doc.text(safeText(title), x, y);
+  y += 5;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.setTextColor(20, 20, 28);
+  const wrapped = [];
+  lines.filter(Boolean).forEach(line => {
+    wrapped.push(...doc.splitTextToSize(safeText(line), width));
+  });
+  doc.text(wrapped.length ? wrapped : ["--"], x, y);
+  return y + Math.max(6, wrapped.length * 4.8);
 }
 
 export function downloadInvoice(invoice, account, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
-  const tax = getTaxBreakdown(invoice);
+  const tax = taxBreakdown(invoice);
   const total = tax.taxable + tax.cgst + tax.sgst + tax.igst;
   const customerName = invoice.billTo?.name || invoice.customer?.name || "--";
+  let y = PAGE.top;
 
-  let y = 18;
-
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 28, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(acc.name || "Your Business", 16, y);
-  doc.setFontSize(18);
-  doc.text("INVOICE", 194, y, { align: "right" });
-
-  y += 8;
+  doc.setFontSize(21);
+  doc.text(safeText(acc.name || "Your Business"), PAGE.left + 4, y + 10);
+  doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
+  doc.text(safeText(acc.email || acc.phone || "Business invoice"), PAGE.left + 4, y + 17);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("INVOICE", PAGE.right - 4, y + 11, { align: "right" });
+  doc.setFontSize(10.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
+  doc.setFontSize(9);
+  doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + 23, { align: "right" });
+  y += 36;
+
   const businessLines = [
     acc.address,
     acc.gstin ? `GSTIN: ${acc.gstin}` : "",
-    acc.phone,
-    acc.email
-  ].filter(Boolean);
-  businessLines.forEach(text => {
-    doc.text(String(text), 16, y);
-    y += 5;
-  });
-
-  let metaY = 26;
+    acc.phone ? `Phone: ${acc.phone}` : "",
+    acc.email ? `Email: ${acc.email}` : ""
+  ];
   const metaLines = [
-    `Invoice: ${invoice.number || "--"}`,
     `Issued: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
-    invoice.dueDate ? `Due: ${fmtDate(invoice.dueDate)}` : "",
-    invoice.status === "paid" && invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
-  ].filter(Boolean);
-  metaLines.forEach(text => {
-    doc.text(text, 194, metaY, { align: "right" });
-    metaY += 5;
-  });
+    invoice.dueDate ? `Due: ${fmtDate(invoice.dueDate)}` : "Due: --",
+    `Status: ${safeText(invoice.status || "pending").toUpperCase()}`,
+    invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
+  ];
 
-  y = Math.max(y, metaY) + 8;
-  doc.setDrawColor(220);
-  doc.line(16, y, 194, y);
-  y += 8;
+  doc.setDrawColor(225);
+  doc.setFillColor(248, 248, 251);
+  doc.roundedRect(PAGE.left, y, 84, 34, 4, 4, "FD");
+  doc.roundedRect(110, y, 84, 34, 4, 4, "FD");
+  const leftEnd = drawWrappedBlock(doc, PAGE.left + 4, y + 7, 74, "FROM", businessLines);
+  const rightEnd = drawWrappedBlock(doc, 114, y + 7, 74, "DETAILS", metaLines);
+  y += Math.max(42, Math.max(leftEnd, rightEnd) - y + 6);
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.text("Bill To", 16, y);
-  doc.text("Ship To", 106, y);
-  y += 6;
+  y = ensureSpace(doc, y, 36);
+  doc.setFillColor(238, 242, 247);
+  doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "F");
+  doc.roundedRect(110, y, 84, 30, 4, 4, "F");
+  const billEnd = drawWrappedBlock(
+    doc,
+    PAGE.left + 4,
+    y + 7,
+    74,
+    "BILL TO",
+    [customerName, invoice.billTo?.address || invoice.customer?.address || "", invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""]
+  );
+  const shipEnd = drawWrappedBlock(
+    doc,
+    114,
+    y + 7,
+    74,
+    "SHIP TO",
+    [invoice.shipTo?.name || customerName, invoice.shipTo?.address || invoice.customer?.address || ""]
+  );
+  y += Math.max(38, Math.max(billEnd, shipEnd) - y + 6);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  const billLines = [
-    customerName,
-    invoice.billTo?.address || invoice.customer?.address || "",
-    invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
-  ].filter(Boolean);
-  const shipLines = [
-    invoice.shipTo?.name || customerName,
-    invoice.shipTo?.address || invoice.customer?.address || ""
-  ].filter(Boolean);
-
-  const blockHeight = Math.max(billLines.length, shipLines.length) * 5;
-  billLines.forEach((text, index) => doc.text(String(text), 16, y + index * 5));
-  shipLines.forEach((text, index) => doc.text(String(text), 106, y + index * 5));
-  y += blockHeight + 8;
-
-  doc.setFont("helvetica", "bold");
-  doc.setFillColor(22, 22, 28);
-  doc.rect(16, y, 178, 8, "F");
+  y = ensureSpace(doc, y, 22);
+  doc.setFillColor(30, 36, 44);
+  doc.rect(PAGE.left, y, PAGE.right - PAGE.left, 9, "F");
   doc.setTextColor(255, 255, 255);
-  doc.text("#", 18, y + 5.3);
-  doc.text("Description", 28, y + 5.3);
-  if (acc.showHSN !== false) doc.text("HSN", 112, y + 5.3);
-  doc.text("Qty", acc.showHSN !== false ? 132 : 122, y + 5.3, { align: "right" });
-  doc.text("Rate", acc.showHSN !== false ? 152 : 147, y + 5.3, { align: "right" });
-  doc.text(invoice.taxMode === "split" ? "GST" : "IGST", acc.showHSN !== false ? 170 : 168, y + 5.3, { align: "right" });
-  doc.text("Amount", 192, y + 5.3, { align: "right" });
-  doc.setTextColor(20, 20, 20);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("#", 18, y + 6);
+  doc.text("Description", 28, y + 6);
+  doc.text("Qty", 128, y + 6, { align: "right" });
+  doc.text("Rate", 148, y + 6, { align: "right" });
+  doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 167, y + 6, { align: "right" });
+  doc.text("Amount", 192, y + 6, { align: "right" });
   y += 12;
+  doc.setTextColor(20, 20, 28);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
   (invoice.items || []).forEach((item, index) => {
-    const taxable = toNumber(item.qty) * toNumber(item.rate);
-    const rate = toNumber(item.taxRate ?? item.igst);
-    const descriptionLines = doc.splitTextToSize(item.subDesc ? `${item.desc}\n${item.subDesc}` : item.desc || "--", 72);
-    const rowHeight = Math.max(7, descriptionLines.length * 4.6);
+    const desc = safeText(item.desc || "Item");
+    const sub = safeText(item.subDesc || "");
+    const descriptionLines = doc.splitTextToSize(sub ? `${desc}  ${sub}` : desc, 82);
+    const rowHeight = Math.max(10, descriptionLines.length * 5);
+    y = ensureSpace(doc, y, rowHeight + 3);
 
-    doc.text(String(index + 1), 18, y);
-    doc.text(descriptionLines, 28, y);
-    if (acc.showHSN !== false) doc.text(item.hsn || "--", 112, y);
-    doc.text(String(item.qty || 0), acc.showHSN !== false ? 132 : 122, y, { align: "right" });
-    doc.text(fmtCurrency(item.rate, sym), acc.showHSN !== false ? 152 : 147, y, { align: "right" });
-    doc.text(`${rate.toFixed(2)}%`, acc.showHSN !== false ? 170 : 168, y, { align: "right" });
-    doc.text(fmtCurrency(taxable, sym), 192, y, { align: "right" });
-    y += rowHeight;
+    if (index % 2 === 0) {
+      doc.setFillColor(249, 249, 251);
+      doc.rect(PAGE.left, y - 4, PAGE.right - PAGE.left, rowHeight + 2, "F");
+    }
+
+    const amount = toNumber(item.qty) * toNumber(item.rate);
+    const rate = toNumber(item.taxRate ?? item.igst);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.8);
+    doc.text(String(index + 1), 18, y + 2);
+    doc.text(descriptionLines, 28, y + 2);
+    doc.text(String(toNumber(item.qty)), 128, y + 2, { align: "right" });
+    doc.text(moneyPlain(item.rate), 148, y + 2, { align: "right" });
+    doc.text(`${rate.toFixed(2)}`, 167, y + 2, { align: "right" });
+    doc.text(moneyPlain(amount), 192, y + 2, { align: "right" });
+    y += rowHeight + 3;
   });
 
   y += 4;
-  doc.line(120, y, 194, y);
+  y = ensureSpace(doc, y, 34);
+  drawRule(doc, y);
+  y += 8;
+  drawLabelValue(doc, y, "Taxable Value", money(tax.taxable, sym));
   y += 7;
-  doc.setFontSize(10);
-  line(doc, "Taxable Value", y, fmtCurrency(tax.taxable, sym));
-  y += 6;
-  if (invoice.taxMode === "split") {
-    line(doc, "CGST", y, fmtCurrency(tax.cgst, sym));
-    y += 6;
-    line(doc, "SGST", y, fmtCurrency(tax.sgst, sym));
-    y += 6;
+  if ((invoice.taxMode || "split") === "split") {
+    drawLabelValue(doc, y, "CGST", money(tax.cgst, sym));
+    y += 7;
+    drawLabelValue(doc, y, "SGST", money(tax.sgst, sym));
+    y += 7;
   } else {
-    line(doc, "IGST", y, fmtCurrency(tax.igst, sym));
-    y += 6;
+    drawLabelValue(doc, y, "IGST", money(tax.igst, sym));
+    y += 7;
   }
-
   doc.setFont("helvetica", "bold");
-  line(doc, "Grand Total", y, fmtCurrency(total, sym));
-  y += 10;
+  doc.setFillColor(243, 246, 249);
+  doc.roundedRect(118, y - 6, 76, 14, 3, 3, "F");
+  doc.setFontSize(10);
+  doc.setTextColor(85, 85, 95);
+  doc.text("Grand Total", 122, y - 0.5);
+  doc.setFontSize(13);
+  doc.setTextColor(20, 20, 28);
+  doc.text(moneyPlain(total), 190, y - 0.5, { align: "right" });
+  doc.setFontSize(9);
+  doc.setTextColor(110, 110, 120);
+  doc.text(sym === "Rs" ? "INR" : safeText(sym), 192, y - 0.5, { align: "left" });
+  y += 12;
 
-  doc.setFont("helvetica", "normal");
   if (invoice.notes) {
+    y = ensureSpace(doc, y, 26);
+    doc.setFillColor(247, 248, 250);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 18, 4, 4, "F");
     doc.setFont("helvetica", "bold");
-    doc.text("Notes", 16, y);
-    y += 5;
+    doc.setFontSize(10);
+    doc.text("Notes", PAGE.left + 4, y + 6);
     doc.setFont("helvetica", "normal");
-    doc.text(doc.splitTextToSize(invoice.notes, 178), 16, y);
-    y += 12;
+    doc.setFontSize(9.5);
+    doc.text(doc.splitTextToSize(safeText(invoice.notes), 168), PAGE.left + 4, y + 12);
+    y += 24;
   }
 
   if (invoice.terms) {
+    y = ensureSpace(doc, y, 28);
+    doc.setFillColor(247, 248, 250);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 20, 4, 4, "F");
     doc.setFont("helvetica", "bold");
-    doc.text("Terms", 16, y);
-    y += 5;
+    doc.setFontSize(10);
+    doc.text("Terms", PAGE.left + 4, y + 6);
     doc.setFont("helvetica", "normal");
-    doc.text(doc.splitTextToSize(invoice.terms, 178), 16, y);
+    doc.setFontSize(9.5);
+    doc.text(doc.splitTextToSize(safeText(invoice.terms), 168), PAGE.left + 4, y + 12);
   }
 
-  doc.save(`${invoice.number || "invoice"}.pdf`);
+  doc.save(`${safeText(invoice.number || "invoice")}.pdf`);
 }
