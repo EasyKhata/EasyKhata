@@ -54,7 +54,9 @@ export function AuthProvider({ children }) {
           email: profile?.email || firebaseUser.email || "",
           phone: profile?.phone || "",
           role: profile?.role || "user",
-          blocked: Boolean(profile?.blocked)
+          blocked: Boolean(profile?.blocked),
+          sharedLedgerId: profile?.sharedLedgerId || "",
+          sharedLedgerRole: profile?.sharedLedgerRole || ""
         });
         setCurrentUser(firebaseUser.uid);
       } catch (err) {
@@ -93,7 +95,9 @@ export function AuthProvider({ children }) {
         email: profile?.email || email,
         phone: profile?.phone || "",
         role: profile?.role || "user",
-        blocked: Boolean(profile?.blocked)
+        blocked: Boolean(profile?.blocked),
+        sharedLedgerId: profile?.sharedLedgerId || "",
+        sharedLedgerRole: profile?.sharedLedgerRole || ""
       };
 
       setUser(nextUser);
@@ -119,6 +123,8 @@ export function AuthProvider({ children }) {
         phone,
         role: "user",
         blocked: false,
+        sharedLedgerId: "",
+        sharedLedgerRole: "",
         createdAt: new Date().toISOString(),
         income: [],
         expenses: [],

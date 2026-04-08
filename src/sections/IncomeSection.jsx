@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, FAB, DeleteBtn, fmtMoney, fmtDate, invoiceTotal, monthKey, MONTHS, Avatar } from "../components/UI";
+import { Modal, Field, Input, FAB, DeleteBtn, fmtMoney, fmtDate, invoiceTotal, monthKey, MONTHS, Avatar, EmptyState, SectionSkeleton } from "../components/UI";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
 const blankForm = (year, month) => ({
@@ -23,6 +23,10 @@ export default function IncomeSection({ year, month }) {
   const manIncome = d.income.filter(i => i.month === mk);
   const totalInv = invIncome.reduce((s, i) => s + invoiceTotal(i.items), 0);
   const totalMan = manIncome.reduce((s, i) => s + Number(i.amount), 0);
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openNew() {
     setEditId(null);
@@ -91,7 +95,7 @@ export default function IncomeSection({ year, month }) {
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {invIncome.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No invoice income recorded for this month.</div>
+            <EmptyState title="No invoice income yet" message="Invoices you raise this month will appear here automatically." actionLabel="Open Invoices" onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))} accentColor="var(--blue)" />
           ) : (
             invIncome.map(inv => (
               <div key={inv.id} className="card-row">
@@ -113,7 +117,7 @@ export default function IncomeSection({ year, month }) {
         </div>
         <div className="card">
           {manIncome.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No manual income added yet. Tap + to add one.</div>
+            <EmptyState title="No manual income yet" message="Track offline payments, cash receipts, or owner deposits here." actionLabel="Add Income" onAction={openNew} accentColor="var(--accent)" />
           ) : (
             manIncome.map(i => (
               <div key={i.id} className="card-row">

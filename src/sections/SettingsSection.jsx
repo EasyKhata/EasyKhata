@@ -1,25 +1,36 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn } from "../components/UI";
+import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
+import { calculateCustomerInsights } from "../utils/analytics";
+import { downloadMonthlyReport } from "../utils/reportGen";
 import { isStrongPassword } from "../utils/validator";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
-  const { account, currency, setCurrency, customers, addCustomer, updateCustomer, removeCustomer } = useData();
+  const { account, currency, setCurrency, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
   const { theme, toggle } = useTheme();
 
   const [screen, setScreen] = useState("main");
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true });
+  const [goalForm, setGoalForm] = useState({ monthlySavings: goals?.monthlySavings || "" });
+  const [notificationForm, setNotificationForm] = useState(notificationPrefs);
+  const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
+
+  const customerInsights = useMemo(
+    () => calculateCustomerInsights({ customers, invoices }),
+    [customers, invoices]
+  );
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -46,6 +57,14 @@ export default function SettingsSection() {
     loadProfile();
   }, [user?.id]);
 
+  useEffect(() => {
+    setGoalForm({ monthlySavings: goals?.monthlySavings || "" });
+  }, [goals?.monthlySavings]);
+
+  useEffect(() => {
+    setNotificationForm(notificationPrefs);
+  }, [notificationPrefs]);
+
   const saveAcc = async () => {
     const res = await updateProfile({
       name: accForm.name || "",
@@ -71,10 +90,16 @@ export default function SettingsSection() {
     setScreen("customer-form");
   }
 
-  function openEditCust(c) {
-    setCustForm({ ...c });
-    setEditCust(c);
+  function openEditCust(customer) {
+    setCustForm({ ...customer });
+    setEditCust(customer);
     setScreen("customer-form");
+  }
+
+  function openCustomerDetail(customer) {
+    const detail = customerInsights.find(item => item.id === customer.id) || customer;
+    setSelectedCustomer(detail);
+    setScreen("customer-detail");
   }
 
   function saveCust() {
@@ -115,13 +140,87 @@ export default function SettingsSection() {
     exportUserData(user.id);
   }
 
-  function handleImport(e) {
-    const file = e.target.files[0];
+  function saveGoalSettings() {
+    const amount = Number(goalForm.monthlySavings) || 0;
+    saveGoals({ monthlySavings: amount });
+    alert(amount > 0 ? "Monthly savings goal updated." : "Monthly savings goal cleared.");
+    setScreen("main");
+  }
+
+  function handleImport(event) {
+    const file = event.target.files[0];
     if (!file) return;
     if (!window.confirm("This will overwrite your current data. Continue?")) return;
     importUserData(user.id, file, () => {
       window.location.reload();
     });
+  }
+
+  function handleReportDownload() {
+    const now = new Date();
+    downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets }, now.getFullYear(), now.getMonth(), currency?.symbol || "Rs");
+  }
+
+  async function handleCreateSharedLedger() {
+    const res = await createSharedLedger(sharedLedgerForm.name);
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    alert("Shared ledger created. You can now invite members with the invite code.");
+    setSharedLedgerForm({ name: "", code: "" });
+    setScreen("main");
+  }
+
+  async function handleJoinSharedLedger() {
+    const res = await joinSharedLedger(sharedLedgerForm.code);
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    alert("You have joined the shared ledger.");
+    setSharedLedgerForm({ name: "", code: "" });
+    setScreen("main");
+  }
+
+  async function handleRefreshInvite() {
+    const res = await regenerateLedgerInvite();
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    alert("Invite code refreshed.");
+    setScreen("shared-ledger");
+  }
+
+  async function handleLeaveSharedLedger() {
+    const res = await leaveSharedLedger();
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    alert("You left the shared ledger.");
+    setScreen("main");
+  }
+
+  async function saveNotificationSettings() {
+    let nextPrefs = { ...notificationForm };
+
+    if (nextPrefs.browserEnabled && typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        const permission = await Notification.requestPermission();
+        if (permission !== "granted") {
+          nextPrefs = { ...nextPrefs, browserEnabled: false };
+          alert("Browser notifications were not allowed, so in-app reminders will stay active without browser popups.");
+        }
+      } else if (Notification.permission !== "granted") {
+        nextPrefs = { ...nextPrefs, browserEnabled: false };
+        alert("Browser notifications are blocked in this browser. You can still use the in-app reminder inbox.");
+      }
+    }
+
+    saveNotificationPrefs(nextPrefs);
+    setScreen("main");
   }
 
   const MenuRow = ({ icon, label, sub, onClick, color, danger }) => (
@@ -154,6 +253,8 @@ export default function SettingsSection() {
             <MenuRow icon="B" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() => setScreen("account")} />
             <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
+            <MenuRow icon="R" label="Monthly Report" sub="Download profit, tax, and GST summary PDF" onClick={handleReportDownload} />
+            <MenuRow icon="L" label="Shared Ledger" sub={sharedLedger?.id ? `${sharedLedger.name} · ${sharedLedger.members?.length || 1} member(s)` : "Create or join a team ledger"} onClick={() => setScreen("shared-ledger")} />
           </div>
         </div>
 
@@ -176,6 +277,8 @@ export default function SettingsSection() {
                 setScreen("passcode");
               }}
             />
+            <MenuRow icon="G" label="Savings Goal" sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />
+            <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
           </div>
         </div>
 
@@ -225,29 +328,83 @@ export default function SettingsSection() {
   if (screen === "customers") {
     return (
       <Modal title="Customers" onClose={() => setScreen("main")} onSave={openNewCust} saveLabel="+ Add">
-        {customers.length === 0 ? (
+        {customerInsights.length === 0 ? (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: "var(--text-sec)" }}>No customers yet</div>
           </div>
         ) : (
           <div className="card">
-            {customers.map(c => (
-              <div key={c.id} className="card-row">
-                <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openEditCust(c)}>
-                  <Avatar name={c.name} size={38} fontSize={13} />
+            {customerInsights.map(customer => (
+              <div key={customer.id} className="card-row">
+                <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openCustomerDetail(customer)}>
+                  <Avatar name={customer.name} size={38} fontSize={13} />
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{c.email || c.phone || (c.gstin ? `GSTIN: ${c.gstin}` : "No contact")}</div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                      Balance {fmtMoney(customer.outstanding, currency?.symbol || "Rs")} · Revenue {fmtMoney(customer.totalRevenue, currency?.symbol || "Rs")}
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button onClick={() => openEditCust(c)} style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}>Edit</button>
-                  <DeleteBtn onDelete={() => { if (window.confirm(`Remove ${c.name}?`)) removeCustomer(c.id); }} />
+                  <button onClick={() => openEditCust(customer)} style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}>Edit</button>
+                  <DeleteBtn onDelete={() => { if (window.confirm(`Remove ${customer.name}?`)) removeCustomer(customer.id); }} />
                 </div>
               </div>
             ))}
           </div>
         )}
+      </Modal>
+    );
+  }
+
+  if (screen === "customer-detail" && selectedCustomer) {
+    return (
+      <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
+        <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Outstanding</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: selectedCustomer.outstanding > 0 ? "var(--gold)" : "var(--accent)" }}>{fmtMoney(selectedCustomer.outstanding, currency?.symbol || "Rs")}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Total Revenue</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(selectedCustomer.totalRevenue, currency?.symbol || "Rs")}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Paid Invoices</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>{selectedCustomer.paidInvoices}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Risk Level</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: selectedCustomer.risk > 0 ? "var(--danger)" : "var(--accent)" }}>
+                {selectedCustomer.risk > 0 ? `${Math.round(selectedCustomer.risk * 100)}% late` : "Healthy"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="section-label">Payment History</div>
+        <div className="card">
+          {selectedCustomer.payments.length === 0 ? (
+            <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No invoice history yet for this customer.</div>
+          ) : (
+            selectedCustomer.payments.map(payment => (
+              <div key={payment.id} className="card-row">
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{payment.number}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                    {payment.date ? new Date(`${payment.date}T00:00:00`).toLocaleDateString("en-IN") : "--"}
+                    {payment.dueMessage ? ` · ${payment.dueMessage}` : ""}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(payment.total, currency?.symbol || "Rs")}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: payment.status === "overdue" ? "var(--danger)" : payment.status === "paid" ? "var(--accent)" : "var(--gold)" }}>{payment.status}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </Modal>
     );
   }
@@ -260,6 +417,137 @@ export default function SettingsSection() {
         <Field label="Phone"><Input type="tel" placeholder="+1 555 000 0000" value={custForm?.phone || ""} onChange={e => setCustForm(f => ({ ...f, phone: e.target.value }))} /></Field>
         <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address || ""} onChange={e => setCustForm(f => ({ ...f, address: e.target.value }))} /></Field>
         <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "goals") {
+    return (
+      <Modal title="Savings Goal" onClose={() => setScreen("main")} onSave={saveGoalSettings} canSave={true}>
+        <Field label="Monthly Savings Goal" hint="Set the profit target you want to hit each month.">
+          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.monthlySavings} onChange={e => setGoalForm({ monthlySavings: e.target.value })} />
+        </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "shared-ledger") {
+    return (
+      <Modal title="Shared Ledger" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done">
+        {sharedLedger?.id ? (
+          <>
+            <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{sharedLedger.name}</div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 12 }}>
+                Role: {sharedLedger.role === "owner" ? "Owner" : "Member"} · Invite Code: {sharedLedger.inviteCode || "--"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                Everyone in this ledger shares the same income, expenses, invoices, customers, and dashboard.
+              </div>
+            </div>
+
+            <div className="section-label">Members</div>
+            <div className="card" style={{ marginBottom: 16 }}>
+              {(sharedLedger.members || []).map(member => (
+                <div key={member.userId} className="card-row">
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <Avatar name={member.name || member.email || "?"} size={36} fontSize={13} />
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{member.name || member.email || "Member"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{member.role} · {member.email || "No email"}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {sharedLedger.role === "owner" && (
+              <button className="btn-secondary" style={{ width: "100%", marginBottom: 12 }} onClick={handleRefreshInvite}>
+                Refresh Invite Code
+              </button>
+            )}
+            <button className="btn-secondary" style={{ width: "100%", color: "var(--danger)", borderColor: "var(--danger)44" }} onClick={handleLeaveSharedLedger}>
+              {sharedLedger.role === "owner" ? "Owner cannot leave yet" : "Leave Shared Ledger"}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
+              <Field label="Create Ledger Name" hint="Use this if you want to share one business ledger with multiple people.">
+                <Input placeholder="e.g. Acme Team Ledger" value={sharedLedgerForm.name} onChange={e => setSharedLedgerForm(current => ({ ...current, name: e.target.value }))} />
+              </Field>
+              <button className="btn-primary" style={{ width: "100%" }} onClick={handleCreateSharedLedger} disabled={!sharedLedgerForm.name.trim()}>
+                Create Shared Ledger
+              </button>
+            </div>
+
+            <div className="card" style={{ padding: "16px" }}>
+              <Field label="Join With Invite Code" hint="Ask the ledger owner for the code shown in their shared ledger settings.">
+                <Input placeholder="Enter invite code" value={sharedLedgerForm.code} onChange={e => setSharedLedgerForm(current => ({ ...current, code: e.target.value.toUpperCase() }))} />
+              </Field>
+              <button className="btn-secondary" style={{ width: "100%" }} onClick={handleJoinSharedLedger} disabled={!sharedLedgerForm.code.trim()}>
+                Join Shared Ledger
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
+    );
+  }
+
+  if (screen === "notifications") {
+    const ToggleRow = ({ label, sub, checked, onChange }) => (
+      <div className="card-row">
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{label}</div>
+          {sub && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{sub}</div>}
+        </div>
+        <button onClick={onChange} style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: checked ? "var(--accent)" : "var(--border)" }}>
+          <div style={{ position: "absolute", top: 3, left: checked ? undefined : 3, right: checked ? 3 : undefined, width: 22, height: 22, borderRadius: 11, background: "#fff", transition: "all 0.3s" }} />
+        </button>
+      </div>
+    );
+
+    return (
+      <Modal title="Notifications" onClose={() => setScreen("main")} onSave={saveNotificationSettings} saveLabel="Save">
+        <div className="card">
+          <ToggleRow
+            label="Browser Notifications"
+            sub="Show system popups for important reminders when your browser allows it."
+            checked={Boolean(notificationForm?.browserEnabled)}
+            onChange={() => setNotificationForm(current => ({ ...current, browserEnabled: !current.browserEnabled }))}
+          />
+          <ToggleRow
+            label="Due Soon Invoices"
+            sub="Warn when invoices are due within the next 3 days."
+            checked={Boolean(notificationForm?.invoiceDue)}
+            onChange={() => setNotificationForm(current => ({ ...current, invoiceDue: !current.invoiceDue }))}
+          />
+          <ToggleRow
+            label="Overdue Invoices"
+            sub="Highlight invoices that have passed their due date."
+            checked={Boolean(notificationForm?.overdueInvoices)}
+            onChange={() => setNotificationForm(current => ({ ...current, overdueInvoices: !current.overdueInvoices }))}
+          />
+          <ToggleRow
+            label="Budget Alerts"
+            sub="Alert when category budgets are fully used."
+            checked={Boolean(notificationForm?.budgetAlerts)}
+            onChange={() => setNotificationForm(current => ({ ...current, budgetAlerts: !current.budgetAlerts }))}
+          />
+          <ToggleRow
+            label="Low Balance"
+            sub="Warn when the current month is running at a loss."
+            checked={Boolean(notificationForm?.lowBalance)}
+            onChange={() => setNotificationForm(current => ({ ...current, lowBalance: !current.lowBalance }))}
+          />
+          <ToggleRow
+            label="High Spending"
+            sub="Alert when this month is sharply above your recent spending average."
+            checked={Boolean(notificationForm?.spendingSpike)}
+            onChange={() => setNotificationForm(current => ({ ...current, spendingSpike: !current.spendingSpike }))}
+          />
+        </div>
       </Modal>
     );
   }
