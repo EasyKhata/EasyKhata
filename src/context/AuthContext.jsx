@@ -1,170 +1,276 @@
-import React,{ createContext, useContext, useState, useEffect } from "react";
-import { setCurrentUser, getCurrentUser, clearCurrentUser } from "../utils/storage";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  EmailAuthProvider,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  reauthenticateWithCredential,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updatePassword
+} from "firebase/auth";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { auth, db } from "../firebase";
+import { clearCurrentUser, setCurrentUser } from "../utils/storage";
 
 const AuthContext = createContext();
-
-// Storage helpers
-function getStore(key, def) {
-  try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; }
-}
-function setStore(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-
-// Seed admin on first run
-function initAdmin() {
-  let users = getStore("ledger_users", []);
-
-  const ADMIN = {
-    id: "admin_1",
-    phone: "9866838167",
-    name: "Deepak Reddy",
-    email: "yasadeepakreddy@gmail.com",
-    role: "admin",
-    passcode: "561417",
-    blocked: false,
-    createdAt: new Date().toISOString(),
-    tempPassword: null,
-  };
-
-  // remove existing admin (important)
-  users = users.filter(u => u.role !== "admin");
-
-  // always insert fresh admin from code
-  users.unshift(ADMIN);
-
-  setStore("ledger_users", users);
-}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const registrationInProgressRef = useRef(false);
 
-useEffect(() => {
-  initAdmin();
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
+      if (!firebaseUser) {
+        clearCurrentUser();
+        setUser(null);
+        setLoading(false);
+        return;
+      }
 
-  const userId = getCurrentUser(); // ✅ new method
+      try {
+        if (!firebaseUser.emailVerified) {
+          if (registrationInProgressRef.current) {
+            clearCurrentUser();
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+          await signOut(auth);
+          clearCurrentUser();
+          setUser(null);
+          setLoading(false);
+          return;
+        }
 
-  if (userId) {
-    const users = getStore("ledger_users", []);
-    const found = users.find(u => u.id === userId);
+        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
+        const profile = snap.exists() ? snap.data() : {};
 
-    if (found && !found.blocked) {
-      setUser(found);
-    } else if (found?.blocked) {
-      setUser(found);
+        setUser({
+          id: firebaseUser.uid,
+          name: profile?.name || "",
+          email: profile?.email || firebaseUser.email || "",
+          phone: profile?.phone || "",
+          role: profile?.role || "user",
+          blocked: Boolean(profile?.blocked)
+        });
+        setCurrentUser(firebaseUser.uid);
+      } catch (err) {
+        console.error("Profile load error:", err);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  async function login(email, password) {
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, email, password);
+
+      if (!userCred.user.emailVerified) {
+        await signOut(auth);
+        clearCurrentUser();
+        return { error: "Please verify your email before logging in." };
+      }
+
+      const snap = await getDoc(doc(db, "users", userCred.user.uid));
+      const profile = snap.exists() ? snap.data() : {};
+
+      if (profile?.blocked) {
+        await signOut(auth);
+        clearCurrentUser();
+        return { error: "Your account has been blocked. Contact admin." };
+      }
+
+      const nextUser = {
+        id: userCred.user.uid,
+        name: profile?.name || "",
+        email: profile?.email || email,
+        phone: profile?.phone || "",
+        role: profile?.role || "user",
+        blocked: Boolean(profile?.blocked)
+      };
+
+      setUser(nextUser);
+      setCurrentUser(nextUser.id);
+      return { success: true, user: nextUser };
+    } catch (err) {
+      if (err.code === "auth/user-not-found") return { error: "User not found. Please register." };
+      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") return { error: "Incorrect password." };
+      if (err.code === "auth/invalid-email") return { error: "Invalid email format." };
+      return { error: err.message };
     }
   }
 
-  setLoading(false);
-}, []);
+  async function register(name, email, phone, password) {
+    registrationInProgressRef.current = true;
+    try {
+      const userCred = await createUserWithEmailAndPassword(auth, email, password);
+      const uid = userCred.user.uid;
 
-  function getAllUsers() { return getStore("ledger_users", []); }
-  function saveUsers(users) { setStore("ledger_users", users); }
+      await setDoc(doc(db, "users", uid), {
+        name,
+        email,
+        phone,
+        role: "user",
+        blocked: false,
+        createdAt: new Date().toISOString(),
+        income: [],
+        expenses: [],
+        invoices: [],
+        customers: [],
+        account: {
+          name,
+          email,
+          phone,
+          address: "",
+          gstin: "",
+          showHSN: false
+        },
+        currency: {
+          code: "INR",
+          symbol: "Rs",
+          name: "Indian Rupee",
+          flag: "IN"
+        }
+      });
 
-  function login(phone, passcode) {
-    const users = getAllUsers();
-    const found = users.find(u => u.phone === phone);
-    if (!found) return { error: "No account found with this phone number." };
-    if (found.blocked) return { error: "Your account has been blocked. Contact admin." };
-    
-    // check passcode or temp password
-    const validPasscode = found.passcode === passcode;
-    const validTemp = found.tempPassword && found.tempPassword === passcode;
-    
-    if (!validPasscode && !validTemp) return { error: "Incorrect passcode." };
-    
-    // If used temp, force clear it
-    if (validTemp) {
-      const updated = users.map(u => u.id === found.id ? { ...u, tempPassword: null } : u);
-      saveUsers(updated);
-      const fresh = { ...found, tempPassword: null };
-      setUser(fresh);
-      setStore("ledger_session", { id: fresh.id });
-      return { success: true, user: fresh };
+      await sendEmailVerification(userCred.user);
+      await signOut(auth);
+      clearCurrentUser();
+
+      return {
+        success: true,
+        message: "Your account is ready. Please verify your email before signing in."
+      };
+    } catch (err) {
+      if (err.code === "auth/email-already-in-use") {
+        return { error: "An account with this email already exists. Please sign in instead." };
+      }
+      if (err.code === "auth/invalid-email") {
+        return { error: "Please enter a valid email address." };
+      }
+      if (err.code === "auth/weak-password") {
+        return { error: "Password must be at least 6 characters long." };
+      }
+      if (err.code === "auth/too-many-requests") {
+        return { error: "Too many attempts were made. Please wait a little and try again." };
+      }
+      return { error: err.message || "We couldn't create your account right now. Please try again." };
+    } finally {
+      registrationInProgressRef.current = false;
     }
-    
-    setUser(found);
-    //setStore("ledger_session", { id: found.id });
-    setCurrentUser(found.id);
-    return { success: true, user: found };
   }
 
-  function register(phone, name, passcode) {
-    const users = getAllUsers();
-    if (users.find(u => u.phone === phone)) return { error: "An account with this phone number already exists." };
-    if (passcode.length !== 6 || !/^\d+$/.test(passcode)) return { error: "Passcode must be exactly 6 digits." };
-    
-    const newUser = {
-      id: `user_${Date.now()}`,
-      phone,
-      name,
-      email: "",
-      role: "user",
-      passcode,
-      blocked: false,
-      createdAt: new Date().toISOString(),
-      tempPassword: null,
-    };
-    saveUsers([...users, newUser]);
-    setUser(newUser);
-    setCurrentUser(newUser.id);
-    return { success: true, user: newUser };
+  async function forgotPassword(email) {
+    try {
+      await sendPasswordResetEmail(auth, email);
+      return { success: true, message: "Password reset instructions have been sent to your email." };
+    } catch (err) {
+      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-email") {
+        return { error: "We couldn't find an account with that email address." };
+      }
+      return { error: "We couldn't send the reset email right now. Please try again shortly." };
+    }
   }
 
-  function requestTempPassword(phone) {
-    const users = getAllUsers();
-    const found = users.find(u => u.phone === phone && u.role !== "admin");
-    if (!found) return { error: "No user account found with this number." };
-    if (found.blocked) return { error: "This account is blocked." };
-    return { success: true, message: "Request noted. Admin will issue a temp password. Try again in a moment." };
+  async function resendVerification(email, password) {
+    try {
+      let verificationUser = auth.currentUser;
+
+      if (!verificationUser) {
+        if (!email || !password) {
+          return { error: "Enter your email and password to resend the verification email." };
+        }
+        const userCred = await signInWithEmailAndPassword(auth, email, password);
+        verificationUser = userCred.user;
+      }
+
+      if (verificationUser.emailVerified) {
+        return { error: "This email address is already verified. Please sign in." };
+      }
+
+      await sendEmailVerification(verificationUser);
+      await signOut(auth);
+      clearCurrentUser();
+      return { success: true, message: "We've sent a fresh verification email. Please check your inbox and spam folder." };
+    } catch (err) {
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") {
+        return { error: "Your password didn't match our records. Please try again." };
+      }
+      if (err.code === "auth/too-many-requests") {
+        return { error: "Too many attempts were made. Please wait a little and try again." };
+      }
+      return { error: "We couldn't resend the verification email right now. Please try again shortly." };
+    }
   }
 
-  function logout() {
-    setUser(null);
+  async function updateProfile(updates) {
+    if (!auth.currentUser) {
+      return { error: "No user logged in." };
+    }
+
+    try {
+      await updateDoc(doc(db, "users", auth.currentUser.uid), updates);
+      setUser(prev => (prev ? { ...prev, ...updates } : prev));
+      return { success: true };
+    } catch (err) {
+      return { error: err.message || "Failed to update profile." };
+    }
+  }
+
+  async function changePassword(currentPassword, nextPassword) {
+    if (!auth.currentUser || !auth.currentUser.email) {
+      return { error: "No authenticated user found." };
+    }
+
+    try {
+      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+      await reauthenticateWithCredential(auth.currentUser, credential);
+      await updatePassword(auth.currentUser, nextPassword);
+      return { success: true };
+    } catch (err) {
+      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        return { error: "Your current password is incorrect." };
+      }
+      if (err.code === "auth/weak-password") {
+        return { error: "Password must be at least 6 characters long." };
+      }
+      return { error: err.message || "We couldn't update your password right now. Please try again." };
+    }
+  }
+
+  async function logout() {
+    await signOut(auth);
     clearCurrentUser();
-  }
-
-  function updateProfile(updates) {
-    const users = getAllUsers();
-    const updated = users.map(u => u.id === user.id ? { ...u, ...updates } : u);
-    saveUsers(updated);
-    const fresh = { ...user, ...updates };
-    setUser(fresh);
-    setStore("ledger_session", { id: fresh.id });
-  }
-
-  // Admin functions
-  function adminGetUsers() {
-    return getAllUsers().filter(u => u.role !== "admin");
-  }
-
-  function adminIssueTempPassword(userId, tempPass) {
-    const users = getAllUsers();
-    const updated = users.map(u => u.id === userId ? { ...u, tempPassword: tempPass } : u);
-    saveUsers(updated);
-  }
-
-  function adminBlockUser(userId) {
-    const users = getAllUsers();
-    const updated = users.map(u => u.id === userId ? { ...u, blocked: !u.blocked } : u);
-    saveUsers(updated);
-  }
-
-  function adminRemoveUser(userId) {
-    const users = getAllUsers().filter(u => u.id !== userId);
-    saveUsers(users);
-    // Also remove their data
-    localStorage.removeItem(`ledgerApp_v1_user_${userId}_appData`);
+    setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{
-      user, loading,
-      login, register, logout, requestTempPassword, updateProfile,
-      adminGetUsers, adminIssueTempPassword, adminBlockUser, adminRemoveUser,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        login,
+        register,
+        logout,
+        setUser,
+        updateProfile,
+        changePassword,
+        forgotPassword,
+        resendVerification
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() { return useContext(AuthContext); }
+export function useAuth() {
+  return useContext(AuthContext);
+}

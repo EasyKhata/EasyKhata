@@ -7,6 +7,7 @@ import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
 import InvoicesSection from "../sections/InvoicesSection";
 import SettingsSection from "../sections/SettingsSection";
+import AdminPanel from "../sections/AdminPanel";
 
 const now = new Date();
 
@@ -23,11 +24,14 @@ export default function MainApp() {
     { id: "expenses",  icon: "↓",  label: "Expenses" },
     { id: "invoices",  icon: "◻",  label: "Invoices" },
     { id: "settings",  icon: "⚙",  label: "Settings" },
+    ...(user?.role === "admin"
+    ? [{ id: "admin", icon: "🛡", label: "Admin" }]
+    : [])
   ];
 
   const tabColor = {
     dashboard: "var(--accent)", income: "var(--accent)", expenses: "var(--danger)",
-    invoices: "var(--blue)", settings: "var(--purple)",
+    invoices: "var(--blue)", settings: "var(--purple)", admin: "var(--purple)"
   };
 
   const activeColor = tabColor[tab];
@@ -65,6 +69,7 @@ export default function MainApp() {
         {tab === "expenses"   && <ExpensesSection  year={year} month={month} />}
         {tab === "invoices"   && <InvoicesSection  year={year} month={month} />}
         {tab === "settings"   && <SettingsSection  />}
+        {tab === "admin" && <AdminPanel />}
       </div>
 
       {/* Tab Bar */}
