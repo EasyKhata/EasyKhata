@@ -15,6 +15,7 @@ import {
   getSubscriptionEndDate,
   getTrialEndDate
 } from "../utils/subscription";
+import { downloadAdminMonthlyReport, downloadAdminUsersCsv, downloadAdminRequestsCsv } from "../utils/reportGen";
 
 const REQUEST_FILTERS = [
   [PAYMENT_REQUEST_STATUS.PENDING, "Pending"],
@@ -32,6 +33,8 @@ export default function AdminPanel() {
   const [userFilter, setUserFilter] = useState("all");
   const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
   const [loading, setLoading] = useState(true);
+  const [adminError, setAdminError] = useState("");
+  const [exporting, setExporting] = useState("");
 
   if (user?.role !== "admin") {
     return <div style={{ padding: 20 }}>Access denied.</div>;
@@ -65,6 +68,7 @@ export default function AdminPanel() {
       }
     } catch (err) {
       console.error("Admin panel load error:", err);
+      setAdminError("Failed to load admin data. Please check your Firestore permissions and try again.");
       setUsers([]);
     } finally {
       setLoading(false);
@@ -93,12 +97,39 @@ export default function AdminPanel() {
     return paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter);
   }, [paymentRequests, requestFilter]);
 
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const stats = {
-    totalUsers: users.length,
-    premiumUsers: users.filter(item => item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS).length,
-    blockedUsers: users.filter(item => item.blocked).length,
-    pendingRequests: paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING).length
-  };
+      totalUsers: users.length,
+      premiumUsers: users.filter(item => item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS).length,
+      trialUsers: users.filter(item => item.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL).length,
+      activeUsers: users.filter(item => !item.blocked).length,
+      blockedUsers: users.filter(item => item.blocked).length,
+      newUsersThisMonth: users.filter(user => user.createdAt?.slice(0, 7) === monthKey).length,
+      newPremiumUsersThisMonth: users.filter(user => (user.plan === PLANS.PRO || user.plan === PLANS.BUSINESS) && user.createdAt?.slice(0, 7) === monthKey).length,
+      pendingRequests: paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING).length
+    };
+  const recentActivity = useMemo(() => {
+    const signups = users
+      .filter(user => user.createdAt)
+      .map(user => ({
+        time: new Date(user.createdAt).getTime(),
+        label: `${user.name || user.email || "Unknown"} joined`,
+        detail: `${user.plan || "free"} plan`
+      }));
+
+    const requests = paymentRequests
+      .filter(request => request.createdAt || request.updatedAt)
+      .map(request => ({
+        time: new Date(request.updatedAt || request.createdAt).getTime(),
+        label: `${request.userName || request.userEmail || "Unknown"} payment ${request.status || PAYMENT_REQUEST_STATUS.PENDING}`,
+        detail: `${request.requestedPlan || "pro"} / ${request.billingCycle || BILLING_CYCLES.MONTHLY}`
+      }));
+
+    return [...signups, ...requests]
+      .sort((a, b) => b.time - a.time)
+      .slice(0, 8);
+  }, [users, paymentRequests]);
 
   async function toggleBlock(id, blocked) {
     if (id === user.id) {
@@ -203,18 +234,109 @@ export default function AdminPanel() {
   return (
     <div style={{ padding: "20px 18px 110px" }}>
       <div className="section-label">Admin Overview</div>
-      <div className="desktop-grid-2" style={{ marginBottom: 18 }}>
-        {[
-          ["Total Users", stats.totalUsers, "var(--blue)"],
-          ["Premium Users", stats.premiumUsers, "var(--accent)"],
-          ["Blocked Users", stats.blockedUsers, "var(--danger)"],
-          ["Pending Payments", stats.pendingRequests, "var(--gold)"]
-        ].map(([label, value, color]) => (
-          <div key={label} className="card" style={{ padding: "16px 14px", borderColor: `${color}33`, marginBottom: 12 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>{label}</div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--text)" }}>{value}</div>
+      {adminError && (
+        <div className="card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "var(--danger)" }}>Admin access warning</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>{adminError}</div>
+        </div>
+      )}
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 20, borderLeft: "4px solid var(--gold)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>Admin workspace</div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 620 }}>
+                Manage user subscriptions, verify payment proof, and export audit-ready admin reports from one central dashboard.
+              </div>
+            </div>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12, minWidth: 140 }}
+              onClick={fetchAdminData}
+              disabled={loading}
+            >
+              {loading ? "Refreshing…" : "Refresh data"}
+            </button>
           </div>
-        ))}
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12 }}
+              onClick={() => {
+                setExporting("pdf");
+                try {
+                  const now = new Date();
+                  downloadAdminMonthlyReport({ users, paymentRequests }, now.getFullYear(), now.getMonth(), "Rs");
+                } finally {
+                  setExporting("");
+                }
+              }}
+              disabled={Boolean(exporting)}
+            >
+              {exporting === "pdf" ? "Generating report..." : "Download Admin PDF"}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12 }}
+              onClick={() => {
+                setExporting("users");
+                try {
+                  downloadAdminUsersCsv(users);
+                } finally {
+                  setExporting("");
+                }
+              }}
+              disabled={Boolean(exporting) || !users.length}
+            >
+              {exporting === "users" ? "Exporting users..." : "Export Users CSV"}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12 }}
+              onClick={() => {
+                setExporting("requests");
+                try {
+                  downloadAdminRequestsCsv(paymentRequests);
+                } finally {
+                  setExporting("");
+                }
+              }}
+              disabled={Boolean(exporting) || !paymentRequests.length}
+            >
+              {exporting === "requests" ? "Exporting requests..." : "Export Requests CSV"}
+            </button>
+          </div>
+
+          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
+            {exporting
+              ? "Preparing your export, please wait..."
+              : "Refresh data anytime and export a PDF or CSV snapshot of your admin activity and subscriptions."}
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: 18 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, color: "var(--text)" }}>Snapshot</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            {[
+              ["Total Users", stats.totalUsers, "var(--blue)"],
+              ["Active Users", stats.activeUsers, "var(--accent)"],
+              ["Blocked Users", stats.blockedUsers, "var(--danger)"],
+              ["Pending Payments", stats.pendingRequests, "var(--gold)"],
+              ["New Users This Month", stats.newUsersThisMonth, "var(--purple)"],
+              ["New Premium Users", stats.newPremiumUsersThisMonth, "var(--accent)"]
+            ].map(([label, value, color]) => (
+              <div key={label} className="card" style={{ padding: "14px 12px", borderColor: `${color}33`, marginBottom: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 6 }}>{label}</div>
+                <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="section-label">Payment Verification</div>
@@ -235,6 +357,9 @@ export default function AdminPanel() {
               {label}
             </button>
           ))}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 12, lineHeight: 1.7 }}>
+          Filter payment requests to review the newest submissions first. Only approve payments after matching UPI details and screenshot proof.
         </div>
       </div>
 
@@ -319,6 +444,23 @@ export default function AdminPanel() {
                   </div>
                 )}
               </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="section-label">Recent Activity</div>
+      <div className="card" style={{ marginBottom: 18, padding: 14 }}>
+        {recentActivity.length === 0 ? (
+          <div style={{ padding: 18, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No recent admin activity found yet.</div>
+        ) : (
+          recentActivity.map((event, index) => (
+            <div key={`${event.time}-${index}`} className="card-row" style={{ justifyContent: "space-between", gap: 12, padding: "10px 0" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{event.label}</div>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{event.detail}</div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-sec)" }}>{new Date(event.time).toLocaleString("en-IN")}</div>
             </div>
           ))
         )}

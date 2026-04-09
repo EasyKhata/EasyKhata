@@ -293,6 +293,116 @@ function fmtMoneyValue(value) {
   return Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+export function calculateYearlyDashboard(data, year) {
+  const today = new Date();
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  // Sum all months in the year
+  for (let month = 0; month < 12; month++) {
+    const mk = monthKey(year, month);
+    totalIncome += sumIncomeForMonth(data, mk);
+    totalExpense += sumExpensesForMonth(data, mk);
+  }
+
+  const profit = totalIncome - totalExpense;
+
+  // Calculate monthly breakdown for visualization
+  const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
+    const mk = monthKey(year, monthIdx);
+    const monthIncome = sumIncomeForMonth(data, mk);
+    const monthExpense = sumExpensesForMonth(data, mk);
+    return {
+      key: mk,
+      month: monthIdx,
+      label: MONTHS[monthIdx],
+      income: monthIncome,
+      expenses: monthExpense,
+      net: monthIncome - monthExpense
+    };
+  });
+
+  // Year-to-date invoices and customers
+  const invoices = (data.invoices || [])
+    .filter(invoice => invoice.date?.slice(0, 4) === String(year))
+    .map(invoice => {
+      const status = getInvoiceStatus(invoice, today);
+      return {
+        ...invoice,
+        computedStatus: status,
+        total: invoiceGrandTotal(invoice),
+        dueMessage: getInvoiceDueMessage(invoice, today)
+      };
+    });
+
+  const pendingInvoices = invoices.filter(invoice => invoice.computedStatus !== "paid");
+  const overdueInvoices = invoices.filter(invoice => invoice.computedStatus === "overdue");
+  const pendingInvoiceTotal = pendingInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
+
+  // Top customers for the year
+  const customerRevenueMap = {};
+  invoices.forEach(invoice => {
+    const customerName = invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer";
+    customerRevenueMap[customerName] = (customerRevenueMap[customerName] || 0) + invoice.total;
+  });
+
+  const topCustomers = Object.entries(customerRevenueMap)
+    .map(([name, revenue]) => ({
+      name,
+      revenue,
+      balance: pendingInvoices
+        .filter(invoice => (invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer") === name)
+        .reduce((sum, invoice) => sum + invoice.total, 0)
+    }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 4);
+
+  // Year-to-date expense categories
+  const yearExpenses = (data.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const yearKey = String(year);
+      const startYear = expense.startMonth?.slice(0, 4);
+      const endYear = expense.endMonth?.slice(0, 4);
+      const started = !startYear || startYear <= yearKey;
+      const notEnded = !endYear || endYear >= yearKey;
+      return started && notEnded;
+    }
+    return expense.month?.slice(0, 4) === String(year);
+  });
+
+  const expenseCategoryMap = yearExpenses.reduce((map, expense) => {
+    const category = expense.category || "Other";
+    map[category] = (map[category] || 0) + toNumber(expense.amount);
+    return map;
+  }, {});
+
+  const topExpenseCategories = Object.entries(expenseCategoryMap)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 4);
+
+  const avgMonthlyIncome = totalIncome / 12;
+  const avgMonthlyExpense = totalExpense / 12;
+  const availableCash = Math.max(0, profit);
+  const burnRateDays = avgMonthlyExpense > 0 ? Math.floor((availableCash / avgMonthlyExpense) * 30) : null;
+
+  return {
+    year,
+    totalIncome,
+    totalExpense,
+    profit,
+    avgMonthlyIncome,
+    avgMonthlyExpense,
+    pendingInvoiceTotal,
+    pendingInvoices,
+    overdueInvoices,
+    topExpenseCategories,
+    topCustomers,
+    monthlyBreakdown,
+    burnRateDays
+  };
+}
+
 export function calculateCustomerInsights(data) {
   const invoices = (data.invoices || []).map(invoice => {
     const customerName = invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer";

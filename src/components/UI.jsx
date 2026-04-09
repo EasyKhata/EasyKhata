@@ -270,67 +270,128 @@ export function UpgradeModal({ open, title, message, onClose }) {
   );
 }
 
-export function MonthNav({ year, month, onChange }) {
+export function MonthNav({ year, month, onChange, viewMode = "month", onViewModeChange }) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const isCurrentMonth = year === currentYear && month === currentMonth;
+
   const prev = () => {
-    let nextMonth = month - 1;
-    let nextYear = year;
-    if (nextMonth < 0) {
-      nextMonth = 11;
-      nextYear -= 1;
+    if (viewMode === "month") {
+      let nextMonth = month - 1;
+      let nextYear = year;
+      if (nextMonth < 0) {
+        nextMonth = 11;
+        nextYear -= 1;
+      }
+      onChange(nextYear, nextMonth);
+    } else {
+      onChange(year - 1, month);
     }
-    onChange(nextYear, nextMonth);
   };
 
   const next = () => {
-    let nextMonth = month + 1;
-    let nextYear = year;
-    if (nextMonth > 11) {
-      nextMonth = 0;
-      nextYear += 1;
+    if (viewMode === "month") {
+      // Prevent navigating to future months
+      if (isCurrentMonth) return;
+      let nextMonth = month + 1;
+      let nextYear = year;
+      if (nextMonth > 11) {
+        nextMonth = 0;
+        nextYear += 1;
+      }
+      onChange(nextYear, nextMonth);
+    } else {
+      if (year === currentYear) return; // Don't allow future years
+      onChange(year + 1, month);
     }
-    onChange(nextYear, nextMonth);
   };
 
+  const isCurrentYear = year === currentYear;
+  const isYearDisabled = viewMode === "year" && isCurrentYear;
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <button
         onClick={prev}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 10,
+          width: 28,
+          height: 28,
+          borderRadius: 8,
           background: "var(--surface-high)",
           border: "1px solid var(--border)",
           color: "var(--text)",
-          fontSize: 18,
+          fontSize: 15,
           cursor: "pointer",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center"
+          justifyContent: "center",
+          transition: "all 0.2s"
         }}
       >
-        {"<"}
+        {"◀"}
       </button>
-      <span style={{ fontFamily: "var(--serif)", fontSize: 16, color: "var(--text)", minWidth: 98, textAlign: "center" }}>
-        {MONTHS[month]} {year}
-      </span>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontFamily: "var(--serif)", fontSize: 15, color: "var(--text)", minWidth: viewMode === "month" ? 84 : 40, textAlign: "center", fontWeight: 600 }}>
+          {viewMode === "month" ? `${MONTHS[month]} ${year}` : year}
+        </span>
+        <div style={{ display: "flex", background: "var(--surface-high)", borderRadius: 8, padding: 3 }}>
+          <button
+            onClick={() => onViewModeChange?.("month")}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: viewMode === "month" ? 700 : 500,
+              color: viewMode === "month" ? "var(--text)" : "var(--text-dim)",
+              background: viewMode === "month" ? "var(--surface)" : "transparent",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            Month
+          </button>
+          <button
+            onClick={() => onViewModeChange?.("year")}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: viewMode === "year" ? 700 : 500,
+              color: viewMode === "year" ? "var(--text)" : "var(--text-dim)",
+              background: viewMode === "year" ? "var(--surface)" : "transparent",
+              border: "none",
+              borderRadius: 6,
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+          >
+            Year
+          </button>
+        </div>
+      </div>
+
       <button
         onClick={next}
+        disabled={isCurrentMonth && viewMode === "month" || isYearDisabled}
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 10,
-          background: "var(--surface-high)",
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: (isCurrentMonth && viewMode === "month" || isYearDisabled) ? "var(--surface-high)44" : "var(--surface-high)",
           border: "1px solid var(--border)",
-          color: "var(--text)",
-          fontSize: 18,
-          cursor: "pointer",
+          color: (isCurrentMonth && viewMode === "month" || isYearDisabled) ? "var(--text-dim)" : "var(--text)",
+          fontSize: 15,
+          cursor: (isCurrentMonth && viewMode === "month" || isYearDisabled) ? "not-allowed" : "pointer",
           display: "flex",
           alignItems: "center",
-          justifyContent: "center"
+          justifyContent: "center",
+          opacity: (isCurrentMonth && viewMode === "month" || isYearDisabled) ? 0.5 : 1,
+          transition: "all 0.2s"
         }}
       >
-        {">"}
+        {"▶"}
       </button>
     </div>
   );

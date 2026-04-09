@@ -111,7 +111,7 @@ export function canUseFeature(user, feature, usage = {}) {
     case "invoicePdf":
     case "reports":
     case "notifications":
-    case "smartDashboard":
+    case "advancedAnalytics":
     case "budgets":
     case "advancedInvoice":
       return plan === PLANS.PRO || plan === PLANS.BUSINESS;
@@ -149,10 +149,10 @@ export function getUpgradeCopy(feature) {
         title: "Smart alerts are available on Pro",
         message: "Upgrade to Pro to turn on reminder inbox features and notification-based alerts."
       };
-    case "smartDashboard":
+    case "advancedAnalytics":
       return {
-        title: "Advanced dashboard is available on Pro",
-        message: "Upgrade to Pro to unlock burn rate, customer intelligence, and advanced financial insights."
+        title: "Advanced analytics are available on Pro",
+        message: "Upgrade to Pro to unlock burn rate, savings goals, smart alerts, and customer intelligence."
       };
     case "budgets":
       return {
