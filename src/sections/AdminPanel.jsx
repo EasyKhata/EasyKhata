@@ -4,29 +4,33 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
 import {
-  DEFAULT_TRIAL_DAYS,
+  BILLING_CYCLES,
+  PAYMENT_REQUEST_STATUS,
   PLAN_LABELS,
   PLANS,
   SUBSCRIPTION_STATUS,
+  UPI_CONFIG,
   formatSubscriptionDate,
+  getBillingDuration,
+  getSubscriptionEndDate,
   getTrialEndDate
 } from "../utils/subscription";
 
 const REQUEST_FILTERS = [
-  ["pending", "Pending"],
-  ["approved", "Approved"],
-  ["rejected", "Rejected"],
+  [PAYMENT_REQUEST_STATUS.PENDING, "Pending"],
+  [PAYMENT_REQUEST_STATUS.APPROVED, "Approved"],
+  [PAYMENT_REQUEST_STATUS.REJECTED, "Rejected"],
   ["all", "All"]
 ];
 
 export default function AdminPanel() {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
-  const [requests, setRequests] = useState([]);
-  const [requestsEnabled, setRequestsEnabled] = useState(true);
+  const [paymentRequests, setPaymentRequests] = useState([]);
+  const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
-  const [requestFilter, setRequestFilter] = useState("pending");
+  const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
   const [loading, setLoading] = useState(true);
 
   if (user?.role !== "admin") {
@@ -37,29 +41,30 @@ export default function AdminPanel() {
     setLoading(true);
     try {
       const usersSnapshot = await getDocs(collection(db, "users"));
-      const nextUsers = usersSnapshot.docs.map(item => ({
-        id: item.id,
-        ...item.data()
-      }));
-      setUsers(nextUsers);
+      setUsers(
+        usersSnapshot.docs.map(item => ({
+          id: item.id,
+          ...item.data()
+        }))
+      );
 
       try {
-        const requestsSnapshot = await getDocs(collection(db, "plan_requests"));
+        const requestsSnapshot = await getDocs(collection(db, "payment_requests"));
         const nextRequests = requestsSnapshot.docs
           .map(item => ({
             id: item.id,
             ...item.data()
           }))
           .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-        setRequests(nextRequests);
-        setRequestsEnabled(true);
+        setPaymentRequests(nextRequests);
+        setPaymentRequestsEnabled(true);
       } catch (err) {
-        console.error("Plan request load error:", err);
-        setRequests([]);
-        setRequestsEnabled(false);
+        console.error("Payment request load error:", err);
+        setPaymentRequests([]);
+        setPaymentRequestsEnabled(false);
       }
     } catch (err) {
-      console.error("Admin user load error:", err);
+      console.error("Admin panel load error:", err);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -85,14 +90,14 @@ export default function AdminPanel() {
   }, [search, userFilter, users]);
 
   const filteredRequests = useMemo(() => {
-    return requests.filter(item => requestFilter === "all" || (item.status || "pending") === requestFilter);
-  }, [requestFilter, requests]);
+    return paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter);
+  }, [paymentRequests, requestFilter]);
 
   const stats = {
     totalUsers: users.length,
     premiumUsers: users.filter(item => item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS).length,
     blockedUsers: users.filter(item => item.blocked).length,
-    pendingRequests: requests.filter(item => (item.status || "pending") === "pending").length
+    pendingRequests: paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING).length
   };
 
   async function toggleBlock(id, blocked) {
@@ -111,9 +116,7 @@ export default function AdminPanel() {
       return;
     }
 
-    const confirmed = window.confirm(
-      "This will remove the user's Firestore profile and queue an Authentication cleanup request. Continue?"
-    );
+    const confirmed = window.confirm("This will remove the user's Firestore profile and queue an Authentication cleanup request. Continue?");
     if (!confirmed) return;
 
     const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
@@ -159,7 +162,7 @@ export default function AdminPanel() {
   async function updateSubscriptionStatus(member, subscriptionStatus) {
     const updates = { subscriptionStatus };
     if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
-      updates.subscriptionEndsAt = getTrialEndDate(DEFAULT_TRIAL_DAYS);
+      updates.subscriptionEndsAt = getTrialEndDate();
     }
     if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
       updates.subscriptionEndsAt = "";
@@ -168,8 +171,8 @@ export default function AdminPanel() {
     fetchAdminData();
   }
 
-  async function updateRequestStatus(request, status, plan = request.requestedPlan) {
-    const requestRef = doc(db, "plan_requests", request.id);
+  async function updatePaymentRequestStatus(request, status) {
+    const requestRef = doc(db, "payment_requests", request.id);
     const updates = {
       status,
       reviewedBy: user.id,
@@ -177,22 +180,16 @@ export default function AdminPanel() {
       updatedAt: new Date().toISOString()
     };
 
-    if (status === "approved") {
+    if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
       await updateDoc(doc(db, "users", request.userId), {
-        plan,
+        plan: request.requestedPlan || PLANS.PRO,
         subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-        subscriptionEndsAt: ""
+        subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
       });
     }
 
-    if (status === "trial") {
-      await updateDoc(doc(db, "users", request.userId), {
-        plan,
-        subscriptionStatus: SUBSCRIPTION_STATUS.TRIAL,
-        subscriptionEndsAt: getTrialEndDate(request.trialDays || DEFAULT_TRIAL_DAYS)
-      });
-      updates.status = "approved";
-      updates.approvalType = "trial";
+    if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
+      updates.rejectionReason = "Payment proof not approved";
     }
 
     await setDoc(requestRef, updates, { merge: true });
@@ -211,7 +208,7 @@ export default function AdminPanel() {
           ["Total Users", stats.totalUsers, "var(--blue)"],
           ["Premium Users", stats.premiumUsers, "var(--accent)"],
           ["Blocked Users", stats.blockedUsers, "var(--danger)"],
-          ["Pending Requests", stats.pendingRequests, "var(--gold)"]
+          ["Pending Payments", stats.pendingRequests, "var(--gold)"]
         ].map(([label, value, color]) => (
           <div key={label} className="card" style={{ padding: "16px 14px", borderColor: `${color}33`, marginBottom: 12 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>{label}</div>
@@ -220,7 +217,7 @@ export default function AdminPanel() {
         ))}
       </div>
 
-      <div className="section-label">Plan Requests</div>
+      <div className="section-label">Payment Verification</div>
       <div className="card" style={{ padding: 14, marginBottom: 18 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {REQUEST_FILTERS.map(([value, label]) => (
@@ -242,14 +239,18 @@ export default function AdminPanel() {
       </div>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        {!requestsEnabled ? (
+        {!paymentRequestsEnabled ? (
           <EmptyState
-            title="Plan requests are locked by Firestore rules"
-            message="User data is still loading correctly, but the plan request collection is not readable yet. Add rules for plan_requests to enable this section."
+            title="Payment requests are locked by rules"
+            message="User data is still loading, but the payment_requests collection is not readable yet. Add rules for payment_requests to enable this section."
             accentColor="var(--gold)"
           />
         ) : filteredRequests.length === 0 ? (
-          <EmptyState title="No plan requests" message="Customer upgrade and trial requests will appear here once they are submitted from Settings." accentColor="var(--gold)" />
+          <EmptyState
+            title="No payment requests"
+            message="Customer UPI payment submissions will appear here for admin verification."
+            accentColor="var(--gold)"
+          />
         ) : (
           filteredRequests.map(request => (
             <div key={request.id} className="card-row" style={{ alignItems: "flex-start", gap: 14 }}>
@@ -258,46 +259,61 @@ export default function AdminPanel() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
                   <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
-                    {PLAN_LABELS[request.currentPlan || PLANS.FREE] || "Free"} to {PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"}
+                    {request.requestedPlan === PLANS.BUSINESS ? "Business (Coming Soon)" : `${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
                   </span>
                   <span
                     className="pill"
                     style={{
                       background:
-                        (request.status || "pending") === "approved"
+                        (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
                           ? "var(--accent-deep)"
-                          : (request.status || "pending") === "rejected"
+                          : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
                             ? "var(--danger-deep)"
                             : "var(--gold-deep)",
                       color:
-                        (request.status || "pending") === "approved"
+                        (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
                           ? "var(--accent)"
-                          : (request.status || "pending") === "rejected"
+                          : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
                             ? "var(--danger)"
                             : "var(--gold)"
                     }}
                   >
-                    {request.approvalType === "trial" ? "Trial approved" : request.status || "pending"}
+                    {request.status || PAYMENT_REQUEST_STATUS.PENDING}
                   </span>
                 </div>
+
                 <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
                 <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  Requested on {formatSubscriptionDate(request.createdAt) || "--"} {request.trialDays ? `- Default trial ${request.trialDays} days` : ""}
+                  Amount Rs {request.amount || 0} - UPI {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
                 </div>
+                <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                  Payee {request.upiPayeeName || UPI_CONFIG.payeeName} - UPI ID {request.upiId || UPI_CONFIG.upiId}
+                </div>
+
                 {request.note && (
                   <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
                     {request.note}
                   </div>
                 )}
-                {(request.status || "pending") === "pending" && (
+
+                {request.screenshotUrl && (
+                  <a
+                    href={request.screenshotUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary"
+                    style={{ display: "inline-flex", marginTop: 12, padding: "8px 12px", fontSize: 12, textDecoration: "none", color: "var(--blue)" }}
+                  >
+                    View Payment Screenshot
+                  </a>
+                )}
+
+                {(request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING && (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updateRequestStatus(request, "approved")}>
-                      Approve
+                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.APPROVED)}>
+                      Approve Payment
                     </button>
-                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--gold)" }} onClick={() => updateRequestStatus(request, "trial")}>
-                      Start {request.trialDays || DEFAULT_TRIAL_DAYS}-Day Trial
-                    </button>
-                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => updateRequestStatus(request, "rejected")}>
+                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.REJECTED)}>
                       Reject
                     </button>
                   </div>
@@ -376,7 +392,7 @@ export default function AdminPanel() {
                     >
                       <option value={PLANS.FREE}>Free</option>
                       <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.BUSINESS}>Business</option>
+                      <option value={PLANS.BUSINESS}>Business (Internal)</option>
                     </select>
                     <select
                       className="input-field"
@@ -413,9 +429,9 @@ export default function AdminPanel() {
       </div>
 
       <div className="card" style={{ marginTop: 18, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How subscription requests work</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How payment verification works</div>
         <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          Customers now request Pro or Business access from Settings. You can approve the plan directly, start a default {DEFAULT_TRIAL_DAYS}-day trial, or reject the request. Authentication cleanup for deleted users still needs a trusted backend later.
+          Customers now pay to your UPI ID ({UPI_CONFIG.upiId}), upload a screenshot, and submit the transaction reference from Settings. You verify the proof here and approve the subscription to activate it automatically.
         </div>
       </div>
     </div>

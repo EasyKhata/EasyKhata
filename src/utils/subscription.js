@@ -11,6 +11,26 @@ export const SUBSCRIPTION_STATUS = {
 };
 
 export const DEFAULT_TRIAL_DAYS = 7;
+export const DEFAULT_MONTHLY_DAYS = 30;
+export const DEFAULT_YEARLY_DAYS = 365;
+
+export const BILLING_CYCLES = {
+  MONTHLY: "monthly",
+  YEARLY: "yearly"
+};
+
+export const PAYMENT_REQUEST_STATUS = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected"
+};
+
+export const UPI_CONFIG = {
+  payeeName: "EasyKhata",
+  upiId: "yourupi@bank",
+  monthlyAmount: 99,
+  yearlyAmount: 999
+};
 
 export const PLAN_LABELS = {
   free: "Free",
@@ -43,6 +63,20 @@ export function formatSubscriptionDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
   return parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function getSubscriptionEndDate(days) {
+  const next = new Date();
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
+}
+
+export function getBillingAmount(cycle) {
+  return cycle === BILLING_CYCLES.YEARLY ? UPI_CONFIG.yearlyAmount : UPI_CONFIG.monthlyAmount;
+}
+
+export function getBillingDuration(cycle) {
+  return cycle === BILLING_CYCLES.YEARLY ? DEFAULT_YEARLY_DAYS : DEFAULT_MONTHLY_DAYS;
 }
 
 export function isTrialActive(user) {
@@ -82,7 +116,7 @@ export function canUseFeature(user, feature, usage = {}) {
     case "advancedInvoice":
       return plan === PLANS.PRO || plan === PLANS.BUSINESS;
     case "sharedLedger":
-      return plan === PLANS.BUSINESS;
+      return false;
     default:
       return true;
   }
@@ -127,8 +161,8 @@ export function getUpgradeCopy(feature) {
       };
     case "sharedLedger":
       return {
-        title: "Shared ledger is part of Business",
-        message: "Upgrade to Business when you are ready to collaborate with a team on one ledger."
+        title: "Shared ledger is coming soon",
+        message: "Shared ledger and team collaboration are planned for a future release."
       };
     default:
       return {

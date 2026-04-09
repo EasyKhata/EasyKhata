@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Field, Input } from "../components/UI";
 import { isStrongPassword, isValidEmail, isValidPhone, sanitizePhone } from "../utils/validator";
+import BrandLogo from "../components/BrandLogo";
+import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 
 export default function AuthScreen() {
   const { login, register, forgotPassword, resendVerification } = useAuth();
@@ -159,10 +161,14 @@ export default function AuthScreen() {
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "48px 28px 32px", position: "relative", zIndex: 1 }}>
         <div style={{ marginBottom: 44 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>Welcome to</div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 52, color: "var(--text)", lineHeight: 1, marginBottom: 10 }}>Ledger</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>Welcome to</div>
+          <BrandLogo showTagline center={false} />
           <div style={{ fontSize: 15, color: "var(--text-sec)", lineHeight: 1.6 }}>
-            {screen === "login" ? "Sign in securely to continue." : screen === "register" ? "Create your account and verify your email." : "Reset your password from your inbox."}
+            {screen === "login"
+              ? `Sign in to ${APP_NAME} and keep ${APP_TAGLINE.toLowerCase()}.`
+              : screen === "register"
+                ? "Create your account, verify your email, and unlock your first free Pro trial."
+                : "Reset your password from your inbox."}
           </div>
         </div>
 
