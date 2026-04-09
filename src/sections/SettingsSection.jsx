@@ -17,6 +17,7 @@ import {
   canUseFeature,
   formatSubscriptionDate,
   getBillingAmount,
+  getUserPlan,
   getPlanSummary,
   getUpgradeCopy,
   PLAN_LABELS,
@@ -49,6 +50,8 @@ export default function SettingsSection() {
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const planSummary = getPlanSummary(user);
+  const currentPlan = getUserPlan(user);
+  const isFreePlanUser = currentPlan === PLANS.FREE;
 
   const customerInsights = useMemo(
     () => calculateCustomerInsights({ customers, invoices }),
@@ -329,16 +332,19 @@ export default function SettingsSection() {
     }
   }
 
-  const MenuRow = ({ icon, label, sub, onClick, color, danger }) => (
-    <div onClick={onClick} className="card-row" style={{ cursor: "pointer" }}>
+  const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
+    <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{icon}</div>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: danger ? "var(--danger)" : "var(--text)" }}>{label}</div>
+          <div style={{ fontSize: 15, fontWeight: 600, color: danger ? "var(--danger)" : "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>{label}</span>
+            {badge && <span className="pill" style={{ background: "var(--surface-pop)", color: "var(--text-sec)" }}>{badge}</span>}
+          </div>
           {sub && <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{sub}</div>}
         </div>
       </div>
-      {!danger && <span style={{ color: "var(--text-dim)", fontSize: 18 }}>{">"}</span>}
+      {!danger && !disabled && <span style={{ color: "var(--text-dim)", fontSize: 18 }}>{">"}</span>}
     </div>
   );
 
@@ -362,10 +368,24 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
-              Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, and advanced insights. Upgrade by paying through UPI and uploading your payment screenshot here for admin verification.
+              {currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
+                ? "You are currently exploring Pro on trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
+                : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, reminders, and secure backup tools."}
+            </div>
+            <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>Free</div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>Basic bookkeeping, limited invoices/customers, no reports, no backup tools.</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>Pro</div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>PDF exports, reports, smart alerts, advanced dashboard, backups, and priority business tools.</div>
+                </div>
+              </div>
             </div>
             <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
-              Upgrade via UPI Payment
+              {isFreePlanUser ? "Upgrade to Pro" : "Manage Subscription"}
             </button>
           </div>
         )}
@@ -377,7 +397,7 @@ export default function SettingsSection() {
             <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             <MenuRow icon="R" label="Monthly Report" sub="Download profit, tax, and GST summary PDF" onClick={handleReportDownload} />
-            <MenuRow icon="L" label="Shared Ledger" sub={sharedLedger?.id ? `${sharedLedger.name} · ${sharedLedger.members?.length || 1} member(s)` : "Create or join a team ledger"} onClick={() => setScreen("shared-ledger")} />
+            <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
           </div>
         </div>
 
@@ -411,17 +431,29 @@ export default function SettingsSection() {
           </div>
         </div>
 
-        <div className="card">
-          <div className="card-row" onClick={handleExport} style={{ cursor: "pointer" }}>
-            <span>Export Backup</span>
+        {isFreePlanUser ? (
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Backups are available on Pro</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
+              Upgrade to Pro to export your bookkeeping data and restore it anytime with secure backup import and export tools.
+            </div>
+            <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
+              Unlock Backups
+            </button>
           </div>
-          <div className="card-row" style={{ cursor: "pointer" }}>
-            <label style={{ cursor: "pointer", width: "100%" }}>
-              Import Backup
-              <input type="file" accept="application/json" onChange={handleImport} style={{ display: "none" }} />
-            </label>
+        ) : (
+          <div className="card">
+            <div className="card-row" onClick={handleExport} style={{ cursor: "pointer" }}>
+              <span>Export Backup</span>
+            </div>
+            <div className="card-row" style={{ cursor: "pointer" }}>
+              <label style={{ cursor: "pointer", width: "100%" }}>
+                Import Backup
+                <input type="file" accept="application/json" onChange={handleImport} style={{ display: "none" }} />
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
         {showCurrPicker && <CurrencyPicker value={currency} onSelect={cur => { setCurrency(cur); setShowCurrPicker(false); }} onClose={() => setShowCurrPicker(false)} />}
       </div>
@@ -555,63 +587,17 @@ export default function SettingsSection() {
   if (screen === "shared-ledger") {
     return (
       <Modal title="Shared Ledger" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done">
-        {sharedLedger?.id ? (
-          <>
-            <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{sharedLedger.name}</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 12 }}>
-                Role: {sharedLedger.role === "owner" ? "Owner" : "Member"} · Invite Code: {sharedLedger.inviteCode || "--"}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                Everyone in this ledger shares the same income, expenses, invoices, customers, and dashboard.
-              </div>
-            </div>
-
-            <div className="section-label">Members</div>
-            <div className="card" style={{ marginBottom: 16 }}>
-              {(sharedLedger.members || []).map(member => (
-                <div key={member.userId} className="card-row">
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Avatar name={member.name || member.email || "?"} size={36} fontSize={13} />
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{member.name || member.email || "Member"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{member.role} · {member.email || "No email"}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {sharedLedger.role === "owner" && (
-              <button className="btn-secondary" style={{ width: "100%", marginBottom: 12 }} onClick={handleRefreshInvite}>
-                Refresh Invite Code
-              </button>
-            )}
-            <button className="btn-secondary" style={{ width: "100%", color: "var(--danger)", borderColor: "var(--danger)44" }} onClick={handleLeaveSharedLedger}>
-              {sharedLedger.role === "owner" ? "Owner cannot leave yet" : "Leave Shared Ledger"}
-            </button>
-          </>
-        ) : (
-          <>
-            <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
-              <Field label="Create Ledger Name" hint="Use this if you want to share one business ledger with multiple people.">
-                <Input placeholder="e.g. Acme Team Ledger" value={sharedLedgerForm.name} onChange={e => setSharedLedgerForm(current => ({ ...current, name: e.target.value }))} />
-              </Field>
-              <button className="btn-primary" style={{ width: "100%" }} onClick={handleCreateSharedLedger} disabled={!sharedLedgerForm.name.trim()}>
-                Create Shared Ledger
-              </button>
-            </div>
-
-            <div className="card" style={{ padding: "16px" }}>
-              <Field label="Join With Invite Code" hint="Ask the ledger owner for the code shown in their shared ledger settings.">
-                <Input placeholder="Enter invite code" value={sharedLedgerForm.code} onChange={e => setSharedLedgerForm(current => ({ ...current, code: e.target.value.toUpperCase() }))} />
-              </Field>
-              <button className="btn-secondary" style={{ width: "100%" }} onClick={handleJoinSharedLedger} disabled={!sharedLedgerForm.code.trim()}>
-                Join Shared Ledger
-              </button>
-            </div>
-          </>
-        )}
+        <div className="card" style={{ padding: 18, marginBottom: 16, opacity: 0.76 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Shared ledger is coming soon</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            We are still building collaborative books, team invites, and shared business access. This feature is visible for roadmap clarity, but it is not live for customers yet.
+          </div>
+        </div>
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>
+            For now, EasyKhata focuses on single-user bookkeeping, invoicing, reports, and alerts. Shared ledger and Business collaboration will be enabled in a future release.
+          </div>
+        </div>
       </Modal>
     );
   }
@@ -687,20 +673,23 @@ export default function SettingsSection() {
           <Field label="Plan" required hint="Choose the plan you want admin to activate after verifying your payment.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
-                [PLANS.PRO, "Pro"],
-                [PLANS.BUSINESS, "Business"]
-              ].map(([value, label]) => (
+                [PLANS.PRO, "Pro", false],
+                [PLANS.BUSINESS, "Business (Coming Soon)", true]
+              ].map(([value, label, disabled]) => (
                 <button
                   key={value}
                   type="button"
                   className="btn-secondary"
-                  onClick={() => setPlanRequestForm(current => ({ ...current, targetPlan: value }))}
+                  onClick={() => !disabled && setPlanRequestForm(current => ({ ...current, targetPlan: value }))}
                   style={{
                     padding: "12px 14px",
-                    background: planRequestForm.targetPlan === value ? "var(--surface-pop)" : "var(--surface-high)",
-                    borderColor: planRequestForm.targetPlan === value ? "var(--accent)" : "var(--border)",
-                    color: planRequestForm.targetPlan === value ? "var(--text)" : "var(--text-sec)"
+                    background: planRequestForm.targetPlan === value && !disabled ? "var(--surface-pop)" : "var(--surface-high)",
+                    borderColor: planRequestForm.targetPlan === value && !disabled ? "var(--accent)" : "var(--border)",
+                    color: disabled ? "var(--text-dim)" : planRequestForm.targetPlan === value ? "var(--text)" : "var(--text-sec)",
+                    opacity: disabled ? 0.55 : 1,
+                    cursor: disabled ? "not-allowed" : "pointer"
                   }}
+                  disabled={disabled}
                 >
                   {label}
                 </button>

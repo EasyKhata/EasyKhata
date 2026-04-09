@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
 import { Modal, MonthNav } from "../components/UI";
+import BrandLogo, { BrandMark } from "../components/BrandLogo";
 import Dashboard from "../sections/Dashboard";
 import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
@@ -116,7 +117,9 @@ export default function MainApp() {
         <span style={{ color: "var(--text)" }}>
           {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
         </span>
-        <span style={{ fontFamily: "var(--serif)", fontSize: 15, color: activeColor, letterSpacing: 0.5 }}>Ledger</span>
+        <div style={{ transform: "scale(0.86)", transformOrigin: "center", opacity: 0.98 }}>
+          <BrandLogo compact showTagline={false} />
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
             onClick={() => setShowReminders(true)}
@@ -135,8 +138,16 @@ export default function MainApp() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 18px 12px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 26, color: "var(--text)" }}>
-          {TABS.find(item => item.id === tab)?.label}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <BrandMark size={32} />
+          <div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
+              {TABS.find(item => item.id === tab)?.label}
+            </div>
+            <div style={{ fontSize: 11, color: activeColor, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", marginTop: 4 }}>
+              EasyKhata
+            </div>
+          </div>
         </div>
         {tab !== "settings" && <MonthNav year={year} month={month} onChange={(nextYear, nextMonth) => { setYear(nextYear); setMonth(nextMonth); }} />}
         {tab === "settings" && (

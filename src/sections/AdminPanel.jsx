@@ -259,7 +259,7 @@ export default function AdminPanel() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
                   <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
-                    {PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} {request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}
+                    {request.requestedPlan === PLANS.BUSINESS ? "Business (Coming Soon)" : `${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
                   </span>
                   <span
                     className="pill"
@@ -392,7 +392,7 @@ export default function AdminPanel() {
                     >
                       <option value={PLANS.FREE}>Free</option>
                       <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.BUSINESS}>Business</option>
+                      <option value={PLANS.BUSINESS}>Business (Internal)</option>
                     </select>
                     <select
                       className="input-field"

@@ -26,10 +26,10 @@ export const PAYMENT_REQUEST_STATUS = {
 };
 
 export const UPI_CONFIG = {
-  payeeName: "Ledger App",
+  payeeName: "EasyKhata",
   upiId: "yourupi@bank",
-  monthlyAmount: 299,
-  yearlyAmount: 2999
+  monthlyAmount: 99,
+  yearlyAmount: 999
 };
 
 export const PLAN_LABELS = {
@@ -116,7 +116,7 @@ export function canUseFeature(user, feature, usage = {}) {
     case "advancedInvoice":
       return plan === PLANS.PRO || plan === PLANS.BUSINESS;
     case "sharedLedger":
-      return plan === PLANS.BUSINESS;
+      return false;
     default:
       return true;
   }
@@ -161,8 +161,8 @@ export function getUpgradeCopy(feature) {
       };
     case "sharedLedger":
       return {
-        title: "Shared ledger is part of Business",
-        message: "Upgrade to Business when you are ready to collaborate with a team on one ledger."
+        title: "Shared ledger is coming soon",
+        message: "Shared ledger and team collaboration are planned for a future release."
       };
     default:
       return {

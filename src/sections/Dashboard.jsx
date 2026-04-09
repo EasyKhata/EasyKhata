@@ -3,7 +3,7 @@ import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, ProgressBar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
 import { calculateDashboard, getInvoiceStatusColor, getInvoiceStatusLabel } from "../utils/analytics";
 import { useAuth } from "../context/AuthContext";
-import { canUseFeature } from "../utils/subscription";
+import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan } from "../utils/subscription";
 
 export default function Dashboard({ year, month, onNav }) {
   const data = useData();
@@ -16,6 +16,8 @@ export default function Dashboard({ year, month, onNav }) {
 
   const stats = calculateDashboard(data, year, month);
   const showAdvanced = canUseFeature(user, "smartDashboard");
+  const currentPlan = getUserPlan(user);
+  const isTrial = user?.subscriptionStatus === "trial";
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of income this month.";
@@ -42,6 +44,41 @@ export default function Dashboard({ year, month, onNav }) {
       </div>
 
       <div style={{ padding: "20px 18px 0" }}>
+        {(currentPlan === PLANS.FREE || isTrial) && (
+          <div style={{ marginBottom: 22 }}>
+            <div className="section-label">Subscription</div>
+            <div className="card" style={{ padding: "16px 18px", borderColor: currentPlan === PLANS.FREE ? "var(--gold)33" : "var(--accent)33" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
+                    {currentPlan === PLANS.FREE ? "Upgrade unlocks the full business toolkit" : "Your Pro trial is active"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginTop: 6 }}>
+                    {currentPlan === PLANS.FREE
+                      ? "Free users get basic bookkeeping. Pro adds reports, PDF exports, smart alerts, backup tools, and advanced business insights."
+                      : `You can currently use reports, PDF exports, alerts, advanced dashboard insights, and backups.${user?.subscriptionEndsAt ? ` Trial ends on ${formatSubscriptionDate(user.subscriptionEndsAt)}.` : ""}`}
+                  </div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
+                  {currentPlan === PLANS.FREE ? "Rs 99/mo" : "Pro Trial"}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  "PDF invoices and reports",
+                  "Smart alerts and reminders",
+                  "Advanced dashboard insights",
+                  "Backup import and export"
+                ].map(item => (
+                  <div key={item} style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
           <Tile label="Income" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub="Manual + invoice earnings" onClick={() => onNav("income")} />
           <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />

@@ -13,6 +13,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
+import { getTrialEndDate } from "../utils/subscription";
 
 const AuthContext = createContext();
 
@@ -35,9 +36,9 @@ export function AuthProvider({ children }) {
         email: baseEmail,
         phone: basePhone,
         role: "user",
-        plan: "free",
-        subscriptionStatus: "active",
-        subscriptionEndsAt: "",
+        plan: "pro",
+        subscriptionStatus: "trial",
+        subscriptionEndsAt: getTrialEndDate(),
         blocked: false,
         sharedLedgerId: "",
         sharedLedgerRole: "",
@@ -179,7 +180,7 @@ export function AuthProvider({ children }) {
 
       return {
         success: true,
-        message: "Your account is ready. Please verify your email before signing in."
+        message: "Your account is ready. Please verify your email before signing in. Your free Pro trial will begin on first login."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {

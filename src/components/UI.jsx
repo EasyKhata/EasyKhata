@@ -77,10 +77,10 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
       <div className="modal-surface">
         <div className="modal-header">
-          <button onClick={onClose} className="btn-secondary" style={{ padding: "9px 16px", fontSize: 14 }}>
+          <button onClick={onClose} className="btn-secondary" style={{ padding: "8px 14px", fontSize: 13 }}>
             x Cancel
           </button>
-          <span style={{ fontFamily: "var(--serif)", fontSize: 19, color: "var(--text)", textAlign: "center" }}>{title}</span>
+          <span style={{ fontFamily: "var(--serif)", fontSize: 17, color: "var(--text)", textAlign: "center" }}>{title}</span>
           <button
             onClick={() => canSave && onSave()}
             disabled={!canSave}
@@ -88,8 +88,8 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
               background: canSave ? btnBg : "var(--surface-high)",
               border: "none",
               borderRadius: 12,
-              padding: "9px 18px",
-              fontSize: 14,
+              padding: "8px 16px",
+              fontSize: 13,
               fontWeight: 700,
               color: canSave ? "#0C0C10" : "var(--text-dim)",
               cursor: canSave ? "pointer" : "not-allowed",
@@ -110,10 +110,10 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
 
 export function Field({ label, hint, children, required }) {
   return (
-    <div style={{ marginBottom: 18 }}>
+    <div style={{ marginBottom: 14 }}>
       <label
         style={{
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: 700,
           color: "var(--text-sec)",
           textTransform: "uppercase",
@@ -126,7 +126,7 @@ export function Field({ label, hint, children, required }) {
         {required && <span style={{ color: "var(--danger)" }}> *</span>}
       </label>
       {children}
-      {hint && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
     </div>
   );
 }
@@ -136,7 +136,7 @@ export function Input({ style, ...props }) {
 }
 
 export function Textarea({ style, ...props }) {
-  return <textarea className="input-field" style={{ minHeight: 88, resize: "vertical", ...style }} {...props} />;
+  return <textarea className="input-field" style={{ minHeight: 76, resize: "vertical", ...style }} {...props} />;
 }
 
 export function Select({ style, children, ...props }) {
