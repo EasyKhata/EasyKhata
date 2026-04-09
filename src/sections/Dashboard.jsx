@@ -806,7 +806,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
               phone: accountInfo.phone || "",
               address: accountInfo.address || "",
               gstin: accountInfo.gstin || "",
-              showHSN: Boolean(accountInfo.showHSN)
+              showHSN: Boolean(accountInfo.showHSN),
+              organizationType: accountInfo.organizationType || user?.organizationType,
+              account: {
+                name: accountInfo.name || "",
+                email: accountInfo.email || "",
+                phone: accountInfo.phone || "",
+                address: accountInfo.address || "",
+                gstin: accountInfo.gstin || "",
+                showHSN: Boolean(accountInfo.showHSN),
+                organizationType: accountInfo.organizationType || user?.organizationType
+              }
             });
           } catch (err) {
             console.error("Account update error:", err);

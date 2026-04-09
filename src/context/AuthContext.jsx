@@ -14,6 +14,7 @@ import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
 import { PLANS, SUBSCRIPTION_STATUS, getTrialEndDate } from "../utils/subscription";
+import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
 const AuthContext = createContext();
 
@@ -29,12 +30,14 @@ export function AuthProvider({ children }) {
     const baseName = profileOverrides.name || existing?.name || firebaseUser.displayName || "";
     const baseEmail = profileOverrides.email || existing?.email || firebaseUser.email || "";
     const basePhone = profileOverrides.phone || existing?.phone || "";
+    const baseOrganizationType = getOrgType(profileOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
 
     if (!snap.exists()) {
       await setDoc(userRef, {
         name: baseName,
         email: baseEmail,
         phone: basePhone,
+        organizationType: baseOrganizationType,
         role: "user",
         plan: PLANS.FREE,
         subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
@@ -55,7 +58,8 @@ export function AuthProvider({ children }) {
           phone: basePhone,
           address: "",
           gstin: "",
-          showHSN: false
+          showHSN: false,
+          organizationType: baseOrganizationType
         },
         currency: {
           code: "INR",
@@ -71,6 +75,8 @@ export function AuthProvider({ children }) {
     if (!existing?.name && baseName) updates.name = baseName;
     if (!existing?.email && baseEmail) updates.email = baseEmail;
     if (!existing?.phone && basePhone) updates.phone = basePhone;
+    if (!existing?.organizationType) updates.organizationType = baseOrganizationType;
+    if (!existing?.account?.organizationType) updates.account = { ...(existing?.account || {}), organizationType: baseOrganizationType };
 
     if (Object.keys(updates).length > 0) {
       await updateDoc(userRef, updates);
@@ -102,6 +108,7 @@ export function AuthProvider({ children }) {
       email: profile?.email || firebaseUser.email || "",
       phone: profile?.phone || "",
       role: profile?.role || "user",
+      organizationType: getOrgType(profile?.organizationType || profile?.account?.organizationType),
       plan: profile?.plan || PLANS.FREE,
       subscriptionStatus: profile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE,
       subscriptionEndsAt: profile?.subscriptionEndsAt || "",
@@ -181,12 +188,12 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function register(name, email, phone, password) {
+  async function register(name, email, phone, password, organizationType = ORG_TYPES.SMALL_BUSINESS) {
     registrationInProgressRef.current = true;
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(userCred.user);
-      await ensureUserProfile(userCred.user, { name, email, phone });
+      await ensureUserProfile(userCred.user, { name, email, phone, organizationType });
       await signOut(auth);
       clearCurrentUser();
 

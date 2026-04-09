@@ -1,27 +1,78 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, Toggle, FAB, DeleteBtn, fmtMoney, fmtDate, monthKey, MONTHS, ProgressBar, EmptyState, SectionSkeleton, UpgradeModal } from "../components/UI";
+import {
+  Modal,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Toggle,
+  FAB,
+  DeleteBtn,
+  fmtMoney,
+  fmtDate,
+  monthKey,
+  MONTHS,
+  ProgressBar,
+  EmptyState,
+  SectionSkeleton,
+  UpgradeModal
+} from "../components/UI";
 import Collapsible from "../components/Collapsible";
 import { calculateDashboard } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { useAuth } from "../context/AuthContext";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
+import { getOrgConfig } from "../utils/orgTypes";
 
 const CATS = ["Operations", "Tools", "Marketing", "Payroll", "Utilities", "Travel", "Other"];
 
-const blankForm = (year, month) => ({
-  label: "",
-  amount: "",
-  category: "Operations",
-  recurring: false,
-  date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
-  endDate: "",
-  note: ""
-});
+function buildBlankForm(year, month, config) {
+  const base = {
+    label: "",
+    amount: "",
+    category: "Operations",
+    recurring: false,
+    date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+    endDate: "",
+    note: ""
+  };
+  (config.expenseFields || []).forEach(field => {
+    base[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
+  });
+  return base;
+}
 
-export default function ExpensesSection({ year, month }) {
+function renderDynamicField(field, value, onChange) {
+  const commonProps = {
+    value: value || "",
+    onChange: event => onChange(event.target.value),
+    placeholder: field.placeholder || ""
+  };
+
+  if (field.type === "select") {
+    return (
+      <Select {...commonProps}>
+        {(field.options || []).map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "textarea") {
+    return <Textarea {...commonProps} />;
+  }
+
+  return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
+}
+
+export default function ExpensesSection({ year, month, orgType }) {
   const d = useData();
   const { user } = useAuth();
+  const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
@@ -29,7 +80,7 @@ export default function ExpensesSection({ year, month }) {
   const [editId, setEditId] = useState(null);
   const [formError, setFormError] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
-  const [form, setForm] = useState(blankForm(year, month));
+  const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [budgetDraft, setBudgetDraft] = useState(() =>
     CATS.reduce((map, category) => ({ ...map, [category]: String(d.budgets?.[category] || "") }), {})
   );
@@ -60,7 +111,7 @@ export default function ExpensesSection({ year, month }) {
 
   function openNew() {
     setEditId(null);
-    setForm(blankForm(year, month));
+    setForm(buildBlankForm(year, month, config));
     setFormError("");
     setShowForm(true);
   }
@@ -75,16 +126,19 @@ export default function ExpensesSection({ year, month }) {
   }
 
   function openEdit(expense) {
-    setEditId(expense.id);
-    setForm({
-      label: expense.label || "",
-      amount: String(expense.amount ?? ""),
-      category: expense.category || "Operations",
-      recurring: Boolean(expense.recurring),
-      date: expense.date || `${year}-${String(month + 1).padStart(2, "0")}-01`,
-      endDate: expense.endDate || "",
-      note: expense.note || ""
+    const next = buildBlankForm(year, month, config);
+    next.label = expense.label || "";
+    next.amount = String(expense.amount ?? "");
+    next.category = expense.category || "Operations";
+    next.recurring = Boolean(expense.recurring);
+    next.date = expense.date || next.date;
+    next.endDate = expense.endDate || "";
+    next.note = expense.note || "";
+    (config.expenseFields || []).forEach(field => {
+      next[field.key] = expense[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
+    setEditId(expense.id);
+    setForm(next);
     setFormError("");
     setShowForm(true);
   }
@@ -93,7 +147,7 @@ export default function ExpensesSection({ year, month }) {
     setEditId(null);
     setShowForm(false);
     setFormError("");
-    setForm(blankForm(year, month));
+    setForm(buildBlankForm(year, month, config));
   }
 
   function saveBudgets() {
@@ -120,13 +174,13 @@ export default function ExpensesSection({ year, month }) {
 
   function validateForm() {
     if (!hasMinLength(form.label, 2)) {
-      return "Add a short expense title so it is easy to identify later.";
+      return `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
     }
     if (!isPositiveAmount(form.amount)) {
       return "Enter an amount greater than 0.";
     }
     if (!isValidDateValue(form.date)) {
-      return "Choose the expense date.";
+      return `Choose the ${config.expensesEntryLabel.toLowerCase()} date.`;
     }
     if (form.recurring && form.endDate && !isValidDateValue(form.endDate)) {
       return "Choose a valid recurring end date or leave it empty.";
@@ -153,6 +207,10 @@ export default function ExpensesSection({ year, month }) {
       recurring: form.recurring
     };
 
+    (config.expenseFields || []).forEach(field => {
+      payload[field.key] = String(form[field.key] || "").trim();
+    });
+
     if (form.recurring) {
       payload.startMonth = form.date.slice(0, 7);
       payload.endDate = form.endDate || "";
@@ -169,19 +227,29 @@ export default function ExpensesSection({ year, month }) {
     closeForm();
   }
 
-  const ExpRow = ({ expense }) => (
+  function expenseMeta(expense) {
+    const extras = (config.expenseFields || [])
+      .map(field => expense[field.key])
+      .filter(Boolean)
+      .join(" - ");
+    const bits = [
+      expense.category,
+      expense.date ? fmtDate(expense.date) : "",
+      expense.recurring && expense.endDate ? `ends ${fmtDate(expense.endDate)}` : "",
+      extras,
+      expense.note || ""
+    ].filter(Boolean);
+    return bits.join(" - ");
+  }
+
+  const ExpenseRow = ({ expense }) => (
     <div className="card-row">
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{expense.label}</span>
           {expense.recurring && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>Recurring</span>}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          {expense.category}
-          {expense.date ? ` - ${fmtDate(expense.date)}` : ""}
-          {expense.recurring && expense.endDate ? ` - ends ${fmtDate(expense.endDate)}` : ""}
-          {expense.note ? ` - ${expense.note}` : ""}
-        </div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{expenseMeta(expense)}</div>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
@@ -194,7 +262,9 @@ export default function ExpensesSection({ year, month }) {
   return (
     <div style={{ paddingBottom: 100 }}>
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Total Expenses - {MONTHS[month]} {year}</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+          Total {config.expensesLabel} - {MONTHS[month]} {year}
+        </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--danger)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>{budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month</div>
       </div>
@@ -226,29 +296,23 @@ export default function ExpensesSection({ year, month }) {
         </div>
 
         {recurring.length > 0 && (
-          <Collapsible 
-            title="Recurring Expenses" 
-            icon="🔄" 
-            color="var(--danger)"
-            count={recurring.length}
-            defaultOpen={true}
-          >
-            <div className="card">{recurring.map(expense => <ExpRow key={expense.id} expense={expense} />)}</div>
+          <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
+            <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
           </Collapsible>
         )}
 
-        <Collapsible 
-          title="One-Time Expenses" 
-          icon="📌" 
-          color="var(--danger)"
-          count={oneTime.length}
-          defaultOpen={oneTime.length > 0}
-        >
+        <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
           <div className="card">
             {oneTime.length === 0 ? (
-              <EmptyState title="No one-time expenses yet" message="Add purchases, bills, or travel costs to keep this month accurate." actionLabel="Add Expense" onAction={openNew} accentColor="var(--danger)" />
+              <EmptyState
+                title={`No ${config.expensesLabel.toLowerCase()} yet`}
+                message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                actionLabel={config.expensesActionLabel}
+                onAction={openNew}
+                accentColor="var(--danger)"
+              />
             ) : (
-              oneTime.map(expense => <ExpRow key={expense.id} expense={expense} />)
+              oneTime.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
             )}
           </div>
         </Collapsible>
@@ -257,7 +321,14 @@ export default function ExpensesSection({ year, month }) {
       <FAB bg="var(--danger)" shadow="rgba(255,110,110,0.35)" onClick={openNew} />
 
       {showForm && (
-        <Modal title={editId ? "Edit Expense" : "Add Expense"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!form.label.trim() && Number(form.amount) > 0} accentColor="var(--danger)">
+        <Modal
+          title={editId ? `Edit ${config.expensesEntryLabel}` : config.expensesActionLabel}
+          onClose={closeForm}
+          onSave={save}
+          saveLabel={editId ? "Update" : "Save"}
+          canSave={!!form.label.trim() && Number(form.amount) > 0}
+          accentColor="var(--danger)"
+        >
           {formError && (
             <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
               {formError}
@@ -265,33 +336,54 @@ export default function ExpensesSection({ year, month }) {
           )}
 
           <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
-            <Field label="Description" required><Input placeholder="e.g. Office rent" value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} /></Field>
-            <Field label={`Amount (${sym})`} required hint="Enter how much you spent."><Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} /></Field>
-            <Field label="Category"><Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>{CATS.map(category => <option key={category}>{category}</option>)}</Select></Field>
-            <Field label="Expense Date" required><Input type="date" value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} /></Field>
+            <Field label="Description" required>
+              <Input placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} />
+            </Field>
+            <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`}>
+              <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
+            </Field>
+            <Field label="Category">
+              <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>
+                {CATS.map(category => <option key={category}>{category}</option>)}
+              </Select>
+            </Field>
+            <Field label="Expense Date" required>
+              <Input type="date" value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} />
+            </Field>
+            {(config.expenseFields || []).map(field => (
+              <Field key={field.key} label={field.label}>
+                {renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
+              </Field>
+            ))}
           </div>
 
           <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
             <Field label="Type">
-              <Toggle value={form.recurring ? "recurring" : "once"} onChange={value => setForm(current => ({ ...current, recurring: value === "recurring", endDate: value === "recurring" ? current.endDate : "" }))} options={[{ value: "once", label: "One-Time" }, { value: "recurring", label: "Recurring Monthly" }]} />
+              <Toggle
+                value={form.recurring ? "recurring" : "once"}
+                onChange={value => setForm(current => ({ ...current, recurring: value === "recurring", endDate: value === "recurring" ? current.endDate : "" }))}
+                options={[{ value: "once", label: "One-Time" }, { value: "recurring", label: "Recurring Monthly" }]}
+              />
             </Field>
             {form.recurring && (
               <>
                 <div style={{ background: "var(--blue-deep)", border: "1px solid var(--blue)33", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "var(--blue)", marginBottom: 16 }}>
-                  This expense will repeat every month starting from {fmtDate(form.date)}.
+                  This {config.expensesEntryLabel.toLowerCase()} will repeat every month starting from {fmtDate(form.date)}.
                 </div>
-                <Field label="Recurring End Date" hint="Optional. Leave empty if this expense should continue until you stop it manually.">
+                <Field label="Recurring End Date" hint="Optional. Leave empty if this should continue until you stop it manually.">
                   <Input type="date" value={form.endDate} min={form.date} onChange={e => setForm(current => ({ ...current, endDate: e.target.value }))} />
                 </Field>
               </>
             )}
-            <Field label="Note"><Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} /></Field>
+            <Field label="Note">
+              <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
+            </Field>
           </div>
         </Modal>
       )}
 
       {showBudgetForm && (
-        <Modal title="Expense Budgets" onClose={() => setShowBudgetForm(false)} onSave={saveBudgets} saveLabel="Save" canSave={true} accentColor="var(--danger)">
+        <Modal title={`${config.expensesLabel} Budgets`} onClose={() => setShowBudgetForm(false)} onSave={saveBudgets} saveLabel="Save" canSave accentColor="var(--danger)">
           {CATS.map(category => (
             <Field key={category} label={category}>
               <Input type="number" min="0" step="0.01" placeholder="0.00" value={budgetDraft[category] || ""} onChange={e => setBudgetDraft(current => ({ ...current, [category]: e.target.value }))} />

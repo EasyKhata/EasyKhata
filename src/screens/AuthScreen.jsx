@@ -1,15 +1,17 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Field, Input } from "../components/UI";
+import { Field, Input, Select } from "../components/UI";
 import { isStrongPassword, isValidEmail, isValidName, isValidPhone, normalizeEmail, sanitizePhone } from "../utils/validator";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
+import { ORG_TYPE_OPTIONS, ORG_TYPES } from "../utils/orgTypes";
 
 export default function AuthScreen() {
   const { login, register, forgotPassword, resendVerification } = useAuth();
   const [screen, setScreen] = useState("login");
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
+  const [organizationType, setOrganizationType] = useState(ORG_TYPES.SMALL_BUSINESS);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -99,7 +101,7 @@ export default function AuthScreen() {
     }
 
     setLoading(true);
-    const res = await register(cleanName, cleanEmail, cleanPhone, password);
+    const res = await register(cleanName, cleanEmail, cleanPhone, password, organizationType);
     setLoading(false);
 
     if (res?.error) {
@@ -219,6 +221,15 @@ export default function AuthScreen() {
             </Field>
             <Field label="Phone Number" required hint="Used for account recovery and business profile.">
               <Input type="tel" autoComplete="tel" placeholder="e.g. 9876543210" value={phone} onChange={e => setPhone(e.target.value)} />
+            </Field>
+            <Field label="What Are You Using EasyKhata For?" required hint="This helps us tailor labels, fields, and sections for your workflow.">
+              <Select value={organizationType} onChange={e => setOrganizationType(e.target.value)}>
+                {ORG_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
             </Field>
             
             <Field label="Password" required hint={showPasswordHint ? "At least 6 characters. Add numbers or symbols for extra security." : 
