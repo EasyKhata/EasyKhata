@@ -97,6 +97,18 @@ export default function ExpensesSection({ year, month }) {
   }
 
   function saveBudgets() {
+    const invalidBudget = CATS.find(category => {
+      const raw = budgetDraft[category];
+      if (raw === "" || raw == null) return false;
+      const amount = Number(raw);
+      return !Number.isFinite(amount) || amount < 0;
+    });
+
+    if (invalidBudget) {
+      alert(`Please enter a valid budget amount for ${invalidBudget}.`);
+      return;
+    }
+
     const nextBudgets = CATS.reduce((map, category) => {
       const amount = Number(budgetDraft[category]) || 0;
       if (amount > 0) map[category] = amount;

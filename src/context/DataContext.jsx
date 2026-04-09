@@ -55,6 +55,28 @@ function normalizeAppData(source = {}) {
   };
 }
 
+function sanitizeForFirestore(value) {
+  if (value === undefined) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(item => sanitizeForFirestore(item)).filter(item => item !== undefined);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.entries(value).reduce((acc, [key, entry]) => {
+      const cleaned = sanitizeForFirestore(entry);
+      if (cleaned !== undefined) {
+        acc[key] = cleaned;
+      }
+      return acc;
+    }, {});
+  }
+
+  return value;
+}
+
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
@@ -131,7 +153,7 @@ export function DataProvider({ children }) {
           notificationPrefs: next.notificationPrefs,
           currency: next.currency
         };
-        setDoc(doc(db, targetCollection, targetId), payload, { merge: true });
+        setDoc(doc(db, targetCollection, targetId), sanitizeForFirestore(payload), { merge: true });
         return next;
       });
     },

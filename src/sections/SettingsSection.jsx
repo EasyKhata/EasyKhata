@@ -8,7 +8,18 @@ import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMo
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport } from "../utils/reportGen";
-import { isStrongPassword, isValidEmail, isValidPhone } from "../utils/validator";
+import {
+  isOptionalEmail,
+  isOptionalPhone,
+  isStrongPassword,
+  isValidEmail,
+  isValidGstin,
+  isValidName,
+  isValidPhone,
+  isValidTransactionId,
+  normalizeEmail,
+  sanitizePhone
+} from "../utils/validator";
 import {
   BILLING_CYCLES,
   PAYMENT_REQUEST_STATUS,
@@ -92,11 +103,13 @@ export default function SettingsSection() {
   }, [notificationPrefs]);
 
   const saveAcc = async () => {
-    const cleanEmail = (accForm.email || "").trim().toLowerCase();
-    const cleanPhone = String(accForm.phone || "").trim();
+    const cleanEmail = normalizeEmail(accForm.email);
+    const cleanPhone = sanitizePhone(accForm.phone);
+    const cleanName = String(accForm.name || "").trim();
+    const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
 
-    if (!accForm.name?.trim()) {
-      alert("Please enter your name.");
+    if (!isValidName(cleanName)) {
+      alert("Please enter your full name.");
       return;
     }
     if (!isValidEmail(cleanEmail)) {
@@ -107,13 +120,17 @@ export default function SettingsSection() {
       alert("Please enter a valid phone number with at least 10 digits.");
       return;
     }
+    if (!isValidGstin(cleanGstin)) {
+      alert("Please enter a valid GSTIN or leave it empty.");
+      return;
+    }
 
     const res = await updateProfile({
-      name: accForm.name || "",
+      name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
-      address: accForm.address || "",
-      gstin: accForm.gstin || "",
+      address: String(accForm.address || "").trim(),
+      gstin: cleanGstin,
       showHSN: Boolean(accForm.showHSN)
     });
 
@@ -145,13 +162,43 @@ export default function SettingsSection() {
   }
 
   function saveCust() {
-    if (!custForm?.name.trim()) return;
+    const cleanName = String(custForm?.name || "").trim();
+    const cleanEmail = normalizeEmail(custForm?.email);
+    const cleanPhone = sanitizePhone(custForm?.phone);
+    const cleanAddress = String(custForm?.address || "").trim();
+    const cleanGstin = String(custForm?.gstin || "").trim().toUpperCase();
+
+    if (!isValidName(cleanName)) {
+      alert("Please enter the customer name.");
+      return;
+    }
+    if (!isOptionalEmail(cleanEmail)) {
+      alert("Please enter a valid customer email or leave it empty.");
+      return;
+    }
+    if (!isOptionalPhone(cleanPhone)) {
+      alert("Please enter a valid customer phone number or leave it empty.");
+      return;
+    }
+    if (!isValidGstin(cleanGstin)) {
+      alert("Please enter a valid GSTIN or leave it empty.");
+      return;
+    }
     if (!editCust && !canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
       setUpgradeInfo(getUpgradeCopy("customerCreate"));
       return;
     }
-    if (editCust) updateCustomer({ ...custForm, id: editCust.id });
-    else addCustomer(custForm);
+
+    const payload = {
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      address: cleanAddress,
+      gstin: cleanGstin
+    };
+
+    if (editCust) updateCustomer({ ...payload, id: editCust.id });
+    else addCustomer(payload);
     setScreen("customers");
   }
 
@@ -187,7 +234,11 @@ export default function SettingsSection() {
   }
 
   function saveGoalSettings() {
-    const amount = Number(goalForm.monthlySavings) || 0;
+    const amount = Number(goalForm.monthlySavings);
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert("Please enter a valid savings goal amount.");
+      return;
+    }
     saveGoals({ monthlySavings: amount });
     alert(amount > 0 ? "Monthly savings goal updated." : "Monthly savings goal cleared.");
     setScreen("main");
@@ -321,9 +372,10 @@ export default function SettingsSection() {
     const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
     const cleanTransactionId = planRequestForm.transactionId.trim();
+    const cleanNote = planRequestForm.note.trim();
 
-    if (!cleanTransactionId) {
-      alert("Please enter the UPI transaction ID or reference number.");
+    if (!isValidTransactionId(cleanTransactionId)) {
+      alert("Please enter a valid UPI transaction ID or reference number.");
       return;
     }
 
@@ -344,7 +396,7 @@ export default function SettingsSection() {
         screenshotStatus: "emailed-separately",
         supportEmail: APP_SUPPORT_EMAIL,
         status: PAYMENT_REQUEST_STATUS.PENDING,
-        note: planRequestForm.note.trim(),
+        note: cleanNote,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
