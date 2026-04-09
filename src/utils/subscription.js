@@ -11,6 +11,26 @@ export const SUBSCRIPTION_STATUS = {
 };
 
 export const DEFAULT_TRIAL_DAYS = 7;
+export const DEFAULT_MONTHLY_DAYS = 30;
+export const DEFAULT_YEARLY_DAYS = 365;
+
+export const BILLING_CYCLES = {
+  MONTHLY: "monthly",
+  YEARLY: "yearly"
+};
+
+export const PAYMENT_REQUEST_STATUS = {
+  PENDING: "pending",
+  APPROVED: "approved",
+  REJECTED: "rejected"
+};
+
+export const UPI_CONFIG = {
+  payeeName: "Ledger App",
+  upiId: "yourupi@bank",
+  monthlyAmount: 299,
+  yearlyAmount: 2999
+};
 
 export const PLAN_LABELS = {
   free: "Free",
@@ -43,6 +63,20 @@ export function formatSubscriptionDate(value) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "";
   return parsed.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function getSubscriptionEndDate(days) {
+  const next = new Date();
+  next.setDate(next.getDate() + days);
+  return next.toISOString();
+}
+
+export function getBillingAmount(cycle) {
+  return cycle === BILLING_CYCLES.YEARLY ? UPI_CONFIG.yearlyAmount : UPI_CONFIG.monthlyAmount;
+}
+
+export function getBillingDuration(cycle) {
+  return cycle === BILLING_CYCLES.YEARLY ? DEFAULT_YEARLY_DAYS : DEFAULT_MONTHLY_DAYS;
 }
 
 export function isTrialActive(user) {

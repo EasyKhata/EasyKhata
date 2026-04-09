@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { doc, getDoc, setDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { db, storage } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
@@ -9,7 +10,18 @@ import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport } from "../utils/reportGen";
 import { isStrongPassword } from "../utils/validator";
-import { canUseFeature, DEFAULT_TRIAL_DAYS, formatSubscriptionDate, getPlanSummary, getUpgradeCopy, PLAN_LABELS, PLANS } from "../utils/subscription";
+import {
+  BILLING_CYCLES,
+  PAYMENT_REQUEST_STATUS,
+  UPI_CONFIG,
+  canUseFeature,
+  formatSubscriptionDate,
+  getBillingAmount,
+  getPlanSummary,
+  getUpgradeCopy,
+  PLAN_LABELS,
+  PLANS
+} from "../utils/subscription";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
@@ -24,11 +36,18 @@ export default function SettingsSection() {
   const [goalForm, setGoalForm] = useState({ monthlySavings: goals?.monthlySavings || "" });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
-  const [planRequestForm, setPlanRequestForm] = useState({ targetPlan: PLANS.PRO, note: "" });
+  const [planRequestForm, setPlanRequestForm] = useState({
+    targetPlan: PLANS.PRO,
+    billingCycle: BILLING_CYCLES.MONTHLY,
+    transactionId: "",
+    note: "",
+    screenshotFile: null
+  });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
   const planSummary = getPlanSummary(user);
 
   const customerInsights = useMemo(
@@ -249,30 +268,64 @@ export default function SettingsSection() {
 
   async function submitPlanRequest() {
     const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
+    const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
+    const cleanTransactionId = planRequestForm.transactionId.trim();
+
+    if (!cleanTransactionId) {
+      alert("Please enter the UPI transaction ID or reference number.");
+      return;
+    }
+
+    if (!planRequestForm.screenshotFile) {
+      alert("Please upload the payment screenshot before sending the request.");
+      return;
+    }
+
+    setSubmittingPayment(true);
     try {
-      await setDoc(doc(db, "plan_requests", user.id), {
+      const safeFileName = `${Date.now()}-${planRequestForm.screenshotFile.name}`.replace(/\s+/g, "-");
+      const screenshotRef = ref(storage, `payment-proofs/${user.id}/${safeFileName}`);
+      await uploadBytes(screenshotRef, planRequestForm.screenshotFile);
+      const screenshotUrl = await getDownloadURL(screenshotRef);
+
+      await setDoc(doc(db, "payment_requests", user.id), {
         userId: user.id,
         userName: user?.name || "",
         userEmail: user?.email || "",
         currentPlan: user?.plan || PLANS.FREE,
         requestedPlan: targetPlan,
-        status: "pending",
-        trialDays: DEFAULT_TRIAL_DAYS,
+        billingCycle,
+        amount: getBillingAmount(billingCycle),
+        paymentMethod: "upi",
+        upiId: UPI_CONFIG.upiId,
+        upiPayeeName: UPI_CONFIG.payeeName,
+        transactionId: cleanTransactionId,
+        screenshotUrl,
+        screenshotName: planRequestForm.screenshotFile.name,
+        status: PAYMENT_REQUEST_STATUS.PENDING,
         note: planRequestForm.note.trim(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
 
-      alert(`Your ${PLAN_LABELS[targetPlan] || "plan"} request has been sent to admin. Trial requests default to ${DEFAULT_TRIAL_DAYS} days unless changed by admin.`);
-      setPlanRequestForm({ targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO, note: "" });
+      alert(`Your payment proof for ${PLAN_LABELS[targetPlan] || "plan"} has been sent to admin for verification.`);
+      setPlanRequestForm({
+        targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
+        billingCycle: BILLING_CYCLES.MONTHLY,
+        transactionId: "",
+        note: "",
+        screenshotFile: null
+      });
       setScreen("main");
     } catch (err) {
-      console.error("Plan request error:", err);
+      console.error("Payment request error:", err);
       if (err?.code === "permission-denied") {
-        alert("Plan requests are blocked by Firestore rules right now. Please allow the plan_requests collection before using this feature.");
+        alert("Payment requests are blocked by Firestore or Storage rules right now. Please allow payment_requests and payment-proofs before using this feature.");
         return;
       }
-      alert(err?.message || "We couldn't send your plan request right now. Please try again.");
+      alert(err?.message || "We couldn't send your payment proof right now. Please try again.");
+    } finally {
+      setSubmittingPayment(false);
     }
   }
 
@@ -309,10 +362,10 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
-              Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, and advanced insights. Business is reserved for bigger collaboration features. Trial access is currently set to {DEFAULT_TRIAL_DAYS} days by default.
+              Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, and advanced insights. Upgrade by paying through UPI and uploading your payment screenshot here for admin verification.
             </div>
             <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
-              Request Plan Upgrade
+              Upgrade via UPI Payment
             </button>
           </div>
         )}
@@ -621,10 +674,17 @@ export default function SettingsSection() {
   }
 
   if (screen === "plan-request") {
+    const amount = getBillingAmount(planRequestForm.billingCycle);
     return (
-      <Modal title="Request Plan Upgrade" onClose={() => setScreen("main")} onSave={submitPlanRequest} saveLabel="Send Request">
+      <Modal
+        title="Upgrade via UPI"
+        onClose={() => setScreen("main")}
+        onSave={submitPlanRequest}
+        saveLabel={submittingPayment ? "Sending..." : "Send Payment Proof"}
+        canSave={!submittingPayment}
+      >
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <Field label="Requested Plan" required hint="Choose the plan you want admin to enable on your account.">
+          <Field label="Plan" required hint="Choose the plan you want admin to activate after verifying your payment.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
                 [PLANS.PRO, "Pro"],
@@ -647,9 +707,56 @@ export default function SettingsSection() {
               ))}
             </div>
           </Field>
-          <Field label="Message to Admin" hint="Optional note like urgent reporting needs, invoice volume, or trial request.">
+          <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {[
+                [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${UPI_CONFIG.monthlyAmount}`],
+                [BILLING_CYCLES.YEARLY, `Yearly - Rs ${UPI_CONFIG.yearlyAmount}`]
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setPlanRequestForm(current => ({ ...current, billingCycle: value }))}
+                  style={{
+                    padding: "12px 14px",
+                    background: planRequestForm.billingCycle === value ? "var(--surface-pop)" : "var(--surface-high)",
+                    borderColor: planRequestForm.billingCycle === value ? "var(--accent)" : "var(--border)",
+                    color: planRequestForm.billingCycle === value ? "var(--text)" : "var(--text-sec)"
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="UPI Payment Details" required hint="Pay the exact amount below and then submit your proof.">
+            <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Payee: {UPI_CONFIG.payeeName}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6 }}>UPI ID: {UPI_CONFIG.upiId}</div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)" }}>Amount to pay: Rs {amount}</div>
+            </div>
+          </Field>
+          <Field label="UPI Transaction ID" required hint="Enter the reference number shown after your payment succeeds.">
+            <Input
+              placeholder="Example: 123456789012"
+              value={planRequestForm.transactionId}
+              onChange={event => setPlanRequestForm(current => ({ ...current, transactionId: event.target.value }))}
+            />
+          </Field>
+          <Field label="Payment Screenshot" required hint="Upload the screenshot showing the successful UPI payment.">
+            <Input
+              type="file"
+              accept="image/*"
+              onChange={event => setPlanRequestForm(current => ({ ...current, screenshotFile: event.target.files?.[0] || null }))}
+            />
+            {planRequestForm.screenshotFile && (
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>{planRequestForm.screenshotFile.name}</div>
+            )}
+          </Field>
+          <Field label="Message to Admin" hint="Optional note like the UPI app used or anything you want admin to know.">
             <Textarea
-              placeholder="Example: I need invoice PDF export and reports for my business this week."
+              placeholder="Example: Paid using PhonePe from my business account."
               value={planRequestForm.note}
               onChange={event => setPlanRequestForm(current => ({ ...current, note: event.target.value }))}
             />
@@ -657,9 +764,9 @@ export default function SettingsSection() {
         </div>
 
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How this works</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How verification works</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Your request goes to admin for approval. If admin enables a trial, the default trial period is {DEFAULT_TRIAL_DAYS} days unless they set a different end date manually in Firebase later.
+            After payment, upload the screenshot and transaction ID here. Admin will verify the proof and then activate your subscription. Access stays pending until approval.
           </div>
         </div>
       </Modal>
