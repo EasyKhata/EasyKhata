@@ -31,6 +31,7 @@ import { hasMinLength, isPositiveAmount, isValidDateValue, isValidGstin } from "
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
+import { getOrgConfig } from "../utils/orgTypes";
 
 function emptyItem() {
   return { id: uid(), desc: "", subDesc: "", hsn: "", qty: 1, rate: "", taxRate: 18 };
@@ -57,9 +58,36 @@ function getTaxBreakdown(invoice) {
   );
 }
 
+function renderDynamicField(field, value, onChange) {
+  const commonProps = {
+    value: value || "",
+    onChange: event => onChange(event.target.value),
+    placeholder: field.placeholder || ""
+  };
+
+  if (field.type === "select") {
+    return (
+      <Select {...commonProps}>
+        {(field.options || []).map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    );
+  }
+
+  if (field.type === "textarea") {
+    return <Textarea {...commonProps} />;
+  }
+
+  return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
+}
+
 export default function InvoicesSection({ year, month }) {
   const d = useData();
   const { user } = useAuth();
+  const config = getOrgConfig(user?.organizationType);
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
@@ -89,6 +117,7 @@ export default function InvoicesSection({ year, month }) {
   }, [isAdmin]);
 
   const blankForm = () => ({
+    ...((config.invoiceFields || []).reduce((acc, field) => ({ ...acc, [field.key]: field.type === "select" ? field.options?.[0] || "" : "" }), {})),
     number: getNextInvoiceNumber(d.invoices),
     customerId: "",
     billTo: { name: "", address: "", gstin: "" },
@@ -204,7 +233,7 @@ export default function InvoicesSection({ year, month }) {
       ? { name: resolvedBillTo.name, address: resolvedBillTo.address }
       : currentForm.shipTo;
 
-    return {
+    const payload = {
       ...currentForm,
       number: String(currentForm.number || "").trim(),
       customer: entity || null,
@@ -219,6 +248,10 @@ export default function InvoicesSection({ year, month }) {
       paidDate: currentForm.status === "paid" ? currentForm.paidDate || currentForm.date : "",
       shipSameAsBill: Boolean(currentForm.shipSameAsBill)
     };
+    (config.invoiceFields || []).forEach(field => {
+      payload[field.key] = String(currentForm[field.key] || "").trim();
+    });
+    return payload;
   }
 
   function saveInv() {
@@ -255,7 +288,7 @@ export default function InvoicesSection({ year, month }) {
       return;
     }
     if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
-      setFormError("Select a customer or enter the bill-to name.");
+      setFormError(`Select a ${config.customerEntryLabel.toLowerCase()} or enter the bill-to name.`);
       return;
     }
     if (!isValidGstin(form.billTo?.gstin)) {
@@ -333,7 +366,7 @@ export default function InvoicesSection({ year, month }) {
     <div style={{ paddingBottom: 100 }}>
         <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            {isAdmin ? "Subscription Invoices" : "Invoice Total"} · {MONTHS[month]} {year}
+            {isAdmin ? "Subscription Invoices" : config.invoicesLabel} · {MONTHS[month]} {year}
           </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--blue)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
@@ -344,7 +377,7 @@ export default function InvoicesSection({ year, month }) {
       <div style={{ padding: "22px 18px 0" }}>
         <div className="card">
           {monthInv.length === 0 ? (
-            <EmptyState title={isAdmin ? "No subscription invoices this month" : "No invoices this month"} message={isAdmin ? "Create invoices for subscription payments." : "Create your first invoice to start tracking revenue, reminders, and customer history."} actionLabel="Create Invoice" onAction={openNew} accentColor="var(--blue)" />
+            <EmptyState title={isAdmin ? "No subscription invoices this month" : `No ${config.invoicesLabel.toLowerCase()} this month`} message={isAdmin ? "Create invoices for subscription payments." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue, reminders, and history.`} actionLabel={config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
           ) : (
             monthInv.map(invoice => (
               <div key={invoice.id} className="card-row" onClick={() => setDetail(invoice)} style={{ cursor: "pointer" }}>
@@ -514,7 +547,7 @@ export default function InvoicesSection({ year, month }) {
         const tax = getTaxBreakdown(previewInvoice);
         const previewTotal = tax.taxable + tax.cgst + tax.sgst + tax.igst;
         return (
-          <Modal title={editInv ? "Edit Invoice" : "New Invoice"} onClose={closeForm} onSave={saveInv} canSave={!!(form.customerId || form.billTo?.name)} accentColor="var(--blue)">
+          <Modal title={editInv ? `Edit ${config.invoiceEntryLabel}` : config.invoiceActionLabel} onClose={closeForm} onSave={saveInv} canSave={!!(form.customerId || form.billTo?.name)} accentColor="var(--blue)">
             {formError && (
               <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
                 {formError}
@@ -525,9 +558,9 @@ export default function InvoicesSection({ year, month }) {
               <Input value={form.number} onChange={event => setForm(current => ({ ...current, number: event.target.value }))} />
             </Field>
 
-            <Field label={isAdmin ? "User" : "Customer"} hint={isAdmin ? "Select a user who made the payment." : "Select an existing customer or fill in bill-to details below."}>
+            <Field label={isAdmin ? "User" : config.customerEntryLabel} hint={isAdmin ? "Select a user who made the payment." : `Select an existing ${config.customerEntryLabel.toLowerCase()} or fill in bill-to details below.`}>
               <Select value={form.customerId} onChange={event => selectCustomer(event.target.value)}>
-                <option value="">{isAdmin ? "-- Select user --" : "-- Select customer --"}</option>
+                <option value="">{isAdmin ? "-- Select user --" : `-- Select ${config.customerEntryLabel.toLowerCase()} --`}</option>
                 {(isAdmin ? users : d.customers).map(entity => (
                   <option key={entity.id} value={entity.id}>{entity.name || entity.email}</option>
                 ))}
@@ -537,7 +570,7 @@ export default function InvoicesSection({ year, month }) {
             {!form.customerId && (
               <>
                 <Field label="Bill To Name" required>
-                  <Input placeholder="Client or company name" value={form.billTo?.name || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } }))} />
+                  <Input placeholder={config.customerNamePlaceholder} value={form.billTo?.name || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } }))} />
                 </Field>
                 <Field label="Bill To Address">
                   <Textarea placeholder="Full billing address" value={form.billTo?.address || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, address: event.target.value } }))} />
@@ -667,6 +700,12 @@ export default function InvoicesSection({ year, month }) {
                 <span style={{ color: "var(--blue)" }}>{fmtMoney(previewTotal, sym)}</span>
               </div>
             </div>
+
+            {(config.invoiceFields || []).map(field => (
+              <Field key={field.key} label={field.label}>
+                {renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
+              </Field>
+            ))}
 
             <Field label="Notes">
               <Textarea placeholder="Any message for the customer" value={form.notes || ""} onChange={event => setForm(current => ({ ...current, notes: event.target.value }))} />

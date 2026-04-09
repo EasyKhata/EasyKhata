@@ -19,6 +19,7 @@ const EMPTY_DATA = {
   expenses: [],
   invoices: [],
   customers: [],
+  orgRecords: {},
   account: null,
   goals: { monthlySavings: 0 },
   budgets: {},
@@ -40,6 +41,7 @@ function normalizeAppData(source = {}) {
     expenses: source.expenses || [],
     invoices: source.invoices || [],
     customers: source.customers || [],
+    orgRecords: source.orgRecords || {},
     goals: source.goals || EMPTY_DATA.goals,
     budgets: source.budgets || EMPTY_DATA.budgets,
     notificationPrefs: { ...EMPTY_DATA.notificationPrefs, ...(source.notificationPrefs || {}) },
@@ -50,7 +52,8 @@ function normalizeAppData(source = {}) {
       phone: source.phone || "",
       address: source.address || "",
       gstin: source.gstin || "",
-      showHSN: source.showHSN || false
+      showHSN: source.showHSN || false,
+      organizationType: source.organizationType || source.account?.organizationType || "small_business"
     }
   };
 }
@@ -147,6 +150,7 @@ export function DataProvider({ children }) {
           expenses: next.expenses,
           invoices: next.invoices,
           customers: next.customers,
+          orgRecords: next.orgRecords,
           account: next.account,
           goals: next.goals,
           budgets: next.budgets,
@@ -168,6 +172,25 @@ export function DataProvider({ children }) {
   const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, { ...c, id: uid() }] }));
   const updateCustomer = c => update(d => ({ ...d, customers: d.customers.map(x => (x.id === c.id ? c : x)) }));
   const removeCustomer = id => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
+  const saveOrgRecords = (key, items) => update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: items } }));
+  const addOrgRecord = (key, record) =>
+    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [{ ...record, id: uid() }, ...(d.orgRecords?.[key] || [])] } }));
+  const updateOrgRecord = (key, record) =>
+    update(d => ({
+      ...d,
+      orgRecords: {
+        ...d.orgRecords,
+        [key]: (d.orgRecords?.[key] || []).map(item => (item.id === record.id ? record : item))
+      }
+    }));
+  const removeOrgRecord = (key, id) =>
+    update(d => ({
+      ...d,
+      orgRecords: {
+        ...d.orgRecords,
+        [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
+      }
+    }));
   const addIncome = i => update(d => ({ ...d, income: [{ ...i, id: uid() }, ...d.income] }));
   const updateIncome = income => update(d => ({ ...d, income: d.income.map(i => (i.id === income.id ? income : i)) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
@@ -370,6 +393,11 @@ export function DataProvider({ children }) {
         addCustomer,
         updateCustomer,
         removeCustomer,
+        orgRecords: data.orgRecords,
+        saveOrgRecords,
+        addOrgRecord,
+        updateOrgRecord,
+        removeOrgRecord,
         income: data.income,
         addIncome,
         updateIncome,

@@ -18,6 +18,7 @@ import {
   saveDismissedReminderIds,
   saveSentBrowserReminderIds
 } from "../utils/reminders";
+import { getOrgConfig } from "../utils/orgTypes";
 
 const now = new Date();
 
@@ -300,13 +301,15 @@ export default function MainApp() {
   }, [dismissedIds, liveReminders, data.notificationPrefs?.browserEnabled, user?.id]);
 
   const isAdmin = user?.role === "admin";
+  const orgConfig = getOrgConfig(user?.organizationType);
+  const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const TABS = [
     { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
     ...(user?.role !== "admin" ? [
-      { id: "income", icon: "↑", label: "Receipts" },
-      { id: "expenses", icon: "↓", label: "Expenses" },
+      { id: "income", icon: "↑", label: orgConfig.incomeLabel },
+      { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
     ] : []),
-    { id: "invoices", icon: "■", label: "Invoices" },
+    ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: orgConfig.invoicesLabel }] : []),
     { id: "settings", icon: "⚙", label: "Settings" }
   ];
 
@@ -333,10 +336,17 @@ export default function MainApp() {
   }
 
   function openReminder(reminder) {
-    setTab(reminder.tab || "dashboard");
+    const nextTab = reminder.tab === "invoices" && hideInvoices ? "income" : reminder.tab || "dashboard";
+    setTab(nextTab);
     dismissReminder(reminder.id);
     setShowReminders(false);
   }
+
+  useEffect(() => {
+    if (hideInvoices && tab === "invoices") {
+      setTab("income");
+    }
+  }, [hideInvoices, tab]);
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
@@ -397,9 +407,9 @@ export default function MainApp() {
 
       <div className="content-scroll">
         {tab === "dashboard" && (isAdmin ? <AdminPanel /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={setTab} />)}
-        {tab === "income" && <IncomeSection year={year} month={month} />}
-        {tab === "expenses" && <ExpensesSection year={year} month={month} />}
-        {tab === "invoices" && <InvoicesSection year={year} month={month} />}
+        {tab === "income" && <IncomeSection year={year} month={month} orgType={user?.organizationType} />}
+        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={user?.organizationType} />}
+        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "settings" && <SettingsSection />}
       </div>
 
@@ -443,3 +453,4 @@ export default function MainApp() {
     </div>
   );
 }
+

@@ -1,19 +1,29 @@
-import React, { useState } from "react";
-import { Modal, Field, Input, Textarea } from "./UI";
+import React, { useEffect, useMemo, useState } from "react";
+import { Field, Input, Select, Textarea } from "./UI";
+import { ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
-export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, user, account, onUpdateAccount }) {
+export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, account, onUpdateAccount }) {
   const [step, setStep] = useState(1);
   const [accountForm, setAccountForm] = useState(
-    account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: false }
+    account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: false, organizationType: getOrgType(user?.organizationType || account?.organizationType) }
   );
 
+  useEffect(() => {
+    setAccountForm(current => ({
+      ...current,
+      organizationType: current.organizationType || getOrgType(user?.organizationType || account?.organizationType)
+    }));
+  }, [user?.organizationType, account?.organizationType]);
+
+  const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
+  const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
   const totalSteps = 4;
   const isLastStep = step === totalSteps;
   const stepTitles = [
-    "Set Your Business Details",
-    "Add Your First Customer",
-    "Create Your First Invoice",
-    "Record Your First Expense"
+    `Set Your ${orgConfig.profileNameLabel}`,
+    `Add Your First ${orgConfig.customerEntryLabel}`,
+    orgConfig.hideInvoices ? `Track Your First ${orgConfig.incomeEntryLabel}` : `Create Your First ${orgConfig.invoiceEntryLabel}`,
+    `Record Your First ${orgConfig.expensesEntryLabel}`
   ];
 
   function handleNext() {
@@ -21,52 +31,61 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
       onComplete();
       return;
     }
-    setStep(step + 1);
+    setStep(current => current + 1);
   }
 
   function handleBack() {
-    if (step > 1) setStep(step - 1);
+    if (step > 1) setStep(current => current - 1);
   }
 
   function saveAccountAndContinue() {
-    if (!accountForm.name.trim()) {
-      alert("Please enter your business name.");
+    if (!String(accountForm.name || "").trim()) {
+      alert(`Please enter your ${orgConfig.profileNameLabel.toLowerCase()}.`);
       return;
     }
-    // Save account info through parent callback
-    if (onUpdateAccount) {
-      onUpdateAccount(accountForm);
-    }
+    onUpdateAccount?.(accountForm);
     handleNext();
   }
 
-  const renderStepContent = () => {
+  function renderStepContent() {
     switch (step) {
       case 1:
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Let's set up your business basics. This information will appear on your invoices and reports.
+              {orgConfig.accountIntro}
             </div>
-            <Field label="Business Name" required>
+            <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EasyKhata.">
+              <Select value={orgType} onChange={e => setAccountForm(current => ({ ...current, organizationType: e.target.value }))}>
+                {ORG_TYPE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div style={{ marginBottom: 16, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {ORG_TYPE_OPTIONS.find(option => option.value === orgType)?.description}
+            </div>
+            <Field label={orgConfig.profileNameLabel} required>
               <Input
-                placeholder="E.g., Sharma's Kirana Store"
+                placeholder={orgConfig.profileNamePlaceholder}
                 value={accountForm.name || ""}
-                onChange={e => setAccountForm(f => ({ ...f, name: e.target.value }))}
+                onChange={e => setAccountForm(current => ({ ...current, name: e.target.value }))}
               />
             </Field>
             <Field label="GSTIN">
               <Input
-                placeholder="Your GST Registration Number"
+                placeholder="Your GST registration number"
                 value={accountForm.gstin || ""}
-                onChange={e => setAccountForm(f => ({ ...f, gstin: e.target.value }))}
+                onChange={e => setAccountForm(current => ({ ...current, gstin: e.target.value }))}
               />
             </Field>
             <Field label="Address">
               <Textarea
-                placeholder="Full business address"
+                placeholder="Full address"
                 value={accountForm.address || ""}
-                onChange={e => setAccountForm(f => ({ ...f, address: e.target.value }))}
+                onChange={e => setAccountForm(current => ({ ...current, address: e.target.value }))}
               />
             </Field>
             <Field label="Phone">
@@ -74,15 +93,15 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
                 type="tel"
                 placeholder="+91-9123456789"
                 value={accountForm.phone || ""}
-                onChange={e => setAccountForm(f => ({ ...f, phone: e.target.value }))}
+                onChange={e => setAccountForm(current => ({ ...current, phone: e.target.value }))}
               />
             </Field>
             <Field label="Email">
               <Input
                 type="email"
-                placeholder="business@example.com"
+                placeholder="you@example.com"
                 value={accountForm.email || ""}
-                onChange={e => setAccountForm(f => ({ ...f, email: e.target.value }))}
+                onChange={e => setAccountForm(current => ({ ...current, email: e.target.value }))}
               />
             </Field>
           </div>
@@ -91,12 +110,14 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Add your first customer. You can add more customers later as you need them.
+              Add your first {orgConfig.customerEntryLabel.toLowerCase()}. You can always add more from Settings later.
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Ready to add a customer?</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
+                Ready to add a {orgConfig.customerEntryLabel.toLowerCase()}?
+              </div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
-                You'll enter customer details like name, email, phone, and address. This helps you track invoices and create professional bills.
+                You will enter details like name, email, phone, and address so your records stay organized.
               </div>
               <button
                 className="btn-secondary"
@@ -106,11 +127,11 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
                   onComplete();
                 }}
               >
-                Go to Customers
+                Go to {orgConfig.customerLabel}
               </button>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              You can also click "Customers" from the Settings tab anytime to add or manage your customer list.
+              You can revisit {orgConfig.customerLabel.toLowerCase()} anytime from Settings.
             </div>
           </div>
         );
@@ -118,26 +139,37 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Ready to create your first invoice? Click the button below to create a professional invoice for your customer.
+              {orgConfig.hideInvoices
+                ? `Ready to track your first ${orgConfig.incomeEntryLabel.toLowerCase()}?`
+                : `Ready to create your first ${orgConfig.invoiceEntryLabel.toLowerCase()}?`}
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do:</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
-                <div>• Select a customer</div>
-                <div>• Add items with description, qty, and rate</div>
-                <div>• Set GST/Tax rates</div>
-                <div>• Add a due date</div>
-                <div>• Save and download as PDF</div>
+                {orgConfig.hideInvoices ? (
+                  <>
+                    <div>• Add the amount you received</div>
+                    <div>• Set the date and earning type</div>
+                    <div>• Keep the entry ready for dashboard tracking</div>
+                  </>
+                ) : (
+                  <>
+                    <div>• Select a {orgConfig.customerEntryLabel.toLowerCase()}</div>
+                    <div>• Add items with description, quantity, and rate</div>
+                    <div>• Set due dates and taxes if needed</div>
+                    <div>• Save a professional invoice</div>
+                  </>
+                )}
               </div>
               <button
                 className="btn-secondary"
                 style={{ width: "100%" }}
                 onClick={() => {
-                  onNavigate("invoices");
+                  onNavigate(orgConfig.hideInvoices ? "income" : "invoices");
                   onComplete();
                 }}
               >
-                Go to Invoices
+                Go to {orgConfig.hideInvoices ? orgConfig.incomeLabel : orgConfig.invoicesLabel}
               </button>
             </div>
           </div>
@@ -146,15 +178,14 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Finally, let's record your first expense. This helps you track costs and see your profit or loss.
+              Finally, record your first {orgConfig.expensesEntryLabel.toLowerCase()} so your dashboard can start comparing inflow and outflow.
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do:</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
-                <div>• Pick an expense category (Rent, Supplies, etc.)</div>
-                <div>• Enter the amount</div>
-                <div>• Choose a date</div>
-                <div>• Add notes (optional)</div>
+                <div>• Add the amount and date</div>
+                <div>• Choose the best category</div>
+                <div>• Add any extra notes you need later</div>
               </div>
               <button
                 className="btn-secondary"
@@ -164,18 +195,15 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
                   onComplete();
                 }}
               >
-                Go to Expenses
+                Go to {orgConfig.expensesLabel}
               </button>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginTop: 12 }}>
-              Once you've added a few receipts and expense entries, your dashboard will show profit, cash flow, and insights.
             </div>
           </div>
         );
       default:
         return null;
     }
-  };
+  }
 
   if (!isOpen) return null;
 
@@ -196,11 +224,8 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.6 }}>
               Setup Guide · Step {step} of {totalSteps}
             </div>
-            <button
-              onClick={onComplete}
-              style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--text-sec)" }}
-            >
-              ✕
+            <button onClick={onComplete} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--text-sec)" }}>
+              ×
             </button>
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{stepTitles[step - 1]}</div>
@@ -209,16 +234,8 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
         <div style={{ padding: "20px 18px" }}>
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-              {[...Array(totalSteps)].map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: 1,
-                    height: 4,
-                    borderRadius: 2,
-                    background: i < step ? "var(--accent)" : "var(--border)"
-                  }}
-                />
+              {[...Array(totalSteps)].map((_, index) => (
+                <div key={index} style={{ flex: 1, height: 4, borderRadius: 2, background: index < step ? "var(--accent)" : "var(--border)" }} />
               ))}
             </div>
           </div>
@@ -228,36 +245,20 @@ export default function OnboardingGuide({ isOpen, onComplete, data, onNavigate, 
 
         <div style={{ padding: "16px 18px", borderTop: "1px solid var(--border)", display: "flex", gap: 10 }}>
           {step > 1 && (
-            <button
-              className="btn-secondary"
-              style={{ flex: 1 }}
-              onClick={handleBack}
-            >
+            <button className="btn-secondary" style={{ flex: 1 }} onClick={handleBack}>
               Back
             </button>
           )}
           {step === 1 ? (
-            <button
-              className="btn-primary"
-              style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }}
-              onClick={saveAccountAndContinue}
-            >
+            <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={saveAccountAndContinue}>
               Continue
             </button>
           ) : isLastStep ? (
-            <button
-              className="btn-primary"
-              style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }}
-              onClick={handleNext}
-            >
+            <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={handleNext}>
               Get Started
             </button>
           ) : (
-            <button
-              className="btn-secondary"
-              style={{ flex: 1 }}
-              onClick={handleNext}
-            >
+            <button className="btn-secondary" style={{ flex: 1 }} onClick={handleNext}>
               Next
             </button>
           )}

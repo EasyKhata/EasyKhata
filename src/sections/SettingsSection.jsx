@@ -4,7 +4,7 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal, EmptyState } from "../components/UI";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal, EmptyState } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport } from "../utils/reportGen";
@@ -34,17 +34,18 @@ import {
   PLANS
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL } from "../utils/brand";
+import { ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
-  const { account, currency, setCurrency, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
+  const { account, currency, setCurrency, saveAccount, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, orgRecords, addOrgRecord, updateOrgRecord, removeOrgRecord, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
   const { theme, toggle } = useTheme();
 
   const [screen, setScreen] = useState("main");
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true });
+  const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true, organizationType: getOrgType(user?.organizationType || account?.organizationType) });
   const [goalForm, setGoalForm] = useState({ monthlySavings: goals?.monthlySavings || "" });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
@@ -60,14 +61,49 @@ export default function SettingsSection() {
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [orgSectionKey, setOrgSectionKey] = useState("");
+  const [orgRecordForm, setOrgRecordForm] = useState(null);
+  const [editOrgRecord, setEditOrgRecord] = useState(null);
   const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
   const isFreePlanUser = currentPlan === PLANS.FREE;
+  const orgType = getOrgType(accForm.organizationType || user?.organizationType || account?.organizationType);
+  const orgConfig = getOrgConfig(orgType);
 
   const customerInsights = useMemo(
     () => calculateCustomerInsights({ customers, invoices }),
     [customers, invoices]
   );
+  const activeOrgSection = useMemo(
+    () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
+    [orgConfig, orgSectionKey]
+  );
+
+  function renderDynamicField(field, value, onChange) {
+    const commonProps = {
+      value: value || "",
+      onChange: event => onChange(event.target.value),
+      placeholder: field.placeholder || ""
+    };
+
+    if (field.type === "select") {
+      return (
+        <Select {...commonProps}>
+          {(field.options || []).map(option => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
+      );
+    }
+
+    if (field.type === "textarea") {
+      return <Textarea {...commonProps} />;
+    }
+
+    return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
+  }
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -83,7 +119,8 @@ export default function SettingsSection() {
             phone: data.phone || "",
             address: data.address || "",
             gstin: data.gstin || "",
-            showHSN: Boolean(data.showHSN)
+            showHSN: Boolean(data.showHSN),
+            organizationType: getOrgType(data.organizationType || data.account?.organizationType || user?.organizationType)
           });
         }
       } catch (err) {
@@ -107,6 +144,7 @@ export default function SettingsSection() {
     const cleanPhone = sanitizePhone(accForm.phone);
     const cleanName = String(accForm.name || "").trim();
     const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
+    const cleanOrganizationType = getOrgType(accForm.organizationType);
 
     if (!isValidName(cleanName)) {
       alert("Please enter your full name.");
@@ -131,7 +169,17 @@ export default function SettingsSection() {
       phone: cleanPhone,
       address: String(accForm.address || "").trim(),
       gstin: cleanGstin,
-      showHSN: Boolean(accForm.showHSN)
+      showHSN: Boolean(accForm.showHSN),
+      organizationType: cleanOrganizationType,
+      account: {
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        address: String(accForm.address || "").trim(),
+        gstin: cleanGstin,
+        showHSN: Boolean(accForm.showHSN),
+        organizationType: cleanOrganizationType
+      }
     });
 
     if (res?.error) {
@@ -139,12 +187,25 @@ export default function SettingsSection() {
       return;
     }
 
+    saveAccount({
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      address: String(accForm.address || "").trim(),
+      gstin: cleanGstin,
+      showHSN: Boolean(accForm.showHSN),
+      organizationType: cleanOrganizationType
+    });
     alert("Your profile has been updated.");
     setScreen("main");
   };
 
   function openNewCust() {
-    setCustForm({ name: "", email: "", phone: "", address: "", gstin: "" });
+    const next = { name: "", email: "", phone: "", address: "", gstin: "" };
+    (orgConfig.customerFields || []).forEach(field => {
+      next[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
+    });
+    setCustForm(next);
     setEditCust(null);
     setScreen("customer-form");
   }
@@ -196,10 +257,55 @@ export default function SettingsSection() {
       address: cleanAddress,
       gstin: cleanGstin
     };
+    (orgConfig.customerFields || []).forEach(field => {
+      payload[field.key] = String(custForm?.[field.key] || "").trim();
+    });
 
     if (editCust) updateCustomer({ ...payload, id: editCust.id });
     else addCustomer(payload);
     setScreen("customers");
+  }
+
+  function openOrgSection(sectionKey) {
+    setOrgSectionKey(sectionKey);
+    setOrgRecordForm(null);
+    setEditOrgRecord(null);
+    setScreen("org-records");
+  }
+
+  function openNewOrgRecord() {
+    if (!activeOrgSection) return;
+    setEditOrgRecord(null);
+    setOrgRecordForm(activeOrgSection.empty());
+    setScreen("org-record-form");
+  }
+
+  function openEditOrgRecord(record) {
+    setEditOrgRecord(record);
+    setOrgRecordForm({ ...record });
+    setScreen("org-record-form");
+  }
+
+  function saveOrgSectionRecord() {
+    if (!activeOrgSection || !orgRecordForm) return;
+
+    const requiredField = activeOrgSection.fields.find(field => field.required && !String(orgRecordForm[field.key] || "").trim());
+    if (requiredField) {
+      alert(`Please enter ${requiredField.label.toLowerCase()}.`);
+      return;
+    }
+
+    const payload = {};
+    activeOrgSection.fields.forEach(field => {
+      payload[field.key] = String(orgRecordForm[field.key] || "").trim();
+    });
+
+    if (editOrgRecord?.id) updateOrgRecord(activeOrgSection.key, { ...payload, id: editOrgRecord.id });
+    else addOrgRecord(activeOrgSection.key, payload);
+
+    setScreen("org-records");
+    setOrgRecordForm(null);
+    setEditOrgRecord(null);
   }
 
   async function handleChangePassword() {
@@ -507,13 +613,22 @@ export default function SettingsSection() {
         )}
 
         <div style={{ marginBottom: 10 }}>
-          <div className="section-label">Business</div>
+          <div className="section-label">Workspace</div>
           <div className="card">
-            <MenuRow icon="B" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() => setScreen("account")} />
-            {user?.role !== "admin" && <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />}
+            <MenuRow icon="B" label="Account Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+            {user?.role !== "admin" && <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Download admin activity, user, and subscription report" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
             {user?.role !== "admin" && <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />}
+            {user?.role !== "admin" && (orgConfig.extraSections || []).map(section => (
+              <MenuRow
+                key={section.key}
+                icon="•"
+                label={section.label}
+                sub={`${(orgRecords?.[section.key] || []).length} ${section.entryLabel.toLowerCase()} record(s)`}
+                onClick={() => openOrgSection(section.key)}
+              />
+            ))}
           </div>
         </div>
 
@@ -536,7 +651,7 @@ export default function SettingsSection() {
                 setScreen("passcode");
               }}
             />
-            {user?.role !== "admin" && <MenuRow icon="G" label="Savings Goal" sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />}
+            {user?.role !== "admin" && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
           </div>
         </div>
@@ -579,7 +694,16 @@ export default function SettingsSection() {
   if (screen === "account") {
     return (
       <Modal title="Account Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
-        <Field label="Business Name" required><Input placeholder="Type to enter" value={accForm.name || ""} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} /></Field>
+        <Field label="Usage Type" required>
+          <Select value={accForm.organizationType || orgType} onChange={e => setAccForm(f => ({ ...f, organizationType: e.target.value }))}>
+            {ORG_TYPE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label={orgConfig.profileNameLabel} required><Input placeholder={orgConfig.profileNamePlaceholder} value={accForm.name || ""} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} /></Field>
         <Field label="Address"><Textarea placeholder="Full address including state, PIN" value={accForm.address || ""} onChange={e => setAccForm(f => ({ ...f, address: e.target.value }))} /></Field>
         <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
         <Field label="Phone"><Input type="tel" placeholder="+91-9391559067" value={accForm.phone || ""} onChange={e => setAccForm(f => ({ ...f, phone: e.target.value }))} /></Field>
@@ -599,9 +723,9 @@ export default function SettingsSection() {
   if (screen === "customers") {
     if (user?.role === "admin") return null;
     return (
-      <Modal title="Customers" onClose={() => setScreen("main")} onSave={openNewCust} saveLabel="+ Add">
+      <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`+ Add ${orgConfig.customerEntryLabel}`}>
         {customerInsights.length === 0 ? (
-          <EmptyState title="No customers yet" message="Add your first customer to start creating invoices and tracking balances." accentColor="var(--blue)" />
+          <EmptyState title={`No ${orgConfig.customerLabel.toLowerCase()} yet`} message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`} accentColor="var(--blue)" />
         ) : (
           <div className="card">
             {customerInsights.map(customer => (
@@ -683,12 +807,17 @@ export default function SettingsSection() {
   if (screen === "customer-form") {
     if (user?.role === "admin") return null;
     return (
-      <Modal title={editCust ? "Edit Customer" : "New Customer"} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
-        <Field label="Name" required><Input placeholder="Client / Company name" value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
+      <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
+        <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
         <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>
         <Field label="Phone"><Input type="tel" placeholder="+1 555 000 0000" value={custForm?.phone || ""} onChange={e => setCustForm(f => ({ ...f, phone: e.target.value }))} /></Field>
         <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address || ""} onChange={e => setCustForm(f => ({ ...f, address: e.target.value }))} /></Field>
         <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
+        {(orgConfig.customerFields || []).map(field => (
+          <Field key={field.key} label={field.label}>
+            {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
+          </Field>
+        ))}
       </Modal>
     );
   }
@@ -700,6 +829,46 @@ export default function SettingsSection() {
         <Field label="Monthly Savings Goal" hint="Set the profit target you want to hit each month.">
           <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.monthlySavings} onChange={e => setGoalForm({ monthlySavings: e.target.value })} />
         </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "org-records" && activeOrgSection) {
+    const items = orgRecords?.[activeOrgSection.key] || [];
+    return (
+      <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`+ Add ${activeOrgSection.entryLabel}`}>
+        {items.length === 0 ? (
+          <EmptyState title={`No ${activeOrgSection.label.toLowerCase()} yet`} message={`Add your first ${activeOrgSection.entryLabel.toLowerCase()} record to tailor EasyKhata to your workflow.`} accentColor="var(--blue)" />
+        ) : (
+          <div className="card">
+            {items.map(item => (
+              <div key={item.id} className="card-row">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item[activeOrgSection.fields[0]?.key] || activeOrgSection.entryLabel}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                    {activeOrgSection.fields.slice(1).map(field => item[field.key]).filter(Boolean).join(" - ")}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button onClick={() => openEditOrgRecord(item)} style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}>Edit</button>
+                  <DeleteBtn onDelete={() => { if (window.confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`)) removeOrgRecord(activeOrgSection.key, item.id); }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+    );
+  }
+
+  if (screen === "org-record-form" && activeOrgSection && orgRecordForm) {
+    return (
+      <Modal title={editOrgRecord ? `Edit ${activeOrgSection.entryLabel}` : `New ${activeOrgSection.entryLabel}`} onClose={() => setScreen("org-records")} onSave={saveOrgSectionRecord} canSave={true}>
+        {activeOrgSection.fields.map(field => (
+          <Field key={field.key} label={field.label} required={Boolean(field.required)}>
+            {renderDynamicField(field, orgRecordForm[field.key], value => setOrgRecordForm(current => ({ ...current, [field.key]: value })))}
+          </Field>
+        ))}
       </Modal>
     );
   }
