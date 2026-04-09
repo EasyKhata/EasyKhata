@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { db, storage } from "../firebase";
+import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
+import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, UpgradeModal, EmptyState } from "../components/UI";
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
-import { downloadMonthlyReport } from "../utils/reportGen";
+import { downloadMonthlyReport, downloadAdminMonthlyReport } from "../utils/reportGen";
 import { isStrongPassword } from "../utils/validator";
 import {
   BILLING_CYCLES,
@@ -23,6 +22,7 @@ import {
   PLAN_LABELS,
   PLANS
 } from "../utils/subscription";
+import { APP_SUPPORT_EMAIL } from "../utils/brand";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
@@ -41,14 +41,14 @@ export default function SettingsSection() {
     targetPlan: PLANS.PRO,
     billingCycle: BILLING_CYCLES.MONTHLY,
     transactionId: "",
-    note: "",
-    screenshotFile: null
+    note: ""
   });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
   const isFreePlanUser = currentPlan === PLANS.FREE;
@@ -186,13 +186,37 @@ export default function SettingsSection() {
     });
   }
 
-  function handleReportDownload() {
+  async function handleReportDownload() {
     if (!canUseFeature(user, "reports")) {
       setUpgradeInfo(getUpgradeCopy("reports"));
       return;
     }
+
     const now = new Date();
-    downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets }, now.getFullYear(), now.getMonth(), currency?.symbol || "Rs");
+    const year = now.getFullYear();
+    const month = now.getMonth();
+
+    if (user?.role === "admin") {
+      setGeneratingReport(true);
+      try {
+        const usersSnapshot = await getDocs(collection(db, "users"));
+        const paymentsSnapshot = await getDocs(collection(db, "payment_requests"));
+
+        const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const paymentRequests = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, currency?.symbol || "Rs");
+      } catch (err) {
+        console.error("Admin report error:", err);
+        alert(err?.message || "Unable to generate admin report right now.");
+      } finally {
+        setGeneratingReport(false);
+      }
+
+      return;
+    }
+
+    downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets }, year, month, currency?.symbol || "Rs");
   }
 
   async function handleCreateSharedLedger() {
@@ -279,18 +303,8 @@ export default function SettingsSection() {
       return;
     }
 
-    if (!planRequestForm.screenshotFile) {
-      alert("Please upload the payment screenshot before sending the request.");
-      return;
-    }
-
     setSubmittingPayment(true);
     try {
-      const safeFileName = `${Date.now()}-${planRequestForm.screenshotFile.name}`.replace(/\s+/g, "-");
-      const screenshotRef = ref(storage, `payment-proofs/${user.id}/${safeFileName}`);
-      await uploadBytes(screenshotRef, planRequestForm.screenshotFile);
-      const screenshotUrl = await getDownloadURL(screenshotRef);
-
       await setDoc(doc(db, "payment_requests", user.id), {
         userId: user.id,
         userName: user?.name || "",
@@ -303,8 +317,8 @@ export default function SettingsSection() {
         upiId: UPI_CONFIG.upiId,
         upiPayeeName: UPI_CONFIG.payeeName,
         transactionId: cleanTransactionId,
-        screenshotUrl,
-        screenshotName: planRequestForm.screenshotFile.name,
+        screenshotStatus: "emailed-separately",
+        supportEmail: APP_SUPPORT_EMAIL,
         status: PAYMENT_REQUEST_STATUS.PENDING,
         note: planRequestForm.note.trim(),
         createdAt: new Date().toISOString(),
@@ -316,20 +330,37 @@ export default function SettingsSection() {
         targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
         billingCycle: BILLING_CYCLES.MONTHLY,
         transactionId: "",
-        note: "",
-        screenshotFile: null
+        note: ""
       });
       setScreen("main");
     } catch (err) {
       console.error("Payment request error:", err);
       if (err?.code === "permission-denied") {
-        alert("Payment requests are blocked by Firestore or Storage rules right now. Please allow payment_requests and payment-proofs before using this feature.");
+        alert("Payment requests are blocked by Firestore rules right now. Please allow payment_requests before using this feature.");
         return;
       }
-      alert(err?.message || "We couldn't send your payment proof right now. Please try again.");
+      alert(err?.message || "We couldn't send your payment request right now. Please try again.");
     } finally {
       setSubmittingPayment(false);
     }
+  }
+
+  async function copySupportEmail() {
+    try {
+      await navigator.clipboard.writeText(APP_SUPPORT_EMAIL);
+      alert("Support email copied.");
+    } catch (err) {
+      alert(`Copy failed. Please use this email manually: ${APP_SUPPORT_EMAIL}`);
+    }
+  }
+
+  function emailPaymentProof() {
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY);
+    const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
+    const body = encodeURIComponent(
+      `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: ${PLAN_LABELS[planRequestForm.targetPlan || PLANS.PRO] || "Pro"}\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
+    );
+    window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
 
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
@@ -394,10 +425,10 @@ export default function SettingsSection() {
           <div className="section-label">Business</div>
           <div className="card">
             <MenuRow icon="B" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() => setScreen("account")} />
-            <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />
+            {user?.role !== "admin" && <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
-            <MenuRow icon="R" label="Monthly Report" sub="Download profit, tax, and GST summary PDF" onClick={handleReportDownload} />
-            <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
+            <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? "Download admin activity, user, and subscription report" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
+            {user?.role !== "admin" && <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />}
           </div>
         </div>
 
@@ -420,7 +451,7 @@ export default function SettingsSection() {
                 setScreen("passcode");
               }}
             />
-            <MenuRow icon="G" label="Savings Goal" sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />
+            {user?.role !== "admin" && <MenuRow icon="G" label="Savings Goal" sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
           </div>
         </div>
@@ -481,6 +512,7 @@ export default function SettingsSection() {
   }
 
   if (screen === "customers") {
+    if (user?.role === "admin") return null;
     return (
       <Modal title="Customers" onClose={() => setScreen("main")} onSave={openNewCust} saveLabel="+ Add">
         {customerInsights.length === 0 ? (
@@ -511,6 +543,7 @@ export default function SettingsSection() {
   }
 
   if (screen === "customer-detail" && selectedCustomer) {
+    if (user?.role === "admin") return null;
     return (
       <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
         <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
@@ -563,6 +596,7 @@ export default function SettingsSection() {
   }
 
   if (screen === "customer-form") {
+    if (user?.role === "admin") return null;
     return (
       <Modal title={editCust ? "Edit Customer" : "New Customer"} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
         <Field label="Name" required><Input placeholder="Client / Company name" value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
@@ -575,6 +609,7 @@ export default function SettingsSection() {
   }
 
   if (screen === "goals") {
+    if (user?.role === "admin") return null;
     return (
       <Modal title="Savings Goal" onClose={() => setScreen("main")} onSave={saveGoalSettings} canSave={true}>
         <Field label="Monthly Savings Goal" hint="Set the profit target you want to hit each month.">
@@ -585,6 +620,7 @@ export default function SettingsSection() {
   }
 
   if (screen === "shared-ledger") {
+    if (user?.role === "admin") return null;
     return (
       <Modal title="Shared Ledger" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done">
         <div className="card" style={{ padding: 18, marginBottom: 16, opacity: 0.76 }}>
@@ -733,15 +769,19 @@ export default function SettingsSection() {
               onChange={event => setPlanRequestForm(current => ({ ...current, transactionId: event.target.value }))}
             />
           </Field>
-          <Field label="Payment Screenshot" required hint="Upload the screenshot showing the successful UPI payment.">
-            <Input
-              type="file"
-              accept="image/*"
-              onChange={event => setPlanRequestForm(current => ({ ...current, screenshotFile: event.target.files?.[0] || null }))}
-            />
-            {planRequestForm.screenshotFile && (
-              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>{planRequestForm.screenshotFile.name}</div>
-            )}
+          <Field label="Send Screenshot to Admin" required hint="Email the screenshot to admin after payment. The request below stores your transaction details in the app.">
+            <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 8 }}>Admin email</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 12 }}>{APP_SUPPORT_EMAIL}</div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
+                  Copy Email
+                </button>
+                <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={emailPaymentProof}>
+                  Email Screenshot
+                </button>
+              </div>
+            </div>
           </Field>
           <Field label="Message to Admin" hint="Optional note like the UPI app used or anything you want admin to know.">
             <Textarea
@@ -755,7 +795,7 @@ export default function SettingsSection() {
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How verification works</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            After payment, upload the screenshot and transaction ID here. Admin will verify the proof and then activate your subscription. Access stays pending until approval.
+            After payment, email the screenshot to {APP_SUPPORT_EMAIL} and submit your transaction ID here. Admin will match the email proof with your in-app request and then activate your subscription.
           </div>
         </div>
       </Modal>

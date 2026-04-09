@@ -9,7 +9,6 @@ import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
 import InvoicesSection from "../sections/InvoicesSection";
 import SettingsSection from "../sections/SettingsSection";
-import AdminPanel from "../sections/AdminPanel";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -75,11 +74,12 @@ export default function MainApp() {
 
   const TABS = [
     { id: "dashboard", icon: "⌂", label: "Home" },
-    { id: "income", icon: "↑", label: "Income" },
-    { id: "expenses", icon: "↓", label: "Expenses" },
+    ...(user?.role !== "admin" ? [
+      { id: "income", icon: "↑", label: "Income" },
+      { id: "expenses", icon: "↓", label: "Expenses" },
+    ] : []),
     { id: "invoices", icon: "■", label: "Invoices" },
-    { id: "settings", icon: "⚙", label: "Settings" },
-    ...(user?.role === "admin" ? [{ id: "admin", icon: "🛡", label: "Admin" }] : [])
+    { id: "settings", icon: "⚙", label: "Settings" }
   ];
 
   const tabColor = {
@@ -87,8 +87,7 @@ export default function MainApp() {
     income: "var(--accent)",
     expenses: "var(--danger)",
     invoices: "var(--blue)",
-    settings: "var(--purple)",
-    admin: "var(--purple)"
+    settings: "var(--purple)"
   };
 
   const activeColor = tabColor[tab];
@@ -163,7 +162,6 @@ export default function MainApp() {
         {tab === "expenses" && <ExpensesSection year={year} month={month} />}
         {tab === "invoices" && <InvoicesSection year={year} month={month} />}
         {tab === "settings" && <SettingsSection />}
-        {tab === "admin" && <AdminPanel />}
       </div>
 
       <div className="tab-bar">

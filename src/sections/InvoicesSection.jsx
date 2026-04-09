@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useData } from "../context/DataContext";
 import {
   Modal,
@@ -29,6 +29,8 @@ import {
 } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
 
 function emptyItem() {
   return { id: uid(), desc: "", subDesc: "", hsn: "", qty: 1, rate: "", taxRate: 18 };
@@ -65,6 +67,26 @@ export default function InvoicesSection({ year, month }) {
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const isAdmin = user?.role === "admin";
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const fetchUsers = async () => {
+      try {
+        const usersSnapshot = await getDocs(collection(db, "users"));
+        setUsers(usersSnapshot.docs.map(item => ({
+          id: item.id,
+          ...item.data()
+        })));
+      } catch (err) {
+        console.error("Fetch users error:", err);
+      }
+    };
+
+    fetchUsers();
+  }, [isAdmin]);
 
   const blankForm = () => ({
     number: getNextInvoiceNumber(d.invoices),
@@ -78,8 +100,8 @@ export default function InvoicesSection({ year, month }) {
     paidDate: "",
     taxMode: "split",
     items: [emptyItem()],
-    notes: "Thanks for your business.",
-    terms: "Payment is due within the agreed billing cycle."
+    notes: isAdmin ? "Invoice for subscription payment." : "Thanks for your business.",
+    terms: isAdmin ? "Payment processed via UPI." : "Payment is due within the agreed billing cycle."
   });
 
   const [form, setForm] = useState(null);
@@ -145,9 +167,11 @@ export default function InvoicesSection({ year, month }) {
   }
 
   function buildInvoicePayload(currentForm) {
-    const customer = d.customers.find(c => c.id === currentForm.customerId);
-    const resolvedBillTo = currentForm.customerId && customer
-      ? { name: customer.name, address: customer.address, gstin: customer.gstin }
+    const entity = isAdmin
+      ? users.find(u => u.id === currentForm.customerId)
+      : d.customers.find(c => c.id === currentForm.customerId);
+    const resolvedBillTo = currentForm.customerId && entity
+      ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: entity.gstin || "" }
       : currentForm.billTo;
     const resolvedShipTo = currentForm.shipSameAsBill
       ? { name: resolvedBillTo.name, address: resolvedBillTo.address }
@@ -155,7 +179,7 @@ export default function InvoicesSection({ year, month }) {
 
     return {
       ...currentForm,
-      customer,
+      customer: entity,
       billTo: resolvedBillTo,
       shipTo: resolvedShipTo,
       items: currentForm.items.map(item => ({
@@ -236,14 +260,16 @@ export default function InvoicesSection({ year, month }) {
   }
 
   function selectCustomer(id) {
-    const customer = d.customers.find(item => item.id === id);
+    const entity = isAdmin
+      ? users.find(u => u.id === id)
+      : d.customers.find(c => c.id === id);
     setForm(current => ({
       ...current,
       customerId: id,
-      billTo: customer
-        ? { name: customer.name, address: customer.address, gstin: customer.gstin }
+      billTo: entity
+        ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: entity.gstin || "" }
         : current.billTo,
-      shipTo: customer ? { name: customer.name, address: customer.address } : current.shipTo
+      shipTo: entity ? { name: entity.name || entity.email || "", address: entity.address || "" } : current.shipTo
     }));
   }
 
@@ -259,10 +285,10 @@ export default function InvoicesSection({ year, month }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Invoice Total · {MONTHS[month]} {year}
-        </div>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            {isAdmin ? "Subscription Invoices" : "Invoice Total"} · {MONTHS[month]} {year}
+          </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--blue)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
           {monthInv.length} invoice(s) · {pendingCount} pending
@@ -272,7 +298,7 @@ export default function InvoicesSection({ year, month }) {
       <div style={{ padding: "22px 18px 0" }}>
         <div className="card">
           {monthInv.length === 0 ? (
-            <EmptyState title="No invoices this month" message="Create your first invoice to start tracking revenue, reminders, and customer history." actionLabel="Create Invoice" onAction={openNew} accentColor="var(--blue)" />
+            <EmptyState title={isAdmin ? "No subscription invoices this month" : "No invoices this month"} message={isAdmin ? "Create invoices for subscription payments." : "Create your first invoice to start tracking revenue, reminders, and customer history."} actionLabel="Create Invoice" onAction={openNew} accentColor="var(--blue)" />
           ) : (
             monthInv.map(invoice => (
               <div key={invoice.id} className="card-row" onClick={() => setDetail(invoice)} style={{ cursor: "pointer" }}>
@@ -418,11 +444,11 @@ export default function InvoicesSection({ year, month }) {
               <Input value={form.number} onChange={event => setForm(current => ({ ...current, number: event.target.value }))} />
             </Field>
 
-            <Field label="Customer" hint="Select an existing customer or fill in bill-to details below.">
+            <Field label={isAdmin ? "User" : "Customer"} hint={isAdmin ? "Select a user who made the payment." : "Select an existing customer or fill in bill-to details below."}>
               <Select value={form.customerId} onChange={event => selectCustomer(event.target.value)}>
-                <option value="">-- Select customer --</option>
-                {d.customers.map(customer => (
-                  <option key={customer.id} value={customer.id}>{customer.name}</option>
+                <option value="">{isAdmin ? "-- Select user --" : "-- Select customer --"}</option>
+                {(isAdmin ? users : d.customers).map(entity => (
+                  <option key={entity.id} value={entity.id}>{entity.name || entity.email}</option>
                 ))}
               </Select>
             </Field>
