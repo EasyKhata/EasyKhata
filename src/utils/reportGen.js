@@ -76,6 +76,105 @@ function drawRows(doc, y, rows) {
   return y;
 }
 
+function formatUserSubscription(user) {
+  const plan = safeText(user.plan || user.subscriptionPlan || "free");
+  const status = safeText(user.subscriptionStatus || user.status || "active");
+  const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN") : "joined N/A";
+  return `${plan} · ${status} · ${joined}`;
+}
+
+export function downloadAdminMonthlyReport(data, year, month, sym) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const title = `Admin Activity Report - ${MONTHS[month]} ${year}`;
+  const users = data.users || [];
+  const paymentRequests = data.paymentRequests || [];
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const usersAdded = users.filter(user => user.createdAt?.slice(0, 7) === monthKey).length;
+  const blockedUsers = users.filter(user => user.blocked).length;
+  const adminUsers = users.filter(user => user.role === "admin").length;
+  const planCounts = users.reduce(
+    (acc, user) => {
+      const plan = user.plan || user.subscriptionPlan || "free";
+      acc[plan] = (acc[plan] || 0) + 1;
+      return acc;
+    },
+    {}
+  );
+
+  const requestStatusCounts = paymentRequests.reduce(
+    (acc, request) => {
+      const status = request.status || "pending";
+      acc[status] = (acc[status] || 0) + 1;
+      acc.totalAmount += Number(request.amount) || 0;
+      return acc;
+    },
+    { totalAmount: 0 }
+  );
+
+  const activeUsers = users.length - blockedUsers;
+  const removedUsersNote = "Removed users are not tracked in this report.";
+
+  let y = PAGE.top;
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(title, PAGE.left + 4, y + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+  y += 32;
+
+  y = sectionTitle(doc, y, "Admin Summary");
+  y = drawMetricGrid(doc, y, [
+    { label: "Total Users", value: String(users.length) },
+    { label: "Admin Users", value: String(adminUsers) },
+    { label: "Active Users", value: String(activeUsers) },
+    { label: "Blocked Users", value: String(blockedUsers) },
+    { label: "Users Added This Month", value: String(usersAdded) },
+    { label: "Removed Users", value: removedUsersNote }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 44);
+  y = sectionTitle(doc, y + 2, "Subscription Breakdown");
+  y = drawRows(
+    doc,
+    y,
+    Object.keys(planCounts).length
+      ? Object.entries(planCounts).map(([plan, count]) => ({ label: `${safeText(plan)} plan users`, value: String(count) }))
+      : [{ label: "No subscription plan data found", value: "--" }]
+  );
+
+  y = ensureSpace(doc, y + 2, 44);
+  y = sectionTitle(doc, y + 2, "Payment Request Activity");
+  y = drawRows(doc, y, [
+    { label: "Pending requests", value: String(requestStatusCounts.pending || 0) },
+    { label: "Approved requests", value: String(requestStatusCounts.approved || 0) },
+    { label: "Rejected requests", value: String(requestStatusCounts.rejected || 0) },
+    { label: "Total requested amount", value: money(requestStatusCounts.totalAmount, sym) }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 30);
+  y = sectionTitle(doc, y + 2, "User Details");
+  const userRows = users.slice(0, 22).map(user => ({
+    label: `${safeText(user.name || "Unknown")} · ${safeText(user.email || "no email")}`,
+    value: formatUserSubscription(user)
+  }));
+
+  y = drawRows(doc, y, userRows.length ? userRows : [{ label: "No user data available", value: "--" }]);
+
+  if (users.length > 22) {
+    y = ensureSpace(doc, y + 16, 20);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 110);
+    doc.text(`Showing first 22 users of ${users.length}.`, PAGE.left, y);
+  }
+
+  doc.save(`admin-report-${monthKey}.pdf`);
+}
+
 export function downloadMonthlyReport(data, year, month, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const stats = calculateDashboard(data, year, month);
