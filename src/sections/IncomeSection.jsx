@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, FAB, DeleteBtn, fmtMoney, fmtDate, invoiceTotal, monthKey, MONTHS, Avatar, EmptyState, SectionSkeleton } from "../components/UI";
+import { Modal, Field, Input, FAB, DeleteBtn, fmtMoney, fmtDate, monthKey, MONTHS, Avatar, EmptyState, SectionSkeleton } from "../components/UI";
+import { getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
 const blankForm = (year, month) => ({
@@ -19,9 +20,9 @@ export default function IncomeSection({ year, month }) {
   const [form, setForm] = useState(blankForm(year, month));
   const [formError, setFormError] = useState("");
 
-  const invIncome = d.invoices.filter(i => i.date?.slice(0, 7) === mk);
+  const invIncome = d.invoices.filter(i => getInvoiceStatus(i) === "paid" && i.paidDate?.slice(0, 7) === mk);
   const manIncome = d.income.filter(i => i.month === mk);
-  const totalInv = invIncome.reduce((s, i) => s + invoiceTotal(i.items), 0);
+  const totalInv = invIncome.reduce((s, i) => s + invoiceGrandTotal(i), 0);
   const totalMan = manIncome.reduce((s, i) => s + Number(i.amount), 0);
 
   if (!d.loaded) {
@@ -94,7 +95,7 @@ export default function IncomeSection({ year, month }) {
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {invIncome.length === 0 ? (
-            <EmptyState title="No invoice receipts yet" message="Invoices you raise this month will appear here automatically." actionLabel="Open Invoices" onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))} accentColor="var(--blue)" />
+            <EmptyState title="No invoice receipts yet" message="Paid invoices received this month will appear here automatically." actionLabel="Open Invoices" onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))} accentColor="var(--blue)" />
           ) : (
             invIncome.map(inv => (
               <div key={inv.id} className="card-row">
@@ -102,10 +103,10 @@ export default function IncomeSection({ year, month }) {
                   <Avatar name={inv.customer?.name || "?"} size={34} fontSize={12} />
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{inv.customer?.name || inv.billTo?.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{inv.number} - {fmtDate(inv.date)}</div>
+                     <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{inv.number} - Paid on {fmtDate(inv.paidDate || inv.date)}</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(invoiceTotal(inv.items), sym)}</span>
+                 <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(invoiceGrandTotal(inv), sym)}</span>
               </div>
             ))
           )}

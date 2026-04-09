@@ -17,7 +17,6 @@ import {
   SectionSkeleton
 } from "../components/UI";
 import { UpgradeModal } from "../components/UI";
-import QuickInvoiceModal from "../components/QuickInvoiceModal";
 import { useAuth } from "../context/AuthContext";
 import { downloadInvoice } from "../utils/invoiceGen";
 import {
@@ -28,7 +27,7 @@ import {
   getNextInvoiceNumber,
   invoiceGrandTotal
 } from "../utils/analytics";
-import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
+import { hasMinLength, isPositiveAmount, isValidDateValue, isValidGstin } from "../utils/validator";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
@@ -68,7 +67,6 @@ export default function InvoicesSection({ year, month }) {
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
-  const [showQuickInvoice, setShowQuickInvoice] = useState(false);
   const isAdmin = user?.role === "admin";
   const [users, setUsers] = useState([]);
 
@@ -153,6 +151,33 @@ export default function InvoicesSection({ year, month }) {
     setShowForm(true);
   }
 
+  function openDuplicate(invoice) {
+    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: d.invoices.length })) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+      return;
+    }
+
+    setForm({
+      ...invoice,
+      number: getNextInvoiceNumber(d.invoices),
+      customerId: invoice.customerId || invoice.customer?.id || "",
+      date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+      dueDate: "",
+      status: "pending",
+      paidDate: "",
+      items: (invoice.items || []).map(item => ({
+        ...item,
+        id: uid(),
+        taxRate: Number(item.taxRate ?? item.igst) || 0
+      })),
+      shipSameAsBill: invoice.shipSameAsBill ?? true
+    });
+    setEditInv(null);
+    setDetail(null);
+    setFormError("");
+    setShowForm(true);
+  }
+
   function handleDownloadPdf(invoice) {
     if (!canUseFeature(user, "invoicePdf")) {
       setUpgradeInfo(getUpgradeCopy("invoicePdf"));
@@ -173,15 +198,16 @@ export default function InvoicesSection({ year, month }) {
       ? users.find(u => u.id === currentForm.customerId)
       : d.customers.find(c => c.id === currentForm.customerId);
     const resolvedBillTo = currentForm.customerId && entity
-      ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: entity.gstin || "" }
-      : currentForm.billTo;
+      ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: String(entity.gstin || "").trim().toUpperCase() }
+      : { ...currentForm.billTo, gstin: String(currentForm.billTo?.gstin || "").trim().toUpperCase() };
     const resolvedShipTo = currentForm.shipSameAsBill
       ? { name: resolvedBillTo.name, address: resolvedBillTo.address }
       : currentForm.shipTo;
 
     return {
       ...currentForm,
-      customer: entity,
+      number: String(currentForm.number || "").trim(),
+      customer: entity || null,
       billTo: resolvedBillTo,
       shipTo: resolvedShipTo,
       items: currentForm.items.map(item => ({
@@ -202,6 +228,12 @@ export default function InvoicesSection({ year, month }) {
       setFormError("Use a valid invoice number.");
       return;
     }
+    const normalizedNumber = String(form.number || "").trim();
+    const duplicateNumber = d.invoices.find(invoice => String(invoice.number || "").trim() === normalizedNumber && invoice.id !== editInv?.id);
+    if (duplicateNumber) {
+      setFormError("This invoice number is already in use. Please use a unique number.");
+      return;
+    }
     if (!isValidDateValue(form.date)) {
       setFormError("Choose a valid invoice date.");
       return;
@@ -218,8 +250,20 @@ export default function InvoicesSection({ year, month }) {
       setFormError("Choose a valid paid date.");
       return;
     }
+    if (form.status === "paid" && form.paidDate && form.paidDate < form.date) {
+      setFormError("Paid date must be on or after the invoice date.");
+      return;
+    }
     if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
       setFormError("Select a customer or enter the bill-to name.");
+      return;
+    }
+    if (!isValidGstin(form.billTo?.gstin)) {
+      setFormError("Enter a valid bill-to GSTIN or leave it empty.");
+      return;
+    }
+    if (!form.shipSameAsBill && !hasMinLength(form.shipTo?.name, 2)) {
+      setFormError("Enter the ship-to name or use the billing address.");
       return;
     }
     if (!form.items.length) {
@@ -248,33 +292,6 @@ export default function InvoicesSection({ year, month }) {
 
   function addItem() {
     setForm(current => ({ ...current, items: [...current.items, emptyItem()] }));
-  }
-
-  function saveQuickInvoice(quickPayload) {
-    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: d.invoices.length })) {
-      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
-      return;
-    }
-
-    const fullForm = {
-      number: getNextInvoiceNumber(d.invoices),
-      customerId: quickPayload.customerId,
-      billTo: { name: "", address: "", gstin: "" },
-      shipTo: { name: "", address: "" },
-      shipSameAsBill: true,
-      date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
-      dueDate: "",
-      status: "pending",
-      paidDate: "",
-      taxMode: "split",
-      items: quickPayload.items,
-      notes: quickPayload.notes,
-      terms: "Payment is due within the agreed billing cycle."
-    };
-
-    const invoice = buildInvoicePayload(fullForm);
-    d.addInvoice(invoice);
-    setShowQuickInvoice(false);
   }
 
   function removeItem(id) {
@@ -358,7 +375,7 @@ export default function InvoicesSection({ year, month }) {
       {/* Quick & Full Invoice Actions */}
       <div style={{ position: "fixed", bottom: 100, right: 20, display: "flex", flexDirection: "column", gap: 10, zIndex: 40 }}>
         <button
-          onClick={() => setShowQuickInvoice(true)}
+          onClick={openNew}
           style={{
             width: 56,
             height: 56,
@@ -369,14 +386,14 @@ export default function InvoicesSection({ year, month }) {
             fontSize: 24,
             fontWeight: 700,
             cursor: "pointer",
-            display: "flex",
+            display: "none",
             alignItems: "center",
             justifyContent: "center",
             boxShadow: "0 4px 12px rgba(255, 183, 77, 0.3)",
             fontFamily: "var(--font)",
             transition: "all 0.2s"
           }}
-          title="Quick Invoice (faster)"
+          title="Create Invoice"
           onMouseEnter={e => {
             e.target.style.transform = "scale(1.1)";
           }}
@@ -473,9 +490,12 @@ export default function InvoicesSection({ year, month }) {
             {invoice.notes && <div className="card" style={{ padding: "14px 18px", fontSize: 14, color: "var(--text-sec)", marginBottom: 14, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Notes:</strong> {invoice.notes}</div>}
             {invoice.terms && <div className="card" style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-sec)", marginBottom: 18, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Terms:</strong> {invoice.terms}</div>}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 12 }}>
               <button onClick={() => updateInvoiceStatus(invoice, computedStatus === "paid" ? "pending" : "paid")} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: computedStatus === "paid" ? "var(--gold-deep)" : "var(--accent)", color: computedStatus === "paid" ? "var(--gold)" : "#0C0C10" }}>
                 {computedStatus === "paid" ? "Mark Pending" : "Mark Paid"}
+              </button>
+              <button onClick={() => openDuplicate(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--surface-high)", color: "var(--text)" }}>
+                Duplicate
               </button>
               <button onClick={() => handleDownloadPdf(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--blue)", color: "#fff" }}>
                 Download PDF
@@ -657,14 +677,6 @@ export default function InvoicesSection({ year, month }) {
           </Modal>
         );
       })()}
-
-      <QuickInvoiceModal
-        open={showQuickInvoice}
-        onClose={() => setShowQuickInvoice(false)}
-        onSave={saveQuickInvoice}
-        customers={isAdmin ? users : d.customers}
-        currency={d.currency}
-      />
 
       <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>

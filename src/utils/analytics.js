@@ -84,7 +84,7 @@ function sumIncomeForMonth(data, mk) {
     .reduce((sum, item) => sum + toNumber(item.amount), 0);
 
   const invoices = (data.invoices || [])
-    .filter(invoice => invoice.date?.slice(0, 7) === mk)
+    .filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk)
     .reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
 
   return manual + invoices;
@@ -337,6 +337,7 @@ export function calculateYearlyDashboard(data, year) {
 
   const pendingInvoices = invoices.filter(invoice => invoice.computedStatus !== "paid");
   const overdueInvoices = invoices.filter(invoice => invoice.computedStatus === "overdue");
+  const dueSoonInvoices = getReminderInvoices(invoices, today);
   const pendingInvoiceTotal = pendingInvoices.reduce((sum, invoice) => sum + invoice.total, 0);
 
   // Top customers for the year
@@ -356,6 +357,27 @@ export function calculateYearlyDashboard(data, year) {
     }))
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 4);
+
+  const customerStatusMap = {};
+  invoices.forEach(invoice => {
+    const customerName = invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer";
+    if (!customerStatusMap[customerName]) {
+      customerStatusMap[customerName] = { total: 0, overdue: 0, pending: 0, paid: 0 };
+    }
+    customerStatusMap[customerName].total += 1;
+    customerStatusMap[customerName][invoice.computedStatus] += 1;
+  });
+
+  const highRiskCustomers = Object.entries(customerStatusMap)
+    .map(([name, stats]) => ({
+      name,
+      lateRatio: stats.total ? stats.overdue / stats.total : 0,
+      overdueCount: stats.overdue,
+      stats
+    }))
+    .filter(customer => customer.overdueCount > 0)
+    .sort((a, b) => b.lateRatio - a.lateRatio || b.overdueCount - a.overdueCount)
+    .slice(0, 3);
 
   // Year-to-date expense categories
   const yearExpenses = (data.expenses || []).filter(expense => {
@@ -381,10 +403,60 @@ export function calculateYearlyDashboard(data, year) {
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 4);
 
+  const budgetMap = data.budgets || {};
+  const budgetStatus = Object.entries(budgetMap)
+    .map(([category, budget]) => {
+      const spent = expenseCategoryMap[category] || 0;
+      const limit = toNumber(budget);
+      const progress = limit > 0 ? (spent / limit) * 100 : 0;
+      return {
+        category,
+        budget: limit,
+        spent,
+        remaining: Math.max(0, limit - spent),
+        progress
+      };
+    })
+    .filter(item => item.budget > 0)
+    .sort((a, b) => b.progress - a.progress);
+
   const avgMonthlyIncome = totalIncome / 12;
   const avgMonthlyExpense = totalExpense / 12;
   const availableCash = Math.max(0, profit);
   const burnRateDays = avgMonthlyExpense > 0 ? Math.floor((availableCash / avgMonthlyExpense) * 30) : null;
+  const monthlySavingsGoal = toNumber(data.goals?.monthlySavings);
+  const goalProgress = monthlySavingsGoal > 0 ? Math.max(0, Math.min(100, (profit / (monthlySavingsGoal * 12)) * 100)) : 0;
+  const goalStatus = monthlySavingsGoal <= 0 ? "Set a savings goal" : profit >= monthlySavingsGoal * 12 ? "On track" : "Behind schedule";
+
+  const alertItems = [];
+  if (overdueInvoices.length) {
+    alertItems.push({
+      tone: "danger",
+      title: `${overdueInvoices.length} overdue invoice(s)`,
+      message: `Pending recovery of ${pendingInvoiceTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    });
+  }
+  if (dueSoonInvoices.length) {
+    alertItems.push({
+      tone: "gold",
+      title: `${dueSoonInvoices.length} invoice reminder(s)`,
+      message: "Some invoices are due within the next 3 days."
+    });
+  }
+  if (profit < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Low balance warning",
+      message: "This year is currently running at a loss. Review spending and collections."
+    });
+  }
+  budgetStatus.filter(item => item.progress >= 100).forEach(item => {
+    alertItems.push({
+      tone: "danger",
+      title: `${item.category} budget exceeded`,
+      message: `Spent ${fmtMoneyValue(item.spent)} against a budget of ${fmtMoneyValue(item.budget)}.`
+    });
+  });
 
   return {
     year,
@@ -396,10 +468,17 @@ export function calculateYearlyDashboard(data, year) {
     pendingInvoiceTotal,
     pendingInvoices,
     overdueInvoices,
+    dueSoonInvoices,
     topExpenseCategories,
     topCustomers,
+    highRiskCustomers,
+    budgetStatus,
     monthlyBreakdown,
-    burnRateDays
+    burnRateDays,
+    monthlySavingsGoal,
+    goalProgress,
+    goalStatus,
+    alertItems
   };
 }
 

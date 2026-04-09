@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Field, Input } from "../components/UI";
-import { isStrongPassword, isValidEmail, isValidPhone, sanitizePhone } from "../utils/validator";
+import { isStrongPassword, isValidEmail, isValidName, isValidPhone, normalizeEmail, sanitizePhone } from "../utils/validator";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 
@@ -38,7 +38,7 @@ export default function AuthScreen() {
 
   async function handleLogin() {
     resetMessages();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
 
     if (!isValidEmail(cleanEmail)) {
       setError("Please enter a valid email address.");
@@ -70,10 +70,10 @@ export default function AuthScreen() {
   async function handleRegister() {
     resetMessages();
     const cleanName = name.trim();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
     const cleanPhone = sanitizePhone(phone);
 
-    if (cleanName.length < 2) {
+    if (!isValidName(cleanName)) {
       setError("Please enter your full name.");
       return;
     }
@@ -115,7 +115,7 @@ export default function AuthScreen() {
 
   async function handleForgot() {
     resetMessages();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
 
     if (!isValidEmail(cleanEmail)) {
       setError("Please enter the email address linked to your account.");
@@ -136,7 +136,7 @@ export default function AuthScreen() {
 
   async function handleResendVerification() {
     resetMessages();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
 
     if (!isValidEmail(cleanEmail)) {
       setError("Enter the same email address you used to create your account.");

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
-import { Modal, MonthNav } from "../components/UI";
+import { Modal, MONTHS } from "../components/UI";
 import BrandLogo, { BrandMark } from "../components/BrandLogo";
 import Dashboard from "../sections/Dashboard";
 import IncomeSection from "../sections/IncomeSection";
@@ -20,6 +20,231 @@ import {
 } from "../utils/reminders";
 
 const now = new Date();
+
+function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
+  const [open, setOpen] = useState(false);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const isCurrentMonth = year === currentYear && month === currentMonth;
+  const isCurrentYear = year === currentYear;
+  const yearOptions = Array.from({ length: 8 }, (_, index) => currentYear - (7 - index));
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    function handleClick(event) {
+      if (!event.target.closest(".header-date-picker")) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick);
+    };
+  }, [open]);
+
+  function prev() {
+    if (viewMode === "month") {
+      let nextMonth = month - 1;
+      let nextYear = year;
+      if (nextMonth < 0) {
+        nextMonth = 11;
+        nextYear -= 1;
+      }
+      onChange(nextYear, nextMonth);
+      return;
+    }
+    onChange(year - 1, month);
+  }
+
+  function next() {
+    if (viewMode === "month") {
+      if (isCurrentMonth) return;
+      let nextMonth = month + 1;
+      let nextYear = year;
+      if (nextMonth > 11) {
+        nextMonth = 0;
+        nextYear += 1;
+      }
+      onChange(nextYear, nextMonth);
+      return;
+    }
+
+    if (isCurrentYear) return;
+    onChange(year + 1, month);
+  }
+
+  const nextDisabled = viewMode === "month" ? isCurrentMonth : isCurrentYear;
+
+  return (
+    <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
+      <button
+        onClick={prev}
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--surface-high)",
+          color: "var(--text)",
+          fontSize: 18,
+          cursor: "pointer"
+        }}
+      >
+        {"<"}
+      </button>
+
+      <button
+        onClick={() => setOpen(current => !current)}
+        style={{
+          minWidth: 138,
+          padding: "10px 14px",
+          borderRadius: 16,
+          border: "1px solid var(--border)",
+          background: "linear-gradient(180deg, var(--surface) 0%, var(--surface-high) 100%)",
+          color: "var(--text)",
+          cursor: "pointer",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-start",
+          boxShadow: "var(--card-shadow)"
+        }}
+      >
+        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8 }}>
+          {viewMode === "month" ? "Current month" : "Current year"}
+        </span>
+        <span style={{ fontFamily: "var(--serif)", fontSize: 20, color: "var(--text)", lineHeight: 1.1, marginTop: 4 }}>
+          {viewMode === "month" ? `${MONTHS[month]} ${year}` : year}
+        </span>
+      </button>
+
+      <button
+        onClick={next}
+        disabled={nextDisabled}
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: nextDisabled ? "var(--surface-high)" : "var(--surface-high)",
+          color: nextDisabled ? "var(--text-dim)" : "var(--text)",
+          fontSize: 18,
+          cursor: nextDisabled ? "not-allowed" : "pointer",
+          opacity: nextDisabled ? 0.5 : 1
+        }}
+      >
+        {">"}
+      </button>
+
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 10px)",
+            right: 0,
+            width: 280,
+            maxWidth: "calc(100vw - 32px)",
+            padding: 14,
+            borderRadius: 18,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            boxShadow: "0 18px 50px rgba(0,0,0,0.24)",
+            zIndex: 120
+          }}
+        >
+          <div style={{ display: "flex", background: "var(--surface-high)", borderRadius: 12, padding: 4, marginBottom: 14 }}>
+            <button
+              onClick={() => onViewModeChange("month")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                background: viewMode === "month" ? "var(--surface-pop)" : "transparent",
+                color: viewMode === "month" ? "var(--text)" : "var(--text-dim)",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              Month
+            </button>
+            <button
+              onClick={() => onViewModeChange("year")}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: 10,
+                border: "none",
+                background: viewMode === "year" ? "var(--surface-pop)" : "transparent",
+                color: viewMode === "year" ? "var(--text)" : "var(--text-dim)",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer"
+              }}
+            >
+              Year
+            </button>
+          </div>
+
+          {viewMode === "month" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+              {MONTHS.map((label, index) => (
+                <button
+                  key={label}
+                  onClick={() => {
+                    onChange(year, index);
+                    setOpen(false);
+                  }}
+                  style={{
+                    padding: "12px 10px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: index === month ? "var(--accent-deep)" : "var(--surface-high)",
+                    color: index === month ? "var(--accent)" : "var(--text)",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+              {yearOptions.map(option => (
+                <button
+                  key={option}
+                  onClick={() => {
+                    onChange(option, month);
+                    setOpen(false);
+                  }}
+                  style={{
+                    padding: "12px 10px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: option === year ? "var(--blue-deep)" : "var(--surface-high)",
+                    color: option === year ? "var(--blue)" : "var(--text)",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer"
+                  }}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MainApp() {
   const { user } = useAuth();
@@ -151,7 +376,18 @@ export default function MainApp() {
             </div>
           </div>
         </div>
-        {tab !== "settings" && <MonthNav year={year} month={month} onChange={(nextYear, nextMonth) => { setYear(nextYear); setMonth(nextMonth); }} viewMode={viewMode} onViewModeChange={setViewMode} />}
+        {tab !== "settings" && (
+          <HeaderDatePicker
+            year={year}
+            month={month}
+            onChange={(nextYear, nextMonth) => {
+              setYear(nextYear);
+              setMonth(nextMonth);
+            }}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+          />
+        )}
         {tab === "settings" && (
           <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {user?.name}

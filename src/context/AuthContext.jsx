@@ -13,7 +13,7 @@ import {
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
-import { getTrialEndDate } from "../utils/subscription";
+import { PLANS, SUBSCRIPTION_STATUS, getTrialEndDate } from "../utils/subscription";
 
 const AuthContext = createContext();
 
@@ -36,9 +36,11 @@ export function AuthProvider({ children }) {
         email: baseEmail,
         phone: basePhone,
         role: "user",
-        plan: "pro",
-        subscriptionStatus: "trial",
-        subscriptionEndsAt: getTrialEndDate(),
+        plan: PLANS.FREE,
+        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+        subscriptionEndsAt: "",
+        trialEligible: true,
+        trialStartedAt: "",
         blocked: false,
         sharedLedgerId: "",
         sharedLedgerRole: "",
@@ -75,6 +77,40 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function activateTrialIfEligible(firebaseUser, profile = null) {
+    const nextProfile = profile || (await getDoc(doc(db, "users", firebaseUser.uid))).data() || {};
+    if (!nextProfile?.trialEligible || nextProfile?.trialStartedAt) {
+      return nextProfile;
+    }
+
+    const updates = {
+      plan: PLANS.PRO,
+      subscriptionStatus: SUBSCRIPTION_STATUS.TRIAL,
+      subscriptionEndsAt: getTrialEndDate(),
+      trialEligible: false,
+      trialStartedAt: new Date().toISOString()
+    };
+
+    await updateDoc(doc(db, "users", firebaseUser.uid), updates);
+    return { ...nextProfile, ...updates };
+  }
+
+  function buildSessionUser(firebaseUser, profile = {}) {
+    return {
+      id: firebaseUser.uid,
+      name: profile?.name || "",
+      email: profile?.email || firebaseUser.email || "",
+      phone: profile?.phone || "",
+      role: profile?.role || "user",
+      plan: profile?.plan || PLANS.FREE,
+      subscriptionStatus: profile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE,
+      subscriptionEndsAt: profile?.subscriptionEndsAt || "",
+      blocked: Boolean(profile?.blocked),
+      sharedLedgerId: profile?.sharedLedgerId || "",
+      sharedLedgerRole: profile?.sharedLedgerRole || ""
+    };
+  }
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
@@ -97,21 +133,9 @@ export function AuthProvider({ children }) {
         }
 
         const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-        const profile = snap.exists() ? snap.data() : {};
+        const profile = await activateTrialIfEligible(firebaseUser, snap.exists() ? snap.data() : {});
 
-        setUser({
-          id: firebaseUser.uid,
-          name: profile?.name || "",
-          email: profile?.email || firebaseUser.email || "",
-          phone: profile?.phone || "",
-          role: profile?.role || "user",
-          plan: profile?.plan || "free",
-          subscriptionStatus: profile?.subscriptionStatus || "active",
-          subscriptionEndsAt: profile?.subscriptionEndsAt || "",
-          blocked: Boolean(profile?.blocked),
-          sharedLedgerId: profile?.sharedLedgerId || "",
-          sharedLedgerRole: profile?.sharedLedgerRole || ""
-        });
+        setUser(buildSessionUser(firebaseUser, profile));
         setCurrentUser(firebaseUser.uid);
       } catch (err) {
         console.error("Profile load error:", err);
@@ -136,7 +160,7 @@ export function AuthProvider({ children }) {
 
       await ensureUserProfile(userCred.user);
       const snap = await getDoc(doc(db, "users", userCred.user.uid));
-      const profile = snap.exists() ? snap.data() : {};
+      const profile = await activateTrialIfEligible(userCred.user, snap.exists() ? snap.data() : {});
 
       if (profile?.blocked) {
         await signOut(auth);
@@ -144,19 +168,7 @@ export function AuthProvider({ children }) {
         return { error: "Your account has been blocked. Contact admin." };
       }
 
-      const nextUser = {
-        id: userCred.user.uid,
-        name: profile?.name || "",
-        email: profile?.email || email,
-        phone: profile?.phone || "",
-        role: profile?.role || "user",
-        plan: profile?.plan || "free",
-        subscriptionStatus: profile?.subscriptionStatus || "active",
-        subscriptionEndsAt: profile?.subscriptionEndsAt || "",
-        blocked: Boolean(profile?.blocked),
-        sharedLedgerId: profile?.sharedLedgerId || "",
-        sharedLedgerRole: profile?.sharedLedgerRole || ""
-      };
+      const nextUser = buildSessionUser(userCred.user, profile);
 
       setUser(nextUser);
       setCurrentUser(nextUser.id);
@@ -180,7 +192,7 @@ export function AuthProvider({ children }) {
 
       return {
         success: true,
-        message: "Your account is ready. Please verify your email before signing in. Your free Pro trial will begin on first login."
+        message: "Your account is ready. Please verify your email before signing in. Your free Pro trial will begin after your first verified login."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {

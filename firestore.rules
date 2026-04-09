@@ -11,7 +11,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && request.auth.uid == "W7dU0vbtEtPG5rn7CXoxLsbcs483";
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return isSignedIn() && (
+        request.auth.uid == "W7dU0vbtEtPG5rn7CXoxLsbcs483" ||
+        (profile.exists() && profile.data.role == "admin")
+      );
     }
 
     match /users/{userId} {
@@ -19,6 +23,19 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin() && request.auth.uid != userId;
+    }
+
+    match /shared_ledgers/{ledgerId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read, update: if isAdmin() ||
+        (resource.data.members is list &&
+         resource.data.members.filter(member => member.userId == request.auth.uid).size() > 0);
+      allow delete: if isAdmin();
+    }
+
+    match /admin_cleanup_queue/{requestId} {
+      allow create: if isAdmin();
+      allow read, update, delete: if isAdmin();
     }
 
     match /payment_requests/{requestId} {

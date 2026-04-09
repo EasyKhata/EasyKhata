@@ -191,6 +191,13 @@ export function getPlanSummary(user) {
     };
   }
 
+  if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user)) {
+    return {
+      title: "Trial ended",
+      message: "Your free Pro trial has ended. Upgrade to continue using premium features."
+    };
+  }
+
   if (status === SUBSCRIPTION_STATUS.INACTIVE) {
     return {
       title: `${PLAN_LABELS[plan] || "Plan"} inactive`,
