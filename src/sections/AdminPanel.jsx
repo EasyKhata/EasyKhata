@@ -42,6 +42,7 @@ export default function AdminPanel() {
 
   async function fetchAdminData() {
     setLoading(true);
+    setAdminError("");
     try {
       const usersSnapshot = await getDocs(collection(db, "users"));
       setUsers(
@@ -137,8 +138,15 @@ export default function AdminPanel() {
       return;
     }
 
-    await updateDoc(doc(db, "users", id), { blocked: !blocked });
-    fetchAdminData();
+    setAdminError("");
+    try {
+      await updateDoc(doc(db, "users", id), { blocked: !blocked });
+      fetchAdminData();
+    } catch (err) {
+      console.error("Block/unblock error:", err);
+      setAdminError("Unable to update the user's block status. Please try again.");
+      alert(err?.message || "Unable to update the user's block status. Please try again.");
+    }
   }
 
   async function deleteUserRecord(member) {
@@ -150,81 +158,109 @@ export default function AdminPanel() {
     const confirmed = window.confirm("This will remove the user's Firestore profile and queue an Authentication cleanup request. Continue?");
     if (!confirmed) return;
 
-    const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
-    await Promise.all(
-      ledgersSnapshot.docs.map(async ledgerDoc => {
-        const ledger = ledgerDoc.data();
-        const members = (ledger.members || []).filter(item => item.userId !== member.id);
-        if (members.length !== (ledger.members || []).length) {
-          await updateDoc(ledgerDoc.ref, { members });
-        }
-      })
-    );
+    setAdminError("");
+    try {
+      const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
+      await Promise.all(
+        ledgersSnapshot.docs.map(async ledgerDoc => {
+          const ledger = ledgerDoc.data();
+          const members = (ledger.members || []).filter(item => item.userId !== member.id);
+          if (members.length !== (ledger.members || []).length) {
+            await updateDoc(ledgerDoc.ref, { members });
+          }
+        })
+      );
 
-    await setDoc(doc(db, "admin_cleanup_queue", member.id), {
-      uid: member.id,
-      email: member.email || "",
-      name: member.name || "",
-      requestedBy: user.id,
-      requestedAt: new Date().toISOString(),
-      status: "pending_auth_cleanup",
-      note: "Client app cannot delete Firebase Authentication users directly. Complete this request with Admin SDK or Cloud Functions."
-    });
+      await setDoc(doc(db, "admin_cleanup_queue", member.id), {
+        uid: member.id,
+        email: member.email || "",
+        name: member.name || "",
+        requestedBy: user.id,
+        requestedAt: new Date().toISOString(),
+        status: "pending_auth_cleanup",
+        note: "Client app cannot delete Firebase Authentication users directly. Complete this request with Admin SDK or Cloud Functions."
+      });
 
-    await deleteDoc(doc(db, "users", member.id));
-    fetchAdminData();
-    alert("User profile removed from Firestore and auth cleanup has been queued.");
+      await deleteDoc(doc(db, "users", member.id));
+      fetchAdminData();
+      alert("User profile removed from Firestore and auth cleanup has been queued.");
+    } catch (err) {
+      console.error("Delete user error:", err);
+      setAdminError("Unable to delete the user profile right now. Please try again.");
+      alert(err?.message || "Unable to delete the user profile right now. Please try again.");
+    }
   }
 
   async function updateUserPlan(member, plan) {
-    const updates = {
-      plan,
-      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE
-    };
+    setAdminError("");
+    try {
+      const updates = {
+        plan,
+        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE
+      };
 
-    if (plan === PLANS.FREE) {
-      updates.subscriptionEndsAt = "";
+      if (plan === PLANS.FREE) {
+        updates.subscriptionEndsAt = "";
+      }
+
+      await updateDoc(doc(db, "users", member.id), updates);
+      fetchAdminData();
+    } catch (err) {
+      console.error("Update plan error:", err);
+      setAdminError("Unable to update the user's plan. Please try again.");
+      alert(err?.message || "Unable to update the user's plan. Please try again.");
     }
-
-    await updateDoc(doc(db, "users", member.id), updates);
-    fetchAdminData();
   }
 
   async function updateSubscriptionStatus(member, subscriptionStatus) {
-    const updates = { subscriptionStatus };
-    if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
-      updates.subscriptionEndsAt = getTrialEndDate();
+    setAdminError("");
+    try {
+      const updates = { subscriptionStatus };
+      if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
+        updates.subscriptionEndsAt = getTrialEndDate();
+      }
+      if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
+        updates.subscriptionEndsAt = "";
+      }
+      await updateDoc(doc(db, "users", member.id), updates);
+      fetchAdminData();
+    } catch (err) {
+      console.error("Update subscription status error:", err);
+      setAdminError("Unable to update the user's subscription status. Please try again.");
+      alert(err?.message || "Unable to update the user's subscription status. Please try again.");
     }
-    if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
-      updates.subscriptionEndsAt = "";
-    }
-    await updateDoc(doc(db, "users", member.id), updates);
-    fetchAdminData();
   }
 
   async function updatePaymentRequestStatus(request, status) {
-    const requestRef = doc(db, "payment_requests", request.id);
-    const updates = {
-      status,
-      reviewedBy: user.id,
-      reviewedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    setAdminError("");
+    try {
+      const requestRef = doc(db, "payment_requests", request.id);
+      const updates = {
+        status,
+        reviewedBy: user.id,
+        reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
 
-    if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
-      await updateDoc(doc(db, "users", request.userId), {
-        plan: request.requestedPlan || PLANS.PRO,
-        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-        subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
-      });
+      if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
+        await updateDoc(doc(db, "users", request.userId), {
+          plan: request.requestedPlan || PLANS.PRO,
+          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+          subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
+        });
+      }
+
+      if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
+        updates.rejectionReason = "Payment proof not approved";
+      }
+
+      await setDoc(requestRef, updates, { merge: true });
+      fetchAdminData();
+    } catch (err) {
+      console.error("Payment request status update error:", err);
+      setAdminError("Unable to update the payment request. Please try again.");
+      alert(err?.message || "Unable to update the payment request. Please try again.");
     }
-
-    if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
-      updates.rejectionReason = "Payment proof not approved";
-    }
-
-    await setDoc(requestRef, updates, { merge: true });
-    fetchAdminData();
   }
 
   if (loading) {

@@ -8,7 +8,7 @@ import { Modal, Field, Input, Textarea, CurrencyPicker, Avatar, DeleteBtn, fmtMo
 import { exportUserData, importUserData } from "../utils/backup";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport } from "../utils/reportGen";
-import { isStrongPassword } from "../utils/validator";
+import { isStrongPassword, isValidEmail, isValidPhone } from "../utils/validator";
 import {
   BILLING_CYCLES,
   PAYMENT_REQUEST_STATUS,
@@ -92,10 +92,26 @@ export default function SettingsSection() {
   }, [notificationPrefs]);
 
   const saveAcc = async () => {
+    const cleanEmail = (accForm.email || "").trim().toLowerCase();
+    const cleanPhone = String(accForm.phone || "").trim();
+
+    if (!accForm.name?.trim()) {
+      alert("Please enter your name.");
+      return;
+    }
+    if (!isValidEmail(cleanEmail)) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+    if (!isValidPhone(cleanPhone)) {
+      alert("Please enter a valid phone number with at least 10 digits.");
+      return;
+    }
+
     const res = await updateProfile({
       name: accForm.name || "",
-      email: accForm.email || "",
-      phone: accForm.phone || "",
+      email: cleanEmail,
+      phone: cleanPhone,
       address: accForm.address || "",
       gstin: accForm.gstin || "",
       showHSN: Boolean(accForm.showHSN)
@@ -224,7 +240,11 @@ export default function SettingsSection() {
       setUpgradeInfo(getUpgradeCopy("sharedLedger"));
       return;
     }
-    const res = await createSharedLedger(sharedLedgerForm.name);
+    if (!sharedLedgerForm.name?.trim()) {
+      alert("Please enter a name for the shared ledger.");
+      return;
+    }
+    const res = await createSharedLedger(sharedLedgerForm.name.trim());
     if (res?.error) {
       alert(res.error);
       return;
@@ -239,7 +259,11 @@ export default function SettingsSection() {
       setUpgradeInfo(getUpgradeCopy("sharedLedger"));
       return;
     }
-    const res = await joinSharedLedger(sharedLedgerForm.code);
+    if (!sharedLedgerForm.code?.trim()) {
+      alert("Please enter the invite code.");
+      return;
+    }
+    const res = await joinSharedLedger(sharedLedgerForm.code.trim());
     if (res?.error) {
       alert(res.error);
       return;
