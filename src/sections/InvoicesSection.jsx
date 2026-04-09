@@ -17,6 +17,7 @@ import {
   SectionSkeleton
 } from "../components/UI";
 import { UpgradeModal } from "../components/UI";
+import QuickInvoiceModal from "../components/QuickInvoiceModal";
 import { useAuth } from "../context/AuthContext";
 import { downloadInvoice } from "../utils/invoiceGen";
 import {
@@ -67,6 +68,7 @@ export default function InvoicesSection({ year, month }) {
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const [showQuickInvoice, setShowQuickInvoice] = useState(false);
   const isAdmin = user?.role === "admin";
   const [users, setUsers] = useState([]);
 
@@ -248,6 +250,33 @@ export default function InvoicesSection({ year, month }) {
     setForm(current => ({ ...current, items: [...current.items, emptyItem()] }));
   }
 
+  function saveQuickInvoice(quickPayload) {
+    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: d.invoices.length })) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+      return;
+    }
+
+    const fullForm = {
+      number: getNextInvoiceNumber(d.invoices),
+      customerId: quickPayload.customerId,
+      billTo: { name: "", address: "", gstin: "" },
+      shipTo: { name: "", address: "" },
+      shipSameAsBill: true,
+      date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+      dueDate: "",
+      status: "pending",
+      paidDate: "",
+      taxMode: "split",
+      items: quickPayload.items,
+      notes: quickPayload.notes,
+      terms: "Payment is due within the agreed billing cycle."
+    };
+
+    const invoice = buildInvoicePayload(fullForm);
+    d.addInvoice(invoice);
+    setShowQuickInvoice(false);
+  }
+
   function removeItem(id) {
     setForm(current => ({ ...current, items: current.items.filter(item => item.id !== id) }));
   }
@@ -326,7 +355,39 @@ export default function InvoicesSection({ year, month }) {
         </div>
       </div>
 
-      <FAB bg="var(--blue)" shadow="rgba(103,178,255,0.35)" onClick={openNew} />
+      {/* Quick & Full Invoice Actions */}
+      <div style={{ position: "fixed", bottom: 100, right: 20, display: "flex", flexDirection: "column", gap: 10, zIndex: 40 }}>
+        <button
+          onClick={() => setShowQuickInvoice(true)}
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: "50%",
+            border: "none",
+            background: "var(--accent)",
+            color: "#0C0C10",
+            fontSize: 24,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 12px rgba(255, 183, 77, 0.3)",
+            fontFamily: "var(--font)",
+            transition: "all 0.2s"
+          }}
+          title="Quick Invoice (faster)"
+          onMouseEnter={e => {
+            e.target.style.transform = "scale(1.1)";
+          }}
+          onMouseLeave={e => {
+            e.target.style.transform = "scale(1)";
+          }}
+        >
+          ⚡
+        </button>
+        <FAB bg="var(--blue)" shadow="rgba(103,178,255,0.35)" onClick={openNew} />
+      </div>
 
       {detail && (() => {
         const invoice = d.invoices.find(item => item.id === detail.id) || detail;
@@ -596,6 +657,14 @@ export default function InvoicesSection({ year, month }) {
           </Modal>
         );
       })()}
+
+      <QuickInvoiceModal
+        open={showQuickInvoice}
+        onClose={() => setShowQuickInvoice(false)}
+        onSave={saveQuickInvoice}
+        customers={isAdmin ? users : d.customers}
+        currency={d.currency}
+      />
 
       <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>

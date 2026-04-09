@@ -83,6 +83,64 @@ function formatUserSubscription(user) {
   return `${plan} · ${status} · ${joined}`;
 }
 
+function downloadCsv(filename, rows) {
+  const csvRows = rows.map(row => row.map(value => {
+    const text = String(value ?? "").replace(/"/g, '""');
+    return `"${text}"`;
+  }).join(","));
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+export function downloadAdminUsersCsv(users) {
+  const rows = [
+    ["User ID", "Name", "Email", "Phone", "Plan", "Subscription Status", "Joined", "Blocked", "Shared Ledger"]
+  ];
+  users.forEach(user => {
+    rows.push([
+      user.id,
+      user.name || "",
+      user.email || "",
+      user.phone || "",
+      user.plan || user.subscriptionPlan || "free",
+      user.subscriptionStatus || user.status || "active",
+      user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN") : "",
+      user.blocked ? "Yes" : "No",
+      user.sharedLedgerId || ""
+    ]);
+  });
+  downloadCsv(`admin-users-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+}
+
+export function downloadAdminRequestsCsv(requests) {
+  const rows = [
+    ["Request ID", "User ID", "User Name", "Email", "Plan", "Billing Cycle", "Amount", "Status", "Created At", "Updated At", "Transaction ID"]
+  ];
+  requests.forEach(request => {
+    rows.push([
+      request.id,
+      request.userId || "",
+      request.userName || "",
+      request.userEmail || "",
+      request.requestedPlan || "",
+      request.billingCycle || "",
+      request.amount || "",
+      request.status || "pending",
+      request.createdAt ? new Date(request.createdAt).toLocaleDateString("en-IN") : "",
+      request.updatedAt ? new Date(request.updatedAt).toLocaleDateString("en-IN") : "",
+      request.transactionId || ""
+    ]);
+  });
+  downloadCsv(`admin-requests-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+}
+
 export function downloadAdminMonthlyReport(data, year, month, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const title = `Admin Activity Report - ${MONTHS[month]} ${year}`;
@@ -214,7 +272,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
 
   y = sectionTitle(doc, y, "Financial Summary");
   y = drawMetricGrid(doc, y, [
-    { label: "Total Income", value: money(stats.totalIncome, sym) },
+    { label: "Total Receipts", value: money(stats.totalIncome, sym) },
     { label: "Total Expenses", value: money(stats.totalExpense, sym) },
     { label: "Profit / Loss", value: money(stats.profit, sym) },
     { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },

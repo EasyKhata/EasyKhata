@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { Modal, Field, Input, Select, Toggle, FAB, DeleteBtn, fmtMoney, fmtDate, monthKey, MONTHS, ProgressBar, EmptyState, SectionSkeleton, UpgradeModal } from "../components/UI";
+import Collapsible from "../components/Collapsible";
 import { calculateDashboard } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { useAuth } from "../context/AuthContext";
@@ -213,24 +214,32 @@ export default function ExpensesSection({ year, month }) {
         </div>
 
         {recurring.length > 0 && (
-          <>
-            <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Recurring</span><span style={{ color: "var(--danger)" }}>{fmtMoney(recurring.reduce((s, e) => s + Number(e.amount), 0), sym)}</span>
-            </div>
-            <div className="card" style={{ marginBottom: 22 }}>{recurring.map(expense => <ExpRow key={expense.id} expense={expense} />)}</div>
-          </>
+          <Collapsible 
+            title="Recurring Expenses" 
+            icon="🔄" 
+            color="var(--danger)"
+            count={recurring.length}
+            defaultOpen={true}
+          >
+            <div className="card">{recurring.map(expense => <ExpRow key={expense.id} expense={expense} />)}</div>
+          </Collapsible>
         )}
 
-        <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>One-Time</span><span style={{ color: "var(--danger)" }}>{fmtMoney(oneTime.reduce((s, e) => s + Number(e.amount), 0), sym)}</span>
-        </div>
-        <div className="card">
-          {oneTime.length === 0 ? (
-            <EmptyState title="No one-time expenses yet" message="Add purchases, bills, or travel costs to keep this month accurate." actionLabel="Add Expense" onAction={openNew} accentColor="var(--danger)" />
-          ) : (
-            oneTime.map(expense => <ExpRow key={expense.id} expense={expense} />)
-          )}
-        </div>
+        <Collapsible 
+          title="One-Time Expenses" 
+          icon="📌" 
+          color="var(--danger)"
+          count={oneTime.length}
+          defaultOpen={oneTime.length > 0}
+        >
+          <div className="card">
+            {oneTime.length === 0 ? (
+              <EmptyState title="No one-time expenses yet" message="Add purchases, bills, or travel costs to keep this month accurate." actionLabel="Add Expense" onAction={openNew} accentColor="var(--danger)" />
+            ) : (
+              oneTime.map(expense => <ExpRow key={expense.id} expense={expense} />)
+            )}
+          </div>
+        </Collapsible>
       </div>
 
       <FAB bg="var(--danger)" shadow="rgba(255,110,110,0.35)" onClick={openNew} />

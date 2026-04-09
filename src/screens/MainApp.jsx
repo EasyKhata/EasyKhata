@@ -9,6 +9,7 @@ import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
 import InvoicesSection from "../sections/InvoicesSection";
 import SettingsSection from "../sections/SettingsSection";
+import AdminPanel from "../sections/AdminPanel";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -27,6 +28,7 @@ export default function MainApp() {
   const [tab, setTab] = useState("dashboard");
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
+  const [viewMode, setViewMode] = useState("month"); // "month" or "year"
   const [showReminders, setShowReminders] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
 
@@ -72,10 +74,11 @@ export default function MainApp() {
     }
   }, [dismissedIds, liveReminders, data.notificationPrefs?.browserEnabled, user?.id]);
 
+  const isAdmin = user?.role === "admin";
   const TABS = [
-    { id: "dashboard", icon: "⌂", label: "Home" },
+    { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
     ...(user?.role !== "admin" ? [
-      { id: "income", icon: "↑", label: "Income" },
+      { id: "income", icon: "↑", label: "Receipts" },
       { id: "expenses", icon: "↓", label: "Expenses" },
     ] : []),
     { id: "invoices", icon: "■", label: "Invoices" },
@@ -83,7 +86,7 @@ export default function MainApp() {
   ];
 
   const tabColor = {
-    dashboard: "var(--accent)",
+    dashboard: isAdmin ? "var(--gold)" : "var(--accent)",
     income: "var(--accent)",
     expenses: "var(--danger)",
     invoices: "var(--blue)",
@@ -148,7 +151,7 @@ export default function MainApp() {
             </div>
           </div>
         </div>
-        {tab !== "settings" && <MonthNav year={year} month={month} onChange={(nextYear, nextMonth) => { setYear(nextYear); setMonth(nextMonth); }} />}
+        {tab !== "settings" && <MonthNav year={year} month={month} onChange={(nextYear, nextMonth) => { setYear(nextYear); setMonth(nextMonth); }} viewMode={viewMode} onViewModeChange={setViewMode} />}
         {tab === "settings" && (
           <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {user?.name}
@@ -157,7 +160,7 @@ export default function MainApp() {
       </div>
 
       <div className="content-scroll">
-        {tab === "dashboard" && <Dashboard year={year} month={month} onNav={setTab} />}
+        {tab === "dashboard" && (isAdmin ? <AdminPanel /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={setTab} />)}
         {tab === "income" && <IncomeSection year={year} month={month} />}
         {tab === "expenses" && <ExpensesSection year={year} month={month} />}
         {tab === "invoices" && <InvoicesSection year={year} month={month} />}

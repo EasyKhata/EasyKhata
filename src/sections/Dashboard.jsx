@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, ProgressBar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
-import { calculateDashboard, getInvoiceStatusColor, getInvoiceStatusLabel } from "../utils/analytics";
+import { calculateDashboard, calculateYearlyDashboard, getInvoiceStatusColor, getInvoiceStatusLabel } from "../utils/analytics";
 import { useAuth } from "../context/AuthContext";
 import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan } from "../utils/subscription";
+import OnboardingGuide from "../components/OnboardingGuide";
+import Collapsible from "../components/Collapsible";
 import { collection, getDocs, updateDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import {
@@ -18,17 +20,39 @@ import {
   getTrialEndDate
 } from "../utils/subscription";
 
-export default function Dashboard({ year, month, onNav }) {
+export default function Dashboard({ year, month, viewMode: propViewMode, onNav }) {
   const data = useData();
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const sym = data.currency?.symbol || "Rs";
   const isAdmin = user?.role === "admin";
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [viewMode, setViewMode] = useState(propViewMode || "month"); // "month" or "year"
 
   const [adminData, setAdminData] = useState({ users: [], paymentRequests: [] });
   const [adminLoading, setAdminLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
   const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
+
+  // Show setup guide for normal users on first visit
+  useEffect(() => {
+    setViewMode(propViewMode || "month");
+  }, [propViewMode]);
+
+  useEffect(() => {
+    if (isAdmin || !data.loaded) return;
+    
+    const hasCompletedSetup = localStorage.getItem(`setup-guide-${user?.id}`);
+    const accountNameSet = !!(data.account?.name && data.account.name.trim());
+    const hasCustomers = data.customers?.length > 0;
+    const hasInvoices = data.invoices?.length > 0;
+    const hasExpenses = data.expenses?.length > 0;
+
+    // Show setup guide if account not set or no activity yet
+    if (!hasCompletedSetup && (!accountNameSet || (!hasCustomers && !hasInvoices && !hasExpenses))) {
+      setShowSetupGuide(true);
+    }
+  }, [user?.id, data.loaded, isAdmin, data.account?.name, data.customers?.length, data.invoices?.length, data.expenses?.length]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -253,8 +277,13 @@ export default function Dashboard({ year, month, onNav }) {
             </div>
           </div>
 
-          <div style={{ marginBottom: 22 }}>
-            <div className="section-label">Payment Verification</div>
+          <Collapsible 
+            title="Payment Verification" 
+            icon="💳" 
+            color="var(--gold)"
+            count={filteredRequests.length}
+            defaultOpen={pendingRequests > 0}
+          >
             <div className="card" style={{ padding: 14, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {[
@@ -359,10 +388,15 @@ export default function Dashboard({ year, month, onNav }) {
                 ))
               )}
             </div>
-          </div>
+          </Collapsible>
 
-          <div style={{ marginBottom: 22 }}>
-            <div className="section-label">User Management</div>
+          <Collapsible 
+            title="User Management" 
+            icon="👥" 
+            color="var(--blue)"
+            count={filteredUsers.length}
+            defaultOpen={false}
+          >
             <div className="card" style={{ padding: 14, marginBottom: 18 }}>
               <input
                 className="input-field"
@@ -465,7 +499,7 @@ export default function Dashboard({ year, month, onNav }) {
                 ))
               )}
             </div>
-          </div>
+          </Collapsible>
 
           <div className="card" style={{ marginTop: 18, padding: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How payment verification works</div>
@@ -478,14 +512,19 @@ export default function Dashboard({ year, month, onNav }) {
     );
   }
 
-  const stats = calculateDashboard(data, year, month);
-  const showAdvanced = canUseFeature(user, "smartDashboard");
+  const stats = viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year);
+  const showAdvanced = canUseFeature(user, "advancedAnalytics");
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
-  const heroSub = stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of income this month.";
-  const maxCashFlow = Math.max(1, ...stats.cashFlow.map(item => Math.max(item.income, item.expenses)));
+  const heroSub = viewMode === "month" 
+    ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
+    : (stats.profit >= 0 ? "You're profitable for the year." : "Expenses exceed receipts for the year.");
+  
+  const maxCashFlow = viewMode === "month" 
+    ? Math.max(1, ...stats.cashFlow.map(item => Math.max(item.income, item.expenses)))
+    : Math.max(1, ...stats.monthlyBreakdown.map(item => Math.max(item.income, item.expenses)));
 
   const Tile = ({ label, value, color, sub, onClick }) => (
     <div onClick={onClick} style={{ background: "var(--surface)", border: `1px solid ${color}33`, borderRadius: 18, padding: "18px 16px", cursor: onClick ? "pointer" : "default", boxShadow: "var(--card-shadow)" }}>
@@ -499,7 +538,7 @@ export default function Dashboard({ year, month, onNav }) {
     <div style={{ paddingBottom: 20 }}>
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-          Smart Dashboard · {MONTHS[month]} {year}
+          Smart Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
         </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
           {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
@@ -509,78 +548,84 @@ export default function Dashboard({ year, month, onNav }) {
 
       <div style={{ padding: "20px 18px 0" }}>
         {(currentPlan === PLANS.FREE || isTrial) && (
-          <div style={{ marginBottom: 22 }}>
-            <div className="section-label">Subscription</div>
-            <div className="card" style={{ padding: "16px 18px", borderColor: currentPlan === PLANS.FREE ? "var(--gold)33" : "var(--accent)33" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>
-                    {currentPlan === PLANS.FREE ? "Upgrade unlocks the full business toolkit" : "Your Pro trial is active"}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginTop: 6 }}>
-                    {currentPlan === PLANS.FREE
-                      ? "Free users get basic bookkeeping. Pro adds reports, PDF exports, smart alerts, backup tools, and advanced business insights."
-                      : `You can currently use reports, PDF exports, alerts, advanced dashboard insights, and backups.${user?.subscriptionEndsAt ? ` Trial ends on ${formatSubscriptionDate(user.subscriptionEndsAt)}.` : ""}`}
-                  </div>
-                </div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
-                  {currentPlan === PLANS.FREE ? "Rs 99/mo" : "Pro Trial"}
-                </div>
+          <div style={{ marginBottom: 18, padding: "12px 14px", background: currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+                {currentPlan === PLANS.FREE ? "📌 Upgrade to Pro" : "✨ Pro Trial Active"}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {[
-                  "PDF invoices and reports",
-                  "Smart alerts and reminders",
-                  "Advanced dashboard insights",
-                  "Backup import and export"
-                ].map(item => (
-                  <div key={item} style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
-                    {item}
-                  </div>
-                ))}
+              <div style={{ fontSize: 12, color: currentPlan === PLANS.FREE ? "var(--gold-text)" : "var(--accent-text)", marginTop: 2 }}>
+                {currentPlan === PLANS.FREE ? "Unlock reports, PDF exports & alerts" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
               </div>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
+              {currentPlan === PLANS.FREE ? "Rs 99/mo" : ""}
             </div>
           </div>
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
-          <Tile label="Income" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub="Manual + invoice earnings" onClick={() => onNav("income")} />
-          <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />
-          <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-          <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
+          {viewMode === "month" ? (
+            <>
+          <Tile label="Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub="Manual + invoice receipts" onClick={() => onNav("income")} />
+              <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />
+              <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
+              {showAdvanced ? (
+                <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
+              ) : (
+                <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
+              )}
+            </>
+          ) : (
+            <>
+              <Tile label="Total Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
+              <Tile label="Total Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={`Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} />
+              <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
+              <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${Math.floor(stats.burnRateDays / 12)} months`} color="var(--blue)" sub="Estimated yearly runway" />
+            </>
+          )}
         </div>
 
-        <div style={{ marginBottom: 22 }}>
-          <div className="section-label">Savings Goal</div>
-          <div className="card" style={{ padding: "18px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{stats.goalStatus}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
-                  {stats.monthlySavingsGoal > 0
-                    ? `Target ${fmtMoney(stats.monthlySavingsGoal, sym)} this month`
-                    : "Set a monthly savings goal in Settings to track progress."}
+
+        {showAdvanced && (
+          <div style={{ marginBottom: 22 }}>
+            <div className="section-label">Savings Goal</div>
+            <div className="card" style={{ padding: "18px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{stats.goalStatus}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                    {stats.monthlySavingsGoal > 0
+                      ? `Target ${fmtMoney(stats.monthlySavingsGoal, sym)} this month`
+                      : "Set a monthly savings goal in Settings to track progress."}
+                  </div>
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: stats.goalStatus === "On track" ? "var(--accent)" : "var(--gold)" }}>
+                  {stats.monthlySavingsGoal > 0 ? `${Math.round(stats.goalProgress)}%` : "--"}
                 </div>
               </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: stats.goalStatus === "On track" ? "var(--accent)" : "var(--gold)" }}>
-                {stats.monthlySavingsGoal > 0 ? `${Math.round(stats.goalProgress)}%` : "--"}
-              </div>
+              <ProgressBar pct={stats.goalProgress} color={stats.goalStatus === "On track" ? "var(--accent)" : "var(--gold)"} />
             </div>
-            <ProgressBar pct={stats.goalProgress} color={stats.goalStatus === "On track" ? "var(--accent)" : "var(--gold)"} />
           </div>
-        </div>
+        )}
 
-        <div style={{ marginBottom: 22 }}>
-          <div className="section-label">Smart Alerts</div>
-          <div className="card">
-            {!showAdvanced ? (
+        <Collapsible 
+          title="Smart Alerts" 
+          icon="🚨" 
+          count={showAdvanced ? stats.alertItems.length : 0}
+          defaultOpen={showAdvanced && stats.alertItems.length > 0}
+        >
+          {!showAdvanced ? (
+            <div className="card">
               <EmptyState title="Upgrade to unlock smart alerts" message="Pro plan adds due reminders, budget warnings, spending spikes, and stronger financial guidance." accentColor="var(--gold)" />
-            ) : stats.alertItems.length === 0 ? (
+            </div>
+          ) : stats.alertItems.length === 0 ? (
+            <div className="card">
               <EmptyState title="All clear for now" message="No urgent alerts right now. Your cash flow and collections look steady." />
-            ) : (
-              stats.alertItems.map((alert, index) => {
+            </div>
+          ) : (
+            <div className="card">
+              {stats.alertItems.map((alert, index) => {
                 const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
-                const bg = alert.tone === "danger" ? "var(--danger-deep)" : "var(--gold-deep)";
                 return (
                   <div key={`${alert.title}-${index}`} className="card-row">
                     <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
@@ -590,17 +635,21 @@ export default function Dashboard({ year, month, onNav }) {
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
-        </div>
+              })}
+            </div>
+          )}
+        </Collapsible>
 
-        <div style={{ marginBottom: 22 }}>
-          <div className="section-label">Cash Flow Trend</div>
+        <Collapsible 
+          title="Cash Flow Trend" 
+          icon="📊" 
+          color="var(--blue)"
+          defaultOpen={false}
+        >
           <div className="card" style={{ padding: "18px" }}>
             {!showAdvanced ? (
-              <EmptyState title="Cash flow trend is on Pro" message="Upgrade to Pro to see your six-month cash flow trend and business runway insights." accentColor="var(--blue)" />
-            ) : (
+              <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month cash flow trend and business runway insights." : "Upgrade to Pro to see your yearly cash flow trend and business runway insights."} accentColor="var(--blue)" />
+            ) : viewMode === "month" ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
               {stats.cashFlow.map(item => (
                 <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -613,100 +662,158 @@ export default function Dashboard({ year, month, onNav }) {
                 </div>
               ))}
             </div>
+            ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
+              {stats.monthlyBreakdown.map(item => (
+                <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
+                    <div style={{ width: 8, height: `${Math.max(8, (item.income / maxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
+                    <div style={{ width: 8, height: `${Math.max(8, (item.expenses / maxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
+                  <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
+                </div>
+              ))}
+            </div>
             )}
           </div>
-        </div>
+        </Collapsible>
 
-        <div style={{ display: "grid", gap: 22 }}>
-          <div>
-            <div className="section-label">Top Expense Categories</div>
-            <div className="card">
-              {!showAdvanced ? (
-                <EmptyState title="Category insights are on Pro" message="Upgrade to Pro to see top expense categories and smarter spending analysis." accentColor="var(--danger)" />
-              ) : stats.topExpenseCategories.length === 0 ? (
-                <EmptyState title="No expenses yet" message="Add your first expense entry to unlock category insights and spending trends." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
-              ) : (
-                stats.topExpenseCategories.map(category => (
-                  <div key={category.category} className="card-row">
-                    <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
+        <Collapsible 
+          title="Top Expense Categories" 
+          icon="💰" 
+          color="var(--danger)"
+          count={showAdvanced ? stats.topExpenseCategories.length : 0}
+          defaultOpen={showAdvanced && stats.topExpenseCategories.length > 0}
+        >
+          <div className="card">
+            {!showAdvanced ? (
+              <EmptyState title="Category insights are on Pro" message="Upgrade to Pro to see top expense categories and smarter spending analysis." accentColor="var(--danger)" />
+            ) : stats.topExpenseCategories.length === 0 ? (
+              <EmptyState title="No expenses yet" message="Add your first expense entry to unlock category insights and spending trends." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+            ) : (
+              stats.topExpenseCategories.map(category => (
+                <div key={category.category} className="card-row">
+                  <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
+                </div>
+              ))
+            )}
           </div>
+        </Collapsible>
 
-          <div>
-            <div className="section-label">Top Customers</div>
-            <div className="card">
-              {!showAdvanced ? (
-                <EmptyState title="Customer intelligence is on Pro" message="Upgrade to Pro to see top customers, open balances, and payment patterns." accentColor="var(--blue)" />
-              ) : stats.topCustomers.length === 0 ? (
-                <EmptyState title="No customer revenue yet" message="Create invoices for your customers to see top accounts and open balances here." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
-              ) : (
-                stats.topCustomers.map(customer => (
-                  <div key={customer.name} className="card-row">
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <Avatar name={customer.name} size={38} fontSize={13} />
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Open balance {fmtMoney(customer.balance, sym)}</div>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(customer.revenue, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div>
-            <div className="section-label">High-Risk Customers</div>
-            <div className="card">
-              {!showAdvanced ? (
-                <EmptyState title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." accentColor="var(--gold)" />
-              ) : stats.highRiskCustomers.length === 0 ? (
-                <EmptyState title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." accentColor="var(--accent)" />
-              ) : (
-                stats.highRiskCustomers.map(customer => (
-                  <div key={customer.name} className="card-row">
+        <Collapsible 
+          title="Top Customers" 
+          icon="⭐" 
+          color="var(--blue)"
+          count={showAdvanced ? stats.topCustomers.length : 0}
+          defaultOpen={showAdvanced && stats.topCustomers.length > 0}
+        >
+          <div className="card">
+            {!showAdvanced ? (
+              <EmptyState title="Customer intelligence is on Pro" message="Upgrade to Pro to see top customers, open balances, and payment patterns." accentColor="var(--blue)" />
+            ) : stats.topCustomers.length === 0 ? (
+              <EmptyState title="No customer revenue yet" message="Create invoices for your customers to see top accounts and open balances here." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
+            ) : (
+              stats.topCustomers.map(customer => (
+                <div key={customer.name} className="card-row">
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <Avatar name={customer.name} size={38} fontSize={13} />
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{customer.overdueCount} overdue invoice(s)</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Open balance {fmtMoney(customer.balance, sym)}</div>
                     </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{Math.round(customer.lateRatio * 100)}% late</span>
                   </div>
-                ))
-              )}
-            </div>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(customer.revenue, sym)}</span>
+                </div>
+              ))
+            )}
           </div>
+        </Collapsible>
 
-          <div>
-            <div className="section-label">Pending Invoice Queue</div>
-            <div className="card">
-              {stats.pendingInvoices.length === 0 ? (
-                <EmptyState title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." accentColor="var(--accent)" />
-              ) : (
-                stats.pendingInvoices.slice(0, 4).map(invoice => {
-                  const color = getInvoiceStatusColor(invoice.computedStatus);
-                  return (
-                    <div key={invoice.id} className="card-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
+        <Collapsible 
+          title="High-Risk Customers" 
+          icon="⚠️" 
+          color="var(--gold)"
+          count={showAdvanced ? stats.highRiskCustomers.length : 0}
+          defaultOpen={false}
+        >
+          <div className="card">
+            {!showAdvanced ? (
+              <EmptyState title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." accentColor="var(--gold)" />
+            ) : stats.highRiskCustomers.length === 0 ? (
+              <EmptyState title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." accentColor="var(--accent)" />
+            ) : (
+              stats.highRiskCustomers.map(customer => (
+                <div key={customer.name} className="card-row">
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{customer.overdueCount} overdue invoice(s)</div>
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{Math.round(customer.lateRatio * 100)}% late</span>
+                </div>
+              ))
+            )}
           </div>
-        </div>
+        </Collapsible>
+
+        <Collapsible 
+          title="Pending Invoice Queue" 
+          icon="⏰" 
+          color="var(--gold)"
+          count={stats.pendingInvoices.length}
+          defaultOpen={stats.pendingInvoices.length > 0}
+        >
+          <div className="card">
+            {stats.pendingInvoices.length === 0 ? (
+              <EmptyState title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." accentColor="var(--accent)" />
+            ) : (
+              stats.pendingInvoices.slice(0, 4).map(invoice => {
+                const color = getInvoiceStatusColor(invoice.computedStatus);
+                return (
+                  <div key={invoice.id} className="card-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Collapsible>
       </div>
+
+      <OnboardingGuide
+        isOpen={showSetupGuide}
+        onComplete={() => {
+          localStorage.setItem(`setup-guide-${user?.id}`, "true");
+          setShowSetupGuide(false);
+        }}
+        data={data}
+        onNavigate={onNav}
+        user={user}
+        account={data.account}
+        onUpdateAccount={async (accountInfo) => {
+          try {
+            await updateProfile({
+              name: accountInfo.name || "",
+              email: accountInfo.email || "",
+              phone: accountInfo.phone || "",
+              address: accountInfo.address || "",
+              gstin: accountInfo.gstin || "",
+              showHSN: Boolean(accountInfo.showHSN)
+            });
+          } catch (err) {
+            console.error("Account update error:", err);
+            alert("Failed to save account details. Please try again.");
+          }
+        }}
+      />
     </div>
   );
 }

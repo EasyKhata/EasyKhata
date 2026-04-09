@@ -56,7 +56,7 @@ export default function IncomeSection({ year, month }) {
 
   function save() {
     if (!hasMinLength(form.label, 2)) {
-      setFormError("Add a clear income description so you can recognize it later.");
+      setFormError("Add a clear receipt description so you can recognize it later.");
       return;
     }
     if (!isPositiveAmount(form.amount)) {
@@ -64,7 +64,7 @@ export default function IncomeSection({ year, month }) {
       return;
     }
     if (!isValidDateValue(form.date)) {
-      setFormError("Choose the date when this income was received.");
+      setFormError("Choose the date when this amount was received.");
       return;
     }
 
@@ -85,8 +85,7 @@ export default function IncomeSection({ year, month }) {
   return (
     <div style={{ paddingBottom: 100 }}>
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Total Income - {MONTHS[month]} {year}</div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--accent)", letterSpacing: -0.5 }}>{fmtMoney(totalInv + totalMan, sym)}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Total Receipts - {MONTHS[month]} {year}</div>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -95,7 +94,7 @@ export default function IncomeSection({ year, month }) {
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {invIncome.length === 0 ? (
-            <EmptyState title="No invoice income yet" message="Invoices you raise this month will appear here automatically." actionLabel="Open Invoices" onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))} accentColor="var(--blue)" />
+            <EmptyState title="No invoice receipts yet" message="Invoices you raise this month will appear here automatically." actionLabel="Open Invoices" onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))} accentColor="var(--blue)" />
           ) : (
             invIncome.map(inv => (
               <div key={inv.id} className="card-row">
@@ -113,11 +112,11 @@ export default function IncomeSection({ year, month }) {
         </div>
 
         <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Manual Income</span><span style={{ color: "var(--accent)" }}>{fmtMoney(totalMan, sym)}</span>
+          <span>Manual Receipts</span><span style={{ color: "var(--accent)" }}>{fmtMoney(totalMan, sym)}</span>
         </div>
         <div className="card">
           {manIncome.length === 0 ? (
-            <EmptyState title="No manual income yet" message="Track offline payments, cash receipts, or owner deposits here." actionLabel="Add Income" onAction={openNew} accentColor="var(--accent)" />
+            <EmptyState title="No manual receipts yet" message="Track offline payments, cash receipts, or owner deposits here." actionLabel="Add Receipt" onAction={openNew} accentColor="var(--accent)" />
           ) : (
             manIncome.map(i => (
               <div key={i.id} className="card-row">
@@ -139,7 +138,7 @@ export default function IncomeSection({ year, month }) {
       <FAB bg="var(--accent)" shadow="rgba(126,232,162,0.35)" onClick={openNew} />
 
       {showForm && (
-        <Modal title={editId ? "Edit Income" : "Add Income"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!form.label.trim() && Number(form.amount) > 0}>
+        <Modal title={editId ? "Edit Receipt" : "Add Receipt"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!form.label.trim() && Number(form.amount) > 0}>
           {formError && (
             <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
               {formError}

@@ -395,6 +395,15 @@ export default function SettingsSection() {
           </div>
         </div>
 
+        {user?.role === "admin" && (
+          <div className="card" style={{ padding: "18px 16px", marginBottom: 20, borderLeft: "4px solid var(--gold)" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Admin Dashboard</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area still contains your account profile, currency controls, and notifications.
+            </div>
+          </div>
+        )}
+
         {user?.role !== "admin" && (
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
@@ -427,7 +436,7 @@ export default function SettingsSection() {
             <MenuRow icon="B" label="Account Profile" sub={account?.name || "Set up your business details"} onClick={() => setScreen("account")} />
             {user?.role !== "admin" && <MenuRow icon="C" label="Customers" sub={`${customers.length} customer(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
-            <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? "Download admin activity, user, and subscription report" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
+            <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Download admin activity, user, and subscription report" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
             {user?.role !== "admin" && <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />}
           </div>
         </div>

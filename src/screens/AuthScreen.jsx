@@ -17,6 +17,14 @@ export default function AuthScreen() {
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [showPasswordHint, setShowPasswordHint] = useState(false);
+
+  // Password strength indicator
+  const passStrength = password ? {
+    length: password.length >= 8 ? "strong" : password.length >= 6 ? "medium" : "weak",
+    hasNumber: /\d/.test(password),
+    hasSpecial: /[!@#$%^&*]/.test(password),
+  } : null;
 
   function resetMessages() {
     setError("");
@@ -204,24 +212,62 @@ export default function AuthScreen() {
         {screen === "register" && (
           <div className="fade-in">
             <Field label="Full Name" required>
-              <Input placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} />
-            </Field>
-            <Field label="Phone Number" required hint="Used for your business profile and account recovery.">
-              <Input type="tel" autoComplete="tel" placeholder="e.g. 9876543210" value={phone} onChange={e => setPhone(e.target.value)} />
+              <Input placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
             </Field>
             <Field label="Email Address" required>
               <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
             </Field>
-            <Field label="Password" required hint="Use at least 6 characters.">
-              <Input type="password" autoComplete="new-password" placeholder="Create a strong password" value={password} onChange={e => setPassword(e.target.value)} />
+            <Field label="Phone Number" required hint="Used for account recovery and business profile.">
+              <Input type="tel" autoComplete="tel" placeholder="e.g. 9876543210" value={phone} onChange={e => setPhone(e.target.value)} />
             </Field>
+            
+            <Field label="Password" required hint={showPasswordHint ? "At least 6 characters. Add numbers or symbols for extra security." : 
+              <button onClick={() => setShowPasswordHint(true)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--font)", fontSize: "inherit" }}>
+                View password tips
+              </button>
+            }>
+              <Input 
+                type="password" 
+                autoComplete="new-password" 
+                placeholder="Create a strong password" 
+                value={password} 
+                onChange={e => setPassword(e.target.value)} 
+              />
+              {password && (
+                <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                  <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: passStrength?.length === "weak" ? "var(--danger-deep)" : passStrength?.length === "medium" ? "var(--gold-deep)" : "var(--accent-deep)", color: passStrength?.length === "weak" ? "var(--danger)" : passStrength?.length === "medium" ? "var(--gold)" : "var(--accent)", fontWeight: 600 }}>
+                    {passStrength.length === "weak" ? "Weak" : passStrength.length === "medium" ? "Medium" : "Strong"}
+                  </div>
+                  {(passStrength.hasNumber || passStrength.hasSpecial) && (
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      {passStrength.hasNumber && "✓ Number "}
+                      {passStrength.hasSpecial && "✓ Symbol"}
+                    </div>
+                  )}
+                </div>
+              )}
+            </Field>
+
             <Field label="Confirm Password" required>
-              <Input type="password" autoComplete="new-password" placeholder="Re-enter your password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+              <Input 
+                type="password" 
+                autoComplete="new-password" 
+                placeholder="Re-enter your password" 
+                value={confirmPassword} 
+                onChange={e => setConfirmPassword(e.target.value)} 
+              />
+              {password && confirmPassword && password === confirmPassword && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>✓ Passwords match</div>
+              )}
+              {password && confirmPassword && password !== confirmPassword && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--danger)", fontWeight: 600 }}>✗ Passwords don't match</div>
+              )}
             </Field>
+
             <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
               {loading ? "Creating your account..." : "Create Account"}
             </button>
-            <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Already have an account? Sign in</button>
+            <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Already have an account? Sign in</button>
           </div>
         )}
 
