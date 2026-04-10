@@ -1,19 +1,93 @@
 import { invoiceTotal, monthKey, MONTHS } from "../components/UI";
+import { ORG_TYPES, getOrgType } from "./orgTypes";
 
 function toNumber(value) {
   return Number(value) || 0;
 }
 
-function invoiceTaxTotal(invoice) {
+function getGoalSnapshot(goals = {}) {
+  const targetAmount = toNumber(goals.targetAmount ?? goals.monthlySavings);
+  const targetDate = String(goals.targetDate || "");
+  const savedAmount = Math.max(0, toNumber(goals.savedAmount));
+  const note = String(goals.note || "").trim();
+  const goalLeft = Math.max(0, targetAmount - savedAmount);
+  const goalProgress = targetAmount > 0 ? Math.max(0, Math.min(100, (savedAmount / targetAmount) * 100)) : 0;
+  const goalStatus = targetAmount <= 0 ? "Set a savings goal" : goalLeft === 0 ? "Goal funded" : targetDate ? `Target by ${targetDate}` : "Goal in progress";
+
+  return {
+    targetAmount,
+    targetDate,
+    savedAmount,
+    note,
+    goalLeft,
+    goalProgress,
+    goalStatus
+  };
+}
+
+export function isQuoteDocument(invoice) {
+  return String(invoice?.documentType || "invoice").toLowerCase() === "quote";
+}
+
+export function getFinancialInvoices(invoices) {
+  return (invoices || []).filter(invoice => !isQuoteDocument(invoice));
+}
+
+function getInvoiceSubtotal(invoice) {
   return (invoice?.items || []).reduce((sum, item) => {
     const taxable = toNumber(item.qty) * toNumber(item.rate);
-    const rate = toNumber(item.taxRate ?? item.igst);
-    return sum + (taxable * rate) / 100;
+    return sum + taxable;
   }, 0);
 }
 
+export function getInvoiceDiscount(invoice) {
+  const subtotal = getInvoiceSubtotal(invoice);
+  return Math.max(0, Math.min(subtotal, toNumber(invoice?.discount)));
+}
+
+export function getInvoiceTaxBreakdown(invoice) {
+  const subtotal = getInvoiceSubtotal(invoice);
+  const discount = getInvoiceDiscount(invoice);
+  const multiplier = subtotal > 0 ? Math.max(0, subtotal - discount) / subtotal : 0;
+
+  return (invoice?.items || []).reduce(
+    (totals, item) => {
+      const taxable = toNumber(item.qty) * toNumber(item.rate);
+      const adjustedTaxable = taxable * multiplier;
+      const rate = toNumber(item.taxRate ?? item.igst);
+      const taxAmount = (adjustedTaxable * rate) / 100;
+
+      totals.subtotal += taxable;
+      totals.discount = discount;
+      totals.taxable += adjustedTaxable;
+      if ((invoice?.taxMode || "split") === "split") {
+        totals.cgst += taxAmount / 2;
+        totals.sgst += taxAmount / 2;
+      } else {
+        totals.igst += taxAmount;
+      }
+
+      return totals;
+    },
+    { subtotal, discount, taxable: 0, cgst: 0, sgst: 0, igst: 0 }
+  );
+}
+
 export function invoiceGrandTotal(invoice) {
-  return invoiceTotal(invoice?.items) + invoiceTaxTotal(invoice);
+  const tax = getInvoiceTaxBreakdown(invoice);
+  return tax.taxable + tax.cgst + tax.sgst + tax.igst;
+}
+
+export function isApartmentResidentInvoice(invoice) {
+  return invoice?.apartmentInvoiceType === "collections";
+}
+
+export function isApartmentExpenseInvoice(invoice) {
+  return invoice?.apartmentInvoiceType === "expenses";
+}
+
+export function getApartmentInvoiceExpenseCategory(invoice) {
+  return invoice?.expenseCategory || invoice?.maintenanceType || "Other";
 }
 
 export function getInvoiceStatus(invoice, today = new Date()) {
@@ -52,6 +126,7 @@ export function getInvoiceDueMessage(invoice, today = new Date()) {
 
 export function getReminderInvoices(invoices, today = new Date()) {
   return (invoices || []).filter(invoice => {
+    if (isQuoteDocument(invoice)) return false;
     const status = getInvoiceStatus(invoice, today);
     if (!invoice?.dueDate || status === "paid") return false;
 
@@ -62,11 +137,859 @@ export function getReminderInvoices(invoices, today = new Date()) {
   });
 }
 
+function getApartmentFlats(data) {
+  return data?.customers || [];
+}
+
+function getApartmentCollectionsForMonth(data, mk) {
+  return (data?.income || []).filter(item => {
+    const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
+    return itemMonth === mk;
+  });
+}
+
+function getApartmentCollectionsForYear(data, year) {
+  return (data?.income || []).filter(item => {
+    const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
+    return itemMonth.slice(0, 4) === String(year);
+  });
+}
+
+function getApartmentExpectedCollection(flats) {
+  return flats.reduce((sum, flat) => sum + toNumber(flat.monthlyMaintenance), 0);
+}
+
+function getApartmentExpenseCategoryMap(expenses) {
+  return expenses.reduce((map, expense) => {
+    const category = expense.category || expense.expenseType || "Other";
+    map[category] = (map[category] || 0) + toNumber(expense.amount);
+    return map;
+  }, {});
+}
+
+function getApartmentUnpaidFlats(flats, collections) {
+  const paidFlatNumbers = new Set(collections.map(item => String(item.flatNumber || "").trim()).filter(Boolean));
+  return flats.filter(flat => !paidFlatNumbers.has(String(flat.name || flat.flatNumber || "").trim()));
+}
+
+function sumApartmentReserveToMonth(data, year, month) {
+  let runningTotal = 0;
+  for (let monthIdx = 0; monthIdx <= month; monthIdx += 1) {
+    const mk = monthKey(year, monthIdx);
+    const income = getApartmentCollectionsForMonth(data, mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const expenses = sumExpensesForMonth(data, mk);
+    runningTotal += income - expenses;
+  }
+  return runningTotal;
+}
+
+export function calculateApartmentDashboard(data, year, month) {
+  const mk = monthKey(year, month);
+  const flats = getApartmentFlats(data);
+  const residents = flats.reduce((count, flat) => count + (flat.ownerName ? 1 : 0) + (flat.tenantName ? 1 : 0), 0);
+  const collections = getApartmentCollectionsForMonth(data, mk);
+  const totalIncome = collections.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const totalExpense = sumExpensesForMonth(data, mk);
+  const profit = totalIncome - totalExpense;
+  const expectedCollection = getApartmentExpectedCollection(flats);
+  const collectionRate = expectedCollection > 0 ? Math.min(100, (totalIncome / expectedCollection) * 100) : 0;
+  const unpaidFlats = getApartmentUnpaidFlats(flats, collections);
+  const monthlyReserve = profit;
+  const totalReserve = sumApartmentReserveToMonth(data, year, month);
+  const directExpenses = (data?.expenses || []).filter(expense => {
+      if (expense.recurring) {
+        const started = expense.startMonth <= mk;
+        const notEnded = !expense.endMonth || expense.endMonth >= mk;
+        return started && notEnded;
+      }
+      return expense.month === mk;
+    });
+  const expenseCategoryMap = getApartmentExpenseCategoryMap(directExpenses);
+  const topExpenseCategories = Object.entries(expenseCategoryMap)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+  const recentCollections = collections
+    .slice()
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+    .slice(0, 6);
+  const cashFlow = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(year, month - (5 - index), 1);
+    const flowKey = monthKey(date.getFullYear(), date.getMonth());
+    const flowIncome = getApartmentCollectionsForMonth(data, flowKey).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const flowExpense = sumExpensesForMonth(data, flowKey);
+    return {
+      key: flowKey,
+      label: monthLabel(date.getFullYear(), date.getMonth()),
+      shortLabel: MONTHS[date.getMonth()],
+      income: flowIncome,
+      expenses: flowExpense,
+      net: flowIncome - flowExpense
+    };
+  });
+
+  const alertItems = [];
+  if (unpaidFlats.length) {
+    alertItems.push({
+      tone: "gold",
+      title: `${unpaidFlats.length} flat(s) pending collection`,
+      message: `${flats.length - unpaidFlats.length} flat(s) have a recorded collection this month and ${unpaidFlats.length} are still pending.`
+    });
+  }
+  if (profit < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Society expenses exceed collections",
+      message: "This month is currently running at a deficit. Review repairs, utilities, and pending collections."
+    });
+  }
+
+  return {
+    monthKey: mk,
+    totalIncome,
+    totalExpense,
+    profit,
+    flatsCount: flats.length,
+    residentsCount: residents,
+    expectedCollection,
+    collectionRate,
+    monthlyReserve,
+    totalReserve,
+    paidFlatsCount: flats.length ? flats.length - unpaidFlats.length : 0,
+    unpaidFlats,
+    topExpenseCategories,
+    recentCollections,
+    cashFlow,
+    alertItems,
+    pendingInvoices: [],
+    pendingInvoiceTotal: 0,
+    overdueInvoices: [],
+    dueSoonInvoices: [],
+    budgetStatus: [],
+    burnRateDays: null,
+    monthlySavingsGoal: 0,
+    goalProgress: 0,
+    goalStatus: ""
+  };
+}
+
+export function calculateApartmentYearlyDashboard(data, year) {
+  const flats = getApartmentFlats(data);
+  const residents = flats.reduce((count, flat) => count + (flat.ownerName ? 1 : 0) + (flat.tenantName ? 1 : 0), 0);
+  const totalIncome = getApartmentCollectionsForYear(data, year).reduce((sum, item) => sum + toNumber(item.amount), 0);
+  let totalExpense = 0;
+  const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
+    const mk = monthKey(year, monthIdx);
+    const income = getApartmentCollectionsForMonth(data, mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const expenses = sumExpensesForMonth(data, mk);
+    totalExpense += expenses;
+    return {
+      key: mk,
+      month: monthIdx,
+      label: MONTHS[monthIdx],
+      income,
+      expenses,
+      net: income - expenses
+    };
+  });
+  const profit = totalIncome - totalExpense;
+  const expectedCollection = getApartmentExpectedCollection(flats) * 12;
+  const collectionRate = expectedCollection > 0 ? Math.min(100, (totalIncome / expectedCollection) * 100) : 0;
+  const monthlyReserve = monthlyBreakdown[monthlyBreakdown.length - 1]?.net || 0;
+  const totalReserve = profit;
+  const topExpenseCategories = Object.entries(
+    getApartmentExpenseCategoryMap(
+      (data?.expenses || []).filter(expense => {
+        if (expense.recurring) {
+          const yearKey = String(year);
+          const startYear = expense.startMonth?.slice(0, 4);
+          const endYear = expense.endMonth?.slice(0, 4);
+          const started = !startYear || startYear <= yearKey;
+          const notEnded = !endYear || endYear >= yearKey;
+          return started && notEnded;
+        }
+        return expense.month?.slice(0, 4) === String(year);
+      })
+    )
+  )
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  const alertItems = [];
+  if (profit < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Society expenses exceed annual collections",
+      message: "This year is currently running at a deficit. Review spending and pending collections."
+    });
+  }
+
+  return {
+    year,
+    totalIncome,
+    totalExpense,
+    profit,
+    avgMonthlyIncome: totalIncome / 12,
+    avgMonthlyExpense: totalExpense / 12,
+    flatsCount: flats.length,
+    residentsCount: residents,
+    expectedCollection,
+    collectionRate,
+    monthlyReserve,
+    totalReserve,
+    topExpenseCategories,
+    monthlyBreakdown,
+    alertItems,
+    pendingInvoices: [],
+    pendingInvoiceTotal: 0,
+    overdueInvoices: [],
+    dueSoonInvoices: [],
+    budgetStatus: [],
+    burnRateDays: null,
+    monthlySavingsGoal: 0,
+    goalProgress: 0,
+    goalStatus: ""
+  };
+}
+
+export function isApartmentOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.APARTMENT;
+}
+
+export function isPersonalOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.PERSONAL;
+}
+
+export function isSmallBusinessOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
+}
+
+export function isFreelancerOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.FREELANCER;
+}
+
+export function isRetailOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.RETAIL;
+}
+
+function isYesValue(value) {
+  return String(value || "").trim().toLowerCase() === "yes";
+}
+
+function getFreelancerClientName(entry) {
+  return String(entry?.clientName || entry?.client || entry?.customer?.name || entry?.billTo?.name || "").trim();
+}
+
+function getActiveExpensesForMonth(data, mk) {
+  return (data.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const started = expense.startMonth <= mk;
+      const notEnded = !expense.endMonth || expense.endMonth >= mk;
+      return started && notEnded;
+    }
+
+    return expense.month === mk;
+  });
+}
+
+function getExpensesForYear(data, year) {
+  return (data.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const yearKey = String(year);
+      const startYear = expense.startMonth?.slice(0, 4);
+      const endYear = expense.endMonth?.slice(0, 4);
+      const started = !startYear || startYear <= yearKey;
+      const notEnded = !endYear || endYear >= yearKey;
+      return started && notEnded;
+    }
+    return expense.month?.slice(0, 4) === String(year);
+  });
+}
+
+function getFreelancerTrackedClients(data, payments, invoices) {
+  const clientNames = new Set((data.customers || []).map(customer => String(customer.name || "").trim()).filter(Boolean));
+  payments.forEach(payment => {
+    const clientName = getFreelancerClientName(payment);
+    if (clientName) clientNames.add(clientName);
+  });
+  invoices.forEach(invoice => {
+    const clientName = getFreelancerClientName(invoice);
+    if (clientName) clientNames.add(clientName);
+  });
+  return clientNames.size;
+}
+
+function getSmallBusinessServices(data) {
+  return data?.orgRecords?.services || [];
+}
+
+function getSmallBusinessPartners(data) {
+  return data?.orgRecords?.partners || [];
+}
+
+function getSmallBusinessTeam(data) {
+  return data?.orgRecords?.team || [];
+}
+
+function getRetailInventory(data) {
+  return data?.orgRecords?.inventory || [];
+}
+
+function getRetailSuppliers(data) {
+  return data?.orgRecords?.suppliers || [];
+}
+
+function buildSmallBusinessServiceInsights(services) {
+  const normalizedServices = (services || []).map(item => {
+    const defaultAmount = Math.max(0, toNumber(item.defaultAmount ?? item.sellingPrice ?? item.costPrice));
+    return {
+      ...item,
+      serviceName: String(item.serviceName || item.productName || item.name || "").trim(),
+      packageName: String(item.packageName || "").trim(),
+      notes: String(item.notes || "").trim(),
+      defaultAmount
+    };
+  }).filter(item => item.serviceName);
+
+  const topServices = normalizedServices
+    .slice()
+    .sort((a, b) => b.defaultAmount - a.defaultAmount || a.serviceName.localeCompare(b.serviceName))
+    .slice(0, 5);
+
+  return {
+    services: normalizedServices,
+    topServices,
+    servicesCount: normalizedServices.length,
+    serviceCatalogValue: normalizedServices.reduce((sum, item) => sum + item.defaultAmount, 0)
+  };
+}
+
+function buildSmallBusinessPartnerInsights(partners) {
+  const normalizedPartners = (partners || []).map(partner => ({
+    ...partner,
+    partnerName: String(partner.partnerName || partner.vendorName || partner.name || "").trim(),
+    balanceDue: Math.max(0, toNumber(partner.balanceDue ?? partner.creditBalance)),
+    contact: String(partner.contact || "").trim()
+  })).filter(partner => partner.partnerName);
+
+  const partnersWithBalance = normalizedPartners
+    .filter(partner => partner.balanceDue > 0)
+    .sort((a, b) => b.balanceDue - a.balanceDue || a.partnerName.localeCompare(b.partnerName));
+
+  return {
+    partners: normalizedPartners,
+    partnersWithBalance,
+    partnersCount: normalizedPartners.length,
+    partnerBalanceTotal: partnersWithBalance.reduce((sum, partner) => sum + partner.balanceDue, 0)
+  };
+}
+
+function buildSmallBusinessTeamInsights(teamMembers) {
+  const normalizedTeam = (teamMembers || []).map(member => ({
+    ...member,
+    name: String(member.name || "").trim(),
+    role: String(member.role || "").trim(),
+    payout: Math.max(0, toNumber(member.payout ?? member.salary))
+  })).filter(member => member.name);
+
+  return {
+    teamMembers: normalizedTeam,
+    teamCount: normalizedTeam.length,
+    monthlyPayoutEstimate: normalizedTeam.reduce((sum, member) => sum + member.payout, 0)
+  };
+}
+
+function buildRetailInventoryInsights(items, today = new Date()) {
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const normalizedInventory = (items || []).map(item => {
+    const stock = Math.max(0, toNumber(item.stock ?? item.quantity ?? item.onHand));
+    const price = Math.max(0, toNumber(item.price ?? item.sellingPrice ?? item.defaultAmount));
+    const expiryDate = String(item.expiryDate || "").trim();
+    const inventoryValue = stock * price;
+    let expiryInDays = null;
+
+    if (expiryDate) {
+      const parsed = new Date(`${expiryDate}T23:59:59`);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiryInDays = Math.round((parsed - start) / (24 * 60 * 60 * 1000));
+      }
+    }
+
+    return {
+      ...item,
+      productName: String(item.productName || item.name || "").trim(),
+      stock,
+      price,
+      expiryDate,
+      expiryInDays,
+      inventoryValue
+    };
+  }).filter(item => item.productName);
+
+  const lowStockItems = normalizedInventory
+    .filter(item => item.stock <= 5)
+    .sort((a, b) => a.stock - b.stock || a.productName.localeCompare(b.productName));
+
+  const expiringItems = normalizedInventory
+    .filter(item => item.expiryInDays !== null && item.expiryInDays >= 0 && item.expiryInDays <= 30)
+    .sort((a, b) => a.expiryInDays - b.expiryInDays || a.productName.localeCompare(b.productName));
+
+  const topProducts = normalizedInventory
+    .slice()
+    .sort((a, b) => b.inventoryValue - a.inventoryValue || b.stock - a.stock || a.productName.localeCompare(b.productName))
+    .slice(0, 6);
+
+  return {
+    inventoryItems: normalizedInventory,
+    inventoryCount: normalizedInventory.length,
+    stockUnits: normalizedInventory.reduce((sum, item) => sum + item.stock, 0),
+    inventoryValue: normalizedInventory.reduce((sum, item) => sum + item.inventoryValue, 0),
+    lowStockItems,
+    expiringItems,
+    topProducts
+  };
+}
+
+function buildRetailSupplierInsights(suppliers) {
+  const normalizedSuppliers = (suppliers || []).map(supplier => ({
+    ...supplier,
+    supplierName: String(supplier.supplierName || supplier.partnerName || supplier.name || "").trim(),
+    contact: String(supplier.contact || "").trim(),
+    creditBalance: Math.max(0, toNumber(supplier.creditBalance ?? supplier.balanceDue))
+  })).filter(supplier => supplier.supplierName);
+
+  const suppliersWithBalance = normalizedSuppliers
+    .filter(supplier => supplier.creditBalance > 0)
+    .sort((a, b) => b.creditBalance - a.creditBalance || a.supplierName.localeCompare(b.supplierName));
+
+  return {
+    suppliers: normalizedSuppliers,
+    suppliersCount: normalizedSuppliers.length,
+    supplierBalanceTotal: suppliersWithBalance.reduce((sum, supplier) => sum + supplier.creditBalance, 0),
+    suppliersWithBalance
+  };
+}
+
+function isRetailPurchaseType(expense, expected) {
+  const purchaseType = String(expense?.purchaseType || expense?.category || "").trim().toLowerCase();
+  return purchaseType === expected;
+}
+
+function startOfMonthValue(year, month) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-01`;
+}
+
+function getPersonalEmis(data) {
+  return data?.orgRecords?.loans || [];
+}
+
+function parseDateParts(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3])
+  };
+}
+
+function isoDate(year, month, day) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function getPersonalEmiAmount(emi) {
+  return toNumber(emi?.monthlyEmi ?? emi?.emiAmount);
+}
+
+export function getPersonalEmiDueDate(emi) {
+  return String(emi?.dueDate || emi?.nextDueDate || "");
+}
+
+export function getPersonalEmiEndDate(emi) {
+  return String(emi?.endDate || "");
+}
+
+function getPersonalEmiStartDate(emi) {
+  return String(emi?.startDate || getPersonalEmiDueDate(emi) || "");
+}
+
+export function getScheduledEmiDate(emi, year, month) {
+  const baseDate = parseDateParts(getPersonalEmiDueDate(emi)) || parseDateParts(getPersonalEmiStartDate(emi));
+  if (!baseDate) return "";
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return isoDate(year, month, Math.min(baseDate.day, lastDay));
+}
+
+export function normalizePersonalEmi(emi, year, month) {
+  const dueDate = getPersonalEmiDueDate(emi);
+  const endDate = getPersonalEmiEndDate(emi);
+  const startDate = getPersonalEmiStartDate(emi);
+  const scheduledDate = getScheduledEmiDate(emi, year, month);
+  return {
+    ...emi,
+    dueDate,
+    endDate,
+    startDate,
+    scheduledDate,
+    monthlyEmi: getPersonalEmiAmount(emi)
+  };
+}
+
+function isActiveEmiForMonth(emi, year, month) {
+  if (!emi) return false;
+  if (String(emi.status || "Active").toLowerCase() === "closed") return false;
+  const periodStart = startOfMonthValue(year, month);
+  const periodEnd = endOfMonthValue(year, month);
+  const startDate = getPersonalEmiStartDate(emi);
+  const endDate = getPersonalEmiEndDate(emi);
+  return (!startDate || startDate <= periodEnd) && (!endDate || endDate >= periodStart);
+}
+
+function getPersonalMemberNames(data) {
+  const names = new Map();
+  const addName = value => {
+    const name = String(value || "").trim();
+    if (!name) return;
+    names.set(name.toLowerCase(), name);
+  };
+
+  (data?.customers || []).forEach(person => addName(person?.name));
+  (data?.income || []).forEach(item => addName(item?.personName));
+  (data?.expenses || []).forEach(item => addName(item?.personName));
+
+  return Array.from(names.values());
+}
+
+function endOfMonthValue(year, month) {
+  const lastDay = new Date(year, month + 1, 0);
+  return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+}
+
+function calculateEmiDueForMonth(data, year, month) {
+  return getPersonalEmis(data)
+    .filter(emi => isActiveEmiForMonth(emi, year, month))
+    .reduce((sum, emi) => sum + getPersonalEmiAmount(emi), 0);
+}
+
+export function calculatePersonalDashboard(data, year, month) {
+  const mk = monthKey(year, month);
+  const totalIncome = (data?.income || [])
+    .filter(item => item.month === mk)
+    .reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const spendingEntries = (data?.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const started = expense.startMonth <= mk;
+      const notEnded = !expense.endMonth || expense.endMonth >= mk;
+      return started && notEnded;
+    }
+    return expense.month === mk;
+  });
+  const totalExpense = spendingEntries.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const totalEmi = calculateEmiDueForMonth(data, year, month);
+  const netAfterEmi = totalIncome - totalExpense - totalEmi;
+  const people = getPersonalMemberNames(data);
+  const activeEmis = getPersonalEmis(data)
+    .filter(emi => isActiveEmiForMonth(emi, year, month))
+    .map(emi => normalizePersonalEmi(emi, year, month));
+  const totalOutstanding = activeEmis.reduce((sum, emi) => sum + toNumber(emi.outstandingBalance), 0);
+  const memberTotals = people.map(name => {
+    const income = (data?.income || []).filter(item => item.month === mk && (item.personName || "") === name).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const spending = spendingEntries.filter(item => (item.personName || "") === name).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    return { name, income, spending, net: income - spending, hasActivity: Boolean(income || spending) };
+  });
+  const expenseCategoryMap = spendingEntries.reduce((map, item) => {
+    const category = item.category || "Other";
+    map[category] = (map[category] || 0) + toNumber(item.amount);
+    return map;
+  }, {});
+  const topExpenseCategories = Object.entries(expenseCategoryMap)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+  const cashFlow = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(year, month - (5 - index), 1);
+    const flowKey = monthKey(date.getFullYear(), date.getMonth());
+    const income = (data?.income || []).filter(item => item.month === flowKey).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const expenses = sumExpensesForMonth(data, flowKey);
+    const emi = calculateEmiDueForMonth(data, date.getFullYear(), date.getMonth());
+    return {
+      key: flowKey,
+      label: monthLabel(date.getFullYear(), date.getMonth()),
+      shortLabel: MONTHS[date.getMonth()],
+      income,
+      expenses: expenses + emi,
+      spending: expenses,
+      emi,
+      net: income - expenses - emi
+    };
+  });
+  const essentialSpending = spendingEntries
+    .filter(item => String(item.necessityType || "Essential").toLowerCase() === "essential")
+    .reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const nonEssentialSpending = Math.max(0, totalExpense - essentialSpending);
+  const goal = getGoalSnapshot(data?.goals);
+  const goalContribution = Math.max(0, netAfterEmi);
+  const goalLeft = goal.goalLeft;
+  const goalProgress = goal.goalProgress;
+  const goalStatus = goal.goalStatus;
+  const spendingRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : totalExpense > 0 ? 100 : 0;
+  const emiRatio = totalIncome > 0 ? (totalEmi / totalIncome) * 100 : totalEmi > 0 ? 100 : 0;
+  const biggestExpenseCategory = topExpenseCategories[0] || null;
+  const spendingPressure = Math.max(0, totalExpense + totalEmi - totalIncome);
+  const upcomingEmis = activeEmis
+    .slice()
+    .sort((a, b) => String(a.scheduledDate || a.dueDate || "").localeCompare(String(b.scheduledDate || b.dueDate || "")))
+    .slice(0, 6);
+  const alertItems = [];
+  if (netAfterEmi < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Household cash flow is negative",
+      message: "Earnings are not covering spending and EMI commitments this month."
+    });
+  }
+  if (spendingRatio >= 80) {
+    alertItems.push({
+      tone: spendingRatio >= 100 ? "danger" : "gold",
+      title: "Spending is consuming most of income",
+      message: `Household spending is at ${Math.round(spendingRatio)}% of earnings before EMI.`
+    });
+  }
+  if (goal.targetAmount > 0 && goalLeft > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Savings goal is still short",
+      message: `You still need ${fmtMoneyValue(goalLeft)} to complete your goal.`
+    });
+  }
+  const dueSoonEmis = activeEmis.filter(emi => {
+    if (!emi.scheduledDate) return false;
+    const today = new Date();
+    const due = new Date(`${emi.scheduledDate}T00:00:00`);
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const diffDays = Math.round((due - start) / (24 * 60 * 60 * 1000));
+    return diffDays >= 0 && diffDays <= 7;
+  });
+  if (dueSoonEmis.length) {
+    alertItems.push({
+      tone: "gold",
+      title: `${dueSoonEmis.length} EMI(s) due soon`,
+      message: "Review upcoming loan payments before their due date."
+    });
+  }
+
+  const actionTips = [];
+  if (biggestExpenseCategory && biggestExpenseCategory.amount >= totalExpense * 0.35) {
+    actionTips.push({
+      title: `Watch ${biggestExpenseCategory.category.toLowerCase()} spending`,
+      message: `${biggestExpenseCategory.category} is taking ${Math.round((biggestExpenseCategory.amount / Math.max(1, totalExpense)) * 100)}% of this month's spending.`
+    });
+  }
+  if (nonEssentialSpending > essentialSpending && nonEssentialSpending > 0) {
+    actionTips.push({
+      title: "Trim non-essential purchases first",
+      message: `Non-essential spending is ${fmtMoneyValue(nonEssentialSpending)}, which is above essential spending this month.`
+    });
+  }
+  if (emiRatio >= 35) {
+    actionTips.push({
+      title: "EMI load is heavy",
+      message: `EMIs take ${Math.round(emiRatio)}% of earnings. Consider prepaying smaller loans when cash flow improves.`
+    });
+  }
+  if (goal.targetAmount > 0 && goalContribution > 0) {
+    actionTips.push({
+      title: "Move surplus to your goal early",
+      message: `${fmtMoneyValue(goalContribution)} is free after spending and EMI. Moving part of it to the goal will reduce the remaining gap faster.`
+    });
+  }
+  if (!actionTips.length) {
+    actionTips.push({
+      title: "Household spending is balanced",
+      message: "Keep tagging each earning and spending entry to maintain clear family-level trends."
+    });
+  }
+
+  return {
+    monthKey: mk,
+    totalIncome,
+    totalExpense,
+    totalEmi,
+    netAfterEmi,
+    peopleCount: people.length,
+    activeLoansCount: activeEmis.length,
+    totalOutstanding,
+    memberTotals,
+    topExpenseCategories,
+    cashFlow,
+    upcomingEmis,
+    alertItems,
+    monthlySavingsGoal: goal.targetAmount,
+    goalTargetAmount: goal.targetAmount,
+    goalTargetDate: goal.targetDate,
+    goalSavedAmount: goal.savedAmount,
+    goalNote: goal.note,
+    goalContribution,
+    goalLeft,
+    goalProgress,
+    goalStatus,
+    spendingRatio,
+    emiRatio,
+    essentialSpending,
+    nonEssentialSpending,
+    biggestExpenseCategory,
+    spendingPressure,
+    actionTips
+  };
+}
+
+export function calculatePersonalYearlyDashboard(data, year) {
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let totalEmi = 0;
+  const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
+    const mk = monthKey(year, monthIdx);
+    const income = (data?.income || []).filter(item => item.month === mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const expenses = sumExpensesForMonth(data, mk);
+    const emi = calculateEmiDueForMonth(data, year, monthIdx);
+    totalIncome += income;
+    totalExpense += expenses;
+    totalEmi += emi;
+    return {
+      key: mk,
+      month: monthIdx,
+      label: MONTHS[monthIdx],
+      income,
+      expenses: expenses + emi,
+      spending: expenses,
+      emi,
+      net: income - expenses - emi
+    };
+  });
+  const today = new Date();
+  const activeEmis = getPersonalEmis(data)
+    .filter(emi => String(emi.status || "Active").toLowerCase() !== "closed")
+    .map(emi => normalizePersonalEmi(emi, today.getFullYear(), today.getMonth()));
+  const totalOutstanding = activeEmis.reduce((sum, emi) => sum + toNumber(emi.outstandingBalance), 0);
+  const people = getPersonalMemberNames(data);
+  const topExpenseCategories = Object.entries(
+    ((data?.expenses || []).filter(expense => {
+      if (expense.recurring) {
+        const yearKey = String(year);
+        const startYear = expense.startMonth?.slice(0, 4);
+        const endYear = expense.endMonth?.slice(0, 4);
+        return (!startYear || startYear <= yearKey) && (!endYear || endYear >= yearKey);
+      }
+      return expense.month?.slice(0, 4) === String(year);
+    })).reduce((map, item) => {
+      const category = item.category || "Other";
+      map[category] = (map[category] || 0) + toNumber(item.amount);
+      return map;
+    }, {})
+  ).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount).slice(0, 5);
+  const goal = getGoalSnapshot(data?.goals);
+  const yearlyGoalTarget = goal.targetAmount;
+  const netAfterEmi = totalIncome - totalExpense - totalEmi;
+  const goalContribution = Math.max(0, netAfterEmi);
+  const goalLeft = goal.goalLeft;
+  const goalProgress = goal.goalProgress;
+  const goalStatus = goal.goalStatus;
+  const spendingRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : totalExpense > 0 ? 100 : 0;
+  const emiRatio = totalIncome > 0 ? (totalEmi / totalIncome) * 100 : totalEmi > 0 ? 100 : 0;
+  const alertItems = [];
+  if (netAfterEmi < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Household cash flow is negative",
+      message: "This year is currently running below your combined spending and EMI commitments."
+    });
+  }
+  if (spendingRatio >= 80) {
+    alertItems.push({
+      tone: spendingRatio >= 100 ? "danger" : "gold",
+      title: "Spending is consuming most of income",
+      message: `Household spending is at ${Math.round(spendingRatio)}% of earnings before EMI this year.`
+    });
+  }
+
+  const actionTips = [];
+  const biggestExpenseCategory = topExpenseCategories[0] || null;
+  if (biggestExpenseCategory && biggestExpenseCategory.amount >= totalExpense * 0.3) {
+    actionTips.push({
+      title: `Review ${biggestExpenseCategory.category.toLowerCase()} over the year`,
+      message: `${biggestExpenseCategory.category} is the largest spending bucket this year.`
+    });
+  }
+  if (emiRatio >= 35) {
+    actionTips.push({
+      title: "EMI load is high across the year",
+      message: `EMIs consumed ${Math.round(emiRatio)}% of earnings. Keep extra cash focused on reducing outstanding balances.`
+    });
+  }
+  if (yearlyGoalTarget > 0 && goalContribution > 0) {
+    actionTips.push({
+      title: "Protect yearly savings momentum",
+      message: `${fmtMoneyValue(goalContribution)} remains after yearly spending and EMI. Keep ring-fencing it for the goal instead of letting it drift into extra spending.`
+    });
+  }
+  if (!actionTips.length) {
+    actionTips.push({
+      title: "Household spending is balanced",
+      message: "Keep tracking member-wise entries to hold this trend through the year."
+    });
+  }
+
+  return {
+    year,
+    totalIncome,
+    totalExpense,
+    totalEmi,
+    netAfterEmi,
+    avgMonthlyIncome: totalIncome / 12,
+    avgMonthlyExpense: totalExpense / 12,
+    avgMonthlyEmi: totalEmi / 12,
+    peopleCount: people.length,
+    activeLoansCount: activeEmis.length,
+    totalOutstanding,
+    topExpenseCategories,
+    monthlyBreakdown,
+    upcomingEmis: activeEmis.slice().sort((a, b) => String(a.scheduledDate || a.dueDate || "").localeCompare(String(b.scheduledDate || b.dueDate || ""))).slice(0, 6),
+    alertItems,
+    monthlySavingsGoal: goal.targetAmount,
+    goalTargetAmount: goal.targetAmount,
+    goalTargetDate: goal.targetDate,
+    goalSavedAmount: goal.savedAmount,
+    goalNote: goal.note,
+    yearlyGoalTarget,
+    goalContribution,
+    goalLeft,
+    goalProgress,
+    goalStatus,
+    spendingRatio,
+    emiRatio,
+    biggestExpenseCategory,
+    actionTips
+  };
+}
+
 export function getNextInvoiceNumber(invoices, date = new Date()) {
   const year = date.getFullYear();
   const prefix = `INV-${year}-`;
-  const maxSeq = (invoices || []).reduce((max, invoice) => {
+  const maxSeq = getFinancialInvoices(invoices).reduce((max, invoice) => {
     if (!invoice?.number?.startsWith(prefix)) return max;
+    const seq = Number(invoice.number.slice(prefix.length));
+    return Number.isFinite(seq) ? Math.max(max, seq) : max;
+  }, 0);
+
+  return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+}
+
+export function getNextQuoteNumber(invoices, date = new Date()) {
+  const year = date.getFullYear();
+  const prefix = `QUO-${year}-`;
+  const maxSeq = (invoices || []).reduce((max, invoice) => {
+    if (!isQuoteDocument(invoice) || !invoice?.number?.startsWith(prefix)) return max;
     const seq = Number(invoice.number.slice(prefix.length));
     return Number.isFinite(seq) ? Math.max(max, seq) : max;
   }, 0);
@@ -83,7 +1006,11 @@ function sumIncomeForMonth(data, mk) {
     .filter(item => item.month === mk)
     .reduce((sum, item) => sum + toNumber(item.amount), 0);
 
-  const invoices = (data.invoices || [])
+  if (isApartmentOrgData(data)) {
+    return manual;
+  }
+
+  const invoices = getFinancialInvoices(data.invoices)
     .filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk)
     .reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
 
@@ -125,15 +1052,7 @@ export function calculateDashboard(data, year, month) {
     };
   });
 
-  const activeExpenses = (data.expenses || []).filter(expense => {
-    if (expense.recurring) {
-      const started = expense.startMonth <= mk;
-      const notEnded = !expense.endMonth || expense.endMonth >= mk;
-      return started && notEnded;
-    }
-
-    return expense.month === mk;
-  });
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
 
   const expenseCategoryMap = activeExpenses.reduce((map, expense) => {
     const category = expense.category || "Other";
@@ -163,7 +1082,7 @@ export function calculateDashboard(data, year, month) {
     .filter(item => item.budget > 0)
     .sort((a, b) => b.progress - a.progress);
 
-  const invoices = (data.invoices || []).map(invoice => {
+  const invoices = getFinancialInvoices(data.invoices).map(invoice => {
     const status = getInvoiceStatus(invoice, today);
     return {
       ...invoice,
@@ -216,10 +1135,7 @@ export function calculateDashboard(data, year, month) {
   const availableCash = Math.max(0, profit);
   const avgDailyExpense = expenses / 30 || 0;
   const burnRateDays = avgDailyExpense > 0 ? Math.floor(availableCash / avgDailyExpense) : null;
-
-  const monthlySavingsGoal = toNumber(data.goals?.monthlySavings);
-  const goalProgress = monthlySavingsGoal > 0 ? Math.max(0, Math.min(100, (profit / monthlySavingsGoal) * 100)) : 0;
-  const goalStatus = monthlySavingsGoal <= 0 ? "Set a savings goal" : profit >= monthlySavingsGoal ? "On track" : "Behind schedule";
+  const goal = getGoalSnapshot(data.goals);
 
   const alertItems = [];
   if (overdueInvoices.length) {
@@ -282,9 +1198,14 @@ export function calculateDashboard(data, year, month) {
     cashFlow,
     topCustomers,
     highRiskCustomers,
-    monthlySavingsGoal,
-    goalProgress,
-    goalStatus,
+    monthlySavingsGoal: goal.targetAmount,
+    goalTargetAmount: goal.targetAmount,
+    goalTargetDate: goal.targetDate,
+    goalSavedAmount: goal.savedAmount,
+    goalNote: goal.note,
+    goalLeft: goal.goalLeft,
+    goalProgress: goal.goalProgress,
+    goalStatus: goal.goalStatus,
     alertItems
   };
 }
@@ -323,7 +1244,7 @@ export function calculateYearlyDashboard(data, year) {
   });
 
   // Year-to-date invoices and customers
-  const invoices = (data.invoices || [])
+  const invoices = getFinancialInvoices(data.invoices)
     .filter(invoice => invoice.date?.slice(0, 4) === String(year))
     .map(invoice => {
       const status = getInvoiceStatus(invoice, today);
@@ -380,17 +1301,7 @@ export function calculateYearlyDashboard(data, year) {
     .slice(0, 3);
 
   // Year-to-date expense categories
-  const yearExpenses = (data.expenses || []).filter(expense => {
-    if (expense.recurring) {
-      const yearKey = String(year);
-      const startYear = expense.startMonth?.slice(0, 4);
-      const endYear = expense.endMonth?.slice(0, 4);
-      const started = !startYear || startYear <= yearKey;
-      const notEnded = !endYear || endYear >= yearKey;
-      return started && notEnded;
-    }
-    return expense.month?.slice(0, 4) === String(year);
-  });
+  const yearExpenses = getExpensesForYear(data, year);
 
   const expenseCategoryMap = yearExpenses.reduce((map, expense) => {
     const category = expense.category || "Other";
@@ -424,9 +1335,7 @@ export function calculateYearlyDashboard(data, year) {
   const avgMonthlyExpense = totalExpense / 12;
   const availableCash = Math.max(0, profit);
   const burnRateDays = avgMonthlyExpense > 0 ? Math.floor((availableCash / avgMonthlyExpense) * 30) : null;
-  const monthlySavingsGoal = toNumber(data.goals?.monthlySavings);
-  const goalProgress = monthlySavingsGoal > 0 ? Math.max(0, Math.min(100, (profit / (monthlySavingsGoal * 12)) * 100)) : 0;
-  const goalStatus = monthlySavingsGoal <= 0 ? "Set a savings goal" : profit >= monthlySavingsGoal * 12 ? "On track" : "Behind schedule";
+  const goal = getGoalSnapshot(data.goals);
 
   const alertItems = [];
   if (overdueInvoices.length) {
@@ -475,15 +1384,251 @@ export function calculateYearlyDashboard(data, year) {
     budgetStatus,
     monthlyBreakdown,
     burnRateDays,
-    monthlySavingsGoal,
-    goalProgress,
-    goalStatus,
+    monthlySavingsGoal: goal.targetAmount,
+    goalTargetAmount: goal.targetAmount,
+    goalTargetDate: goal.targetDate,
+    goalSavedAmount: goal.savedAmount,
+    goalNote: goal.note,
+    goalLeft: goal.goalLeft,
+    goalProgress: goal.goalProgress,
+    goalStatus: goal.goalStatus,
+    alertItems
+  };
+}
+
+export function calculateFreelancerDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const mk = monthKey(year, month);
+  const payments = (data.income || []).filter(item => item.month === mk);
+  const expenses = getActiveExpensesForMonth(data, mk);
+  const billableExpenseTotal = expenses.reduce((sum, expense) => sum + (isYesValue(expense.billable) ? toNumber(expense.amount) : 0), 0);
+  const trackedClientsCount = getFreelancerTrackedClients(data, payments, data.invoices || []);
+
+  const alertItems = [...base.alertItems];
+  if (base.overdueInvoices.length) {
+    alertItems.push({
+      tone: "gold",
+      title: "Overdue invoices need follow-up",
+      message: "Some client invoices are overdue. Follow up to keep freelance cash flow moving."
+    });
+  }
+  if (billableExpenseTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Billable costs need review",
+      message: `${fmtMoneyValue(billableExpenseTotal)} of this month's expenses are marked billable.`
+    });
+  }
+
+  return {
+    ...base,
+    trackedClientsCount,
+    billableExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateFreelancerYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const payments = (data.income || []).filter(item => item.month?.slice(0, 4) === String(year));
+  const expenses = getExpensesForYear(data, year);
+  const billableExpenseTotal = expenses.reduce((sum, expense) => sum + (isYesValue(expense.billable) ? toNumber(expense.amount) : 0), 0);
+  const trackedClientsCount = getFreelancerTrackedClients(data, payments, data.invoices || []);
+
+  const alertItems = [...base.alertItems];
+  if (base.overdueInvoices.length) {
+    alertItems.push({
+      tone: "gold",
+      title: "Outstanding invoices need attention",
+      message: "This year still has overdue client invoices that need follow-up."
+    });
+  }
+
+  return {
+    ...base,
+    trackedClientsCount,
+    billableExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateSmallBusinessDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
+  const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
+  const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const mk = monthKey(year, month);
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
+  const teamPayoutTotal = activeExpenses
+    .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+
+  const alertItems = [...base.alertItems];
+  if (serviceInsights.servicesCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "No services listed yet",
+      message: "Add your core services or packages in Settings so the business setup stays focused and reusable."
+    });
+  }
+  if (partnerInsights.partnerBalanceTotal > 0) {
+    alertItems.push({
+      tone: partnerInsights.partnerBalanceTotal > Math.max(base.totalExpense, 1) ? "danger" : "gold",
+      title: "Partner dues need planning",
+      message: `${fmtMoneyValue(partnerInsights.partnerBalanceTotal)} is still due across partners or outside vendors.`
+    });
+  }
+  if (teamInsights.teamCount > 0 && teamPayoutTotal === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "No team payout logged this month",
+      message: "Team members are listed in Settings, but no team payout expense is recorded for this month yet."
+    });
+  }
+
+  return {
+    ...base,
+    ...serviceInsights,
+    ...partnerInsights,
+    ...teamInsights,
+    teamPayoutTotal,
+    alertItems
+  };
+}
+
+export function calculateSmallBusinessYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
+  const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
+  const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const yearExpenses = getExpensesForYear(data, year);
+  const teamPayoutTotal = yearExpenses
+    .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+
+  const alertItems = [...base.alertItems];
+  if (serviceInsights.servicesCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Service catalog is still empty",
+      message: "Add your main services or packages in Settings to keep work types consistent across the year."
+    });
+  }
+  if (partnerInsights.partnerBalanceTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Partner dues remain open",
+      message: `${fmtMoneyValue(partnerInsights.partnerBalanceTotal)} is outstanding across partner or vendor accounts this year.`
+    });
+  }
+
+  return {
+    ...base,
+    ...serviceInsights,
+    ...partnerInsights,
+    ...teamInsights,
+    teamPayoutTotal,
+    alertItems
+  };
+}
+
+export function calculateRetailDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
+  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
+  const mk = monthKey(year, month);
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
+  const stockPurchaseTotal = activeExpenses
+    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const supplierPaymentTotal = activeExpenses
+    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
+
+  const alertItems = [...base.alertItems];
+  if (inventoryInsights.inventoryCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Inventory list is empty",
+      message: "Add your main shop products in Settings so sales and stock checks become reusable."
+    });
+  }
+  if (inventoryInsights.lowStockItems.length) {
+    alertItems.push({
+      tone: inventoryInsights.lowStockItems.length >= 5 ? "danger" : "gold",
+      title: `${inventoryInsights.lowStockItems.length} product(s) are low on stock`,
+      message: "Review low-stock items before they start affecting daily sales."
+    });
+  }
+  if (inventoryInsights.expiringItems.length) {
+    alertItems.push({
+      tone: "gold",
+      title: `${inventoryInsights.expiringItems.length} product(s) nearing expiry`,
+      message: "Check expiring stock and plan discounting or faster movement."
+    });
+  }
+  if (supplierInsights.supplierBalanceTotal > 0) {
+    alertItems.push({
+      tone: supplierInsights.supplierBalanceTotal > Math.max(base.totalIncome, 1) ? "danger" : "gold",
+      title: "Supplier dues need planning",
+      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still payable across supplier balances.`
+    });
+  }
+
+  return {
+    ...base,
+    ...inventoryInsights,
+    ...supplierInsights,
+    stockPurchaseTotal,
+    supplierPaymentTotal,
+    shopExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateRetailYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
+  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
+  const yearExpenses = getExpensesForYear(data, year);
+  const stockPurchaseTotal = yearExpenses
+    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const supplierPaymentTotal = yearExpenses
+    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
+
+  const alertItems = [...base.alertItems];
+  if (inventoryInsights.inventoryCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Inventory list is still empty",
+      message: "Add your main shop products in Settings to keep stock and sales organized across the year."
+    });
+  }
+  if (supplierInsights.supplierBalanceTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Supplier dues remain open",
+      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still outstanding across supplier accounts this year.`
+    });
+  }
+
+  return {
+    ...base,
+    ...inventoryInsights,
+    ...supplierInsights,
+    stockPurchaseTotal,
+    supplierPaymentTotal,
+    shopExpenseTotal,
     alertItems
   };
 }
 
 export function calculateCustomerInsights(data) {
-  const invoices = (data.invoices || []).map(invoice => {
+  const invoices = getFinancialInvoices(data.invoices).map(invoice => {
     const customerName = invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer";
     const total = invoiceGrandTotal(invoice);
     const status = getInvoiceStatus(invoice);

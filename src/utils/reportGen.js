@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { calculateDashboard, invoiceGrandTotal } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateRetailDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isRetailOrgData, isSmallBusinessOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 
 const PAGE = {
@@ -81,6 +81,239 @@ function formatUserSubscription(user) {
   const status = safeText(user.subscriptionStatus || user.status || "active");
   const joined = user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN") : "joined N/A";
   return `${plan} · ${status} · ${joined}`;
+}
+
+function getReportStatsForMonth(data, year, month) {
+  if (isApartmentOrgData(data)) return calculateApartmentDashboard(data, year, month);
+  if (isPersonalOrgData(data)) return calculatePersonalDashboard(data, year, month);
+  if (isFreelancerOrgData(data)) return calculateFreelancerDashboard(data, year, month);
+  if (isSmallBusinessOrgData(data)) return calculateSmallBusinessDashboard(data, year, month);
+  if (isRetailOrgData(data)) return calculateRetailDashboard(data, year, month);
+  return calculateDashboard(data, year, month);
+}
+
+function getFinancialYearPeriods(startYear) {
+  return Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(startYear, 3 + index, 1);
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth(),
+      key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      label: `${MONTHS[date.getMonth()]} ${date.getFullYear()}`
+    };
+  });
+}
+
+function getFinancialYearLabel(startYear) {
+  return `FY ${startYear}-${String(startYear + 1).slice(-2)}`;
+}
+
+function getFinancialYearTitle(data, startYear) {
+  const fyLabel = getFinancialYearLabel(startYear);
+  if (isApartmentOrgData(data)) return `Society Report - ${fyLabel}`;
+  if (isPersonalOrgData(data)) return `Household Report - ${fyLabel}`;
+  if (isFreelancerOrgData(data)) return `Freelancer Report - ${fyLabel}`;
+  if (isSmallBusinessOrgData(data)) return `Small Business Report - ${fyLabel}`;
+  if (isRetailOrgData(data)) return `Retail Report - ${fyLabel}`;
+  return `Ledger Report - ${fyLabel}`;
+}
+
+function getFinancialYearFilename(data, startYear) {
+  const suffix = `${startYear}-${startYear + 1}`;
+  if (isApartmentOrgData(data)) return `society-report-${suffix}.pdf`;
+  if (isPersonalOrgData(data)) return `household-report-${suffix}.pdf`;
+  if (isFreelancerOrgData(data)) return `freelancer-report-${suffix}.pdf`;
+  if (isSmallBusinessOrgData(data)) return `small-business-report-${suffix}.pdf`;
+  if (isRetailOrgData(data)) return `retail-report-${suffix}.pdf`;
+  return `ledger-report-${suffix}.pdf`;
+}
+
+function buildFinancialYearOverview(data, startYear) {
+  const monthlyStats = getFinancialYearPeriods(startYear).map(period => ({
+    ...period,
+    stats: getReportStatsForMonth(data, period.year, period.month)
+  }));
+  const endingStats = monthlyStats[monthlyStats.length - 1]?.stats || {};
+  const totals = monthlyStats.reduce(
+    (acc, period) => {
+      const stats = period.stats || {};
+      acc.totalIncome += Number(stats.totalIncome || 0);
+      acc.totalExpense += Number(stats.totalExpense || 0);
+      acc.totalEmi += Number(stats.totalEmi || 0);
+      acc.totalNet += isPersonalOrgData(data) ? Number(stats.netAfterEmi || 0) : Number(stats.profit || 0);
+      return acc;
+    },
+    { totalIncome: 0, totalExpense: 0, totalEmi: 0, totalNet: 0 }
+  );
+
+  const expenseMap = {};
+  monthlyStats.forEach(period => {
+    (period.stats?.topExpenseCategories || []).forEach(item => {
+      expenseMap[item.category] = (expenseMap[item.category] || 0) + Number(item.amount || 0);
+    });
+  });
+
+  const topExpenseCategories = Object.entries(expenseMap)
+    .map(([category, amount]) => ({ category, amount }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 6);
+
+  const alertMap = new Map();
+  monthlyStats.forEach(period => {
+    (period.stats?.alertItems || []).forEach(item => {
+      if (!alertMap.has(item.title)) {
+        alertMap.set(item.title, item.message);
+      }
+    });
+  });
+
+  const alerts = Array.from(alertMap.entries()).map(([title, message]) => ({ title, message })).slice(0, 8);
+
+  return {
+    startYear,
+    label: getFinancialYearLabel(startYear),
+    monthlyStats,
+    endingStats,
+    topExpenseCategories,
+    alerts,
+    ...totals
+  };
+}
+
+function getFinancialYearMetricItems(data, overview, sym) {
+  const stats = overview.endingStats || {};
+
+  if (isApartmentOrgData(data)) {
+    return [
+      { label: "Collections", value: money(overview.totalIncome, sym) },
+      { label: "Expenses", value: money(overview.totalExpense, sym) },
+      { label: "Net Reserve", value: money(overview.totalNet, sym) },
+      { label: "Avg Collections", value: money(overview.totalIncome / 12, sym) },
+      { label: "Flats", value: String(stats.flatsCount || 0) },
+      { label: "Residents", value: String(stats.residentsCount || 0) }
+    ];
+  }
+
+  if (isPersonalOrgData(data)) {
+    return [
+      { label: "Earnings", value: money(overview.totalIncome, sym) },
+      { label: "Spending", value: money(overview.totalExpense, sym) },
+      { label: "EMI", value: money(overview.totalEmi, sym) },
+      { label: "Net After EMI", value: money(overview.totalNet, sym) },
+      { label: "People", value: String(stats.peopleCount || 0) },
+      { label: "Goal Gap", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" }
+    ];
+  }
+
+  if (isFreelancerOrgData(data)) {
+    return [
+      { label: "Collected", value: money(overview.totalIncome, sym) },
+      { label: "Expenses", value: money(overview.totalExpense, sym) },
+      { label: "Net", value: money(overview.totalNet, sym) },
+      { label: "Avg Monthly Net", value: money(overview.totalNet / 12, sym) },
+      { label: "Clients", value: String(stats.trackedClientsCount || 0) },
+      { label: "Billable Costs", value: money(stats.billableExpenseTotal || 0, sym) }
+    ];
+  }
+
+  if (isSmallBusinessOrgData(data)) {
+    return [
+      { label: "Receipts", value: money(overview.totalIncome, sym) },
+      { label: "Expenses", value: money(overview.totalExpense, sym) },
+      { label: "Net", value: money(overview.totalNet, sym) },
+      { label: "Services", value: String(stats.servicesCount || 0) },
+      { label: "Partner Dues", value: money(stats.partnerBalanceTotal || 0, sym) },
+      { label: "Team", value: String(stats.teamCount || 0) }
+    ];
+  }
+
+  if (isRetailOrgData(data)) {
+    return [
+      { label: "Sales", value: money(overview.totalIncome, sym) },
+      { label: "Purchases & Expenses", value: money(overview.totalExpense, sym) },
+      { label: "Net", value: money(overview.totalNet, sym) },
+      { label: "Stock Value", value: money(stats.inventoryValue || 0, sym) },
+      { label: "Supplier Dues", value: money(stats.supplierBalanceTotal || 0, sym) },
+      { label: "Inventory Items", value: String(stats.inventoryCount || 0) }
+    ];
+  }
+
+  return [
+    { label: "Receipts", value: money(overview.totalIncome, sym) },
+    { label: "Expenses", value: money(overview.totalExpense, sym) },
+    { label: "Net", value: money(overview.totalNet, sym) },
+    { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal || 0, sym) },
+    { label: "Avg Monthly Net", value: money(overview.totalNet / 12, sym) },
+    { label: "Top Customers", value: String((stats.topCustomers || []).length || 0) }
+  ];
+}
+
+function getFinancialYearSnapshotRows(data, overview, sym) {
+  const stats = overview.endingStats || {};
+
+  if (isApartmentOrgData(data)) {
+    return {
+      title: "Society Snapshot",
+      rows: [
+        { label: "Collection rate", value: `${Math.round(stats.collectionRate || 0)}%` },
+        { label: "Latest monthly reserve", value: money(stats.monthlyReserve || 0, sym) },
+        { label: "Pending flats in latest month", value: String(stats.unpaidFlats?.length || 0) }
+      ]
+    };
+  }
+
+  if (isPersonalOrgData(data)) {
+    return {
+      title: "Household Snapshot",
+      rows: [
+        { label: "Active EMIs", value: String(stats.activeLoansCount || 0) },
+        { label: "Outstanding balance", value: money(stats.totalOutstanding || 0, sym) },
+        { label: "Goal status", value: safeText(stats.goalStatus || "--") }
+      ]
+    };
+  }
+
+  if (isFreelancerOrgData(data)) {
+    return {
+      title: "Freelancer Snapshot",
+      rows: [
+        { label: "Tracked clients", value: String(stats.trackedClientsCount || 0) },
+        { label: "Pending invoices", value: money(stats.pendingInvoiceTotal || 0, sym) },
+        { label: "Overdue invoices", value: String(stats.overdueInvoices?.length || 0) }
+      ]
+    };
+  }
+
+  if (isSmallBusinessOrgData(data)) {
+    return {
+      title: "Business Snapshot",
+      rows: [
+        { label: "Service catalog", value: String(stats.servicesCount || 0) },
+        { label: "Team members", value: String(stats.teamCount || 0) },
+        { label: "Partner dues", value: money(stats.partnerBalanceTotal || 0, sym) }
+      ]
+    };
+  }
+
+  if (isRetailOrgData(data)) {
+    return {
+      title: "Retail Snapshot",
+      rows: [
+        { label: "Stock units", value: String(stats.stockUnits || 0) },
+        { label: "Low-stock products", value: String(stats.lowStockItems?.length || 0) },
+        { label: "Expiring products", value: String(stats.expiringItems?.length || 0) }
+      ]
+    };
+  }
+
+  return {
+    title: "Business Snapshot",
+    rows: [
+      { label: "Pending invoices", value: money(stats.pendingInvoiceTotal || 0, sym) },
+      { label: "Burn rate", value: stats.burnRateDays == null ? "--" : `${stats.burnRateDays} days` },
+      { label: "Goal status", value: safeText(stats.goalStatus || "--") }
+    ]
+  };
 }
 
 function downloadCsv(filename, rows) {
@@ -233,10 +466,511 @@ export function downloadAdminMonthlyReport(data, year, month, sym) {
   doc.save(`admin-report-${monthKey}.pdf`);
 }
 
+export function downloadFinancialYearReport(data, startYear, sym) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const overview = buildFinancialYearOverview(data, startYear);
+  const title = getFinancialYearTitle(data, startYear);
+  const snapshot = getFinancialYearSnapshotRows(data, overview, sym);
+
+  let y = PAGE.top;
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(title, PAGE.left + 4, y + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+  y += 32;
+
+  y = sectionTitle(doc, y, "Financial Year Summary");
+  y = drawMetricGrid(doc, y, getFinancialYearMetricItems(data, overview, sym));
+
+  y = ensureSpace(doc, y + 2, 44);
+  y = sectionTitle(doc, y + 2, "Month-by-Month Breakdown");
+  y = drawRows(
+    doc,
+    y,
+    overview.monthlyStats.map(period => {
+      const stats = period.stats || {};
+      const expenseValue = isPersonalOrgData(data)
+        ? Number(stats.totalExpense || 0) + Number(stats.totalEmi || 0)
+        : Number(stats.totalExpense || 0);
+      const netValue = isPersonalOrgData(data) ? Number(stats.netAfterEmi || 0) : Number(stats.profit || 0);
+      return {
+        label: period.label,
+        value: `${money(stats.totalIncome || 0, sym)} | ${money(expenseValue, sym)} | Net ${money(netValue, sym)}`
+      };
+    })
+  );
+
+  y = ensureSpace(doc, y + 2, 40);
+  y = sectionTitle(doc, y + 2, snapshot.title);
+  y = drawRows(doc, y, snapshot.rows);
+
+  y = ensureSpace(doc, y + 2, 40);
+  y = sectionTitle(doc, y + 2, "Top Expense Categories");
+  y = drawRows(
+    doc,
+    y,
+    overview.topExpenseCategories.length
+      ? overview.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+      : [{ label: "No expense categories recorded", value: "--" }]
+  );
+
+  y = ensureSpace(doc, y + 2, 40);
+  y = sectionTitle(doc, y + 2, "Alerts Across The Year");
+  y = drawRows(
+    doc,
+    y,
+    overview.alerts.length
+      ? overview.alerts.map(item => ({ label: item.title, value: safeText(item.message) }))
+      : [{ label: "No active alerts", value: "This financial year looks steady across the tracked records" }]
+  );
+
+  doc.save(getFinancialYearFilename(data, startYear));
+}
+
 export function downloadMonthlyReport(data, year, month, sym) {
+  if (isApartmentOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculateApartmentDashboard(data, year, month);
+    const title = `Society Report - ${MONTHS[month]} ${year}`;
+    const recentCollections = stats.recentCollections || [];
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Society Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Collections", value: money(stats.totalIncome, sym) },
+      { label: "Society Expenses", value: money(stats.totalExpense, sym) },
+      { label: "Monthly Reserve", value: money(stats.monthlyReserve, sym) },
+      { label: "Total Reserve", value: money(stats.totalReserve, sym) },
+      { label: "Flats", value: String(stats.flatsCount || 0) },
+      { label: "Residents", value: String(stats.residentsCount || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 44);
+    y = sectionTitle(doc, y + 2, "Collection Coverage");
+    y = drawRows(doc, y, [
+      { label: "Flats paid this month", value: String(stats.paidFlatsCount || 0) },
+      { label: "Flats pending this month", value: String(stats.unpaidFlats.length || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Expense Breakdown");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No society expenses recorded this month", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Recent Collections");
+    y = drawRows(
+      doc,
+      y,
+      recentCollections.length
+        ? recentCollections.map(item => ({
+            label: `${safeText(item.flatNumber || "Flat")} · ${safeText(item.residentName || "Resident")}`,
+            value: `${money(item.amount, sym)}  |  ${safeText(item.collectionType || "Collection")}`
+          }))
+        : [{ label: "No maintenance collections recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Pending Flats");
+    y = drawRows(
+      doc,
+      y,
+      stats.unpaidFlats.length
+        ? stats.unpaidFlats.slice(0, 18).map(flat => ({
+            label: `${safeText(flat.flatNumber || "Flat")} · ${safeText(flat.ownerName || flat.tenantName || "No resident assigned")}`,
+            value: flat.phone ? safeText(flat.phone) : "No phone number"
+          }))
+        : [{ label: "All tracked flats are covered this month", value: "--" }]
+    );
+
+    doc.save(`society-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
+  if (isPersonalOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculatePersonalDashboard(data, year, month);
+    const title = `Household Report - ${MONTHS[month]} ${year}`;
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Household Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Earnings", value: money(stats.totalIncome, sym) },
+      { label: "Spending", value: money(stats.totalExpense, sym) },
+      { label: "Monthly EMI", value: money(stats.totalEmi, sym) },
+      { label: "Left for Goals", value: money(stats.goalContribution || stats.netAfterEmi || 0, sym) },
+      { label: "Goal Gap", value: stats.monthlySavingsGoal ? money(stats.goalLeft || 0, sym) : "--" },
+      { label: "Household Members", value: String(stats.peopleCount || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 44);
+    y = sectionTitle(doc, y + 2, "Savings Goal");
+    y = drawRows(doc, y, [
+      { label: "Goal target", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
+      { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
+      { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
+      { label: "Still needed", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
+      { label: "Status", value: safeText(stats.goalStatus || "") },
+      { label: "Note", value: safeText(stats.goalNote || "--") }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Household Members");
+    y = drawRows(
+      doc,
+      y,
+      stats.memberTotals.length
+        ? stats.memberTotals.map(person => ({
+            label: person.name,
+            value: `${money(person.income, sym)} earned | ${money(person.spending, sym)} spent`
+          }))
+        : [{ label: "No member activity tagged yet", value: "Add People in Settings or tag entries with a person" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "EMI Commitments");
+    y = drawRows(
+      doc,
+      y,
+      stats.upcomingEmis.length
+        ? stats.upcomingEmis.map(item => ({
+            label: `${safeText(item.loanName || "EMI")} · ${safeText(item.lender || "Lender")}`,
+            value: `${money(item.monthlyEmi, sym)} | Due ${safeText(item.scheduledDate || item.dueDate || "--")}${item.endDate ? ` | Ends ${safeText(item.endDate)}` : ""}`
+          }))
+        : [{ label: "No EMI records found", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Spending Insights");
+    y = drawRows(doc, y, [
+      { label: "Spending ratio", value: `${Math.round(stats.spendingRatio || 0)}% of earnings` },
+      { label: "EMI ratio", value: `${Math.round(stats.emiRatio || 0)}% of earnings` },
+      { label: "Essential spending", value: money(stats.essentialSpending || 0, sym) },
+      { label: "Non-essential spending", value: money(stats.nonEssentialSpending || 0, sym) },
+      { label: "Overspend pressure", value: money(stats.spendingPressure || 0, sym) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Top Spending Categories");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No spending categories recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Smart Suggestions");
+    y = drawRows(
+      doc,
+      y,
+      (stats.actionTips || []).map(item => ({ label: item.title, value: safeText(item.message) }))
+    );
+
+    doc.save(`household-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
+  if (isFreelancerOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculateFreelancerDashboard(data, year, month);
+    const title = `Freelancer Report - ${MONTHS[month]} ${year}`;
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Freelancer Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Collected", value: money(stats.totalIncome, sym) },
+      { label: "Expenses", value: money(stats.totalExpense, sym) },
+      { label: "Net", value: money(stats.profit, sym) },
+      { label: "Awaiting Payments", value: money(stats.pendingInvoiceTotal, sym) },
+      { label: "Clients", value: String(stats.trackedClientsCount || 0) },
+      { label: "Billable Costs", value: money(stats.billableExpenseTotal || 0, sym) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 44);
+    y = sectionTitle(doc, y + 2, "Invoice Follow-up");
+    y = drawRows(
+      doc,
+      y,
+      [...(stats.overdueInvoices || []), ...(stats.dueSoonInvoices || []).filter(invoice => !(stats.overdueInvoices || []).some(overdue => overdue.id === invoice.id))].length
+        ? [...(stats.overdueInvoices || []), ...(stats.dueSoonInvoices || []).filter(invoice => !(stats.overdueInvoices || []).some(overdue => overdue.id === invoice.id))].slice(0, 6).map(invoice => ({
+            label: `${safeText(invoice.number || "Invoice")}${(invoice.customer?.name || invoice.billTo?.name) ? ` · ${safeText(invoice.customer?.name || invoice.billTo?.name)}` : ""}`,
+            value: `${money(invoice.total || 0, sym)} | ${safeText(invoice.status || invoice.computedStatus || "pending")}${invoice.dueDate ? ` | Due ${safeText(invoice.dueDate)}` : ""}`
+          }))
+        : [{ label: "No invoice follow-up needed", value: "Open client invoices are under control for this period" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Client Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.topCustomers.length
+        ? stats.topCustomers.map(client => ({
+            label: safeText(client.name),
+            value: `${money(client.revenue, sym)} | Open ${money(client.balance, sym)}`
+          }))
+        : [{ label: "No client billing recorded yet", value: "Create invoices or log client payments to build this section" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Expense Breakdown");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No freelancer expenses recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Alerts Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.alertItems.length
+        ? stats.alertItems.slice(0, 5).map(item => ({ label: item.title, value: safeText(item.message) }))
+        : [{ label: "No active alerts", value: "Payments and freelancer spending look steady right now" }]
+    );
+
+    doc.save(`freelancer-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
+  if (isSmallBusinessOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculateSmallBusinessDashboard(data, year, month);
+    const title = `Small Business Report - ${MONTHS[month]} ${year}`;
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Business Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Receipts", value: money(stats.totalIncome, sym) },
+      { label: "Expenses", value: money(stats.totalExpense, sym) },
+      { label: "Profit / Loss", value: money(stats.profit, sym) },
+      { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
+      { label: "Service Catalog", value: String(stats.servicesCount || 0) },
+      { label: "Partner Dues", value: money(stats.partnerBalanceTotal || 0, sym) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Service Catalog");
+    y = drawRows(
+      doc,
+      y,
+      stats.servicesCount
+        ? (stats.topServices || []).slice(0, 6).map(item => ({
+            label: safeText(item.serviceName),
+            value: `${item.defaultAmount ? money(item.defaultAmount, sym) : "--"}${item.packageName ? ` | ${safeText(item.packageName)}` : ""}`
+          }))
+        : [{ label: "No service records added", value: "Add your core services in Settings to keep work consistent" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Partner Balances");
+    y = drawRows(
+      doc,
+      y,
+      stats.partnersCount
+        ? (stats.partnersWithBalance.length
+          ? stats.partnersWithBalance.slice(0, 6).map(partner => ({
+              label: safeText(partner.partnerName),
+              value: `${money(partner.balanceDue, sym)}${partner.contact ? ` | ${safeText(partner.contact)}` : ""}`
+            }))
+          : [{ label: "All partner balances are clear", value: "No outstanding partner or vendor dues are recorded" }])
+        : [{ label: "No partner records added", value: "Add partners or outside vendors in Settings to track balances here" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Team Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.teamCount
+        ? (stats.teamMembers || []).slice(0, 6).map(member => ({
+            label: safeText(member.name),
+            value: `${member.role ? safeText(member.role) : "Role not added"}${member.payout ? ` | ${money(member.payout, sym)}` : ""}`
+          }))
+        : [{ label: "No team records added", value: "Add team members in Settings to keep roles and payouts visible" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Top Customers");
+    y = drawRows(
+      doc,
+      y,
+      stats.topCustomers.length
+        ? stats.topCustomers.map(item => ({
+            label: item.name,
+            value: `${money(item.revenue, sym)} | Open ${money(item.balance, sym)}`
+          }))
+        : [{ label: "No customer revenue recorded yet", value: "Create invoices to build customer insights" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Alerts Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.alertItems.length
+        ? stats.alertItems.slice(0, 6).map(item => ({ label: item.title, value: safeText(item.message) }))
+        : [{ label: "No active alerts", value: "Operations, stock, and collections look steady right now" }]
+    );
+
+    doc.save(`small-business-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
+  if (isRetailOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculateRetailDashboard(data, year, month);
+    const title = `Retail Report - ${MONTHS[month]} ${year}`;
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Shop Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Sales", value: money(stats.totalIncome, sym) },
+      { label: "Purchases & Expenses", value: money(stats.totalExpense, sym) },
+      { label: "Stock Purchases", value: money(stats.stockPurchaseTotal || 0, sym) },
+      { label: "Supplier Dues", value: money(stats.supplierBalanceTotal || 0, sym) },
+      { label: "Inventory Items", value: String(stats.inventoryCount || 0) },
+      { label: "Stock Value", value: money(stats.inventoryValue || 0, sym) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Inventory Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.topProducts.length
+        ? stats.topProducts.map(item => ({
+            label: safeText(item.productName),
+            value: `${item.stock} in stock | ${money(item.inventoryValue, sym)}`
+          }))
+        : [{ label: "No inventory records added", value: "Add your shop products in Settings to build stock tracking" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Low Stock Watch");
+    y = drawRows(
+      doc,
+      y,
+      stats.lowStockItems.length
+        ? stats.lowStockItems.slice(0, 6).map(item => ({
+            label: safeText(item.productName),
+            value: `${item.stock} left${item.expiryDate ? ` | Exp ${safeText(item.expiryDate)}` : ""}`
+          }))
+        : [{ label: "No low-stock products right now", value: "Current tracked stock levels look healthy" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Supplier Balances");
+    y = drawRows(
+      doc,
+      y,
+      stats.suppliersCount
+        ? (stats.suppliersWithBalance.length
+          ? stats.suppliersWithBalance.slice(0, 6).map(supplier => ({
+              label: safeText(supplier.supplierName),
+              value: `${money(supplier.creditBalance, sym)}${supplier.contact ? ` | ${safeText(supplier.contact)}` : ""}`
+            }))
+          : [{ label: "Supplier balances are clear", value: "No open supplier credit is recorded" }])
+        : [{ label: "No suppliers added yet", value: "Add suppliers in Settings to track balances here" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Expense Breakdown");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No purchases or expenses recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Alerts Snapshot");
+    y = drawRows(
+      doc,
+      y,
+      stats.alertItems.length
+        ? stats.alertItems.slice(0, 6).map(item => ({ label: item.title, value: safeText(item.message) }))
+        : [{ label: "No active alerts", value: "Sales, stock, and supplier balances look steady right now" }]
+    );
+
+    doc.save(`retail-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const stats = calculateDashboard(data, year, month);
-  const invoices = (data.invoices || []).filter(item => item.date?.slice(0, 7) === stats.monthKey);
+  const invoices = getFinancialInvoices(data.invoices).filter(item => item.date?.slice(0, 7) === stats.monthKey);
   const title = `Ledger Report - ${MONTHS[month]} ${year}`;
 
   const taxSummary = invoices.reduce(
@@ -277,7 +1011,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "Profit / Loss", value: money(stats.profit, sym) },
     { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
     { label: "Burn Rate", value: stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days` },
-    { label: "Savings Goal", value: stats.monthlySavingsGoal ? money(stats.monthlySavingsGoal, sym) : "--" }
+    { label: "Savings Goal", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);
@@ -314,6 +1048,16 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "SGST", value: money(taxSummary.sgst, sym) },
     { label: "IGST", value: money(taxSummary.igst, sym) },
     { label: "Invoice Total", value: money(invoices.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0), sym) }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 40);
+  y = sectionTitle(doc, y + 2, "Savings Goal");
+  y = drawRows(doc, y, [
+    { label: "Target amount", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
+    { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
+    { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
+    { label: "Remaining", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
+    { label: "Note", value: safeText(stats.goalNote || "--") }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);

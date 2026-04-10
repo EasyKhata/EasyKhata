@@ -37,6 +37,20 @@ export function isValidDateValue(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 
+export function isFutureDateValue(value) {
+  if (!isValidDateValue(value)) return false;
+  const today = new Date();
+  const todayValue = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return String(value) > todayValue;
+}
+
+export function isFutureMonthValue(value) {
+  if (!/^\d{4}-\d{2}$/.test(String(value || ""))) return false;
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  return String(value) > currentMonth;
+}
+
 export function isOptionalEmail(email) {
   const value = normalizeEmail(email);
   return !value || isValidEmail(value);

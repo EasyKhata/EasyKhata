@@ -270,6 +270,64 @@ export function UpgradeModal({ open, title, message, onClose }) {
   );
 }
 
+export function ToastNotice({ notice, onClose }) {
+  useEffect(() => {
+    if (!notice) return undefined;
+
+    const timeout = window.setTimeout(() => {
+      onClose?.();
+    }, 4200);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice, onClose]);
+
+  if (!notice) return null;
+
+  const tone = notice.tone || "danger";
+  const palette = {
+    success: {
+      border: "var(--accent)",
+      background: "var(--accent-deep)",
+      text: "var(--accent)"
+    },
+    warning: {
+      border: "var(--gold)",
+      background: "var(--gold-deep)",
+      text: "var(--gold)"
+    },
+    danger: {
+      border: "var(--danger)",
+      background: "var(--danger-deep)",
+      text: "var(--danger)"
+    },
+    info: {
+      border: "var(--blue)",
+      background: "var(--blue-deep)",
+      text: "var(--blue)"
+    }
+  }[tone] || {
+    border: "var(--danger)",
+    background: "var(--danger-deep)",
+    text: "var(--danger)"
+  };
+
+  return createPortal(
+    <div style={{ position: "fixed", left: 16, right: 16, bottom: 88, zIndex: 2200, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+      <div style={{ width: "min(560px, 100%)", pointerEvents: "auto", borderRadius: 16, border: `1px solid ${palette.border}55`, background: palette.background, boxShadow: "0 18px 40px rgba(0,0,0,0.28)", padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ width: 10, height: 10, borderRadius: 999, marginTop: 6, background: palette.border, flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {notice.title && <div style={{ fontSize: 13, fontWeight: 700, color: palette.text, marginBottom: 4 }}>{notice.title}</div>}
+          <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.6 }}>{notice.message}</div>
+        </div>
+        <button onClick={() => onClose?.()} style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 0 }}>
+          ×
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export function MonthNav({ year, month, onChange, viewMode = "month", onViewModeChange }) {
   const now = new Date();
   const currentYear = now.getFullYear();

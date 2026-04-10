@@ -17,6 +17,31 @@ import { PLANS, SUBSCRIPTION_STATUS, getTrialEndDate } from "../utils/subscripti
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
 const AuthContext = createContext();
+const PENDING_PROFILE_KEY = "pending-profile:";
+
+function getPendingProfileKey(email) {
+  return `${PENDING_PROFILE_KEY}${String(email || "").trim().toLowerCase()}`;
+}
+
+function savePendingProfile(email, profile) {
+  if (typeof window === "undefined" || !email) return;
+  localStorage.setItem(getPendingProfileKey(email), JSON.stringify(profile));
+}
+
+function readPendingProfile(email) {
+  if (typeof window === "undefined" || !email) return null;
+  try {
+    const raw = localStorage.getItem(getPendingProfileKey(email));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingProfile(email) {
+  if (typeof window === "undefined" || !email) return;
+  localStorage.removeItem(getPendingProfileKey(email));
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -24,13 +49,14 @@ export function AuthProvider({ children }) {
   const registrationInProgressRef = useRef(false);
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
+    const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
     const userRef = doc(db, "users", firebaseUser.uid);
     const snap = await getDoc(userRef);
     const existing = snap.exists() ? snap.data() : {};
-    const baseName = profileOverrides.name || existing?.name || firebaseUser.displayName || "";
-    const baseEmail = profileOverrides.email || existing?.email || firebaseUser.email || "";
-    const basePhone = profileOverrides.phone || existing?.phone || "";
-    const baseOrganizationType = getOrgType(profileOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
+    const baseName = normalizedOverrides.name || existing?.name || firebaseUser.displayName || "";
+    const baseEmail = normalizedOverrides.email || existing?.email || firebaseUser.email || "";
+    const basePhone = normalizedOverrides.phone || existing?.phone || "";
+    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
 
     if (!snap.exists()) {
       await setDoc(userRef, {
@@ -68,6 +94,7 @@ export function AuthProvider({ children }) {
           flag: "IN"
         }
       });
+      clearPendingProfile(baseEmail);
       return;
     }
 
@@ -81,6 +108,7 @@ export function AuthProvider({ children }) {
     if (Object.keys(updates).length > 0) {
       await updateDoc(userRef, updates);
     }
+    clearPendingProfile(baseEmail);
   }
 
   async function activateTrialIfEligible(firebaseUser, profile = null) {
@@ -139,6 +167,7 @@ export function AuthProvider({ children }) {
           return;
         }
 
+        await ensureUserProfile(firebaseUser, readPendingProfile(firebaseUser.email));
         const snap = await getDoc(doc(db, "users", firebaseUser.uid));
         const profile = await activateTrialIfEligible(firebaseUser, snap.exists() ? snap.data() : {});
 
@@ -165,7 +194,7 @@ export function AuthProvider({ children }) {
         return { error: "Please verify your email before logging in." };
       }
 
-      await ensureUserProfile(userCred.user);
+      await ensureUserProfile(userCred.user, readPendingProfile(userCred.user.email));
       const snap = await getDoc(doc(db, "users", userCred.user.uid));
       const profile = await activateTrialIfEligible(userCred.user, snap.exists() ? snap.data() : {});
 
@@ -193,17 +222,37 @@ export function AuthProvider({ children }) {
     try {
       const userCred = await createUserWithEmailAndPassword(auth, email, password);
       await sendEmailVerification(userCred.user);
-      await ensureUserProfile(userCred.user, { name, email, phone, organizationType });
+      savePendingProfile(email, { name, email, phone, organizationType });
       await signOut(auth);
       clearCurrentUser();
 
       return {
         success: true,
-        message: "Your account is ready. Please verify your email before signing in. Your free Pro trial will begin after your first verified login."
+        message: "Your account is ready. Please verify your email before signing in. Your 30-day free Pro trial will begin after your first verified login."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
-        return { error: "An account with this email already exists. Please sign in instead." };
+        try {
+          const existingCred = await signInWithEmailAndPassword(auth, email, password);
+          if (!existingCred.user.emailVerified) {
+            await sendEmailVerification(existingCred.user);
+            await signOut(auth);
+            clearCurrentUser();
+            return {
+              success: true,
+              message: "This email is already registered but still unverified. We've sent a fresh verification email. Please verify it before signing in."
+            };
+          }
+
+          await signOut(auth);
+          clearCurrentUser();
+          return { error: "An account with this email already exists. Please sign in instead." };
+        } catch (existingErr) {
+          if (existingErr.code === "auth/wrong-password" || existingErr.code === "auth/invalid-credential") {
+            return { error: "This email is already registered. Use your existing password from Sign In to resend the verification email if needed." };
+          }
+          return { error: "This email is already registered. Please sign in instead." };
+        }
       }
       if (err.code === "auth/invalid-email") {
         return { error: "Please enter a valid email address." };

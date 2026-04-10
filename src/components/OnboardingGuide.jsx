@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Field, Input, Select, Textarea } from "./UI";
-import { ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, account, onUpdateAccount }) {
   const [step, setStep] = useState(1);
@@ -17,6 +17,8 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
 
   const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
+  const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
+  const isRetailOrg = orgType === ORG_TYPES.RETAIL;
   const totalSteps = 4;
   const isLastStep = step === totalSteps;
   const stepTitles = [
@@ -110,14 +112,22 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Add your first {orgConfig.customerEntryLabel.toLowerCase()}. You can always add more from Settings later.
+              {isSmallBusinessOrg
+                ? "Add your first customer so invoices, follow-ups, and repeat business all start from a clean contact base."
+                : isRetailOrg
+                  ? "Add a regular or credit customer if you want to track repeat buyers or udhar separately later."
+                : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}. You can always add more from Settings later.`}
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
                 Ready to add a {orgConfig.customerEntryLabel.toLowerCase()}?
               </div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
-                You will enter details like name, email, phone, and address so your records stay organized.
+                {isSmallBusinessOrg
+                  ? "Start with a real customer record so invoicing, payment follow-up, and sales history stay organized from day one."
+                  : isRetailOrg
+                    ? "This step is optional for a kirana flow, but useful if you want to keep repeat customers or udhar contacts organized."
+                  : "You will enter details like name, email, phone, and address so your records stay organized."}
               </div>
               <button
                 className="btn-secondary"
@@ -148,16 +158,26 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
                 {orgConfig.hideInvoices ? (
                   <>
-                    <div>• Add the amount you received</div>
-                    <div>• Set the date and earning type</div>
-                    <div>• Keep the entry ready for dashboard tracking</div>
+                    {isRetailOrg ? (
+                      <>
+                        <div>• Pick a product or basket from inventory</div>
+                        <div>• Enter the sale amount, quantity, and date</div>
+                        <div>• Keep daily shop sales ready for dashboard tracking</div>
+                      </>
+                    ) : (
+                      <>
+                        <div>• Add the amount you received</div>
+                        <div>• Set the date and earning type</div>
+                        <div>• Keep the entry ready for dashboard tracking</div>
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
                     <div>• Select a {orgConfig.customerEntryLabel.toLowerCase()}</div>
                     <div>• Add items with description, quantity, and rate</div>
                     <div>• Set due dates and taxes if needed</div>
-                    <div>• Save a professional invoice</div>
+                    <div>{isSmallBusinessOrg ? "Save an invoice your customer can pay against" : "Save a professional invoice"}</div>
                   </>
                 )}
               </div>
@@ -178,7 +198,11 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Finally, record your first {orgConfig.expensesEntryLabel.toLowerCase()} so your dashboard can start comparing inflow and outflow.
+              {isSmallBusinessOrg
+                ? `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so the dashboard can compare sales against real operating costs like rent, payroll, or supplies.`
+                : isRetailOrg
+                  ? `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so the dashboard can compare shop sales against stock buying and running costs.`
+                : `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so your dashboard can start comparing inflow and outflow.`}
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do</div>

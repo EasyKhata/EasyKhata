@@ -10,6 +10,10 @@ function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+function withId(record = {}) {
+  return { ...record, id: record.id || uid() };
+}
+
 function inviteCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
@@ -21,7 +25,7 @@ const EMPTY_DATA = {
   customers: [],
   orgRecords: {},
   account: null,
-  goals: { monthlySavings: 0 },
+  goals: { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
   budgets: {},
   notificationPrefs: {
     browserEnabled: false,
@@ -35,14 +39,36 @@ const EMPTY_DATA = {
   currency: { code: "INR", symbol: "Rs", name: "Indian Rupee", flag: "IN" }
 };
 
+function buildResetData(currentData, nextAccount) {
+  return {
+    ...currentData,
+    income: [],
+    expenses: [],
+    invoices: [],
+    customers: [],
+    orgRecords: {},
+    goals: { ...EMPTY_DATA.goals },
+    budgets: { ...EMPTY_DATA.budgets },
+    account: nextAccount
+  };
+}
+
 function normalizeAppData(source = {}) {
+  const sourceGoals = source.goals || {};
   return {
     income: source.income || [],
     expenses: source.expenses || [],
     invoices: source.invoices || [],
     customers: source.customers || [],
     orgRecords: source.orgRecords || {},
-    goals: source.goals || EMPTY_DATA.goals,
+    goals: {
+      ...EMPTY_DATA.goals,
+      ...sourceGoals,
+      targetAmount: Number(sourceGoals.targetAmount ?? sourceGoals.monthlySavings) || 0,
+      targetDate: String(sourceGoals.targetDate || ""),
+      savedAmount: Number(sourceGoals.savedAmount) || 0,
+      note: String(sourceGoals.note || "")
+    },
     budgets: source.budgets || EMPTY_DATA.budgets,
     notificationPrefs: { ...EMPTY_DATA.notificationPrefs, ...(source.notificationPrefs || {}) },
     currency: source.currency || EMPTY_DATA.currency,
@@ -166,15 +192,16 @@ export function DataProvider({ children }) {
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
   const saveAccount = acc => update(d => ({ ...d, account: acc }));
+  const resetForOrgTypeChange = nextAccount => update(d => buildResetData(d, nextAccount));
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));
-  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, { ...c, id: uid() }] }));
+  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(c)] }));
   const updateCustomer = c => update(d => ({ ...d, customers: d.customers.map(x => (x.id === c.id ? c : x)) }));
   const removeCustomer = id => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
   const saveOrgRecords = (key, items) => update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: items } }));
   const addOrgRecord = (key, record) =>
-    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [{ ...record, id: uid() }, ...(d.orgRecords?.[key] || [])] } }));
+    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(record), ...(d.orgRecords?.[key] || [])] } }));
   const updateOrgRecord = (key, record) =>
     update(d => ({
       ...d,
@@ -191,13 +218,13 @@ export function DataProvider({ children }) {
         [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
       }
     }));
-  const addIncome = i => update(d => ({ ...d, income: [{ ...i, id: uid() }, ...d.income] }));
+  const addIncome = i => update(d => ({ ...d, income: [withId(i), ...d.income] }));
   const updateIncome = income => update(d => ({ ...d, income: d.income.map(i => (i.id === income.id ? income : i)) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
-  const addExpense = e => update(d => ({ ...d, expenses: [{ ...e, id: uid() }, ...d.expenses] }));
+  const addExpense = e => update(d => ({ ...d, expenses: [withId(e), ...d.expenses] }));
   const updateExpense = expense => update(d => ({ ...d, expenses: d.expenses.map(e => (e.id === expense.id ? expense : e)) }));
   const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
-  const addInvoice = inv => update(d => ({ ...d, invoices: [{ ...inv, id: uid() }, ...d.invoices] }));
+  const addInvoice = inv => update(d => ({ ...d, invoices: [withId(inv), ...d.invoices] }));
   const updateInvoice = inv => update(d => ({ ...d, invoices: d.invoices.map(i => (i.id === inv.id ? inv : i)) }));
   const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
@@ -378,6 +405,7 @@ export function DataProvider({ children }) {
         loaded,
         setCurrency,
         saveAccount,
+        resetForOrgTypeChange,
         goals: data.goals,
         saveGoals,
         budgets: data.budgets,
