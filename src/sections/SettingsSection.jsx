@@ -62,6 +62,14 @@ function getCurrentFinancialYearStart(date = new Date()) {
 }
 
 const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
+const SUPPORT_TOPIC_OPTIONS = [
+  ["account", "Account access"],
+  ["billing", "Billing and subscription"],
+  ["bug", "Bug report"],
+  ["feature", "Feature request"],
+  ["data", "Data or reports"],
+  ["other", "Other"]
+];
 
 function buildAccountFormState(account, user) {
   const parsedLocation = parseLocationFields(account?.location || account?.address || "");
@@ -195,6 +203,11 @@ export default function SettingsSection({ navigationTarget }) {
     note: ""
   });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
+  const [supportForm, setSupportForm] = useState({
+    topic: "account",
+    subject: "",
+    message: ""
+  });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -1007,6 +1020,36 @@ export default function SettingsSection({ navigationTarget }) {
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
 
+  function buildSupportContext() {
+    return [
+      `User: ${user?.name || "--"}`,
+      `Email: ${user?.email || "--"}`,
+      `Role: ${user?.role || "user"}`,
+      `Plan: ${planSummary.title || user?.plan || "--"}`,
+      `Organization: ${account?.name || "--"}`,
+      `Usage type: ${orgConfig.profileNameLabel || orgType || "--"}`
+    ].join("\n");
+  }
+
+  function openSupportComposer() {
+    const topicLabel = SUPPORT_TOPIC_OPTIONS.find(([value]) => value === supportForm.topic)?.[1] || "Customer support";
+    const subject = encodeURIComponent(String(supportForm.subject || `${topicLabel} - ${user?.name || "Customer"}`).trim());
+    const message = String(supportForm.message || "").trim();
+    const body = encodeURIComponent(
+      `Hello EasyKhata Support,\n\nTopic: ${topicLabel}\n\n${message ? `${message}\n\n` : ""}Support context:\n${buildSupportContext()}\n\nPlease help me with this issue.\n`
+    );
+    window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+  }
+
+  async function copySupportContext() {
+    try {
+      await navigator.clipboard.writeText(buildSupportContext());
+      showNotice("Support context copied.", "success");
+    } catch (err) {
+      showNotice("Copy failed. You can still use the email action below.");
+    }
+  }
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1145,6 +1188,7 @@ export default function SettingsSection({ navigationTarget }) {
             />
             {user?.role !== "admin" && orgConfig.showSavingsGoal !== false && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={(Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0) ? `Target ${currency?.symbol}${Number((goals?.targetAmount ?? goals?.monthlySavings) || 0).toLocaleString("en-IN")} · Saved ${currency?.symbol}${Number(goals?.savedAmount || 0).toLocaleString("en-IN")}` : "Track your target, date, saved amount, and notes"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
+            <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
           </div>
         </div>
 
@@ -1588,6 +1632,69 @@ export default function SettingsSection({ navigationTarget }) {
         <Field label="Note" hint="Add any context such as emergency fund, vacation, school fees, or how you plan to save for it.">
           <Textarea placeholder="Additional info about this goal" value={goalForm.note} onChange={e => setGoalForm(current => ({ ...current, note: e.target.value }))} />
         </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "support") {
+    return withNotice(
+      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={openSupportComposer} saveLabel="Email Support" canSave={true} accentColor="var(--blue)">
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Use this space to contact support for account issues, billing questions, bugs, or feature requests. We prefill your account context so support can respond faster.
+          </div>
+        </div>
+
+        <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
+          <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
+            {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
+          <Input
+            placeholder="Example: Invoice PDF is not downloading"
+            value={supportForm.subject}
+            onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
+          />
+        </Field>
+
+        <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
+          <Textarea
+            placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
+            value={supportForm.message}
+            onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
+          />
+        </Field>
+
+        <Field label="Support Email">
+          <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 12 }}>{APP_SUPPORT_EMAIL}</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
+                Copy Email
+              </button>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportContext}>
+                Copy Support Context
+              </button>
+            </div>
+          </div>
+        </Field>
+
+        <div className="card" style={{ padding: 16, marginTop: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
+            <div>• What you were trying to do</div>
+            <div>• What happened instead</div>
+            <div>• The screen or section where it happened</div>
+            <div>• Any invoice, customer, or report details that help reproduce it</div>
+          </div>
+        </div>
       </Modal>
     );
   }
