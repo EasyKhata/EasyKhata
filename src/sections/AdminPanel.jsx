@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDocs, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
@@ -125,6 +125,12 @@ function InsightCard({ eyebrow, title, body, tone = "var(--blue)" }) {
   );
 }
 
+function formatTicketStatus(status) {
+  if (status === "resolved") return "Resolved";
+  if (status === "in_progress") return "In Progress";
+  return "Open";
+}
+
 function TopUsersCard({ users }) {
   return (
     <div className="card" style={{ padding: 18, marginBottom: 0 }}>
@@ -195,7 +201,9 @@ export default function AdminPanel({ year, month }) {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
+  const [supportTickets, setSupportTickets] = useState([]);
   const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
+  const [supportTicketsEnabled, setSupportTicketsEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
@@ -231,6 +239,20 @@ export default function AdminPanel({ year, month }) {
         setPaymentRequests([]);
         setPaymentRequestsEnabled(false);
       }
+
+      try {
+        const ticketsSnapshot = await getDocs(collection(db, "support_tickets"));
+        setSupportTickets(
+          ticketsSnapshot.docs
+            .map(item => ({ id: item.id, ...item.data() }))
+            .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+        );
+        setSupportTicketsEnabled(true);
+      } catch (err) {
+        console.error("Support ticket load error:", err);
+        setSupportTickets([]);
+        setSupportTicketsEnabled(false);
+      }
     } catch (err) {
       console.error("Admin panel load error:", err);
       setAdminError("Failed to load admin data. Please check your Firestore permissions and try again.");
@@ -244,6 +266,24 @@ export default function AdminPanel({ year, month }) {
     fetchAdminData();
   }, []);
 
+  async function updateSupportTicketStatus(ticket, status) {
+    setAdminError("");
+    try {
+      const nowIso = new Date().toISOString();
+      await updateDoc(doc(db, "support_tickets", ticket.id), {
+        status,
+        updatedAt: nowIso,
+        resolvedAt: status === "resolved" ? nowIso : "",
+        adminNote: status === "resolved" ? "Resolved by admin" : ticket.adminNote || "",
+        reviewedBy: user.id
+      });
+      setSupportTickets(current => current.map(item => item.id === ticket.id ? { ...item, status, updatedAt: nowIso, resolvedAt: status === "resolved" ? nowIso : item.resolvedAt, reviewedBy: user.id } : item));
+    } catch (err) {
+      console.error("Support ticket status update error:", err);
+      setAdminError("Unable to update the support ticket. Please try again.");
+    }
+  }
+
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const selectedPeriodLabel = new Date(year, month, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 
@@ -252,6 +292,9 @@ export default function AdminPanel({ year, month }) {
     const approvedRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED);
     const pendingRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING);
     const rejectedRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED);
+    const openSupportTickets = supportTickets.filter(item => (item.status || "open") === "open");
+    const inProgressSupportTickets = supportTickets.filter(item => (item.status || "open") === "in_progress");
+    const resolvedSupportTickets = supportTickets.filter(item => (item.status || "open") === "resolved");
 
     const userRecords = users.map(item => {
       const parsedProfileLocation = parseLocationFields(item.location || "");
@@ -445,12 +488,21 @@ export default function AdminPanel({ year, month }) {
     const activationRate = totalUsers ? Math.round((activatedUsers / totalUsers) * 100) : 0;
     const multiOrgShare = totalUsers ? Math.round((multiOrgUsers / totalUsers) * 100) : 0;
 
+    const staleSupportTickets = openSupportTickets.filter(item => getDaysSince(item.updatedAt || item.createdAt, now) > 3).length;
     const insights = [];
     if (requestBacklog > 0) {
       insights.push({
         eyebrow: "Revenue Ops",
         title: `${requestBacklog} payment request${requestBacklog === 1 ? "" : "s"} need escalation`,
         body: `There are ${pendingRequests.length} pending payment submissions and ${requestBacklog} have been waiting for more than 7 days. Tightening this queue will improve conversion and trust.`,
+        tone: "var(--gold)"
+      });
+    }
+    if (staleSupportTickets > 0) {
+      insights.push({
+        eyebrow: "Support Ops",
+        title: `${staleSupportTickets} support ticket${staleSupportTickets === 1 ? " is" : "s are"} aging`,
+        body: `${openSupportTickets.length} support tickets are still open and ${staleSupportTickets} have not moved for more than 3 days. This is the clearest support backlog signal in the app right now.`,
         tone: "var(--gold)"
       });
     }
@@ -534,6 +586,10 @@ export default function AdminPanel({ year, month }) {
         sharedLedgerUsers,
         onboardingCompletedUsers,
         requestBacklog,
+        supportOpen: openSupportTickets.length,
+        supportInProgress: inProgressSupportTickets.length,
+        supportResolved: resolvedSupportTickets.length,
+        supportAging: staleSupportTickets,
         expiringSoonCount: expiringSoon.length,
         averageSessionPerUserMs: totalUsers ? Math.round(totalSessionMs / totalUsers) : 0
       },
@@ -561,7 +617,7 @@ export default function AdminPanel({ year, month }) {
       averageSessionPerUserLabel: formatDuration(totalUsers ? Math.round(totalSessionMs / totalUsers) : 0),
       totalSessionLabel: formatDuration(totalSessionMs)
     };
-  }, [monthKey, paymentRequests, users]);
+  }, [monthKey, paymentRequests, supportTickets, users]);
 
   if (loading) {
     return <SectionSkeleton rows={6} showHero={false} />;
@@ -665,6 +721,62 @@ export default function AdminPanel({ year, month }) {
             <MetricTile label="Pending Payments" value={analytics.stats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
             <MetricTile label="Approved This Period" value={fmtMoney(analytics.stats.monthlyApprovedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
           </div>
+        </div>
+      </div>
+
+      <div className="section-label">Support Operations</div>
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Support Queue Snapshot</div>
+          {!supportTicketsEnabled ? (
+            <EmptyState title="Support tickets are locked by rules" message="Add rules for support_tickets to manage customer issues here." accentColor="var(--gold)" />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+              <MetricTile label="Open Tickets" value={analytics.stats.supportOpen} sub="Needs triage" color="var(--gold)" />
+              <MetricTile label="In Progress" value={analytics.stats.supportInProgress} sub="Currently being handled" color="var(--blue)" />
+              <MetricTile label="Resolved" value={analytics.stats.supportResolved} sub="Closed by admin" color="var(--accent)" />
+              <MetricTile label="Aging Tickets" value={analytics.stats.supportAging} sub="Open for more than 3 days" color="var(--danger)" />
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Latest Support Tickets</div>
+          {!supportTicketsEnabled ? (
+            <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>Support tickets are not readable yet.</div>
+          ) : !supportTickets.length ? (
+            <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets have been submitted yet.</div>
+          ) : (
+            <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+              {supportTickets.slice(0, 8).map((ticket, index) => (
+                <div key={ticket.id} style={{ padding: index === supportTickets.slice(0, 8).length - 1 ? "0" : "0 0 12px", marginBottom: index === supportTickets.slice(0, 8).length - 1 ? 0 : 12, borderBottom: index === supportTickets.slice(0, 8).length - 1 ? "none" : "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{ticket.userName || ticket.userEmail || "Unknown user"} · {ticket.topic || "other"}</div>
+                    </div>
+                    <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
+                      {formatTicketStatus(ticket.status)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 8 }}>{ticket.message}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 10 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
+                  {(ticket.status || "open") !== "resolved" && (
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {(ticket.status || "open") !== "in_progress" && (
+                        <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12, color: "var(--blue)" }} onClick={() => updateSupportTicketStatus(ticket, "in_progress")}>
+                          Mark In Progress
+                        </button>
+                      )}
+                      <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updateSupportTicketStatus(ticket, "resolved")}>
+                        Mark Resolved
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

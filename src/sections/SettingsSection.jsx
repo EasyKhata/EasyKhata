@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -62,6 +62,19 @@ function getCurrentFinancialYearStart(date = new Date()) {
 }
 
 const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
+const SUPPORT_TOPIC_OPTIONS = [
+  ["account", "Account access"],
+  ["billing", "Billing and subscription"],
+  ["bug", "Bug report"],
+  ["feature", "Feature request"],
+  ["data", "Data or reports"],
+  ["other", "Other"]
+];
+const SUPPORT_STATUS_LABELS = {
+  open: "Open",
+  in_progress: "In Progress",
+  resolved: "Resolved"
+};
 
 function buildAccountFormState(account, user) {
   const parsedLocation = parseLocationFields(account?.location || account?.address || "");
@@ -195,6 +208,14 @@ export default function SettingsSection({ navigationTarget }) {
     note: ""
   });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
+  const [supportForm, setSupportForm] = useState({
+    topic: "account",
+    subject: "",
+    message: ""
+  });
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [submittingSupport, setSubmittingSupport] = useState(false);
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -1007,6 +1028,108 @@ export default function SettingsSection({ navigationTarget }) {
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
 
+  function buildSupportContext() {
+    return [
+      `User: ${user?.name || "--"}`,
+      `Email: ${user?.email || "--"}`,
+      `Role: ${user?.role || "user"}`,
+      `Plan: ${planSummary.title || user?.plan || "--"}`,
+      `Organization: ${account?.name || "--"}`,
+      `Usage type: ${orgConfig.profileNameLabel || orgType || "--"}`
+    ].join("\n");
+  }
+
+  function openSupportComposer() {
+    const topicLabel = SUPPORT_TOPIC_OPTIONS.find(([value]) => value === supportForm.topic)?.[1] || "Customer support";
+    const subject = encodeURIComponent(String(supportForm.subject || `${topicLabel} - ${user?.name || "Customer"}`).trim());
+    const message = String(supportForm.message || "").trim();
+    const body = encodeURIComponent(
+      `Hello EasyKhata Support,\n\nTopic: ${topicLabel}\n\n${message ? `${message}\n\n` : ""}Support context:\n${buildSupportContext()}\n\nPlease help me with this issue.\n`
+    );
+    window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+  }
+
+  async function copySupportContext() {
+    try {
+      await navigator.clipboard.writeText(buildSupportContext());
+      showNotice("Support context copied.", "success");
+    } catch (err) {
+      showNotice("Copy failed. You can still use the email action below.");
+    }
+  }
+
+  async function loadSupportTickets() {
+    if (!user?.id || user?.role === "admin") return;
+    setSupportLoading(true);
+    try {
+      const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", user.id));
+      const ticketsSnapshot = await getDocs(ticketsQuery);
+      setSupportTickets(
+        ticketsSnapshot.docs
+          .map(item => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      );
+    } catch (err) {
+      console.error("Support ticket load error:", err);
+      showNotice("We couldn't load your support tickets right now.");
+      setSupportTickets([]);
+    } finally {
+      setSupportLoading(false);
+    }
+  }
+
+  async function submitSupportTicket() {
+    const topic = String(supportForm.topic || "other").trim();
+    const subject = String(supportForm.subject || "").trim() || `${SUPPORT_TOPIC_OPTIONS.find(([value]) => value === topic)?.[1] || "Customer support"} - ${user?.name || "Customer"}`;
+    const message = String(supportForm.message || "").trim();
+
+    if (!message) {
+      showNotice("Please describe the issue before submitting a support ticket.");
+      return;
+    }
+
+    setSubmittingSupport(true);
+    try {
+      const ticketRef = doc(collection(db, "support_tickets"));
+      const nowIso = new Date().toISOString();
+      const payload = {
+        userId: user.id,
+        userName: user?.name || "",
+        userEmail: user?.email || "",
+        topic,
+        subject,
+        message,
+        status: "open",
+        activeOrgId: activeOrgId || "",
+        organizationName: account?.name || "",
+        organizationType: account?.organizationType || user?.organizationType || "",
+        supportContext: buildSupportContext(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        resolvedAt: "",
+        adminNote: ""
+      };
+      await setDoc(ticketRef, payload);
+      showNotice("Support ticket submitted.", "success");
+      setSupportForm({ topic: "account", subject: "", message: "" });
+      await loadSupportTickets();
+    } catch (err) {
+      console.error("Support ticket submit error:", err);
+      if (err?.code === "permission-denied") {
+        showNotice("Support tickets are blocked by Firestore rules right now. Please allow support_tickets first.");
+      } else {
+        showNotice(err?.message || "We couldn't submit your support ticket right now.");
+      }
+    } finally {
+      setSubmittingSupport(false);
+    }
+  }
+
+  useEffect(() => {
+    if (screen !== "support") return;
+    loadSupportTickets();
+  }, [screen, user?.id]);
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1145,6 +1268,7 @@ export default function SettingsSection({ navigationTarget }) {
             />
             {user?.role !== "admin" && orgConfig.showSavingsGoal !== false && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={(Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0) ? `Target ${currency?.symbol}${Number((goals?.targetAmount ?? goals?.monthlySavings) || 0).toLocaleString("en-IN")} · Saved ${currency?.symbol}${Number(goals?.savedAmount || 0).toLocaleString("en-IN")}` : "Track your target, date, saved amount, and notes"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
+            <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
           </div>
         </div>
 
@@ -1588,6 +1712,98 @@ export default function SettingsSection({ navigationTarget }) {
         <Field label="Note" hint="Add any context such as emergency fund, vacation, school fees, or how you plan to save for it.">
           <Textarea placeholder="Additional info about this goal" value={goalForm.note} onChange={e => setGoalForm(current => ({ ...current, note: e.target.value }))} />
         </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "support") {
+    return withNotice(
+      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={submitSupportTicket} saveLabel={submittingSupport ? "Submitting..." : "Submit Ticket"} canSave={!submittingSupport && !!supportForm.message.trim()} accentColor="var(--blue)">
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Use this space to submit support tickets for account issues, billing questions, bugs, or feature requests. Your account context is attached automatically so support can respond faster.
+          </div>
+        </div>
+
+        <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
+          <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
+            {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
+          <Input
+            placeholder="Example: Invoice PDF is not downloading"
+            value={supportForm.subject}
+            onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
+          />
+        </Field>
+
+        <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
+          <Textarea
+            placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
+            value={supportForm.message}
+            onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
+          />
+        </Field>
+
+        <Field label="Support Email">
+          <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 12 }}>{APP_SUPPORT_EMAIL}</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
+                Copy Email
+              </button>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={openSupportComposer}>
+                Email Instead
+              </button>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportContext}>
+                Copy Support Context
+              </button>
+            </div>
+          </div>
+        </Field>
+
+        <div className="card" style={{ padding: 16, marginTop: 6 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
+            <div>• What you were trying to do</div>
+            <div>• What happened instead</div>
+            <div>• The screen or section where it happened</div>
+            <div>• Any invoice, customer, or report details that help reproduce it</div>
+          </div>
+        </div>
+
+        {user?.role !== "admin" && (
+          <div className="card" style={{ padding: 16, marginTop: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Your Recent Tickets</div>
+            {supportLoading ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
+            ) : supportTickets.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Submit one above and it will appear here.</div>
+            ) : (
+              <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+                {supportTickets.slice(0, 5).map((ticket, index) => (
+                  <div key={ticket.id} style={{ padding: index === supportTickets.slice(0, 5).length - 1 ? "0" : "0 0 12px", marginBottom: index === supportTickets.slice(0, 5).length - 1 ? 0 : 12, borderBottom: index === supportTickets.slice(0, 5).length - 1 ? "none" : "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
+                      <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
+                        {SUPPORT_STATUS_LABELS[ticket.status] || "Open"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>{ticket.message}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     );
   }

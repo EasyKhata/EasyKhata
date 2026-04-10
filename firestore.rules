@@ -11,10 +11,12 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid));
       return isSignedIn() && (
         request.auth.uid == "W7dU0vbtEtPG5rn7CXoxLsbcs483" ||
-        (profile.exists() && profile.data.role == "admin")
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+        )
       );
     }
 
@@ -23,13 +25,19 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin() && request.auth.uid != userId;
+
+      match /orgs/{orgId}/invoices/{invoiceId} {
+        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /shared_ledgers/{ledgerId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read, update: if isAdmin() ||
-        (resource.data.members is list &&
-         resource.data.members.filter(member => member.userId == request.auth.uid).size() > 0);
+        (isSignedIn() && (
+          resource.data.ownerId == request.auth.uid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId
+        ));
       allow delete: if isAdmin();
     }
 
@@ -43,6 +51,12 @@ service cloud.firestore {
       allow read: if isSignedIn() && (request.auth.uid == requestId || isAdmin());
       allow update: if isAdmin();
       allow delete: if isAdmin();
+    }
+
+    match /support_tickets/{ticketId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
     }
   }
 }
