@@ -37,7 +37,9 @@ function buildBlankForm(year, month, config, categories) {
     recurring: false,
     date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
     endDate: "",
-    note: ""
+    note: "",
+    teamMemberName: "",
+    partnerName: ""
   };
   (config.expenseFields || []).forEach(field => {
     base[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
@@ -77,6 +79,8 @@ export default function ExpensesSection({ year, month, orgType }) {
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
+  const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
+  const isRetailOrg = getOrgType(orgType) === ORG_TYPES.RETAIL;
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const categoryOptions = useMemo(() => {
@@ -99,6 +103,15 @@ export default function ExpensesSection({ year, month, orgType }) {
   const peopleOptions = useMemo(() => (
     (d.customers || []).map(person => ({ value: person.name || "", label: [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
+  const teamOptions = useMemo(() => (
+    (d.orgRecords?.team || []).map(member => ({ value: member.name || "", label: [member.name || "", member.role || "", member.payout ? `${sym} ${member.payout}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.orgRecords, sym]);
+  const partnerOptions = useMemo(() => (
+    (d.orgRecords?.partners || []).map(partner => ({ value: partner.partnerName || "", label: [partner.partnerName || "", partner.contact || "", partner.balanceDue ? `${sym} ${partner.balanceDue}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.orgRecords, sym]);
+  const supplierOptions = useMemo(() => (
+    (d.orgRecords?.suppliers || []).map(supplier => ({ value: supplier.supplierName || "", label: [supplier.supplierName || "", supplier.contact || "", supplier.creditBalance ? `${sym} ${supplier.creditBalance}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.orgRecords, sym]);
 
   const active = d.expenses.filter(expense => {
     if (!expense.recurring) return expense.month === mk;
@@ -109,6 +122,12 @@ export default function ExpensesSection({ year, month, orgType }) {
   const total = active.reduce((sum, expense) => sum + Number(expense.amount), 0);
   const recurring = active.filter(expense => expense.recurring);
   const oneTime = active.filter(expense => !expense.recurring);
+  const salaryExpenses = active.filter(expense => String(expense.expenseType || "").trim() === "Team Payout");
+  const partnerExpenses = active.filter(expense => String(expense.expenseType || "").trim() === "Partner Payment");
+  const stockExpenses = active.filter(expense => String(expense.purchaseType || "").trim() === "Stock Purchase");
+  const supplierPaymentExpenses = active.filter(expense => String(expense.purchaseType || "").trim() === "Supplier Payment");
+  const otherExpenses = active.filter(expense => !["Team Payout", "Partner Payment"].includes(String(expense.expenseType || "").trim()));
+  const retailOtherExpenses = active.filter(expense => !["Stock Purchase", "Supplier Payment"].includes(String(expense.purchaseType || "").trim()));
   const stats = calculateDashboard(d, year, month);
 
   if (!d.loaded) {
@@ -149,6 +168,8 @@ export default function ExpensesSection({ year, month, orgType }) {
     next.date = expense.date || next.date;
     next.endDate = expense.endDate || "";
     next.note = expense.note || "";
+    next.teamMemberName = expense.teamMemberName || "";
+    next.partnerName = expense.partnerName || "";
     (config.expenseFields || []).forEach(field => {
       next[field.key] = expense[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
@@ -228,7 +249,9 @@ export default function ExpensesSection({ year, month, orgType }) {
       category: form.category,
       note: form.note.trim(),
       date: form.date,
-      recurring: form.recurring
+      recurring: form.recurring,
+      teamMemberName: String(form.teamMemberName || "").trim(),
+      partnerName: String(form.partnerName || "").trim()
     };
 
     (config.expenseFields || []).forEach(field => {
@@ -260,6 +283,8 @@ export default function ExpensesSection({ year, month, orgType }) {
       expense.category,
       expense.date ? fmtDate(expense.date) : "",
       expense.recurring && expense.endDate ? `ends ${fmtDate(expense.endDate)}` : "",
+      expense.teamMemberName || "",
+      expense.partnerName || "",
       extras,
       expense.note || ""
     ].filter(Boolean);
@@ -325,13 +350,77 @@ export default function ExpensesSection({ year, month, orgType }) {
           </>
         )}
 
-        {recurring.length > 0 && (
+        {isSmallBusinessOrg ? (
+          <>
+            <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
+              <div className="card">
+                {salaryExpenses.length === 0 ? (
+                  <EmptyState title="No team payouts yet" message="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--purple)" />
+                ) : (
+                  salaryExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+
+            <Collapsible title="Partner & Vendor Payments" icon="🏷" color="var(--gold)" count={partnerExpenses.length} defaultOpen={partnerExpenses.length > 0}>
+              <div className="card">
+                {partnerExpenses.length === 0 ? (
+                  <EmptyState title="No partner payments yet" message="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--gold)" />
+                ) : (
+                  partnerExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+
+            <Collapsible title="Operating Expenses" icon="•" color="var(--danger)" count={otherExpenses.length} defaultOpen>
+              <div className="card">
+                {otherExpenses.length === 0 ? (
+                  <EmptyState title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--danger)" />
+                ) : (
+                  otherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+          </>
+        ) : isRetailOrg ? (
+          <>
+            <Collapsible title="Stock Purchases" icon="📦" color="var(--blue)" count={stockExpenses.length} defaultOpen>
+              <div className="card">
+                {stockExpenses.length === 0 ? (
+                  <EmptyState title="No stock purchases yet" message="Track stock buying here so the month reflects how much inventory you brought into the shop." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--blue)" />
+                ) : (
+                  stockExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+
+            <Collapsible title="Supplier Payments" icon="🏷" color="var(--gold)" count={supplierPaymentExpenses.length} defaultOpen={supplierPaymentExpenses.length > 0}>
+              <div className="card">
+                {supplierPaymentExpenses.length === 0 ? (
+                  <EmptyState title="No supplier payments yet" message="Log direct supplier settlements here to keep payables clear." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--gold)" />
+                ) : (
+                  supplierPaymentExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+
+            <Collapsible title="Shop Running Costs" icon="•" color="var(--danger)" count={retailOtherExpenses.length} defaultOpen>
+              <div className="card">
+                {retailOtherExpenses.length === 0 ? (
+                  <EmptyState title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--danger)" />
+                ) : (
+                  retailOtherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            </Collapsible>
+          </>
+        ) : recurring.length > 0 && (
           <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
             <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
           </Collapsible>
         )}
 
-        <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
+        {!isSmallBusinessOrg && !isRetailOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
           <div className="card">
             {oneTime.length === 0 ? (
               <EmptyState
@@ -345,7 +434,7 @@ export default function ExpensesSection({ year, month, orgType }) {
               oneTime.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
             )}
           </div>
-        </Collapsible>
+        </Collapsible>}
       </div>
 
       <FAB bg="var(--danger)" shadow="rgba(255,110,110,0.35)" onClick={openNew} />
@@ -389,9 +478,45 @@ export default function ExpensesSection({ year, month, orgType }) {
                       {peopleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
                   )
+                  : isSmallBusinessOrg && field.key === "expenseType"
+                    ? (
+                      <Select value={form.expenseType || ""} onChange={e => setForm(current => ({ ...current, expenseType: e.target.value, teamMemberName: e.target.value === "Team Payout" ? current.teamMemberName : "", partnerName: e.target.value === "Partner Payment" ? current.partnerName : "", label: current.label || e.target.value }))}>
+                        {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
+                      </Select>
+                    )
+                  : isRetailOrg && field.key === "purchaseType"
+                    ? (
+                      <Select value={form.purchaseType || ""} onChange={e => setForm(current => ({ ...current, purchaseType: e.target.value, supplierName: ["Stock Purchase", "Supplier Payment"].includes(e.target.value) ? current.supplierName : "", label: current.label || e.target.value }))}>
+                        {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
+                      </Select>
+                    )
                   : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
               </Field>
             ))}
+            {isSmallBusinessOrg && form.expenseType === "Team Payout" && (
+              <Field label="Team Member">
+                <Select value={form.teamMemberName || ""} onChange={e => setForm(current => ({ ...current, teamMemberName: e.target.value, label: current.label || `${e.target.value} Payout` }))}>
+                  <option value="">{teamOptions.length ? "Select team member" : "Add team members in Settings first"}</option>
+                  {teamOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Select>
+              </Field>
+            )}
+            {isSmallBusinessOrg && form.expenseType === "Partner Payment" && (
+              <Field label="Partner / Vendor">
+                <Select value={form.partnerName || ""} onChange={e => setForm(current => ({ ...current, partnerName: e.target.value, label: current.label || `${e.target.value} Payment` }))}>
+                  <option value="">{partnerOptions.length ? "Select partner" : "Add partners in Settings first"}</option>
+                  {partnerOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Select>
+              </Field>
+            )}
+            {isRetailOrg && ["Stock Purchase", "Supplier Payment"].includes(form.purchaseType || "") && (
+              <Field label="Supplier">
+                <Select value={form.supplierName || ""} onChange={e => setForm(current => ({ ...current, supplierName: e.target.value, label: current.label || `${e.target.value} ${form.purchaseType === "Supplier Payment" ? "Payment" : "Purchase"}` }))}>
+                  <option value="">{supplierOptions.length ? "Select supplier" : "Add suppliers in Settings first"}</option>
+                  {supplierOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </Select>
+              </Field>
+            )}
           </div>
 
           <div className="card" style={{ padding: "16px", marginBottom: 16 }}>

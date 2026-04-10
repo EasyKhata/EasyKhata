@@ -25,16 +25,57 @@ function getGoalSnapshot(goals = {}) {
   };
 }
 
-function invoiceTaxTotal(invoice) {
+export function isQuoteDocument(invoice) {
+  return String(invoice?.documentType || "invoice").toLowerCase() === "quote";
+}
+
+export function getFinancialInvoices(invoices) {
+  return (invoices || []).filter(invoice => !isQuoteDocument(invoice));
+}
+
+function getInvoiceSubtotal(invoice) {
   return (invoice?.items || []).reduce((sum, item) => {
     const taxable = toNumber(item.qty) * toNumber(item.rate);
-    const rate = toNumber(item.taxRate ?? item.igst);
-    return sum + (taxable * rate) / 100;
+    return sum + taxable;
   }, 0);
 }
 
+export function getInvoiceDiscount(invoice) {
+  const subtotal = getInvoiceSubtotal(invoice);
+  return Math.max(0, Math.min(subtotal, toNumber(invoice?.discount)));
+}
+
+export function getInvoiceTaxBreakdown(invoice) {
+  const subtotal = getInvoiceSubtotal(invoice);
+  const discount = getInvoiceDiscount(invoice);
+  const multiplier = subtotal > 0 ? Math.max(0, subtotal - discount) / subtotal : 0;
+
+  return (invoice?.items || []).reduce(
+    (totals, item) => {
+      const taxable = toNumber(item.qty) * toNumber(item.rate);
+      const adjustedTaxable = taxable * multiplier;
+      const rate = toNumber(item.taxRate ?? item.igst);
+      const taxAmount = (adjustedTaxable * rate) / 100;
+
+      totals.subtotal += taxable;
+      totals.discount = discount;
+      totals.taxable += adjustedTaxable;
+      if ((invoice?.taxMode || "split") === "split") {
+        totals.cgst += taxAmount / 2;
+        totals.sgst += taxAmount / 2;
+      } else {
+        totals.igst += taxAmount;
+      }
+
+      return totals;
+    },
+    { subtotal, discount, taxable: 0, cgst: 0, sgst: 0, igst: 0 }
+  );
+}
+
 export function invoiceGrandTotal(invoice) {
-  return invoiceTotal(invoice?.items) + invoiceTaxTotal(invoice);
+  const tax = getInvoiceTaxBreakdown(invoice);
+  return tax.taxable + tax.cgst + tax.sgst + tax.igst;
 }
 
 export function isApartmentResidentInvoice(invoice) {
@@ -85,6 +126,7 @@ export function getInvoiceDueMessage(invoice, today = new Date()) {
 
 export function getReminderInvoices(invoices, today = new Date()) {
   return (invoices || []).filter(invoice => {
+    if (isQuoteDocument(invoice)) return false;
     const status = getInvoiceStatus(invoice, today);
     if (!invoice?.dueDate || status === "paid") return false;
 
@@ -317,6 +359,221 @@ export function isApartmentOrgData(data) {
 
 export function isPersonalOrgData(data) {
   return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.PERSONAL;
+}
+
+export function isSmallBusinessOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
+}
+
+export function isFreelancerOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.FREELANCER;
+}
+
+export function isRetailOrgData(data) {
+  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.RETAIL;
+}
+
+function isYesValue(value) {
+  return String(value || "").trim().toLowerCase() === "yes";
+}
+
+function getFreelancerClientName(entry) {
+  return String(entry?.clientName || entry?.client || entry?.customer?.name || entry?.billTo?.name || "").trim();
+}
+
+function getActiveExpensesForMonth(data, mk) {
+  return (data.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const started = expense.startMonth <= mk;
+      const notEnded = !expense.endMonth || expense.endMonth >= mk;
+      return started && notEnded;
+    }
+
+    return expense.month === mk;
+  });
+}
+
+function getExpensesForYear(data, year) {
+  return (data.expenses || []).filter(expense => {
+    if (expense.recurring) {
+      const yearKey = String(year);
+      const startYear = expense.startMonth?.slice(0, 4);
+      const endYear = expense.endMonth?.slice(0, 4);
+      const started = !startYear || startYear <= yearKey;
+      const notEnded = !endYear || endYear >= yearKey;
+      return started && notEnded;
+    }
+    return expense.month?.slice(0, 4) === String(year);
+  });
+}
+
+function getFreelancerTrackedClients(data, payments, invoices) {
+  const clientNames = new Set((data.customers || []).map(customer => String(customer.name || "").trim()).filter(Boolean));
+  payments.forEach(payment => {
+    const clientName = getFreelancerClientName(payment);
+    if (clientName) clientNames.add(clientName);
+  });
+  invoices.forEach(invoice => {
+    const clientName = getFreelancerClientName(invoice);
+    if (clientName) clientNames.add(clientName);
+  });
+  return clientNames.size;
+}
+
+function getSmallBusinessServices(data) {
+  return data?.orgRecords?.services || [];
+}
+
+function getSmallBusinessPartners(data) {
+  return data?.orgRecords?.partners || [];
+}
+
+function getSmallBusinessTeam(data) {
+  return data?.orgRecords?.team || [];
+}
+
+function getRetailInventory(data) {
+  return data?.orgRecords?.inventory || [];
+}
+
+function getRetailSuppliers(data) {
+  return data?.orgRecords?.suppliers || [];
+}
+
+function buildSmallBusinessServiceInsights(services) {
+  const normalizedServices = (services || []).map(item => {
+    const defaultAmount = Math.max(0, toNumber(item.defaultAmount ?? item.sellingPrice ?? item.costPrice));
+    return {
+      ...item,
+      serviceName: String(item.serviceName || item.productName || item.name || "").trim(),
+      packageName: String(item.packageName || "").trim(),
+      notes: String(item.notes || "").trim(),
+      defaultAmount
+    };
+  }).filter(item => item.serviceName);
+
+  const topServices = normalizedServices
+    .slice()
+    .sort((a, b) => b.defaultAmount - a.defaultAmount || a.serviceName.localeCompare(b.serviceName))
+    .slice(0, 5);
+
+  return {
+    services: normalizedServices,
+    topServices,
+    servicesCount: normalizedServices.length,
+    serviceCatalogValue: normalizedServices.reduce((sum, item) => sum + item.defaultAmount, 0)
+  };
+}
+
+function buildSmallBusinessPartnerInsights(partners) {
+  const normalizedPartners = (partners || []).map(partner => ({
+    ...partner,
+    partnerName: String(partner.partnerName || partner.vendorName || partner.name || "").trim(),
+    balanceDue: Math.max(0, toNumber(partner.balanceDue ?? partner.creditBalance)),
+    contact: String(partner.contact || "").trim()
+  })).filter(partner => partner.partnerName);
+
+  const partnersWithBalance = normalizedPartners
+    .filter(partner => partner.balanceDue > 0)
+    .sort((a, b) => b.balanceDue - a.balanceDue || a.partnerName.localeCompare(b.partnerName));
+
+  return {
+    partners: normalizedPartners,
+    partnersWithBalance,
+    partnersCount: normalizedPartners.length,
+    partnerBalanceTotal: partnersWithBalance.reduce((sum, partner) => sum + partner.balanceDue, 0)
+  };
+}
+
+function buildSmallBusinessTeamInsights(teamMembers) {
+  const normalizedTeam = (teamMembers || []).map(member => ({
+    ...member,
+    name: String(member.name || "").trim(),
+    role: String(member.role || "").trim(),
+    payout: Math.max(0, toNumber(member.payout ?? member.salary))
+  })).filter(member => member.name);
+
+  return {
+    teamMembers: normalizedTeam,
+    teamCount: normalizedTeam.length,
+    monthlyPayoutEstimate: normalizedTeam.reduce((sum, member) => sum + member.payout, 0)
+  };
+}
+
+function buildRetailInventoryInsights(items, today = new Date()) {
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const normalizedInventory = (items || []).map(item => {
+    const stock = Math.max(0, toNumber(item.stock ?? item.quantity ?? item.onHand));
+    const price = Math.max(0, toNumber(item.price ?? item.sellingPrice ?? item.defaultAmount));
+    const expiryDate = String(item.expiryDate || "").trim();
+    const inventoryValue = stock * price;
+    let expiryInDays = null;
+
+    if (expiryDate) {
+      const parsed = new Date(`${expiryDate}T23:59:59`);
+      if (!Number.isNaN(parsed.getTime())) {
+        expiryInDays = Math.round((parsed - start) / (24 * 60 * 60 * 1000));
+      }
+    }
+
+    return {
+      ...item,
+      productName: String(item.productName || item.name || "").trim(),
+      stock,
+      price,
+      expiryDate,
+      expiryInDays,
+      inventoryValue
+    };
+  }).filter(item => item.productName);
+
+  const lowStockItems = normalizedInventory
+    .filter(item => item.stock <= 5)
+    .sort((a, b) => a.stock - b.stock || a.productName.localeCompare(b.productName));
+
+  const expiringItems = normalizedInventory
+    .filter(item => item.expiryInDays !== null && item.expiryInDays >= 0 && item.expiryInDays <= 30)
+    .sort((a, b) => a.expiryInDays - b.expiryInDays || a.productName.localeCompare(b.productName));
+
+  const topProducts = normalizedInventory
+    .slice()
+    .sort((a, b) => b.inventoryValue - a.inventoryValue || b.stock - a.stock || a.productName.localeCompare(b.productName))
+    .slice(0, 6);
+
+  return {
+    inventoryItems: normalizedInventory,
+    inventoryCount: normalizedInventory.length,
+    stockUnits: normalizedInventory.reduce((sum, item) => sum + item.stock, 0),
+    inventoryValue: normalizedInventory.reduce((sum, item) => sum + item.inventoryValue, 0),
+    lowStockItems,
+    expiringItems,
+    topProducts
+  };
+}
+
+function buildRetailSupplierInsights(suppliers) {
+  const normalizedSuppliers = (suppliers || []).map(supplier => ({
+    ...supplier,
+    supplierName: String(supplier.supplierName || supplier.partnerName || supplier.name || "").trim(),
+    contact: String(supplier.contact || "").trim(),
+    creditBalance: Math.max(0, toNumber(supplier.creditBalance ?? supplier.balanceDue))
+  })).filter(supplier => supplier.supplierName);
+
+  const suppliersWithBalance = normalizedSuppliers
+    .filter(supplier => supplier.creditBalance > 0)
+    .sort((a, b) => b.creditBalance - a.creditBalance || a.supplierName.localeCompare(b.supplierName));
+
+  return {
+    suppliers: normalizedSuppliers,
+    suppliersCount: normalizedSuppliers.length,
+    supplierBalanceTotal: suppliersWithBalance.reduce((sum, supplier) => sum + supplier.creditBalance, 0),
+    suppliersWithBalance
+  };
+}
+
+function isRetailPurchaseType(expense, expected) {
+  const purchaseType = String(expense?.purchaseType || expense?.category || "").trim().toLowerCase();
+  return purchaseType === expected;
 }
 
 function startOfMonthValue(year, month) {
@@ -719,8 +976,20 @@ export function calculatePersonalYearlyDashboard(data, year) {
 export function getNextInvoiceNumber(invoices, date = new Date()) {
   const year = date.getFullYear();
   const prefix = `INV-${year}-`;
-  const maxSeq = (invoices || []).reduce((max, invoice) => {
+  const maxSeq = getFinancialInvoices(invoices).reduce((max, invoice) => {
     if (!invoice?.number?.startsWith(prefix)) return max;
+    const seq = Number(invoice.number.slice(prefix.length));
+    return Number.isFinite(seq) ? Math.max(max, seq) : max;
+  }, 0);
+
+  return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+}
+
+export function getNextQuoteNumber(invoices, date = new Date()) {
+  const year = date.getFullYear();
+  const prefix = `QUO-${year}-`;
+  const maxSeq = (invoices || []).reduce((max, invoice) => {
+    if (!isQuoteDocument(invoice) || !invoice?.number?.startsWith(prefix)) return max;
     const seq = Number(invoice.number.slice(prefix.length));
     return Number.isFinite(seq) ? Math.max(max, seq) : max;
   }, 0);
@@ -741,7 +1010,7 @@ function sumIncomeForMonth(data, mk) {
     return manual;
   }
 
-  const invoices = (data.invoices || [])
+  const invoices = getFinancialInvoices(data.invoices)
     .filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk)
     .reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
 
@@ -783,15 +1052,7 @@ export function calculateDashboard(data, year, month) {
     };
   });
 
-  const activeExpenses = (data.expenses || []).filter(expense => {
-    if (expense.recurring) {
-      const started = expense.startMonth <= mk;
-      const notEnded = !expense.endMonth || expense.endMonth >= mk;
-      return started && notEnded;
-    }
-
-    return expense.month === mk;
-  });
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
 
   const expenseCategoryMap = activeExpenses.reduce((map, expense) => {
     const category = expense.category || "Other";
@@ -821,7 +1082,7 @@ export function calculateDashboard(data, year, month) {
     .filter(item => item.budget > 0)
     .sort((a, b) => b.progress - a.progress);
 
-  const invoices = (data.invoices || []).map(invoice => {
+  const invoices = getFinancialInvoices(data.invoices).map(invoice => {
     const status = getInvoiceStatus(invoice, today);
     return {
       ...invoice,
@@ -983,7 +1244,7 @@ export function calculateYearlyDashboard(data, year) {
   });
 
   // Year-to-date invoices and customers
-  const invoices = (data.invoices || [])
+  const invoices = getFinancialInvoices(data.invoices)
     .filter(invoice => invoice.date?.slice(0, 4) === String(year))
     .map(invoice => {
       const status = getInvoiceStatus(invoice, today);
@@ -1040,17 +1301,7 @@ export function calculateYearlyDashboard(data, year) {
     .slice(0, 3);
 
   // Year-to-date expense categories
-  const yearExpenses = (data.expenses || []).filter(expense => {
-    if (expense.recurring) {
-      const yearKey = String(year);
-      const startYear = expense.startMonth?.slice(0, 4);
-      const endYear = expense.endMonth?.slice(0, 4);
-      const started = !startYear || startYear <= yearKey;
-      const notEnded = !endYear || endYear >= yearKey;
-      return started && notEnded;
-    }
-    return expense.month?.slice(0, 4) === String(year);
-  });
+  const yearExpenses = getExpensesForYear(data, year);
 
   const expenseCategoryMap = yearExpenses.reduce((map, expense) => {
     const category = expense.category || "Other";
@@ -1145,8 +1396,239 @@ export function calculateYearlyDashboard(data, year) {
   };
 }
 
+export function calculateFreelancerDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const mk = monthKey(year, month);
+  const payments = (data.income || []).filter(item => item.month === mk);
+  const expenses = getActiveExpensesForMonth(data, mk);
+  const billableExpenseTotal = expenses.reduce((sum, expense) => sum + (isYesValue(expense.billable) ? toNumber(expense.amount) : 0), 0);
+  const trackedClientsCount = getFreelancerTrackedClients(data, payments, data.invoices || []);
+
+  const alertItems = [...base.alertItems];
+  if (base.overdueInvoices.length) {
+    alertItems.push({
+      tone: "gold",
+      title: "Overdue invoices need follow-up",
+      message: "Some client invoices are overdue. Follow up to keep freelance cash flow moving."
+    });
+  }
+  if (billableExpenseTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Billable costs need review",
+      message: `${fmtMoneyValue(billableExpenseTotal)} of this month's expenses are marked billable.`
+    });
+  }
+
+  return {
+    ...base,
+    trackedClientsCount,
+    billableExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateFreelancerYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const payments = (data.income || []).filter(item => item.month?.slice(0, 4) === String(year));
+  const expenses = getExpensesForYear(data, year);
+  const billableExpenseTotal = expenses.reduce((sum, expense) => sum + (isYesValue(expense.billable) ? toNumber(expense.amount) : 0), 0);
+  const trackedClientsCount = getFreelancerTrackedClients(data, payments, data.invoices || []);
+
+  const alertItems = [...base.alertItems];
+  if (base.overdueInvoices.length) {
+    alertItems.push({
+      tone: "gold",
+      title: "Outstanding invoices need attention",
+      message: "This year still has overdue client invoices that need follow-up."
+    });
+  }
+
+  return {
+    ...base,
+    trackedClientsCount,
+    billableExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateSmallBusinessDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
+  const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
+  const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const mk = monthKey(year, month);
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
+  const teamPayoutTotal = activeExpenses
+    .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+
+  const alertItems = [...base.alertItems];
+  if (serviceInsights.servicesCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "No services listed yet",
+      message: "Add your core services or packages in Settings so the business setup stays focused and reusable."
+    });
+  }
+  if (partnerInsights.partnerBalanceTotal > 0) {
+    alertItems.push({
+      tone: partnerInsights.partnerBalanceTotal > Math.max(base.totalExpense, 1) ? "danger" : "gold",
+      title: "Partner dues need planning",
+      message: `${fmtMoneyValue(partnerInsights.partnerBalanceTotal)} is still due across partners or outside vendors.`
+    });
+  }
+  if (teamInsights.teamCount > 0 && teamPayoutTotal === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "No team payout logged this month",
+      message: "Team members are listed in Settings, but no team payout expense is recorded for this month yet."
+    });
+  }
+
+  return {
+    ...base,
+    ...serviceInsights,
+    ...partnerInsights,
+    ...teamInsights,
+    teamPayoutTotal,
+    alertItems
+  };
+}
+
+export function calculateSmallBusinessYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
+  const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
+  const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const yearExpenses = getExpensesForYear(data, year);
+  const teamPayoutTotal = yearExpenses
+    .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+
+  const alertItems = [...base.alertItems];
+  if (serviceInsights.servicesCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Service catalog is still empty",
+      message: "Add your main services or packages in Settings to keep work types consistent across the year."
+    });
+  }
+  if (partnerInsights.partnerBalanceTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Partner dues remain open",
+      message: `${fmtMoneyValue(partnerInsights.partnerBalanceTotal)} is outstanding across partner or vendor accounts this year.`
+    });
+  }
+
+  return {
+    ...base,
+    ...serviceInsights,
+    ...partnerInsights,
+    ...teamInsights,
+    teamPayoutTotal,
+    alertItems
+  };
+}
+
+export function calculateRetailDashboard(data, year, month) {
+  const base = calculateDashboard(data, year, month);
+  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
+  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
+  const mk = monthKey(year, month);
+  const activeExpenses = getActiveExpensesForMonth(data, mk);
+  const stockPurchaseTotal = activeExpenses
+    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const supplierPaymentTotal = activeExpenses
+    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
+
+  const alertItems = [...base.alertItems];
+  if (inventoryInsights.inventoryCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Inventory list is empty",
+      message: "Add your main shop products in Settings so sales and stock checks become reusable."
+    });
+  }
+  if (inventoryInsights.lowStockItems.length) {
+    alertItems.push({
+      tone: inventoryInsights.lowStockItems.length >= 5 ? "danger" : "gold",
+      title: `${inventoryInsights.lowStockItems.length} product(s) are low on stock`,
+      message: "Review low-stock items before they start affecting daily sales."
+    });
+  }
+  if (inventoryInsights.expiringItems.length) {
+    alertItems.push({
+      tone: "gold",
+      title: `${inventoryInsights.expiringItems.length} product(s) nearing expiry`,
+      message: "Check expiring stock and plan discounting or faster movement."
+    });
+  }
+  if (supplierInsights.supplierBalanceTotal > 0) {
+    alertItems.push({
+      tone: supplierInsights.supplierBalanceTotal > Math.max(base.totalIncome, 1) ? "danger" : "gold",
+      title: "Supplier dues need planning",
+      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still payable across supplier balances.`
+    });
+  }
+
+  return {
+    ...base,
+    ...inventoryInsights,
+    ...supplierInsights,
+    stockPurchaseTotal,
+    supplierPaymentTotal,
+    shopExpenseTotal,
+    alertItems
+  };
+}
+
+export function calculateRetailYearlyDashboard(data, year) {
+  const base = calculateYearlyDashboard(data, year);
+  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
+  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
+  const yearExpenses = getExpensesForYear(data, year);
+  const stockPurchaseTotal = yearExpenses
+    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const supplierPaymentTotal = yearExpenses
+    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
+    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
+
+  const alertItems = [...base.alertItems];
+  if (inventoryInsights.inventoryCount === 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Inventory list is still empty",
+      message: "Add your main shop products in Settings to keep stock and sales organized across the year."
+    });
+  }
+  if (supplierInsights.supplierBalanceTotal > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: "Supplier dues remain open",
+      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still outstanding across supplier accounts this year.`
+    });
+  }
+
+  return {
+    ...base,
+    ...inventoryInsights,
+    ...supplierInsights,
+    stockPurchaseTotal,
+    supplierPaymentTotal,
+    shopExpenseTotal,
+    alertItems
+  };
+}
+
 export function calculateCustomerInsights(data) {
-  const invoices = (data.invoices || []).map(invoice => {
+  const invoices = getFinancialInvoices(data.invoices).map(invoice => {
     const customerName = invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer";
     const total = invoiceGrandTotal(invoice);
     const status = getInvoiceStatus(invoice);

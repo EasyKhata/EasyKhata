@@ -9,6 +9,7 @@ import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
 import EmiSection from "../sections/EmiSection";
 import InvoicesSection from "../sections/InvoicesSection";
+import QuotesSection from "../sections/QuotesSection";
 import SettingsSection from "../sections/SettingsSection";
 import AdminPanel from "../sections/AdminPanel";
 import {
@@ -304,6 +305,7 @@ export default function MainApp() {
   const isAdmin = user?.role === "admin";
   const orgConfig = getOrgConfig(user?.organizationType);
   const isPersonalOrg = getOrgType(user?.organizationType) === ORG_TYPES.PERSONAL;
+  const isSmallBusinessOrg = getOrgType(user?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const TABS = [
     { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
@@ -312,6 +314,7 @@ export default function MainApp() {
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
     ] : []),
+    ...(!hideInvoices && isSmallBusinessOrg ? [{ id: "quotes", icon: "◇", label: "Quotes" }] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: orgConfig.invoicesLabel }] : []),
     { id: "settings", icon: "⚙", label: "Settings" }
   ];
@@ -321,6 +324,7 @@ export default function MainApp() {
     income: "var(--accent)",
     expenses: "var(--danger)",
     emi: "var(--gold)",
+    quotes: "var(--gold)",
     invoices: "var(--blue)",
     settings: "var(--purple)"
   };
@@ -414,6 +418,7 @@ export default function MainApp() {
         {tab === "income" && <IncomeSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={user?.organizationType} />}
+        {tab === "quotes" && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "settings" && <SettingsSection />}
       </div>

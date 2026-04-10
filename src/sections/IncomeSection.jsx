@@ -16,7 +16,7 @@ import {
   EmptyState,
   SectionSkeleton
 } from "../components/UI";
-import { getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
+import { getFinancialInvoices, getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
@@ -69,6 +69,8 @@ export default function IncomeSection({ year, month, orgType }) {
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
+  const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
+  const isRetailOrg = getOrgType(orgType) === ORG_TYPES.RETAIL;
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
@@ -79,7 +81,7 @@ export default function IncomeSection({ year, month, orgType }) {
 
   const invIncome = config.hideInvoices || isApartmentOrg
     ? []
-    : d.invoices.filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk);
+    : getFinancialInvoices(d.invoices).filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk);
   const manualIncome = d.income.filter(item => {
     if (isApartmentOrg) {
       return (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk;
@@ -109,6 +111,21 @@ export default function IncomeSection({ year, month, orgType }) {
   const peopleOptions = useMemo(() => (
     (d.customers || []).map(person => ({ value: person.name || "", label: [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
+  const clientOptions = useMemo(() => (
+    (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.email || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.customers]);
+  const serviceOptions = useMemo(() => (
+    (d.orgRecords?.services || []).map(service => ({
+      value: service.serviceName || "",
+      label: [service.serviceName || "", service.packageName || "", service.defaultAmount ? `${sym} ${service.defaultAmount}` : ""].filter(Boolean).join(" - ")
+    })).filter(option => option.value)
+  ), [d.orgRecords, sym]);
+  const inventoryOptions = useMemo(() => (
+    (d.orgRecords?.inventory || []).map(item => ({
+      value: item.productName || "",
+      label: [item.productName || "", item.stock ? `${item.stock} in stock` : "", item.price ? `${sym} ${item.price}` : ""].filter(Boolean).join(" - ")
+    })).filter(option => option.value)
+  ), [d.orgRecords, sym]);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -334,6 +351,27 @@ export default function IncomeSection({ year, month, orgType }) {
                 </Select>
               ) : isApartmentOrg && field.key === "residentName" ? (
                 <Input value={form.residentName || ""} placeholder="Owner / tenant auto-fills from flat" readOnly />
+              ) : field.key === "clientName" ? (
+                <Select value={form.clientName || ""} onChange={event => setForm(current => ({ ...current, clientName: event.target.value, label: current.label || `${event.target.value} Payment` }))}>
+                  <option value="">{clientOptions.length ? "Select client" : "Add clients in Settings first"}</option>
+                  {clientOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              ) : isSmallBusinessOrg && field.key === "serviceName" ? (
+                <Select value={form.serviceName || ""} onChange={event => setForm(current => ({ ...current, serviceName: event.target.value, label: current.label || event.target.value }))}>
+                  <option value="">{serviceOptions.length ? "Select service" : "Add services in Settings first"}</option>
+                  {serviceOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              ) : isRetailOrg && field.key === "productName" ? (
+                <Select value={form.productName || ""} onChange={event => setForm(current => ({ ...current, productName: event.target.value, label: current.label || `${event.target.value} Sale` }))}>
+                  <option value="">{inventoryOptions.length ? "Select product" : "Add inventory in Settings first"}</option>
+                  {inventoryOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
               ) : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
             </Field>
           ))}

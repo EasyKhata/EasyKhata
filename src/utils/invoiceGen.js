@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import { fmtDate } from "../components/UI";
+import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
 
 const PAGE = {
   width: 210,
@@ -34,26 +35,6 @@ function moneyPlain(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
-}
-
-function taxBreakdown(invoice) {
-  return (invoice?.items || []).reduce(
-    (totals, item) => {
-      const taxable = toNumber(item.qty) * toNumber(item.rate);
-      const rate = toNumber(item.taxRate ?? item.igst);
-      const taxAmount = (taxable * rate) / 100;
-
-      totals.taxable += taxable;
-      if ((invoice?.taxMode || "split") === "split") {
-        totals.cgst += taxAmount / 2;
-        totals.sgst += taxAmount / 2;
-      } else {
-        totals.igst += taxAmount;
-      }
-      return totals;
-    },
-    { taxable: 0, cgst: 0, sgst: 0, igst: 0 }
-  );
 }
 
 function ensureSpace(doc, y, needed) {
@@ -97,9 +78,10 @@ function drawWrappedBlock(doc, x, y, width, title, lines) {
 export function downloadInvoice(invoice, account, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
-  const tax = taxBreakdown(invoice);
+  const tax = getInvoiceTaxBreakdown(invoice);
   const total = tax.taxable + tax.cgst + tax.sgst + tax.igst;
   const customerName = invoice.billTo?.name || invoice.customer?.name || "--";
+  const isQuote = String(invoice?.documentType || "invoice").toLowerCase() === "quote";
   let y = PAGE.top;
 
   doc.setFillColor(22, 22, 28);
@@ -113,7 +95,7 @@ export function downloadInvoice(invoice, account, sym) {
   doc.text(safeText(acc.email || acc.phone || "Business invoice"), PAGE.left + 4, y + 17);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text("INVOICE", PAGE.right - 4, y + 11, { align: "right" });
+  doc.text(isQuote ? "QUOTE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
   doc.setFontSize(10.5);
   doc.setFont("helvetica", "normal");
   doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
@@ -128,8 +110,8 @@ export function downloadInvoice(invoice, account, sym) {
     acc.email ? `Email: ${acc.email}` : ""
   ];
   const metaLines = [
-    `Issued: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
-    invoice.dueDate ? `Due: ${fmtDate(invoice.dueDate)}` : "Due: --",
+    `${isQuote ? "Prepared" : "Issued"}: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
+    invoice.dueDate ? `${isQuote ? "Valid Until" : "Due"}: ${fmtDate(invoice.dueDate)}` : `${isQuote ? "Valid Until" : "Due"}: --`,
     `Status: ${safeText(invoice.status || "pending").toUpperCase()}`,
     invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
   ];
@@ -209,6 +191,10 @@ export function downloadInvoice(invoice, account, sym) {
   y = ensureSpace(doc, y, 34);
   drawRule(doc, y);
   y += 8;
+  drawLabelValue(doc, y, "Subtotal", money(tax.subtotal, sym));
+  y += 7;
+  drawLabelValue(doc, y, "Discount", `- ${money(getInvoiceDiscount(invoice), sym)}`);
+  y += 7;
   drawLabelValue(doc, y, "Taxable Value", money(tax.taxable, sym));
   y += 7;
   if ((invoice.taxMode || "split") === "split") {

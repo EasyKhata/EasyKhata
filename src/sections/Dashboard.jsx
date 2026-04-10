@@ -5,8 +5,14 @@ import {
   calculateApartmentDashboard,
   calculateApartmentYearlyDashboard,
   calculateDashboard,
+  calculateFreelancerDashboard,
+  calculateFreelancerYearlyDashboard,
   calculatePersonalDashboard,
   calculatePersonalYearlyDashboard,
+  calculateRetailDashboard,
+  calculateRetailYearlyDashboard,
+  calculateSmallBusinessDashboard,
+  calculateSmallBusinessYearlyDashboard,
   calculateYearlyDashboard,
   getInvoiceStatusColor,
   getInvoiceStatusLabel
@@ -524,9 +530,18 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
 
   const orgType = getOrgType(user?.organizationType || data.account?.organizationType);
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
+  const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
+  const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
+  const isRetailOrg = orgType === ORG_TYPES.RETAIL;
   const stats = isApartmentOrg
     ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
+    : isFreelancerOrg
+      ? (viewMode === "month" ? calculateFreelancerDashboard(data, year, month) : calculateFreelancerYearlyDashboard(data, year))
+      : isRetailOrg
+        ? (viewMode === "month" ? calculateRetailDashboard(data, year, month) : calculateRetailYearlyDashboard(data, year))
+    : isSmallBusinessOrg
+      ? (viewMode === "month" ? calculateSmallBusinessDashboard(data, year, month) : calculateSmallBusinessYearlyDashboard(data, year))
     : isPersonalOrg
       ? (viewMode === "month" ? calculatePersonalDashboard(data, year, month) : calculatePersonalYearlyDashboard(data, year))
     : (viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year));
@@ -535,7 +550,31 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   const isTrial = user?.subscriptionStatus === "trial";
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
-  const heroSub = viewMode === "month" 
+  const heroSub = isRetailOrg
+    ? (viewMode === "month"
+      ? ((stats.supplierBalanceTotal || 0) > 0
+        ? `${fmtMoney(stats.supplierBalanceTotal || 0, sym)} is still pending across supplier balances this month.`
+        : stats.profit >= 0
+          ? "Daily sales are covering shop purchases and running costs this month."
+          : "Purchases and shop costs are ahead of sales this month.")
+      : ((stats.supplierBalanceTotal || 0) > 0
+        ? `${fmtMoney(stats.supplierBalanceTotal || 0, sym)} is still open across supplier balances this year.`
+        : stats.profit >= 0
+          ? "The shop stayed ahead of purchases and costs across the year."
+          : "Purchases and shop costs are ahead of sales across the year."))
+    : isSmallBusinessOrg
+    ? (viewMode === "month"
+      ? (stats.pendingInvoiceTotal > 0
+        ? `${fmtMoney(stats.pendingInvoiceTotal, sym)} is still awaiting collection from customers this month.`
+        : stats.profit >= 0
+          ? "Client work and collections are staying ahead of business costs this month."
+          : "Expenses are ahead of business receipts this month.")
+      : (stats.partnerBalanceTotal > 0
+        ? `${fmtMoney(stats.partnerBalanceTotal, sym)} is still due across partner balances this year.`
+        : stats.profit >= 0
+          ? "The business stayed profitable across the year."
+          : "Expenses are ahead of receipts across the year."))
+    : viewMode === "month" 
     ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
     : (stats.profit >= 0 ? "You're profitable for the year." : "Expenses exceed receipts for the year.");
   
@@ -931,11 +970,296 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
     );
   }
 
+  if (isFreelancerOrg) {
+    const freelancerHeroSub = viewMode === "month"
+      ? (stats.pendingInvoiceTotal > 0
+        ? `You have ${fmtMoney(stats.pendingInvoiceTotal, sym)} awaiting from clients this month.`
+        : stats.profit >= 0
+          ? "Collected work is covering freelancer costs this month."
+          : "Expenses are ahead of collected work this month.")
+      : (stats.pendingInvoiceTotal > 0
+        ? `You still have ${fmtMoney(stats.pendingInvoiceTotal, sym)} open across this year's invoices.`
+        : stats.profit >= 0
+          ? "Your freelance work stayed cash-positive this year."
+          : "Expenses are ahead of collected work this year.");
+    const freelancerCashFlow = viewMode === "month" ? stats.cashFlow : stats.monthlyBreakdown;
+    const freelancerMaxCashFlow = Math.max(1, ...freelancerCashFlow.map(item => Math.max(item.income, item.expenses)));
+
+    return (
+      <div style={{ paddingBottom: 20 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+            Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{freelancerHeroSub}</div>
+        </div>
+
+        <div style={{ padding: "20px 18px 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+            <Tile label={viewMode === "month" ? "Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Payments logged plus paid client invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
+            <Tile label={viewMode === "month" ? "Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Tools, travel, subscriptions, and delivery costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
+            <Tile label="Awaiting Payments" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} client invoice(s) still open`} onClick={() => onNav("invoices")} />
+            <Tile label="Overdue Invoices" value={String(stats.overdueInvoices.length || 0)} color="var(--blue)" sub="Client invoices that need immediate follow-up" onClick={() => onNav("invoices")} />
+            <Tile label="Billable Costs" value={fmtMoney(stats.billableExpenseTotal || 0, sym)} color="var(--purple)" sub="Expenses marked to recharge to clients" onClick={() => onNav("expenses")} />
+            <Tile label="Clients" value={String(stats.trackedClientsCount || 0)} color="var(--blue)" sub="Across client records, payments, and invoices" onClick={() => onNav("settings")} />
+          </div>
+
+          <Collapsible title="Invoice Follow-up" icon="◎" color="var(--blue)" count={(stats.overdueInvoices.length || 0) + (stats.dueSoonInvoices.length || 0)} defaultOpen>
+            <div className="card">
+              {stats.overdueInvoices.length === 0 && stats.dueSoonInvoices.length === 0 ? (
+                <EmptyState title="No invoice follow-up right now" message="Your open client invoices are either paid or not near their due date yet." accentColor="var(--accent)" />
+              ) : (
+                [...stats.overdueInvoices, ...stats.dueSoonInvoices.filter(invoice => !stats.overdueInvoices.some(overdue => overdue.id === invoice.id))].slice(0, 6).map(invoice => (
+                  <div key={invoice.id} className="card-row">
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.number || "Invoice"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        {[invoice.customer?.name || invoice.billTo?.name || "No client", invoice.dueDate ? `Due ${invoice.dueDate}` : "No due date"].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: getInvoiceStatusColor(invoice.status || invoice.computedStatus || "pending") }}>{fmtMoney(invoice.total || 0, sym)}</div>
+                      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{getInvoiceStatusLabel(invoice.status || invoice.computedStatus || "pending")}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Client Snapshot" icon="⭐" color="var(--blue)" count={showAdvanced ? stats.topCustomers.length : 0} defaultOpen={showAdvanced && stats.topCustomers.length > 0}>
+            <div className="card">
+              {!showAdvanced ? (
+                <EmptyState title="Client insights are on Pro" message="Upgrade to Pro to see your strongest clients and outstanding balances in one place." accentColor="var(--blue)" />
+              ) : stats.topCustomers.length === 0 ? (
+                <EmptyState title="No client billing yet" message="Create invoices or log client payments to see who brings in the most work." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
+              ) : (
+                stats.topCustomers.map(client => (
+                  <div key={client.name} className="card-row">
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <Avatar name={client.name} size={38} fontSize={13} />
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{client.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Open balance {fmtMoney(client.balance, sym)}</div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(client.revenue, sym)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Freelancer Alerts" icon="🚨" color="var(--gold)" count={showAdvanced ? stats.alertItems.length : 0} defaultOpen={showAdvanced && stats.alertItems.length > 0}>
+            {!showAdvanced ? (
+              <div className="card">
+                <EmptyState title="Freelancer alerts are on Pro" message="Upgrade to Pro for overdue invoice alerts, spending spikes, and payment follow-up reminders." accentColor="var(--gold)" />
+              </div>
+            ) : stats.alertItems.length === 0 ? (
+              <div className="card">
+                <EmptyState title="No freelancer alerts right now" message="Payments, open invoices, and spending look steady for the selected period." accentColor="var(--accent)" />
+              </div>
+            ) : (
+              <div className="card">
+                {stats.alertItems.map((alert, index) => {
+                  const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
+                  return (
+                    <div key={`${alert.title}-${index}`} className="card-row">
+                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Collapsible>
+
+          <Collapsible title="Cash Flow Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
+            <div className="card" style={{ padding: "18px" }}>
+              {!showAdvanced ? (
+                <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month freelancer cash flow trend." : "Upgrade to Pro to see your yearly freelancer cash flow trend."} accentColor="var(--blue)" />
+              ) : viewMode === "month" ? (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
+                  {stats.cashFlow.map(item => (
+                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
+                        <div style={{ width: 12, height: `${Math.max(10, (item.income / freelancerMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
+                        <div style={{ width: 12, height: `${Math.max(10, (item.expenses / freelancerMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)" }}>{item.shortLabel}</div>
+                      <div style={{ fontSize: 11, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
+                  {stats.monthlyBreakdown.map(item => (
+                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
+                        <div style={{ width: 8, height: `${Math.max(8, (item.income / freelancerMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
+                        <div style={{ width: 8, height: `${Math.max(8, (item.expenses / freelancerMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
+                      <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Collapsible>
+        </div>
+
+        {onboardingGuide}
+      </div>
+    );
+  }
+
+  if (isRetailOrg) {
+    const retailHeroSub = viewMode === "month"
+      ? (stats.profit >= 0 ? "Sales are covering purchases and shop running costs this month." : "Purchases and shop costs are ahead of sales this month.")
+      : (stats.profit >= 0 ? "Sales stayed ahead of purchases and shop costs this year." : "Purchases and shop costs are ahead of sales this year.");
+    const retailCashFlow = viewMode === "month" ? stats.cashFlow : stats.monthlyBreakdown;
+    const retailMaxCashFlow = Math.max(1, ...retailCashFlow.map(item => Math.max(item.income, item.expenses)));
+
+    return (
+      <div style={{ paddingBottom: 20 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+            Retail Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{retailHeroSub}</div>
+        </div>
+
+        <div style={{ padding: "20px 18px 0" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+            <Tile label={viewMode === "month" ? "Sales" : "Total Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Recorded daily sales" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
+            <Tile label={viewMode === "month" ? "Purchases & Expenses" : "Total Purchases & Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Stock buying plus shop costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
+            <Tile label="Stock Value" value={fmtMoney(stats.inventoryValue || 0, sym)} color="var(--blue)" sub={`${stats.inventoryCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
+            <Tile label="Supplier Dues" value={fmtMoney(stats.supplierBalanceTotal || 0, sym)} color="var(--gold)" sub={`${stats.suppliersWithBalance.length || 0} supplier account(s) open`} onClick={() => onNav("settings")} />
+            <Tile label="Stock Purchases" value={fmtMoney(stats.stockPurchaseTotal || 0, sym)} color="var(--purple)" sub={viewMode === "month" ? "Inventory bought this period" : "Stock buying across the year"} onClick={() => onNav("expenses")} />
+            <Tile label="Low Stock" value={String(stats.lowStockItems.length || 0)} color={(stats.lowStockItems.length || 0) > 0 ? "var(--danger)" : "var(--accent)"} sub="Products needing refill soon" onClick={() => onNav("settings")} />
+          </div>
+
+          <Collapsible title="Inventory Snapshot" icon="📦" color="var(--blue)" count={stats.inventoryCount || 0} defaultOpen>
+            <div className="card">
+              {stats.inventoryCount === 0 ? (
+                <EmptyState title="No inventory added yet" message="Add your shop products in Settings so stock and sales become easier to track." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--blue)" />
+              ) : (
+                (stats.topProducts || []).slice(0, 6).map(item => (
+                  <div key={item.productName} className="card-row">
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.productName}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        {[`${item.stock} in stock`, item.expiryDate ? `Exp ${item.expiryDate}` : "No expiry date"].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(item.inventoryValue || 0, sym)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Low Stock Watch" icon="⚠" color="var(--danger)" count={stats.lowStockItems.length || 0} defaultOpen={stats.lowStockItems.length > 0}>
+            <div className="card">
+              {stats.lowStockItems.length === 0 ? (
+                <EmptyState title="No low-stock alerts" message="Tracked inventory levels look healthy right now." accentColor="var(--accent)" />
+              ) : (
+                stats.lowStockItems.slice(0, 6).map(item => (
+                  <div key={item.productName} className="card-row">
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.productName}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{item.expiryDate ? `Expiry ${item.expiryDate}` : "No expiry date added"}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{item.stock}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Supplier Balances" icon="🏷" color="var(--gold)" count={stats.suppliersWithBalance.length || 0} defaultOpen={stats.suppliersWithBalance.length > 0}>
+            <div className="card">
+              {stats.suppliersCount === 0 ? (
+                <EmptyState title="No suppliers added yet" message="Add suppliers in Settings to track balances and contacts." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--gold)" />
+              ) : stats.suppliersWithBalance.length === 0 ? (
+                <EmptyState title="Supplier balances are clear" message="No outstanding supplier credit is recorded right now." accentColor="var(--accent)" />
+              ) : (
+                stats.suppliersWithBalance.slice(0, 6).map(supplier => (
+                  <div key={supplier.supplierName} className="card-row">
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{supplier.supplierName}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{supplier.contact || "No contact added"}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(supplier.creditBalance || 0, sym)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Shop Alerts" icon="🚨" color="var(--gold)" count={stats.alertItems.length} defaultOpen={stats.alertItems.length > 0}>
+            <div className="card">
+              {stats.alertItems.length === 0 ? (
+                <EmptyState title="No shop alerts right now" message="Sales, stock, and supplier balances look stable for the selected period." accentColor="var(--accent)" />
+              ) : (
+                stats.alertItems.map((alert, index) => {
+                  const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
+                  return (
+                    <div key={`${alert.title}-${index}`} className="card-row">
+                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title="Sales Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
+            <div className="card" style={{ padding: "18px" }}>
+              {!showAdvanced ? (
+                <EmptyState title="Trend view is on Pro" message="Upgrade to Pro to compare shop sales and expenses over time." accentColor="var(--blue)" />
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${viewMode === "month" ? 6 : 12}, 1fr)`, gap: viewMode === "month" ? 8 : 6, alignItems: "end", height: 180 }}>
+                  {retailCashFlow.map(item => (
+                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "end", gap: viewMode === "month" ? 4 : 2, height: 132 }}>
+                        <div style={{ width: viewMode === "month" ? 12 : 8, height: `${Math.max(viewMode === "month" ? 10 : 8, (item.income / retailMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
+                        <div style={{ width: viewMode === "month" ? 12 : 8, height: `${Math.max(viewMode === "month" ? 10 : 8, (item.expenses / retailMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
+                      </div>
+                      <div style={{ fontSize: viewMode === "month" ? 11 : 10, fontWeight: 600, color: "var(--text-dim)" }}>{viewMode === "month" ? item.shortLabel : item.label.slice(0, 1)}</div>
+                      <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Collapsible>
+        </div>
+
+        {onboardingGuide}
+      </div>
+    );
+  }
+
   return (
     <div style={{ paddingBottom: 20 }}>
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-          Smart Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+          {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
         </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
           {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
@@ -963,10 +1287,12 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
           {viewMode === "month" ? (
             <>
-          <Tile label="Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub="Manual + invoice receipts" onClick={() => onNav("income")} />
+          <Tile label="Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg ? "Client payments, advances, and paid invoices" : "Manual + invoice receipts"} onClick={() => onNav("income")} />
               <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />
               <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-              {showAdvanced ? (
+              {isSmallBusinessOrg ? (
+                <Tile label="Services" value={String(stats.servicesCount || 0)} color="var(--blue)" sub={`${stats.teamCount || 0} team member(s) configured`} onClick={() => onNav("settings")} />
+              ) : showAdvanced ? (
                 <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
               ) : (
                 <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
@@ -976,11 +1302,100 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             <>
               <Tile label="Total Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
               <Tile label="Total Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={`Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} />
-              <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-              <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${Math.floor(stats.burnRateDays / 12)} months`} color="var(--blue)" sub="Estimated yearly runway" />
+              {isSmallBusinessOrg ? (
+                <>
+                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--gold)" sub={`${stats.partnersWithBalance.length || 0} partner account(s) still open`} onClick={() => onNav("settings")} />
+                  <Tile label="Team Payout Plan" value={fmtMoney(stats.monthlyPayoutEstimate || 0, sym)} color="var(--blue)" sub={`${stats.teamCount || 0} team member(s) tracked`} onClick={() => onNav("settings")} />
+                </>
+              ) : (
+                <>
+                  <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
+                  <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${Math.floor(stats.burnRateDays / 12)} months`} color="var(--blue)" sub="Estimated yearly runway" />
+                </>
+              )}
             </>
           )}
         </div>
+
+        {isSmallBusinessOrg && (
+          <>
+            <Collapsible 
+              title="Service Catalog" 
+              icon="📦" 
+              color="var(--blue)"
+              count={stats.servicesCount || 0}
+              defaultOpen
+            >
+              <div className="card">
+                {stats.servicesCount === 0 ? (
+                  <EmptyState title="No services added yet" message="Add your main services or packages in Settings so quotes, receipts, and invoices stay simple and consistent." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--blue)" />
+                ) : (stats.topServices || []).slice(0, 5).map(item => (
+                  <div key={item.serviceName} className="card-row">
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.serviceName}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        {[item.packageName || "Custom work", item.notes || "No extra notes"].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>
+                      {item.defaultAmount ? fmtMoney(item.defaultAmount, sym) : "--"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Collapsible>
+
+            <Collapsible 
+              title="Partner Balances" 
+              icon="🏷" 
+              color="var(--gold)"
+              count={stats.partnersWithBalance.length || 0}
+              defaultOpen={stats.partnersWithBalance.length > 0}
+            >
+              <div className="card">
+                {stats.partnersCount === 0 ? (
+                  <EmptyState title="No partners added yet" message="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--gold)" />
+                ) : stats.partnersWithBalance.length === 0 ? (
+                  <EmptyState title="Partner balances are clear" message="No outstanding partner or vendor dues are recorded right now." accentColor="var(--accent)" />
+                ) : (
+                  stats.partnersWithBalance.slice(0, 5).map(partner => (
+                    <div key={partner.partnerName} className="card-row">
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{partner.partnerName}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{partner.contact || "No contact added"}</div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(partner.balanceDue, sym)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Collapsible>
+
+            <Collapsible 
+              title="Team Snapshot" 
+              icon="👥" 
+              color="var(--purple)"
+              count={stats.teamCount || 0}
+              defaultOpen={stats.teamCount > 0}
+            >
+              <div className="card">
+                {stats.teamCount === 0 ? (
+                  <EmptyState title="No team records yet" message="Add up to 5-10 team members in Settings to keep roles and payout plans visible on the dashboard." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--purple)" />
+                ) : (
+                  (stats.teamMembers || []).slice(0, 5).map(member => (
+                    <div key={member.name} className="card-row">
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{member.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{member.role || "Role not added"}</div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--purple)" }}>{member.payout ? fmtMoney(member.payout, sym) : "--"}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Collapsible>
+          </>
+        )}
 
 
         {showAdvanced && (

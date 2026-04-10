@@ -38,8 +38,8 @@ const BASE_CONFIG = {
 
 export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
-  { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage client work, payments received, and projects." },
-  { value: ORG_TYPES.SMALL_BUSINESS, label: "Small Business", description: "Run invoicing, expenses, vendors, staff, and stock." },
+  { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage clients, payments received, invoices, and business expenses." },
+  { value: ORG_TYPES.SMALL_BUSINESS, label: "Small Business", description: "Run a service business with clients, invoices, team, and operating expenses." },
   { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." },
   { value: ORG_TYPES.RETAIL, label: "Kirana Shop / Retail", description: "Track sales, purchases, inventory, and supplier balances." }
 ];
@@ -107,84 +107,83 @@ export const ORG_TYPE_CONFIGS = {
     customerNamePlaceholder: "Client or studio name",
     profileNameLabel: "Freelancer / Brand Name",
     profileNamePlaceholder: "E.g. Deepak Design Studio",
-    accountIntro: "This profile powers your client invoices, payments, and project details.",
+    accountIntro: "This profile powers your client invoices, payments, and expense records.",
     incomeFields: [
       { key: "clientName", label: "Client Name", type: "text", placeholder: "Client name" },
-      { key: "project", label: "Project", type: "text", placeholder: "Website redesign" },
       { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Received", "Partially Received", "Awaiting"] }
     ],
     expenseFields: [
-      { key: "projectLink", label: "Project Link", type: "text", placeholder: "Optional project name or URL" },
       { key: "billable", label: "Billable", type: "select", options: ["Yes", "No"] }
     ],
-    invoiceFields: [
-      { key: "projectName", label: "Project Name", type: "text", placeholder: "Project name" },
-      { key: "hourlyRate", label: "Hourly Rate", type: "number", placeholder: "0.00" },
-      { key: "hours", label: "Hours", type: "number", placeholder: "0" }
-    ],
+    invoiceFields: [],
     customerFields: [
       { key: "company", label: "Company", type: "text", placeholder: "Company name" }
     ],
-    extraSections: [
-      {
-        key: "projects",
-        label: "Projects",
-        entryLabel: "Project",
-        empty: () => ({ projectName: "", client: "", status: "Active", budget: "" }),
-        fields: [
-          { key: "projectName", label: "Project Name", type: "text", required: true, placeholder: "Brand identity refresh" },
-          { key: "client", label: "Client", type: "text", required: true, placeholder: "Client name" },
-          { key: "status", label: "Status", type: "select", options: ["Active", "On Hold", "Completed"] },
-          { key: "budget", label: "Budget", type: "number", placeholder: "0.00" }
-        ]
-      }
-    ]
+    extraSections: []
   },
   [ORG_TYPES.SMALL_BUSINESS]: {
     ...BASE_CONFIG,
+    incomeLabel: "Receipts",
+    incomeEntryLabel: "Receipt",
+    incomeActionLabel: "Add Receipt",
+    expensesLabel: "Business Expenses",
+    expensesEntryLabel: "Expense",
+    expensesActionLabel: "Add Expense",
+    invoicesLabel: "Client Invoices",
+    customerLabel: "Clients",
+    customerEntryLabel: "Client",
+    customerNameLabel: "Client Name",
+    customerNamePlaceholder: "Client or company name",
+    profileNameLabel: "Business / Studio Name",
+    profileNamePlaceholder: "E.g. Reddy Photo Studio",
+    accountIntro: "Use this profile for a small service business with one owner, a small team, client invoices, and everyday operating costs.",
     incomeFields: [
-      { key: "salesChannel", label: "Sales Channel", type: "select", options: ["Online", "Store", "Other"] },
-      { key: "productOrService", label: "Product / Service", type: "text", placeholder: "What was sold?" }
+      { key: "receiptType", label: "Receipt Type", type: "select", options: ["Client Payment", "Advance", "Retainer", "Commission", "Other"] },
+      { key: "serviceName", label: "Service / Deal / Event", type: "text", placeholder: "What was this payment for?" }
     ],
     expenseFields: [
-      { key: "expenseType", label: "Expense Type", type: "select", options: ["Operational", "Salary", "Rent", "Other"] }
+      { key: "expenseType", label: "Expense Type", type: "select", options: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"] }
     ],
     invoiceFields: [
       { key: "taxId", label: "GST / Tax ID", type: "text", placeholder: "Tax identifier (optional)" },
       { key: "discount", label: "Discount", type: "number", placeholder: "0.00" },
       { key: "paymentTerms", label: "Payment Terms", type: "text", placeholder: "E.g. Net 15" }
     ],
+    customerFields: [
+      { key: "company", label: "Company", type: "text", placeholder: "Company or brand name" }
+    ],
+    expenseCategories: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"],
     extraSections: [
       {
-        key: "inventory",
-        label: "Inventory",
-        entryLabel: "Item",
-        empty: () => ({ productName: "", stockQuantity: "", costPrice: "", sellingPrice: "" }),
+        key: "services",
+        label: "Services",
+        entryLabel: "Service",
+        empty: () => ({ serviceName: "", packageName: "", defaultAmount: "", notes: "" }),
         fields: [
-          { key: "productName", label: "Product Name", type: "text", required: true, placeholder: "Product name" },
-          { key: "stockQuantity", label: "Stock Quantity", type: "number", placeholder: "0" },
-          { key: "costPrice", label: "Cost Price", type: "number", placeholder: "0.00" },
-          { key: "sellingPrice", label: "Selling Price", type: "number", placeholder: "0.00" }
+          { key: "serviceName", label: "Service Name", type: "text", required: true, placeholder: "Wedding shoot, flat resale, ad campaign" },
+          { key: "packageName", label: "Package / Plan", type: "text", placeholder: "Optional package name" },
+          { key: "defaultAmount", label: "Default Amount", type: "number", placeholder: "0.00" },
+          { key: "notes", label: "Notes", type: "textarea", placeholder: "Short notes or scope" }
         ]
       },
       {
-        key: "employees",
-        label: "Employees",
-        entryLabel: "Employee",
-        empty: () => ({ name: "", salary: "", role: "" }),
+        key: "team",
+        label: "Team Members",
+        entryLabel: "Team Member",
+        empty: () => ({ name: "", payout: "", role: "" }),
         fields: [
-          { key: "name", label: "Name", type: "text", required: true, placeholder: "Employee name" },
-          { key: "salary", label: "Salary", type: "number", placeholder: "0.00" },
-          { key: "role", label: "Role", type: "text", placeholder: "Role" }
+          { key: "name", label: "Name", type: "text", required: true, placeholder: "Team member name" },
+          { key: "payout", label: "Monthly Payout", type: "number", placeholder: "0.00" },
+          { key: "role", label: "Role", type: "text", placeholder: "Photographer, agent, editor, coordinator" }
         ]
       },
       {
-        key: "vendors",
-        label: "Vendors",
-        entryLabel: "Vendor",
-        empty: () => ({ vendorName: "", contact: "", balanceDue: "" }),
+        key: "partners",
+        label: "Partners / Vendors",
+        entryLabel: "Partner",
+        empty: () => ({ partnerName: "", contact: "", balanceDue: "" }),
         fields: [
-          { key: "vendorName", label: "Vendor Name", type: "text", required: true, placeholder: "Vendor name" },
+          { key: "partnerName", label: "Partner / Vendor Name", type: "text", required: true, placeholder: "Venue, printer, decorator, broker, freelancer" },
           { key: "contact", label: "Contact", type: "text", placeholder: "Phone or email" },
           { key: "balanceDue", label: "Balance Due", type: "number", placeholder: "0.00" }
         ]
@@ -236,6 +235,8 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.RETAIL]: {
     ...BASE_CONFIG,
+    hideInvoices: true,
+    showCustomerFinancials: false,
     incomeLabel: "Sales",
     incomeEntryLabel: "Sale",
     incomeActionLabel: "Add Sale",
@@ -243,17 +244,23 @@ export const ORG_TYPE_CONFIGS = {
     expensesEntryLabel: "Purchase / Expense",
     expensesActionLabel: "Add Purchase",
     invoicesLabel: "Bills",
+    customerLabel: "Customers / Udhar",
+    customerEntryLabel: "Customer",
+    customerNameLabel: "Customer Name",
+    customerNamePlaceholder: "Regular or credit customer name",
     profileNameLabel: "Shop Name",
-    profileNamePlaceholder: "E.g. EasyKhata Kirana",
-    accountIntro: "Use this profile for sales, purchases, stock, and supplier balances.",
+    profileNamePlaceholder: "E.g. Reddy Kirana Store",
+    accountIntro: "Use this profile for daily sales, stock purchases, inventory tracking, and supplier balances.",
     incomeFields: [
-      { key: "itemList", label: "Items", type: "textarea", placeholder: "List sold items" },
+      { key: "saleType", label: "Sale Type", type: "select", options: ["Counter Sale", "Home Delivery", "Credit Sale", "Online Order", "Other"] },
+      { key: "productName", label: "Product / Basket", type: "text", placeholder: "Select a product or describe the basket" },
       { key: "quantity", label: "Quantity", type: "number", placeholder: "0" },
-      { key: "totalItems", label: "Total Items", type: "number", placeholder: "0" }
     ],
     expenseFields: [
-      { key: "purchaseType", label: "Purchase Type", type: "select", options: ["Stock", "Utility", "Other"] }
+      { key: "purchaseType", label: "Entry Type", type: "select", options: ["Stock Purchase", "Supplier Payment", "Rent", "Utilities", "Staff", "Other"] },
+      { key: "supplierName", label: "Supplier", type: "text", placeholder: "Select supplier if relevant" }
     ],
+    expenseCategories: ["Stock Purchase", "Supplier Payment", "Rent", "Utilities", "Staff", "Other"],
     extraSections: [
       {
         key: "inventory",
@@ -276,18 +283,6 @@ export const ORG_TYPE_CONFIGS = {
           { key: "supplierName", label: "Supplier Name", type: "text", required: true, placeholder: "Supplier name" },
           { key: "contact", label: "Contact", type: "text", placeholder: "Phone or email" },
           { key: "creditBalance", label: "Credit Balance", type: "number", placeholder: "0.00" }
-        ]
-      },
-      {
-        key: "dailySummaries",
-        label: "Daily Sales Summary",
-        entryLabel: "Daily Summary",
-        empty: () => ({ summaryDate: "", totalSales: "", totalExpenses: "", profit: "" }),
-        fields: [
-          { key: "summaryDate", label: "Date", type: "date", required: true },
-          { key: "totalSales", label: "Total Sales", type: "number", placeholder: "0.00" },
-          { key: "totalExpenses", label: "Total Expenses", type: "number", placeholder: "0.00" },
-          { key: "profit", label: "Profit", type: "number", placeholder: "0.00" }
         ]
       }
     ]
