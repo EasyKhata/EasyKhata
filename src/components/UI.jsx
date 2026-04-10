@@ -1,5 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  buildDateFromParts,
+  buildMonthValue,
+  COUNTRY_OPTIONS,
+  getDayOptions,
+  getStateProvinceOptions,
+  getYearOptions,
+  MONTH_OPTIONS,
+  parseDateParts,
+  parseMonthParts
+} from "../utils/profile";
 
 export function uid() {
   return Math.random().toString(36).slice(2, 9);
@@ -144,6 +155,240 @@ export function Select({ style, children, ...props }) {
     <select className="input-field" style={{ cursor: "pointer", ...style }} {...props}>
       {children}
     </select>
+  );
+}
+
+export function PhoneNumberInput({
+  countryCode,
+  phoneNumber,
+  onCountryCodeChange,
+  onPhoneNumberChange,
+  countryOptions = [],
+  phonePlaceholder = "9876543210"
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(132px, 172px) minmax(0, 1fr)", gap: 10 }}>
+      <Select value={countryCode} onChange={event => onCountryCodeChange(event.target.value)}>
+        {countryOptions.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <Input type="tel" autoComplete="tel-national" placeholder={phonePlaceholder} value={phoneNumber} onChange={event => onPhoneNumberChange(event.target.value)} />
+    </div>
+  );
+}
+
+export function StructuredLocationFields({
+  addressLine,
+  city,
+  state,
+  country,
+  onAddressLineChange,
+  onCityChange,
+  onStateChange,
+  onCountryChange,
+  addressLabel = "Address Line",
+  cityLabel = "City",
+  countryLabel = "Country",
+  stateLabel = "State / Province",
+  addressPlaceholder = "House no, street, road",
+  cityPlaceholder = "Hyderabad",
+  addressHint,
+  cityHint,
+  required = false
+}) {
+  const stateOptions = getStateProvinceOptions(country || "India");
+
+  return (
+    <>
+      <Field label={addressLabel} hint={addressHint}>
+        <Input placeholder={addressPlaceholder} value={addressLine || ""} onChange={event => onAddressLineChange?.(event.target.value)} autoComplete="address-line1" />
+      </Field>
+      <div className="desktop-grid-2">
+        <Field label={cityLabel} required={required} hint={cityHint}>
+          <Input placeholder={cityPlaceholder} value={city || ""} onChange={event => onCityChange(event.target.value)} autoComplete="address-level2" />
+        </Field>
+        <Field label={countryLabel} required={required}>
+          <Select value={country || "India"} onChange={event => onCountryChange(event.target.value)}>
+            {COUNTRY_OPTIONS.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <Field label={stateLabel} required={required}>
+        <Select value={state || ""} onChange={event => onStateChange(event.target.value)}>
+          <option value="">Select state / province</option>
+          {stateOptions.map(option => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </>
+  );
+}
+
+export function DateSelectInput({ value, onChange, min, max, allowEmpty = true, yearOrder = "desc" }) {
+  const [parts, setParts] = useState(() => parseDateParts(value));
+
+  useEffect(() => {
+    const nextValue = String(value || "").trim();
+    const currentValue = buildDateFromParts(parts);
+    if (nextValue && nextValue !== currentValue) {
+      setParts(parseDateParts(nextValue));
+      return;
+    }
+    if (!nextValue && currentValue && !value) {
+      setParts({ day: "", month: "", year: "" });
+    }
+  }, [parts, value]);
+
+  const minParts = parseDateParts(min);
+  const maxParts = parseDateParts(max);
+  const nowYear = new Date().getFullYear();
+  const selectedYear = Number(parts.year || 0);
+  const selectedMonth = Number(parts.month || 0);
+  const startYear = Number(minParts.year || parts.year || nowYear - 20);
+  const endYear = Number(maxParts.year || parts.year || nowYear + 10);
+  const yearOptions = getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" });
+  const monthOptions = MONTH_OPTIONS.filter(option => {
+    if (!selectedYear) return true;
+    if (Number(minParts.year || 0) === selectedYear && option.value < minParts.month) return false;
+    if (Number(maxParts.year || 0) === selectedYear && option.value > maxParts.month) return false;
+    return true;
+  });
+  const dayOptions = getDayOptions(parts.month, parts.year).filter(option => {
+    if (!selectedYear || !selectedMonth) return true;
+    if (Number(minParts.year || 0) === selectedYear && Number(minParts.month || 0) === selectedMonth && option < minParts.day) return false;
+    if (Number(maxParts.year || 0) === selectedYear && Number(maxParts.month || 0) === selectedMonth && option > maxParts.day) return false;
+    return true;
+  });
+
+  function updateParts(nextParts) {
+    const normalized = { ...parts, ...nextParts };
+    if (normalized.day && normalized.month && normalized.year && !getDayOptions(normalized.month, normalized.year).includes(normalized.day)) {
+      normalized.day = "";
+    }
+    const normalizedValue = buildDateFromParts(normalized);
+    setParts(normalized);
+    if (!normalized.day || !normalized.month || !normalized.year) {
+      onChange?.("");
+      return;
+    }
+    if (min && normalizedValue < min) {
+      onChange?.("");
+      return;
+    }
+    if (max && normalizedValue > max) {
+      onChange?.("");
+      return;
+    }
+    onChange?.(normalizedValue);
+  }
+
+  return (
+    <div className="desktop-grid-3">
+      <Select value={parts.day} onChange={event => updateParts({ day: event.target.value })}>
+        <option value="">{allowEmpty ? "Day" : "Select day"}</option>
+        {dayOptions.map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+      <Select value={parts.month} onChange={event => updateParts({ month: event.target.value })}>
+        <option value="">{allowEmpty ? "Month" : "Select month"}</option>
+        {monthOptions.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <Select value={parts.year} onChange={event => updateParts({ year: event.target.value })}>
+        <option value="">{allowEmpty ? "Year" : "Select year"}</option>
+        {yearOptions.map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
+export function MonthSelectInput({ value, onChange, min, max, allowEmpty = true, yearOrder = "desc" }) {
+  const [parts, setParts] = useState(() => parseMonthParts(value));
+
+  useEffect(() => {
+    const nextValue = String(value || "").trim();
+    const currentValue = buildMonthValue(parts);
+    if (nextValue && nextValue !== currentValue) {
+      setParts(parseMonthParts(nextValue));
+      return;
+    }
+    if (!nextValue && currentValue && !value) {
+      setParts({ month: "", year: "" });
+    }
+  }, [parts, value]);
+
+  const minParts = parseMonthParts(min);
+  const maxParts = parseMonthParts(max);
+  const nowYear = new Date().getFullYear();
+  const selectedYear = Number(parts.year || 0);
+  const startYear = Number(minParts.year || parts.year || nowYear - 20);
+  const endYear = Number(maxParts.year || parts.year || nowYear + 10);
+  const yearOptions = getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" });
+  const monthOptions = MONTH_OPTIONS.filter(option => {
+    if (!selectedYear) return true;
+    if (Number(minParts.year || 0) === selectedYear && option.value < minParts.month) return false;
+    if (Number(maxParts.year || 0) === selectedYear && option.value > maxParts.month) return false;
+    return true;
+  });
+
+  function updateParts(nextParts) {
+    const normalized = { ...parts, ...nextParts };
+    const normalizedValue = buildMonthValue(normalized);
+    setParts(normalized);
+    if (!normalized.month || !normalized.year) {
+      onChange?.("");
+      return;
+    }
+    if (min && normalizedValue < min) {
+      onChange?.("");
+      return;
+    }
+    if (max && normalizedValue > max) {
+      onChange?.("");
+      return;
+    }
+    onChange?.(normalizedValue);
+  }
+
+  return (
+    <div className="desktop-grid-2">
+      <Select value={parts.month} onChange={event => updateParts({ month: event.target.value })}>
+        <option value="">{allowEmpty ? "Month" : "Select month"}</option>
+        {monthOptions.map(option => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+      <Select value={parts.year} onChange={event => updateParts({ year: event.target.value })}>
+        <option value="">{allowEmpty ? "Year" : "Select year"}</option>
+        {yearOptions.map(option => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </Select>
+    </div>
   );
 }
 

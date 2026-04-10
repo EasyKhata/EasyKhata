@@ -1,13 +1,17 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { collection, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
+import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
+const SESSION_STORAGE_PREFIX = "ledger-session-analytics:";
+const SESSION_FLUSH_INTERVAL_MS = 30000;
+const SESSION_MIN_FLUSH_MS = 1000;
 
 function uid() {
   return Math.random().toString(36).slice(2, 9);
@@ -31,6 +35,11 @@ const EMPTY_ORG_DATA = {
     name: "",
     email: "",
     phone: "",
+    addressLine: "",
+    city: "",
+    state: "",
+    country: "",
+    location: "",
     address: "",
     gstin: "",
     showHSN: false,
@@ -57,9 +66,23 @@ const EMPTY_DATA = {
 };
 
 function createEmptyAccount(overrides = {}) {
+  const parsedLocation = parseLocationFields(overrides.location || overrides.address || "");
+  const addressLine = String(overrides.addressLine || parsedLocation.addressLine || "").trim();
+  const city = String(overrides.city || parsedLocation.city || "").trim();
+  const state = String(overrides.state || parsedLocation.state || "").trim();
+  const rawCountry = String(overrides.country || parsedLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
+  const country = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
+  const location = buildLocationLabel({ city, state, country });
+  const address = buildLocationLabel({ addressLine, city, state, country });
   return {
     ...EMPTY_ORG_DATA.account,
     ...overrides,
+    addressLine,
+    city,
+    state,
+    country,
+    location,
+    address,
     organizationType: getOrgType(overrides.organizationType || EMPTY_ORG_DATA.account.organizationType)
   };
 }
@@ -67,6 +90,16 @@ function createEmptyAccount(overrides = {}) {
 function normalizeOrgData(source = {}, fallback = {}) {
   const sourceGoals = source.goals || {};
   const fallbackAccount = fallback.account || {};
+  const sourceAccount = source.account || {};
+  const parsedSourceLocation = parseLocationFields(sourceAccount.location || sourceAccount.address || source.location || source.address || "");
+  const parsedFallbackLocation = parseLocationFields(fallbackAccount.location || fallbackAccount.address || fallback.location || fallback.address || "");
+  const normalizedAddressLine = String(sourceAccount.addressLine || source.addressLine || parsedSourceLocation.addressLine || fallbackAccount.addressLine || fallback.addressLine || parsedFallbackLocation.addressLine || "").trim();
+  const normalizedCity = String(sourceAccount.city || source.city || parsedSourceLocation.city || fallbackAccount.city || fallback.city || parsedFallbackLocation.city || "").trim();
+  const normalizedState = String(sourceAccount.state || source.state || parsedSourceLocation.state || fallbackAccount.state || fallback.state || parsedFallbackLocation.state || "").trim();
+  const rawCountry = String(sourceAccount.country || source.country || parsedSourceLocation.country || fallbackAccount.country || fallback.country || parsedFallbackLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
+  const normalizedCountry = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
+  const normalizedLocation = buildLocationLabel({ city: normalizedCity, state: normalizedState, country: normalizedCountry });
+  const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, state: normalizedState, country: normalizedCountry });
   return {
     income: source.income || [],
     expenses: source.expenses || [],
@@ -85,11 +118,16 @@ function normalizeOrgData(source = {}, fallback = {}) {
     notificationPrefs: { ...EMPTY_ORG_DATA.notificationPrefs, ...(source.notificationPrefs || {}) },
     currency: source.currency || EMPTY_ORG_DATA.currency,
     account: createEmptyAccount(
-      source.account || {
+      sourceAccount || {
         name: source.name || fallbackAccount.name || "",
         email: source.email || fallbackAccount.email || "",
         phone: source.phone || fallbackAccount.phone || "",
-        address: source.address || fallbackAccount.address || "",
+        addressLine: normalizedAddressLine,
+        city: normalizedCity,
+        state: normalizedState,
+        country: normalizedCountry,
+        location: normalizedLocation,
+        address: normalizedAddress,
         gstin: source.gstin || fallbackAccount.gstin || "",
         showHSN: source.showHSN || fallbackAccount.showHSN || false,
         organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || "small_business"
@@ -175,14 +213,176 @@ function sanitizeForFirestore(value) {
   return value;
 }
 
+function getSessionStorageKey(userId) {
+  return `${SESSION_STORAGE_PREFIX}${userId}`;
+}
+
+function readSessionDraft(userId) {
+  if (typeof window === "undefined" || !userId) return null;
+  try {
+    const raw = window.localStorage.getItem(getSessionStorageKey(userId));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionDraft(userId, draft) {
+  if (typeof window === "undefined" || !userId) return;
+  window.localStorage.setItem(getSessionStorageKey(userId), JSON.stringify(draft));
+}
+
+function clearSessionDraft(userId) {
+  if (typeof window === "undefined" || !userId) return;
+  window.localStorage.removeItem(getSessionStorageKey(userId));
+}
+
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
+  const sessionRef = useRef(null);
+  const flushInFlightRef = useRef(false);
+
+  const persistSessionDraft = useCallback(() => {
+    if (!user?.id || !sessionRef.current) return;
+    writeSessionDraft(user.id, sessionRef.current);
+  }, [user?.id]);
+
+  const captureSessionTick = useCallback(() => {
+    if (!user?.id || !sessionRef.current) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+
+    const nowMs = Date.now();
+    const currentOrgId = sessionRef.current.currentOrgId || data.activeOrgId || DEFAULT_ORG_ID;
+    const lastTickAt = sessionRef.current.lastTickAt || nowMs;
+    const deltaMs = Math.max(0, nowMs - lastTickAt);
+
+    sessionRef.current.lastTickAt = nowMs;
+    sessionRef.current.currentOrgId = currentOrgId;
+
+    if (deltaMs <= 0) {
+      persistSessionDraft();
+      return;
+    }
+
+    sessionRef.current.pendingTotalMs = (sessionRef.current.pendingTotalMs || 0) + deltaMs;
+    sessionRef.current.pendingByOrg = {
+      ...(sessionRef.current.pendingByOrg || {}),
+      [currentOrgId]: (sessionRef.current.pendingByOrg?.[currentOrgId] || 0) + deltaMs
+    };
+
+    const orgData = data.orgs?.[currentOrgId];
+    sessionRef.current.orgMeta = {
+      ...(sessionRef.current.orgMeta || {}),
+      [currentOrgId]: {
+        name: orgData?.account?.name || "",
+        organizationType: getOrgType(orgData?.account?.organizationType || user?.organizationType)
+      }
+    };
+
+    persistSessionDraft();
+  }, [data.activeOrgId, data.orgs, persistSessionDraft, user?.id, user?.organizationType]);
+
+  const registerSessionVisit = useCallback(
+    async orgId => {
+      if (!user?.id || !orgId) return;
+      if (!sessionRef.current) return;
+
+      const nextOrgId = orgId || DEFAULT_ORG_ID;
+      const orgData = data.orgs?.[nextOrgId];
+      const orgType = getOrgType(orgData?.account?.organizationType || user?.organizationType);
+      const nowIso = new Date().toISOString();
+      const updates = {
+        updatedAt: nowIso,
+        lastActivityAt: nowIso,
+        "analytics.lastSessionStartedAt": sessionRef.current.startedAt || nowIso,
+        [`analytics.byOrg.${nextOrgId}.lastSessionStartedAt`]: nowIso,
+        [`analytics.byOrg.${nextOrgId}.organizationType`]: orgType,
+        [`analytics.byOrg.${nextOrgId}.name`]: orgData?.account?.name || "Organization"
+      };
+
+      if (!sessionRef.current.sessionRegistered) {
+        updates["analytics.sessionCount"] = increment(1);
+        sessionRef.current.sessionRegistered = true;
+      }
+
+      if (!sessionRef.current.orgVisits?.[nextOrgId]) {
+        updates[`analytics.byOrg.${nextOrgId}.sessionCount`] = increment(1);
+        sessionRef.current.orgVisits = { ...(sessionRef.current.orgVisits || {}), [nextOrgId]: true };
+      }
+
+      sessionRef.current.orgMeta = {
+        ...(sessionRef.current.orgMeta || {}),
+        [nextOrgId]: {
+          name: orgData?.account?.name || "",
+          organizationType: orgType
+        }
+      };
+      persistSessionDraft();
+      await updateDoc(doc(db, "users", user.id), updates);
+    },
+    [data.orgs, persistSessionDraft, user?.id, user?.organizationType]
+  );
+
+  const flushSessionAnalytics = useCallback(
+    async ({ force = false } = {}) => {
+      if (!user?.id || !sessionRef.current || flushInFlightRef.current) return;
+
+      captureSessionTick();
+
+      const totalMs = Math.round(sessionRef.current.pendingTotalMs || 0);
+      if (totalMs < (force ? SESSION_MIN_FLUSH_MS : SESSION_FLUSH_INTERVAL_MS)) {
+        persistSessionDraft();
+        return;
+      }
+
+      const byOrg = { ...(sessionRef.current.pendingByOrg || {}) };
+      sessionRef.current.pendingTotalMs = 0;
+      sessionRef.current.pendingByOrg = {};
+      persistSessionDraft();
+
+      const nowIso = new Date().toISOString();
+      const updates = {
+        updatedAt: nowIso,
+        lastActivityAt: nowIso,
+        "analytics.totalSessionMs": increment(totalMs),
+        "analytics.lastSessionAt": nowIso,
+        "analytics.lastSessionDurationMs": totalMs
+      };
+
+      Object.entries(byOrg).forEach(([orgId, orgMs]) => {
+        const rounded = Math.round(orgMs || 0);
+        if (rounded < SESSION_MIN_FLUSH_MS) return;
+        const meta = sessionRef.current.orgMeta?.[orgId] || {};
+        updates[`analytics.byOrg.${orgId}.totalSessionMs`] = increment(rounded);
+        updates[`analytics.byOrg.${orgId}.lastActivityAt`] = nowIso;
+        if (meta.name) updates[`analytics.byOrg.${orgId}.name`] = meta.name;
+        if (meta.organizationType) updates[`analytics.byOrg.${orgId}.organizationType`] = meta.organizationType;
+      });
+
+      flushInFlightRef.current = true;
+      try {
+        await updateDoc(doc(db, "users", user.id), updates);
+        setUser(prev => (prev ? { ...prev, lastActivityAt: nowIso } : prev));
+      } catch (err) {
+        sessionRef.current.pendingTotalMs = (sessionRef.current.pendingTotalMs || 0) + totalMs;
+        sessionRef.current.pendingByOrg = Object.entries(byOrg).reduce((acc, [orgId, orgMs]) => {
+          acc[orgId] = (sessionRef.current.pendingByOrg?.[orgId] || 0) + orgMs;
+          return acc;
+        }, { ...(sessionRef.current.pendingByOrg || {}) });
+      } finally {
+        flushInFlightRef.current = false;
+        persistSessionDraft();
+      }
+    },
+    [captureSessionTick, persistSessionDraft, setUser, user?.id]
+  );
 
   const persistState = useCallback(
     nextState => {
       if (!user?.id) return;
+      const activityAt = new Date().toISOString();
 
       setUserData(user.id, "appData", nextState);
 
@@ -200,12 +400,19 @@ export function DataProvider({ children }) {
           currency: nextState.currency
         };
         setDoc(doc(db, "shared_ledgers", nextState.sharedLedger.id), sanitizeForFirestore(payload), { merge: true });
+        setDoc(
+          doc(db, "users", user.id),
+          sanitizeForFirestore({ updatedAt: activityAt, lastActivityAt: activityAt }),
+          { merge: true }
+        );
         return;
       }
 
       setDoc(
         doc(db, "users", user.id),
         sanitizeForFirestore({
+          updatedAt: activityAt,
+          lastActivityAt: activityAt,
           activeOrgId: nextState.activeOrgId,
           organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
           orgs: {
@@ -332,6 +539,104 @@ export function DataProvider({ children }) {
 
     loadData();
   }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone]);
+
+  useEffect(() => {
+    if (!user?.id || !loaded) {
+      sessionRef.current = null;
+      return undefined;
+    }
+
+    const nowMs = Date.now();
+    const existingDraft = readSessionDraft(user.id);
+    const initialOrgId = data.activeOrgId || DEFAULT_ORG_ID;
+    const shouldResetSession = existingDraft && nowMs - Number(existingDraft.lastTickAt || 0) > SESSION_FLUSH_INTERVAL_MS * 10;
+
+    sessionRef.current = !existingDraft || shouldResetSession ? {
+      startedAt: new Date(nowMs).toISOString(),
+      currentOrgId: initialOrgId,
+      lastTickAt: typeof document !== "undefined" && document.visibilityState === "hidden" ? 0 : nowMs,
+      pendingTotalMs: 0,
+      pendingByOrg: {},
+      orgVisits: {},
+      orgMeta: {},
+      sessionRegistered: false
+    } : existingDraft;
+
+    sessionRef.current.currentOrgId = initialOrgId;
+    if (typeof document !== "undefined" && document.visibilityState !== "hidden") {
+      sessionRef.current.lastTickAt = nowMs;
+    }
+    persistSessionDraft();
+
+    registerSessionVisit(initialOrgId);
+    flushSessionAnalytics({ force: true });
+
+    return () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "hidden") {
+        captureSessionTick();
+      }
+      persistSessionDraft();
+    };
+  }, [captureSessionTick, flushSessionAnalytics, loaded, persistSessionDraft, registerSessionVisit, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !loaded || !sessionRef.current) return undefined;
+
+    const nextOrgId = data.activeOrgId || DEFAULT_ORG_ID;
+    if (sessionRef.current.currentOrgId === nextOrgId) return undefined;
+
+    captureSessionTick();
+    flushSessionAnalytics({ force: true });
+    sessionRef.current.currentOrgId = nextOrgId;
+    sessionRef.current.lastTickAt = typeof document !== "undefined" && document.visibilityState === "hidden" ? 0 : Date.now();
+    persistSessionDraft();
+    registerSessionVisit(nextOrgId);
+    return undefined;
+  }, [captureSessionTick, data.activeOrgId, flushSessionAnalytics, loaded, persistSessionDraft, registerSessionVisit, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !loaded) return undefined;
+
+    function handleVisibilityChange() {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState === "hidden") {
+        captureSessionTick();
+        flushSessionAnalytics({ force: true });
+        if (sessionRef.current) {
+          sessionRef.current.lastTickAt = 0;
+        }
+        persistSessionDraft();
+        return;
+      }
+
+      if (sessionRef.current) {
+        sessionRef.current.lastTickAt = Date.now();
+      }
+      persistSessionDraft();
+      registerSessionVisit(data.activeOrgId || DEFAULT_ORG_ID);
+    }
+
+    function handlePageHide() {
+      captureSessionTick();
+      persistSessionDraft();
+    }
+
+    const intervalId = window.setInterval(() => {
+      captureSessionTick();
+      flushSessionAnalytics();
+    }, 1000);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("beforeunload", handlePageHide);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("beforeunload", handlePageHide);
+    };
+  }, [captureSessionTick, data.activeOrgId, flushSessionAnalytics, loaded, persistSessionDraft, registerSessionVisit, user?.id]);
 
   const update = useCallback(
     updater => {

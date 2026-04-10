@@ -96,15 +96,6 @@ input, select, textarea, button {
   font-family: var(--font);
 }
 
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.5);
-  cursor: pointer;
-}
-
-[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.8);
-}
-
 .spinner {
   width: 40px; height: 40px;
   border: 3px solid var(--border);

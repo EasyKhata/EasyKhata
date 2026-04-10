@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
+  DateSelectInput,
   Modal,
   Field,
   Input,
@@ -68,6 +69,10 @@ function renderDynamicField(field, value, onChange) {
 
   if (field.type === "textarea") {
     return <Textarea {...commonProps} />;
+  }
+
+  if (field.type === "date") {
+    return <DateSelectInput value={value || ""} onChange={onChange} max={TODAY} />;
   }
 
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : undefined} step={field.type === "number" ? "0.01" : undefined} />;
@@ -467,7 +472,7 @@ export default function ExpensesSection({ year, month, orgType }) {
               </Select>
             </Field>
             <Field label="Expense Date" required>
-              <Input type="date" max={TODAY} value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} />
+              <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
             </Field>
             {(config.expenseFields || []).map(field => (
               <Field key={field.key} label={field.label}>
@@ -533,7 +538,7 @@ export default function ExpensesSection({ year, month, orgType }) {
                   This {config.expensesEntryLabel.toLowerCase()} will repeat every month starting from {fmtDate(form.date)}.
                 </div>
                 <Field label="Recurring End Date" hint="Optional. Leave empty if this should continue until you stop it manually.">
-                  <Input type="date" value={form.endDate} min={form.date} max={TODAY} onChange={e => setForm(current => ({ ...current, endDate: e.target.value }))} />
+                  <DateSelectInput value={form.endDate} onChange={value => setForm(current => ({ ...current, endDate: value }))} min={form.date} max={TODAY} />
                 </Field>
               </>
             )}

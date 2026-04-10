@@ -1,18 +1,44 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Field, Input, Select } from "../components/UI";
-import { isStrongPassword, isValidEmail, isValidName, isValidPhone, normalizeEmail, sanitizePhone } from "../utils/validator";
+import { Field, Input, PhoneNumberInput, Select } from "../components/UI";
+import { isStrongPassword, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { ORG_TYPE_OPTIONS, ORG_TYPES } from "../utils/orgTypes";
+import {
+  buildDateOfBirthFromParts,
+  buildPhoneNumber,
+  COUNTRY_OPTIONS,
+  DEFAULT_PHONE_COUNTRY_CODE,
+  getBirthDayOptions,
+  getBirthYearOptions,
+  getStateProvinceOptions,
+  isValidDateOfBirth,
+  isValidUserPhoneNumber,
+  MONTH_OPTIONS,
+  PHONE_COUNTRY_OPTIONS,
+  parseDateOfBirthParts,
+  sanitizePhoneDigits
+} from "../utils/profile";
+
+const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
 
 export default function AuthScreen() {
   const { login, register, forgotPassword, resendVerification } = useAuth();
   const [screen, setScreen] = useState("login");
-  const [phone, setPhone] = useState("");
+  const [phoneCountryCode, setPhoneCountryCode] = useState(DEFAULT_PHONE_COUNTRY_CODE);
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [name, setName] = useState("");
   const [organizationType, setOrganizationType] = useState(ORG_TYPES.SMALL_BUSINESS);
   const [email, setEmail] = useState("");
+  const [birthDay, setBirthDay] = useState("");
+  const [birthMonth, setBirthMonth] = useState("");
+  const [birthYear, setBirthYear] = useState("");
+  const [gender, setGender] = useState("");
+  const [addressLine, setAddressLine] = useState("");
+  const [city, setCity] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [country, setCountry] = useState("India");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -20,6 +46,9 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [showPasswordHint, setShowPasswordHint] = useState(false);
+  const stateOptions = useMemo(() => getStateProvinceOptions(country), [country]);
+  const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
+  const birthDayOptions = useMemo(() => getBirthDayOptions(birthMonth, birthYear), [birthMonth, birthYear]);
 
   // Password strength indicator
   const passStrength = password ? {
@@ -37,6 +66,18 @@ export default function AuthScreen() {
     setScreen(nextScreen);
     resetMessages();
   }
+
+  useEffect(() => {
+    if (stateName && !stateOptions.includes(stateName)) {
+      setStateName("");
+    }
+  }, [stateName, stateOptions]);
+
+  useEffect(() => {
+    if (birthDay && !birthDayOptions.includes(birthDay)) {
+      setBirthDay("");
+    }
+  }, [birthDay, birthDayOptions]);
 
   async function handleLogin() {
     resetMessages();
@@ -73,7 +114,14 @@ export default function AuthScreen() {
     resetMessages();
     const cleanName = name.trim();
     const cleanEmail = normalizeEmail(email);
-    const cleanPhone = sanitizePhone(phone);
+    const cleanPhoneNumber = sanitizePhoneDigits(phoneNumber);
+    const cleanPhone = buildPhoneNumber(phoneCountryCode, cleanPhoneNumber);
+    const cleanDateOfBirth = buildDateOfBirthFromParts({ birthDay, birthMonth, birthYear });
+    const cleanAddressLine = String(addressLine || "").trim();
+    const cleanCity = String(city || "").trim();
+    const cleanState = String(stateName || "").trim();
+    const cleanCountry = String(country || "").trim();
+    const cleanGender = String(gender || "").trim();
 
     if (!isValidName(cleanName)) {
       setError("Please enter your full name.");
@@ -85,8 +133,18 @@ export default function AuthScreen() {
       return;
     }
 
-    if (!isValidPhone(cleanPhone)) {
-      setError("Please enter a valid phone number with at least 10 digits.");
+    if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
+      setError("Please enter a valid phone number.");
+      return;
+    }
+
+    if (!isValidDateOfBirth(cleanDateOfBirth)) {
+      setError("Please enter a valid date of birth. Users must be at least 13 years old.");
+      return;
+    }
+
+    if (!cleanCity || !cleanState || !cleanCountry) {
+      setError("Please enter your city, state, and country.");
       return;
     }
 
@@ -101,7 +159,22 @@ export default function AuthScreen() {
     }
 
     setLoading(true);
-    const res = await register(cleanName, cleanEmail, cleanPhone, password, organizationType);
+    const res = await register(
+      {
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        phoneCountryCode,
+        organizationType,
+        dateOfBirth: cleanDateOfBirth,
+        gender: cleanGender,
+        addressLine: cleanAddressLine,
+        city: cleanCity,
+        state: cleanState,
+        country: cleanCountry
+      },
+      password
+    );
     setLoading(false);
 
     if (res?.error) {
@@ -112,6 +185,10 @@ export default function AuthScreen() {
     setInfo(res?.message || "Account created successfully.");
     setPassword("");
     setConfirmPassword("");
+    setPhoneNumber("");
+    setBirthDay("");
+    setBirthMonth("");
+    setBirthYear("");
     setScreen("login");
   }
 
@@ -220,7 +297,79 @@ export default function AuthScreen() {
               <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
             </Field>
             <Field label="Phone Number" required hint="Used for account recovery and business profile.">
-              <Input type="tel" autoComplete="tel" placeholder="e.g. 9876543210" value={phone} onChange={e => setPhone(e.target.value)} />
+              <PhoneNumberInput
+                countryCode={phoneCountryCode}
+                phoneNumber={phoneNumber}
+                onCountryCodeChange={setPhoneCountryCode}
+                onPhoneNumberChange={setPhoneNumber}
+                countryOptions={PHONE_COUNTRY_OPTIONS}
+                phonePlaceholder="9876543210"
+              />
+            </Field>
+            <Field label="Date of Birth" required hint="Used for age-group insights and safer product planning.">
+              <div className="desktop-grid-3">
+                <Select value={birthDay} onChange={e => setBirthDay(e.target.value)}>
+                  <option value="">Day</option>
+                  {birthDayOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+                <Select value={birthMonth} onChange={e => setBirthMonth(e.target.value)}>
+                  <option value="">Month</option>
+                  {MONTH_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <Select value={birthYear} onChange={e => setBirthYear(e.target.value)}>
+                  <option value="">Year</option>
+                  {birthYearOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </Field>
+            <Field label="Gender" hint="Optional. Used only for aggregate audience insights.">
+              <Select value={gender} onChange={e => setGender(e.target.value)}>
+                <option value="">Prefer not to share</option>
+                {GENDER_OPTIONS.filter(option => option).map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Address Line" hint="House number, street, road, or area.">
+              <Input placeholder="Flat 12, MG Road" value={addressLine} onChange={e => setAddressLine(e.target.value)} autoComplete="address-line1" />
+            </Field>
+            <div className="desktop-grid-2">
+              <Field label="City" required>
+                <Input placeholder="Hyderabad" value={city} onChange={e => setCity(e.target.value)} autoComplete="address-level2" />
+              </Field>
+              <Field label="Country" required>
+                <Select value={country} onChange={e => setCountry(e.target.value)}>
+                  {COUNTRY_OPTIONS.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Field label="State / Province" required>
+              <Select value={stateName} onChange={e => setStateName(e.target.value)}>
+                <option value="">Select state / province</option>
+                {stateOptions.map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
             </Field>
             <Field label="What Are You Using EasyKhata For?" required hint="This helps us tailor labels, fields, and sections for your workflow.">
               <Select value={organizationType} onChange={e => setOrganizationType(e.target.value)}>

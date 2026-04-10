@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { useData } from "../context/DataContext";
 import {
+  DateSelectInput,
   Modal,
   Field,
   Input,
+  PhoneNumberInput,
+  StructuredLocationFields,
   Textarea,
   Select,
   FAB,
@@ -32,8 +35,21 @@ import {
   invoiceGrandTotal
 } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue, isValidGstin } from "../utils/validator";
-import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
-import { collection, getDocs } from "firebase/firestore";
+import { buildLocationLabel, buildPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE, isValidUserPhoneNumber, PHONE_COUNTRY_OPTIONS, parseLocationFields, sanitizePhoneDigits, splitPhoneNumber } from "../utils/profile";
+import {
+  BILLING_CYCLES,
+  PAYMENT_REQUEST_STATUS,
+  PLAN_LABELS,
+  PLANS,
+  SUBSCRIPTION_STATUS,
+  UPI_CONFIG,
+  canUseFeature,
+  formatSubscriptionDate,
+  getBillingDuration,
+  getSubscriptionEndDate,
+  getUpgradeCopy
+} from "../utils/subscription";
+import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
@@ -41,6 +57,12 @@ const APARTMENT_INVOICE_TYPE_LABELS = {
   collections: "Maintenance Collection",
   expenses: "Society Expense"
 };
+const REQUEST_FILTERS = [
+  [PAYMENT_REQUEST_STATUS.PENDING, "Pending"],
+  [PAYMENT_REQUEST_STATUS.APPROVED, "Approved"],
+  [PAYMENT_REQUEST_STATUS.REJECTED, "Rejected"],
+  ["all", "All"]
+];
 const TODAY = new Date().toISOString().slice(0, 10);
 
 function emptyItem() {
@@ -74,6 +96,30 @@ function getDocumentDueMessage(invoice, isQuote) {
   return `Valid until ${fmtDate(invoice.dueDate)}`;
 }
 
+function buildContactFormState(contact = {}, fallbackCountry = "India") {
+  const parsedLocation = parseLocationFields(contact?.location || contact?.address || "");
+  const country = contact?.country || parsedLocation.country || fallbackCountry;
+  const phoneParts = splitPhoneNumber(contact?.phone || "", contact?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+  const addressLine = contact?.addressLine || parsedLocation.addressLine || "";
+  const city = contact?.city || parsedLocation.city || "";
+  const state = contact?.state || parsedLocation.state || "";
+  const location = contact?.location || buildLocationLabel({ city, state, country });
+  return {
+    ...contact,
+    name: contact?.name || "",
+    phone: contact?.phone || "",
+    phoneCountryCode: contact?.phoneCountryCode || phoneParts.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    phoneNumber: phoneParts.phoneNumber,
+    addressLine,
+    city,
+    state,
+    country,
+    location,
+    address: contact?.address || buildLocationLabel({ addressLine, city, state, country }),
+    gstin: contact?.gstin || ""
+  };
+}
+
 function renderDynamicField(field, value, onChange) {
   const commonProps = {
     value: value || "",
@@ -97,15 +143,29 @@ function renderDynamicField(field, value, onChange) {
     return <Textarea {...commonProps} />;
   }
 
+  if (field.type === "date") {
+    return <DateSelectInput value={value || ""} onChange={onChange} />;
+  }
+
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function InvoicesSection({ year, month, documentType = "invoice" }) {
+export default function InvoicesSection({ year, month, documentType = "invoice", orgType }) {
   const d = useData();
   const { user } = useAuth();
-  const config = getOrgConfig(user?.organizationType);
-  const isApartmentOrg = getOrgType(user?.organizationType) === ORG_TYPES.APARTMENT;
-  const isSmallBusinessOrg = getOrgType(user?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
+  const isAdmin = user?.role === "admin";
+  const effectiveOrgType = getOrgType(orgType || user?.organizationType);
+  const config = isAdmin
+    ? {
+        invoicesLabel: "Subscription Invoices",
+        invoiceEntryLabel: "Subscription Invoice",
+        invoiceActionLabel: "Create Subscription Invoice",
+        customerEntryLabel: "User",
+        customerNamePlaceholder: "User name"
+      }
+    : getOrgConfig(effectiveOrgType);
+  const isApartmentOrg = !isAdmin && effectiveOrgType === ORG_TYPES.APARTMENT;
+  const isSmallBusinessOrg = !isAdmin && effectiveOrgType === ORG_TYPES.SMALL_BUSINESS;
   const isQuote = documentType === "quote";
   const documentLabel = isQuote ? "Quote" : config.invoiceEntryLabel;
   const documentCollectionLabel = isQuote ? "Quotes" : config.invoicesLabel;
@@ -117,8 +177,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
-  const isAdmin = user?.role === "admin";
   const [users, setUsers] = useState([]);
+  const [paymentRequests, setPaymentRequests] = useState([]);
+  const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
+  const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
+  const [adminRequestError, setAdminRequestError] = useState("");
   const serviceOptions = (d.orgRecords?.services || []).map(service => ({
     id: service.id,
     name: service.serviceName || "",
@@ -152,10 +215,68 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
       } catch (err) {
         console.error("Fetch users error:", err);
       }
+
+      try {
+        const requestsSnapshot = await getDocs(collection(db, "payment_requests"));
+        setPaymentRequests(
+          requestsSnapshot.docs
+            .map(item => ({
+              id: item.id,
+              ...item.data()
+            }))
+            .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+        );
+        setPaymentRequestsEnabled(true);
+      } catch (err) {
+        console.error("Fetch payment requests error:", err);
+        setPaymentRequests([]);
+        setPaymentRequestsEnabled(false);
+      }
     };
 
     fetchUsers();
   }, [isAdmin]);
+
+  const filteredRequests = paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter);
+
+  async function updatePaymentRequestStatus(request, status) {
+    setAdminRequestError("");
+    try {
+      const requestRef = doc(db, "payment_requests", request.id);
+      const updates = {
+        status,
+        reviewedBy: user.id,
+        reviewedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
+        await updateDoc(doc(db, "users", request.userId), {
+          plan: request.requestedPlan || PLANS.PRO,
+          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+          subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
+        });
+      }
+
+      if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
+        updates.rejectionReason = "Payment proof not approved";
+      }
+
+      await setDoc(requestRef, updates, { merge: true });
+
+      setPaymentRequests(current =>
+        current.map(item =>
+          item.id === request.id
+            ? { ...item, ...updates }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error("Payment request status update error:", err);
+      setAdminRequestError("Unable to update the payment request. Please try again.");
+      alert(err?.message || "Unable to update the payment request. Please try again.");
+    }
+  }
 
   const blankForm = () => ({
     ...((config.invoiceFields || []).reduce((acc, field) => ({ ...acc, [field.key]: field.type === "select" ? field.options?.[0] || "" : "" }), {})),
@@ -163,8 +284,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
     apartmentInvoiceType: isApartmentOrg ? "collections" : "",
     number: isQuote ? getNextQuoteNumber(d.invoices) : getNextInvoiceNumber(d.invoices),
     customerId: "",
-    billTo: { name: "", address: "", gstin: "" },
-    shipTo: { name: "", address: "" },
+    billTo: buildContactFormState({}, d.account?.country || "India"),
+    shipTo: buildContactFormState({}, d.account?.country || "India"),
     shipSameAsBill: true,
     date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
     dueDate: "",
@@ -217,6 +338,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
         ...item,
         taxRate: Number(item.taxRate ?? item.igst) || 0
       })),
+      billTo: buildContactFormState(invoice.billTo || invoice.customer || {}, d.account?.country || "India"),
+      shipTo: buildContactFormState(invoice.shipTo || {}, d.account?.country || "India"),
       shipSameAsBill: invoice.shipSameAsBill ?? true
     });
     setEditInv(invoice);
@@ -245,6 +368,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
         id: uid(),
         taxRate: Number(item.taxRate ?? item.igst) || 0
       })),
+      billTo: buildContactFormState(invoice.billTo || invoice.customer || {}, d.account?.country || "India"),
+      shipTo: buildContactFormState(invoice.shipTo || {}, d.account?.country || "India"),
       shipSameAsBill: invoice.shipSameAsBill ?? true
     });
     setEditInv(null);
@@ -275,22 +400,38 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
     const selectedFlat = isApartmentOrg ? apartmentFlatOptions.find(item => item.id === currentForm.customerId) : null;
     const isApartmentExpense = isApartmentOrg && currentForm.apartmentInvoiceType === "expenses";
     const resolvedBillTo = currentForm.customerId && (entity || selectedFlat) && !isApartmentExpense
-      ? {
+      ? buildContactFormState({
         name: isApartmentOrg ? selectedFlat?.tenantName || selectedFlat?.ownerName || selectedFlat?.flatNumber || "" : entity.name || entity.email || "",
-        address: isApartmentOrg ? (selectedFlat?.phone ? `Phone: ${selectedFlat.phone}` : "") : entity?.address || "",
+        addressLine: isApartmentOrg ? "" : entity?.addressLine || "",
+        address: isApartmentOrg ? (selectedFlat?.phone ? `Phone: ${selectedFlat.phone}` : "") : buildLocationLabel({ addressLine: entity?.addressLine, city: entity?.city, state: entity?.state, country: entity?.country }) || entity?.address || "",
+        phone: isApartmentOrg ? selectedFlat?.phone || "" : entity?.phone || "",
+        phoneCountryCode: isApartmentOrg ? "" : entity?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+        city: isApartmentOrg ? "" : entity?.city || "",
+        state: isApartmentOrg ? "" : entity?.state || "",
+        country: isApartmentOrg ? "" : entity?.country || d.account?.country || "India",
         gstin: isApartmentOrg ? "" : String(entity?.gstin || "").trim().toUpperCase()
-      }
-      : { ...currentForm.billTo, gstin: String(currentForm.billTo?.gstin || "").trim().toUpperCase() };
+      }, d.account?.country || "India")
+      : buildContactFormState({ ...currentForm.billTo, gstin: String(currentForm.billTo?.gstin || "").trim().toUpperCase() }, d.account?.country || "India");
     const resolvedShipTo = currentForm.shipSameAsBill
-      ? { name: resolvedBillTo.name, address: resolvedBillTo.address }
-      : currentForm.shipTo;
+      ? buildContactFormState(resolvedBillTo, d.account?.country || "India")
+      : buildContactFormState(currentForm.shipTo, d.account?.country || "India");
 
     const payload = {
       ...currentForm,
       number: String(currentForm.number || "").trim(),
       customer: entity || null,
-      billTo: resolvedBillTo,
-      shipTo: resolvedShipTo,
+      billTo: {
+        ...resolvedBillTo,
+        phone: buildPhoneNumber(resolvedBillTo.phoneCountryCode, sanitizePhoneDigits(resolvedBillTo.phoneNumber || resolvedBillTo.phone)),
+        location: buildLocationLabel({ city: resolvedBillTo.city, state: resolvedBillTo.state, country: resolvedBillTo.country }),
+        address: buildLocationLabel({ addressLine: resolvedBillTo.addressLine, city: resolvedBillTo.city, state: resolvedBillTo.state, country: resolvedBillTo.country }) || resolvedBillTo.address || ""
+      },
+      shipTo: {
+        ...resolvedShipTo,
+        phone: buildPhoneNumber(resolvedShipTo.phoneCountryCode, sanitizePhoneDigits(resolvedShipTo.phoneNumber || resolvedShipTo.phone)),
+        location: buildLocationLabel({ city: resolvedShipTo.city, state: resolvedShipTo.state, country: resolvedShipTo.country }),
+        address: buildLocationLabel({ addressLine: resolvedShipTo.addressLine, city: resolvedShipTo.city, state: resolvedShipTo.state, country: resolvedShipTo.country }) || resolvedShipTo.address || ""
+      },
       items: currentForm.items.map(item => ({
         ...item,
         qty: Number(item.qty),
@@ -362,6 +503,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
       setFormError("Paid date must be on or after the invoice date.");
       return;
     }
+    if (sanitizePhoneDigits(form.billTo?.phoneNumber || "") && !isValidUserPhoneNumber(sanitizePhoneDigits(form.billTo?.phoneNumber || ""))) {
+      setFormError("Enter a valid bill-to phone number or leave it empty.");
+      return;
+    }
+    if (!form.shipSameAsBill && sanitizePhoneDigits(form.shipTo?.phoneNumber || "") && !isValidUserPhoneNumber(sanitizePhoneDigits(form.shipTo?.phoneNumber || ""))) {
+      setFormError("Enter a valid ship-to phone number or leave it empty.");
+      return;
+    }
     if (isApartmentOrg && form.apartmentInvoiceType === "collections" && !form.customerId) {
       setFormError("Select a flat record from Settings so collection details can auto-populate.");
       return;
@@ -378,8 +527,16 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
       setFormError("Enter a valid bill-to GSTIN or leave it empty.");
       return;
     }
+    if (!form.customerId && !isApartmentOrg && (!String(form.billTo?.city || "").trim() || !String(form.billTo?.state || "").trim() || !String(form.billTo?.country || "").trim())) {
+      setFormError("Enter bill-to city, state, and country.");
+      return;
+    }
     if (!form.shipSameAsBill && !hasMinLength(form.shipTo?.name, 2)) {
       setFormError("Enter the ship-to name or use the billing address.");
+      return;
+    }
+    if (!form.shipSameAsBill && !isApartmentOrg && (!String(form.shipTo?.city || "").trim() || !String(form.shipTo?.state || "").trim() || !String(form.shipTo?.country || "").trim())) {
+      setFormError("Enter ship-to city, state, and country or use the billing address.");
       return;
     }
     if (!form.items.length) {
@@ -440,19 +597,31 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
       billTo: isApartmentOrg && current.apartmentInvoiceType === "expenses"
         ? current.billTo
         : (entity || flatRecord)
-          ? {
+          ? buildContactFormState({
             name: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || flatRecord?.flatNumber || "" : entity.name || entity.email || "",
-            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : entity?.address || "",
+            addressLine: isApartmentOrg ? "" : entity?.addressLine || "",
+            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : buildLocationLabel({ addressLine: entity?.addressLine, city: entity?.city, state: entity?.state, country: entity?.country }) || entity?.address || "",
+            phone: isApartmentOrg ? flatRecord?.phone || "" : entity?.phone || "",
+            phoneCountryCode: isApartmentOrg ? "" : entity?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+            city: isApartmentOrg ? "" : entity?.city || "",
+            state: isApartmentOrg ? "" : entity?.state || "",
+            country: isApartmentOrg ? "" : entity?.country || d.account?.country || "India",
             gstin: isApartmentOrg ? "" : entity?.gstin || ""
-          }
+          }, d.account?.country || "India")
           : current.billTo,
       shipTo: isApartmentOrg && current.apartmentInvoiceType === "expenses"
         ? current.shipTo
         : (entity || flatRecord)
-          ? {
+          ? buildContactFormState({
             name: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || flatRecord?.flatNumber || "" : entity.name || entity.email || "",
-            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : entity?.address || ""
-          }
+            addressLine: isApartmentOrg ? "" : entity?.addressLine || "",
+            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : buildLocationLabel({ addressLine: entity?.addressLine, city: entity?.city, state: entity?.state, country: entity?.country }) || entity?.address || "",
+            phone: isApartmentOrg ? flatRecord?.phone || "" : entity?.phone || "",
+            phoneCountryCode: isApartmentOrg ? "" : entity?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+            city: isApartmentOrg ? "" : entity?.city || "",
+            state: isApartmentOrg ? "" : entity?.state || "",
+            country: isApartmentOrg ? "" : entity?.country || d.account?.country || "India"
+          }, d.account?.country || "India")
           : current.shipTo
     }));
   }
@@ -481,6 +650,113 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
+        {isAdmin && (
+          <>
+            <div className="section-label">Payment Requests</div>
+            <div className="card" style={{ padding: 14, marginBottom: 18 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {REQUEST_FILTERS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    className="btn-secondary"
+                    style={{
+                      padding: "8px 12px",
+                      fontSize: 12,
+                      background: requestFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
+                      color: requestFilter === value ? "var(--text)" : "var(--text-sec)"
+                    }}
+                    onClick={() => setRequestFilter(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 12, lineHeight: 1.7 }}>
+                Keep payment proofs and subscription approvals together in this subscriptions workspace.
+              </div>
+              {adminRequestError && <div style={{ marginTop: 12, fontSize: 12, color: "var(--danger)" }}>{adminRequestError}</div>}
+            </div>
+
+            <div className="card" style={{ marginBottom: 18 }}>
+              {!paymentRequestsEnabled ? (
+                <EmptyState title="Payment requests are locked by rules" message="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." accentColor="var(--gold)" />
+              ) : filteredRequests.length === 0 ? (
+                <EmptyState title="No payment requests" message="Customer UPI payment submissions will appear here for admin verification." accentColor="var(--gold)" />
+              ) : (
+                filteredRequests.map(request => (
+                  <div key={request.id} className="card-row" style={{ alignItems: "flex-start", gap: 14 }}>
+                    <Avatar name={request.userName || request.userEmail || "?"} size={42} fontSize={14} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
+                        <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
+                          {request.requestedPlan === PLANS.BUSINESS ? "Business (Coming Soon)" : `${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
+                        </span>
+                        <span
+                          className="pill"
+                          style={{
+                            background:
+                              (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
+                                ? "var(--accent-deep)"
+                                : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
+                                  ? "var(--danger-deep)"
+                                  : "var(--gold-deep)",
+                            color:
+                              (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
+                                ? "var(--accent)"
+                                : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
+                                  ? "var(--danger)"
+                                  : "var(--gold)"
+                          }}
+                        >
+                          {request.status || PAYMENT_REQUEST_STATUS.PENDING}
+                        </span>
+                      </div>
+
+                      <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                        Amount Rs {request.amount || 0} - UPI {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                        Payee {request.upiPayeeName || UPI_CONFIG.payeeName} - UPI ID {request.upiId || UPI_CONFIG.upiId}
+                      </div>
+
+                      {request.note && (
+                        <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
+                          {request.note}
+                        </div>
+                      )}
+
+                      {request.screenshotUrl && (
+                        <a
+                          href={request.screenshotUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn-secondary"
+                          style={{ display: "inline-flex", marginTop: 12, padding: "8px 12px", fontSize: 12, textDecoration: "none", color: "var(--blue)" }}
+                        >
+                          View Payment Screenshot
+                        </a>
+                      )}
+
+                      {(request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+                          <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.APPROVED)}>
+                            Approve Payment
+                          </button>
+                          <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.REJECTED)}>
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
         <div className="card">
           {monthInv.length === 0 ? (
             <EmptyState title={isAdmin ? "No subscription invoices this month" : `No ${documentCollectionLabel.toLowerCase()} this month`} message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue, reminders, and history.`} actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
@@ -703,9 +979,30 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
                 <Field label={isApartmentOrg && form.apartmentInvoiceType === "expenses" ? "Paid To" : "Bill To Name"} required>
                   <Input placeholder={config.customerNamePlaceholder} value={form.billTo?.name || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } }))} />
                 </Field>
-                <Field label="Bill To Address">
-                  <Textarea placeholder="Full billing address" value={form.billTo?.address || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, address: event.target.value } }))} />
-                </Field>
+                {!isApartmentOrg && (
+                  <>
+                    <Field label="Bill To Phone">
+                      <PhoneNumberInput
+                        countryCode={form.billTo?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
+                        phoneNumber={form.billTo?.phoneNumber || ""}
+                        onCountryCodeChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, phoneCountryCode: value } }))}
+                        onPhoneNumberChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, phoneNumber: value } }))}
+                        countryOptions={PHONE_COUNTRY_OPTIONS}
+                        phonePlaceholder="9876543210"
+                      />
+                    </Field>
+                    <StructuredLocationFields
+                      addressLine={form.billTo?.addressLine || ""}
+                      city={form.billTo?.city || ""}
+                      state={form.billTo?.state || ""}
+                      country={form.billTo?.country || d.account?.country || "India"}
+                      onAddressLineChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, addressLine: value } }))}
+                      onCityChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, city: value } }))}
+                      onStateChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, state: value } }))}
+                      onCountryChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, country: value } }))}
+                    />
+                  </>
+                )}
                 <Field label="Bill To GSTIN">
                   <Input placeholder="GSTIN (optional)" value={form.billTo?.gstin || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, gstin: event.target.value } }))} />
                 </Field>
@@ -724,17 +1021,40 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
               {!form.shipSameAsBill && (
                 <>
                   <Input placeholder="Ship-to name" value={form.shipTo?.name || ""} onChange={event => setForm(current => ({ ...current, shipTo: { ...current.shipTo, name: event.target.value } }))} style={{ marginBottom: 10 }} />
-                  <Textarea placeholder="Ship-to address" value={form.shipTo?.address || ""} onChange={event => setForm(current => ({ ...current, shipTo: { ...current.shipTo, address: event.target.value } }))} />
+                  {!isApartmentOrg && (
+                    <>
+                      <Field label="Ship To Phone">
+                        <PhoneNumberInput
+                          countryCode={form.shipTo?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
+                          phoneNumber={form.shipTo?.phoneNumber || ""}
+                          onCountryCodeChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, phoneCountryCode: value } }))}
+                          onPhoneNumberChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, phoneNumber: value } }))}
+                          countryOptions={PHONE_COUNTRY_OPTIONS}
+                          phonePlaceholder="9876543210"
+                        />
+                      </Field>
+                      <StructuredLocationFields
+                        addressLine={form.shipTo?.addressLine || ""}
+                        city={form.shipTo?.city || ""}
+                        state={form.shipTo?.state || ""}
+                        country={form.shipTo?.country || form.billTo?.country || d.account?.country || "India"}
+                        onAddressLineChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, addressLine: value } }))}
+                        onCityChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, city: value } }))}
+                        onStateChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, state: value } }))}
+                        onCountryChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, country: value } }))}
+                      />
+                    </>
+                  )}
                 </>
               )}
             </Field>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Invoice Date" required>
-                <Input type="date" max={TODAY} value={form.date} onChange={event => setForm(current => ({ ...current, date: event.target.value }))} />
+                <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
               </Field>
               <Field label={isQuote ? "Valid Until" : "Due Date"}>
-                <Input type="date" value={form.dueDate || ""} min={form.date} max={TODAY} onChange={event => setForm(current => ({ ...current, dueDate: event.target.value }))} />
+                <DateSelectInput value={form.dueDate || ""} onChange={value => setForm(current => ({ ...current, dueDate: value }))} min={form.date} max={TODAY} />
               </Field>
             </div>
 
@@ -777,7 +1097,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice" 
 
             {!isQuote && form.status === "paid" && (
               <Field label="Paid Date">
-                <Input type="date" value={form.paidDate || ""} min={form.date} max={TODAY} onChange={event => setForm(current => ({ ...current, paidDate: event.target.value }))} />
+                <DateSelectInput value={form.paidDate || ""} onChange={value => setForm(current => ({ ...current, paidDate: value }))} min={form.date} max={TODAY} />
               </Field>
             )}
 

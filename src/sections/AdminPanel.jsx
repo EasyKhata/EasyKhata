@@ -1,37 +1,201 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
-import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
-import {
-  BILLING_CYCLES,
-  PAYMENT_REQUEST_STATUS,
-  PLAN_LABELS,
-  PLANS,
-  SUBSCRIPTION_STATUS,
-  UPI_CONFIG,
-  formatSubscriptionDate,
-  getBillingDuration,
-  getSubscriptionEndDate,
-  getTrialEndDate
-} from "../utils/subscription";
+import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
+import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
+import { PAYMENT_REQUEST_STATUS, PLANS, SUBSCRIPTION_STATUS, formatSubscriptionDate } from "../utils/subscription";
 import { downloadAdminMonthlyReport, downloadAdminUsersCsv, downloadAdminRequestsCsv } from "../utils/reportGen";
+import { ORG_TYPE_OPTIONS, getOrgType } from "../utils/orgTypes";
 
-const REQUEST_FILTERS = [
-  [PAYMENT_REQUEST_STATUS.PENDING, "Pending"],
-  [PAYMENT_REQUEST_STATUS.APPROVED, "Approved"],
-  [PAYMENT_REQUEST_STATUS.REJECTED, "Rejected"],
-  ["all", "All"]
-];
+const ORG_TYPE_LABELS = ORG_TYPE_OPTIONS.reduce((acc, option) => {
+  acc[option.value] = option.label;
+  return acc;
+}, {});
 
-export default function AdminPanel() {
+function toDate(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getDaysSince(value, now = new Date()) {
+  const parsed = value instanceof Date ? value : toDate(value);
+  if (!parsed) return null;
+  return Math.max(0, Math.floor((now.getTime() - parsed.getTime()) / 86400000));
+}
+
+function getDaysUntil(value, now = new Date()) {
+  const parsed = value instanceof Date ? value : toDate(value);
+  if (!parsed) return null;
+  return Math.ceil((parsed.getTime() - now.getTime()) / 86400000);
+}
+
+function countOrgRecords(orgRecords = {}) {
+  return Object.values(orgRecords || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : 0), 0);
+}
+
+function normalizeLocationLabel(value = "") {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const parts = clean
+    .split(",")
+    .map(part => part.trim())
+    .filter(Boolean);
+  const label = parts.length >= 2 ? parts.slice(-2).join(", ") : clean;
+  return label.length > 28 ? `${label.slice(0, 28)}...` : label;
+}
+
+function pushCount(bucket, label, amount = 1) {
+  if (!label) return;
+  bucket[label] = (bucket[label] || 0) + amount;
+}
+
+function toDistribution(bucket, total) {
+  return Object.entries(bucket)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({
+      label,
+      count,
+      pct: total ? Math.round((count / total) * 100) : 0
+    }));
+}
+
+function describeActivity(daysSinceActivity) {
+  if (daysSinceActivity === null) return "No signal yet";
+  if (daysSinceActivity <= 7) return "Active this week";
+  if (daysSinceActivity <= 30) return "Active this month";
+  if (daysSinceActivity <= 60) return "Cooling";
+  return "Dormant";
+}
+
+function formatPlanLabel(plan) {
+  if (plan === PLANS.BUSINESS) return "Business";
+  if (plan === PLANS.PRO) return "Pro";
+  return "Free";
+}
+
+function formatSubscriptionLabel(status) {
+  if (status === SUBSCRIPTION_STATUS.TRIAL) return "Trial";
+  if (status === SUBSCRIPTION_STATUS.ACTIVE) return "Active";
+  return "Inactive";
+}
+
+function MetricTile({ label, value, sub, color = "var(--blue)" }) {
+  return (
+    <div className="card" style={{ padding: "14px 12px", borderColor: `${color}33`, marginBottom: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 6 }}>{label}</div>
+      <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4, lineHeight: 1.5 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function DistributionCard({ title, subtitle, items, emptyMessage, accentColor = "var(--blue)", formatValue }) {
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 12 }}>{subtitle}</div>}
+      {!items.length ? (
+        <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>{emptyMessage}</div>
+      ) : (
+        <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+          {items.map((item, index) => (
+            <div key={`${title}-${item.label}`} style={{ padding: index === items.length - 1 ? "0" : "0 0 12px", marginBottom: index === items.length - 1 ? 0 : 12, borderBottom: index === items.length - 1 ? "none" : "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 8 }}>
+                <div style={{ fontSize: 13, color: "var(--text)" }}>{item.label}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: accentColor }}>{formatValue ? formatValue(item) : `${item.count} · ${item.pct}%`}</div>
+              </div>
+              <ProgressBar pct={item.pct} color={accentColor} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InsightCard({ eyebrow, title, body, tone = "var(--blue)" }) {
+  return (
+    <div className="card" style={{ padding: 16, borderLeft: `4px solid ${tone}`, marginBottom: 0 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: tone, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>{eyebrow}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>{body}</div>
+    </div>
+  );
+}
+
+function TopUsersCard({ users }) {
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Most Engaged Accounts</div>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 12 }}>
+        Ranked using true tracked foreground session time, then refined with workspace breadth and recent activity.
+      </div>
+      {!users.length ? (
+        <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No activity signal has been captured yet.</div>
+      ) : (
+        <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+          {users.map((entry, index) => (
+            <div key={entry.id} style={{ padding: index === users.length - 1 ? "0" : "0 0 12px", marginBottom: index === users.length - 1 ? 0 : 12, borderBottom: index === users.length - 1 ? "none" : "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{entry.name || entry.email || "Unnamed user"}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4, lineHeight: 1.6 }}>
+                    {entry.planLabel} · {entry.orgCount} workspace{entry.orgCount === 1 ? "" : "s"} · {entry.primaryOrgTypeLabel}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>{formatDuration(entry.totalSessionMs)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>{entry.totalEntries} records · {describeActivity(entry.daysSinceActivity)}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopWorkspacesCard({ items }) {
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Top Workspaces By Time Spent</div>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 12 }}>
+        Shows which org workspaces are absorbing the most real user time across the product.
+      </div>
+      {!items.length ? (
+        <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No tracked workspace session time is available yet.</div>
+      ) : (
+        <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+          {items.map((entry, index) => (
+            <div key={`${entry.userId}-${entry.orgId}`} style={{ padding: index === items.length - 1 ? "0" : "0 0 12px", marginBottom: index === items.length - 1 ? 0 : 12, borderBottom: index === items.length - 1 ? "none" : "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{entry.orgName}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4, lineHeight: 1.6 }}>
+                    {entry.ownerName} · {entry.orgTypeLabel}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>{formatDuration(entry.sessionMs)}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>{entry.totalEntries} records</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdminPanel({ year, month }) {
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
-  const [search, setSearch] = useState("");
-  const [userFilter, setUserFilter] = useState("all");
-  const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
   const [loading, setLoading] = useState(true);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
@@ -80,188 +244,324 @@ export default function AdminPanel() {
     fetchAdminData();
   }, []);
 
-  const filteredUsers = useMemo(() => {
-    return users.filter(member => {
-      const haystack = `${member.name || ""} ${member.email || ""} ${member.phone || ""}`.toLowerCase();
-      const matchesSearch = haystack.includes(search.trim().toLowerCase());
-      const matchesFilter =
-        userFilter === "all" ||
-        (userFilter === "blocked" && member.blocked) ||
-        (userFilter === "active" && !member.blocked) ||
-        (userFilter === "shared" && member.sharedLedgerId) ||
-        (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS));
-      return matchesSearch && matchesFilter;
-    });
-  }, [search, userFilter, users]);
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const selectedPeriodLabel = new Date(year, month, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 
-  const filteredRequests = useMemo(() => {
-    return paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter);
-  }, [paymentRequests, requestFilter]);
+  const analytics = useMemo(() => {
+    const now = new Date();
+    const approvedRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED);
+    const pendingRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING);
+    const rejectedRequests = paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED);
 
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const stats = {
-      totalUsers: users.length,
-      premiumUsers: users.filter(item => item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS).length,
-      trialUsers: users.filter(item => item.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL).length,
-      activeUsers: users.filter(item => !item.blocked).length,
-      blockedUsers: users.filter(item => item.blocked).length,
-      newUsersThisMonth: users.filter(user => user.createdAt?.slice(0, 7) === monthKey).length,
-      newPremiumUsersThisMonth: users.filter(user => (user.plan === PLANS.PRO || user.plan === PLANS.BUSINESS) && user.createdAt?.slice(0, 7) === monthKey).length,
-      pendingRequests: paymentRequests.filter(item => (item.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING).length
-    };
-  const recentActivity = useMemo(() => {
-    const signups = users
-      .filter(user => user.createdAt)
-      .map(user => ({
-        time: new Date(user.createdAt).getTime(),
-        label: `${user.name || user.email || "Unknown"} joined`,
-        detail: `${user.plan || "free"} plan`
-      }));
-
-    const requests = paymentRequests
-      .filter(request => request.createdAt || request.updatedAt)
-      .map(request => ({
-        time: new Date(request.updatedAt || request.createdAt).getTime(),
-        label: `${request.userName || request.userEmail || "Unknown"} payment ${request.status || PAYMENT_REQUEST_STATUS.PENDING}`,
-        detail: `${request.requestedPlan || "pro"} / ${request.billingCycle || BILLING_CYCLES.MONTHLY}`
-      }));
-
-    return [...signups, ...requests]
-      .sort((a, b) => b.time - a.time)
-      .slice(0, 8);
-  }, [users, paymentRequests]);
-
-  async function toggleBlock(id, blocked) {
-    if (id === user.id) {
-      alert("You cannot block your own account.");
-      return;
-    }
-
-    setAdminError("");
-    try {
-      await updateDoc(doc(db, "users", id), { blocked: !blocked });
-      fetchAdminData();
-    } catch (err) {
-      console.error("Block/unblock error:", err);
-      setAdminError("Unable to update the user's block status. Please try again.");
-      alert(err?.message || "Unable to update the user's block status. Please try again.");
-    }
-  }
-
-  async function deleteUserRecord(member) {
-    if (member.id === user.id) {
-      alert("You cannot delete your own admin account.");
-      return;
-    }
-
-    const confirmed = window.confirm("This will remove the user's Firestore profile and queue an Authentication cleanup request. Continue?");
-    if (!confirmed) return;
-
-    setAdminError("");
-    try {
-      const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
-      await Promise.all(
-        ledgersSnapshot.docs.map(async ledgerDoc => {
-          const ledger = ledgerDoc.data();
-          const members = (ledger.members || []).filter(item => item.userId !== member.id);
-          if (members.length !== (ledger.members || []).length) {
-            await updateDoc(ledgerDoc.ref, { members });
-          }
+    const userRecords = users.map(item => {
+      const parsedProfileLocation = parseLocationFields(item.location || "");
+      const profileLocation = normalizeLocationLabel(
+        buildLocationLabel({
+          city: item.city || parsedProfileLocation.city,
+          state: item.state || parsedProfileLocation.state,
+          country: item.country || parsedProfileLocation.country
         })
       );
+      const sessionAnalytics = item.analytics || {};
+      const orgSessionMap = sessionAnalytics.byOrg || {};
+      const orgSource = item?.orgs && typeof item.orgs === "object" && Object.keys(item.orgs).length > 0
+        ? item.orgs
+        : {
+            [item.activeOrgId || "org_primary"]: {
+              income: [],
+              expenses: [],
+              invoices: [],
+              customers: [],
+              orgRecords: {},
+              account: {
+                name: "",
+                address: "",
+                organizationType: item.organizationType || "small_business"
+              }
+            }
+          };
 
-      await setDoc(doc(db, "admin_cleanup_queue", member.id), {
-        uid: member.id,
-        email: member.email || "",
-        name: member.name || "",
-        requestedBy: user.id,
-        requestedAt: new Date().toISOString(),
-        status: "pending_auth_cleanup",
-        note: "Client app cannot delete Firebase Authentication users directly. Complete this request with Admin SDK or Cloud Functions."
+      const organizations = Object.entries(orgSource).map(([orgId, orgValue]) => {
+        const incomeCount = Array.isArray(orgValue?.income) ? orgValue.income.length : 0;
+        const expenseCount = Array.isArray(orgValue?.expenses) ? orgValue.expenses.length : 0;
+        const invoiceCount = Array.isArray(orgValue?.invoices) ? orgValue.invoices.length : 0;
+        const customerCount = Array.isArray(orgValue?.customers) ? orgValue.customers.length : 0;
+        const orgRecordCount = countOrgRecords(orgValue?.orgRecords);
+        const orgType = getOrgType(orgValue?.account?.organizationType || item.organizationType);
+        const parsedOrgLocation = parseLocationFields(orgValue?.account?.location || orgValue?.account?.address || "");
+        return {
+          id: orgId,
+          name: String(orgValue?.account?.name || "").trim() || ORG_TYPE_LABELS[orgType] || "Organization",
+          orgType,
+          orgTypeLabel: ORG_TYPE_LABELS[orgType] || orgType,
+          location: normalizeLocationLabel(
+            buildLocationLabel({
+              city: orgValue?.account?.city || parsedOrgLocation.city,
+              state: orgValue?.account?.state || parsedOrgLocation.state,
+              country: orgValue?.account?.country || parsedOrgLocation.country
+            })
+          ),
+          sessionMs: Number(orgSessionMap?.[orgId]?.totalSessionMs || 0),
+          incomeCount,
+          expenseCount,
+          invoiceCount,
+          customerCount,
+          orgRecordCount,
+          totalEntries: incomeCount + expenseCount + invoiceCount + customerCount + orgRecordCount
+        };
       });
 
-      await deleteDoc(doc(db, "users", member.id));
-      fetchAdminData();
-      alert("User profile removed from Firestore and auth cleanup has been queued.");
-    } catch (err) {
-      console.error("Delete user error:", err);
-      setAdminError("Unable to delete the user profile right now. Please try again.");
-      alert(err?.message || "Unable to delete the user profile right now. Please try again.");
-    }
-  }
+      const activityAt = item.lastActivityAt || item.updatedAt || item.onboardingSeenAt || item.createdAt || "";
+      const daysSinceActivity = getDaysSince(activityAt, now);
+      const totalEntries = organizations.reduce((sum, org) => sum + org.totalEntries, 0);
+      const totalSessionMs = Number(sessionAnalytics.totalSessionMs || 0);
+      const activityScore = Math.round(totalSessionMs / 60000) + totalEntries + organizations.length * 4 + (daysSinceActivity === null ? 0 : Math.max(0, 30 - Math.min(daysSinceActivity, 30)));
+      const primaryOrg = organizations[0] || null;
 
-  async function updateUserPlan(member, plan) {
-    setAdminError("");
-    try {
-      const updates = {
-        plan,
-        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE
+      return {
+        ...item,
+        orgCount: organizations.length,
+        organizations,
+        totalEntries,
+        totalSessionMs,
+        activityScore,
+        daysSinceActivity,
+        activityAt,
+        location: profileLocation,
+        gender: String(item.gender || "").trim(),
+        ageGroup: String(item.ageGroup || getAgeGroupFromDateOfBirth(item.dateOfBirth) || "").trim(),
+        planLabel: formatPlanLabel(item.plan),
+        subscriptionLabel: formatSubscriptionLabel(item.subscriptionStatus),
+        primaryOrgTypeLabel: primaryOrg?.orgTypeLabel || ORG_TYPE_LABELS[getOrgType(item.organizationType)] || "Organization",
+        isPaid: item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS
       };
+    });
 
-      if (plan === PLANS.FREE) {
-        updates.subscriptionEndsAt = "";
-      }
+    const orgTypeCounts = {};
+    const planCounts = {};
+    const statusCounts = {};
+    const genderCounts = {};
+    const ageCounts = {};
+    const locationCounts = {};
 
-      await updateDoc(doc(db, "users", member.id), updates);
-      fetchAdminData();
-    } catch (err) {
-      console.error("Update plan error:", err);
-      setAdminError("Unable to update the user's plan. Please try again.");
-      alert(err?.message || "Unable to update the user's plan. Please try again.");
+    let totalOrganizations = 0;
+    let totalEntries = 0;
+    let totalSessionMs = 0;
+    let totalInvoices = 0;
+    let totalCustomers = 0;
+    let totalIncomeEntries = 0;
+    let totalExpenseEntries = 0;
+    let totalOrgRecords = 0;
+    let activatedUsers = 0;
+    let multiOrgUsers = 0;
+    let sharedLedgerUsers = 0;
+    let onboardingCompletedUsers = 0;
+    let activeSevenDays = 0;
+    let activeThirtyDays = 0;
+    let dormantUsers = 0;
+    let powerUsers = 0;
+    let paidAtRisk = 0;
+    let locationCoverageUsers = 0;
+    let genderCoverageUsers = 0;
+    let ageCoverageUsers = 0;
+    let sessionCoverageUsers = 0;
+
+    userRecords.forEach(entry => {
+      totalOrganizations += entry.orgCount;
+      totalEntries += entry.totalEntries;
+      totalSessionMs += entry.totalSessionMs;
+      if (entry.totalEntries > 0) activatedUsers += 1;
+      if (entry.orgCount > 1) multiOrgUsers += 1;
+      if (entry.sharedLedgerId) sharedLedgerUsers += 1;
+      if (entry.onboardingSeenAt) onboardingCompletedUsers += 1;
+      if (entry.daysSinceActivity !== null && entry.daysSinceActivity <= 7) activeSevenDays += 1;
+      if (entry.daysSinceActivity !== null && entry.daysSinceActivity <= 30) activeThirtyDays += 1;
+      if (entry.daysSinceActivity !== null && entry.daysSinceActivity > 30) dormantUsers += 1;
+      if (entry.totalEntries >= 20) powerUsers += 1;
+      if (entry.isPaid && entry.daysSinceActivity !== null && entry.daysSinceActivity > 30 && !entry.blocked) paidAtRisk += 1;
+      if (entry.location || entry.organizations.some(org => org.location)) locationCoverageUsers += 1;
+      if (entry.gender) genderCoverageUsers += 1;
+      if (entry.ageGroup) ageCoverageUsers += 1;
+      if (entry.totalSessionMs > 0) sessionCoverageUsers += 1;
+
+      pushCount(planCounts, entry.planLabel);
+      pushCount(statusCounts, entry.subscriptionLabel);
+      if (entry.gender) pushCount(genderCounts, entry.gender);
+      if (entry.ageGroup) pushCount(ageCounts, entry.ageGroup);
+
+      entry.organizations.forEach(org => {
+        totalInvoices += org.invoiceCount;
+        totalCustomers += org.customerCount;
+        totalIncomeEntries += org.incomeCount;
+        totalExpenseEntries += org.expenseCount;
+        totalOrgRecords += org.orgRecordCount;
+        pushCount(orgTypeCounts, org.orgTypeLabel);
+        pushCount(locationCounts, entry.location || org.location);
+      });
+    });
+
+    const paymentApprovalRate = paymentRequests.length ? Math.round((approvedRequests.length / paymentRequests.length) * 100) : 0;
+    const monthlyApprovedAmount = approvedRequests
+      .filter(item => (item.updatedAt || item.createdAt || "").slice(0, 7) === monthKey)
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const monthlyPendingAmount = pendingRequests.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    const requestBacklog = pendingRequests.filter(item => getDaysSince(item.updatedAt || item.createdAt, now) > 7).length;
+
+    const expiringSoon = userRecords
+      .filter(entry => {
+        const daysUntilEnd = getDaysUntil(entry.subscriptionEndsAt, now);
+        return daysUntilEnd !== null && daysUntilEnd >= 0 && daysUntilEnd <= 14;
+      })
+      .sort((a, b) => (getDaysUntil(a.subscriptionEndsAt, now) || 9999) - (getDaysUntil(b.subscriptionEndsAt, now) || 9999));
+
+    const topUsers = [...userRecords]
+      .sort((a, b) => b.totalSessionMs - a.totalSessionMs || b.activityScore - a.activityScore || (a.daysSinceActivity ?? 9999) - (b.daysSinceActivity ?? 9999))
+      .slice(0, 5);
+
+    const topWorkspaces = userRecords
+      .flatMap(entry =>
+        entry.organizations.map(org => ({
+          userId: entry.id,
+          ownerName: entry.name || entry.email || "Unnamed user",
+          orgId: org.id,
+          orgName: org.name,
+          orgTypeLabel: org.orgTypeLabel,
+          sessionMs: org.sessionMs,
+          totalEntries: org.totalEntries
+        }))
+      )
+      .filter(entry => entry.sessionMs > 0)
+      .sort((a, b) => b.sessionMs - a.sessionMs)
+      .slice(0, 6);
+
+    const totalUsers = users.length;
+    const premiumUsers = userRecords.filter(entry => entry.isPaid).length;
+    const trialUsers = userRecords.filter(entry => entry.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL).length;
+    const activeUsers = userRecords.filter(entry => !entry.blocked).length;
+    const blockedUsers = userRecords.filter(entry => entry.blocked).length;
+    const newUsersThisMonth = userRecords.filter(entry => entry.createdAt?.slice(0, 7) === monthKey).length;
+    const newPremiumUsersThisMonth = userRecords.filter(entry => entry.isPaid && entry.createdAt?.slice(0, 7) === monthKey).length;
+    const premiumShare = totalUsers ? Math.round((premiumUsers / totalUsers) * 100) : 0;
+    const activationRate = totalUsers ? Math.round((activatedUsers / totalUsers) * 100) : 0;
+    const multiOrgShare = totalUsers ? Math.round((multiOrgUsers / totalUsers) * 100) : 0;
+
+    const insights = [];
+    if (requestBacklog > 0) {
+      insights.push({
+        eyebrow: "Revenue Ops",
+        title: `${requestBacklog} payment request${requestBacklog === 1 ? "" : "s"} need escalation`,
+        body: `There are ${pendingRequests.length} pending payment submissions and ${requestBacklog} have been waiting for more than 7 days. Tightening this queue will improve conversion and trust.`,
+        tone: "var(--gold)"
+      });
     }
-  }
-
-  async function updateSubscriptionStatus(member, subscriptionStatus) {
-    setAdminError("");
-    try {
-      const updates = { subscriptionStatus };
-      if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
-        updates.subscriptionEndsAt = getTrialEndDate();
-      }
-      if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
-        updates.subscriptionEndsAt = "";
-      }
-      await updateDoc(doc(db, "users", member.id), updates);
-      fetchAdminData();
-    } catch (err) {
-      console.error("Update subscription status error:", err);
-      setAdminError("Unable to update the user's subscription status. Please try again.");
-      alert(err?.message || "Unable to update the user's subscription status. Please try again.");
+    if (paidAtRisk > 0) {
+      insights.push({
+        eyebrow: "Retention",
+        title: `${paidAtRisk} paid account${paidAtRisk === 1 ? " is" : "s are"} going quiet`,
+        body: `These users still hold Pro or Business access but have no recent activity signal in the last 30 days. They are the best audience for win-back nudges or onboarding help.`,
+        tone: "var(--danger)"
+      });
     }
-  }
-
-  async function updatePaymentRequestStatus(request, status) {
-    setAdminError("");
-    try {
-      const requestRef = doc(db, "payment_requests", request.id);
-      const updates = {
-        status,
-        reviewedBy: user.id,
-        reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
-        await updateDoc(doc(db, "users", request.userId), {
-          plan: request.requestedPlan || PLANS.PRO,
-          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-          subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
-        });
-      }
-
-      if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
-        updates.rejectionReason = "Payment proof not approved";
-      }
-
-      await setDoc(requestRef, updates, { merge: true });
-      fetchAdminData();
-    } catch (err) {
-      console.error("Payment request status update error:", err);
-      setAdminError("Unable to update the payment request. Please try again.");
-      alert(err?.message || "Unable to update the payment request. Please try again.");
+    if (expiringSoon.length > 0) {
+      insights.push({
+        eyebrow: "Conversion",
+        title: `${expiringSoon.length} subscription${expiringSoon.length === 1 ? "" : "s"} expire soon`,
+        body: `The next renewal checkpoint is ${formatSubscriptionDate(expiringSoon[0]?.subscriptionEndsAt) || "coming up"}. Use the Subscriptions tab to prioritise manual follow-up before access lapses.`,
+        tone: "var(--blue)"
+      });
     }
-  }
+    if (locationCoverageUsers < totalUsers || genderCoverageUsers < totalUsers || ageCoverageUsers < totalUsers) {
+      insights.push({
+        eyebrow: "Audience Data",
+        title: "Demographic coverage is still partial",
+        body: `Location is captured for ${totalUsers ? Math.round((locationCoverageUsers / totalUsers) * 100) : 0}% of users, gender for ${totalUsers ? Math.round((genderCoverageUsers / totalUsers) * 100) : 0}%, and age groups for ${totalUsers ? Math.round((ageCoverageUsers / totalUsers) * 100) : 0}%. Encourage profile completion to sharpen marketing decisions.`,
+        tone: "var(--purple)"
+      });
+    }
+    if (multiOrgUsers > 0) {
+      insights.push({
+        eyebrow: "Expansion",
+        title: `${multiOrgUsers} users already manage multiple workspaces`,
+        body: `Multi-org adoption is at ${multiOrgShare}% of the user base. This segment is ideal for premium upsell messaging, cross-sell campaigns, and heavier automation features.`,
+        tone: "var(--accent)"
+      });
+    }
+
+    while (insights.length < 4) {
+      insights.push({
+        eyebrow: "Strategy",
+        title: "More insight quality will come from better profile completion",
+        body: "The dashboard now exposes product usage and org depth. To unlock stronger audience segmentation, continue driving users to complete location, age group, and gender in their personal profile.",
+        tone: "var(--blue)"
+      });
+    }
+
+    return {
+      approvedRequests,
+      pendingRequests,
+      rejectedRequests,
+      stats: {
+        totalUsers,
+        premiumUsers,
+        trialUsers,
+        activeUsers,
+        blockedUsers,
+        newUsersThisMonth,
+        newPremiumUsersThisMonth,
+        pendingRequests: pendingRequests.length,
+        approvedRequests: approvedRequests.length,
+        rejectedRequests: rejectedRequests.length,
+        paymentApprovalRate,
+        monthlyApprovedAmount,
+        monthlyPendingAmount,
+        premiumShare,
+        activationRate,
+        multiOrgUsers,
+        multiOrgShare,
+        totalOrganizations,
+        totalEntries,
+        totalSessionMs,
+        totalInvoices,
+        totalCustomers,
+        totalIncomeEntries,
+        totalExpenseEntries,
+        totalOrgRecords,
+        activeSevenDays,
+        activeThirtyDays,
+        dormantUsers,
+        powerUsers,
+        paidAtRisk,
+        sharedLedgerUsers,
+        onboardingCompletedUsers,
+        requestBacklog,
+        expiringSoonCount: expiringSoon.length,
+        averageSessionPerUserMs: totalUsers ? Math.round(totalSessionMs / totalUsers) : 0
+      },
+      distributions: {
+        planMix: toDistribution(planCounts, totalUsers),
+        statusMix: toDistribution(statusCounts, totalUsers),
+        orgTypeMix: toDistribution(orgTypeCounts, Math.max(1, totalOrganizations)).slice(0, 5),
+        locationMix: toDistribution(locationCounts, Math.max(1, totalOrganizations)).slice(0, 6),
+        genderMix: toDistribution(genderCounts, totalUsers),
+        ageMix: toDistribution(ageCounts, totalUsers)
+      },
+      readiness: {
+        locationCoverage: totalUsers ? Math.round((locationCoverageUsers / totalUsers) * 100) : 0,
+        genderCoverage: totalUsers ? Math.round((genderCoverageUsers / totalUsers) * 100) : 0,
+        ageCoverage: totalUsers ? Math.round((ageCoverageUsers / totalUsers) * 100) : 0,
+        sessionCoverage: totalUsers ? Math.round((sessionCoverageUsers / totalUsers) * 100) : 0
+      },
+      topUsers,
+      topWorkspaces,
+      insights: insights.slice(0, 4),
+      nextExpiryLabel: expiringSoon[0]?.subscriptionEndsAt ? formatSubscriptionDate(expiringSoon[0].subscriptionEndsAt) : "No end dates recorded yet",
+      averageOrganizationsPerUser: totalUsers ? (totalOrganizations / totalUsers).toFixed(1) : "0.0",
+      averageEntriesPerUser: totalUsers ? Math.round(totalEntries / totalUsers) : 0,
+      averageEntriesPerOrg: totalOrganizations ? Math.round(totalEntries / totalOrganizations) : 0,
+      averageSessionPerUserLabel: formatDuration(totalUsers ? Math.round(totalSessionMs / totalUsers) : 0),
+      totalSessionLabel: formatDuration(totalSessionMs)
+    };
+  }, [monthKey, paymentRequests, users]);
 
   if (loading) {
     return <SectionSkeleton rows={6} showHero={false} />;
@@ -276,13 +576,14 @@ export default function AdminPanel() {
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>{adminError}</div>
         </div>
       )}
+
       <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
         <div className="card" style={{ padding: 20, borderLeft: "4px solid var(--gold)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>Admin workspace</div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>Company intelligence center</div>
               <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 620 }}>
-                Manage user subscriptions, verify payment proof, and export audit-ready admin reports from one central dashboard.
+                Use this view to understand how subscriptions are converting, which organizations are driving depth, where your strongest markets are, and which user segments deserve retention or marketing attention.
               </div>
             </div>
             <button
@@ -304,8 +605,7 @@ export default function AdminPanel() {
               onClick={() => {
                 setExporting("pdf");
                 try {
-                  const now = new Date();
-                  downloadAdminMonthlyReport({ users, paymentRequests }, now.getFullYear(), now.getMonth(), "Rs");
+                  downloadAdminMonthlyReport({ users, paymentRequests }, year, month, "Rs");
                 } finally {
                   setExporting("");
                 }
@@ -351,265 +651,213 @@ export default function AdminPanel() {
           <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
             {exporting
               ? "Preparing your export, please wait..."
-              : "Refresh data anytime and export a PDF or CSV snapshot of your admin activity and subscriptions."}
+              : `Selected period: ${selectedPeriodLabel}. Refresh anytime to recalculate subscription, audience, and workspace analytics.`}
           </div>
         </div>
 
         <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, color: "var(--text)" }}>Snapshot</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, color: "var(--text)" }}>Executive Snapshot</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            {[
-              ["Total Users", stats.totalUsers, "var(--blue)"],
-              ["Active Users", stats.activeUsers, "var(--accent)"],
-              ["Blocked Users", stats.blockedUsers, "var(--danger)"],
-              ["Pending Payments", stats.pendingRequests, "var(--gold)"],
-              ["New Users This Month", stats.newUsersThisMonth, "var(--purple)"],
-              ["New Premium Users", stats.newPremiumUsersThisMonth, "var(--accent)"]
-            ].map(([label, value, color]) => (
-              <div key={label} className="card" style={{ padding: "14px 12px", borderColor: `${color}33`, marginBottom: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 6 }}>{label}</div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)" }}>{value}</div>
-              </div>
-            ))}
+            <MetricTile label="Total Users" value={analytics.stats.totalUsers} sub={`${analytics.stats.activeUsers} currently active accounts`} color="var(--blue)" />
+            <MetricTile label="Paid Accounts" value={analytics.stats.premiumUsers} sub={`${analytics.stats.premiumShare}% of the user base`} color="var(--accent)" />
+            <MetricTile label="Workspaces" value={analytics.stats.totalOrganizations} sub={`${analytics.stats.multiOrgUsers} multi-org users`} color="var(--purple)" />
+            <MetricTile label="Tracked Time" value={analytics.totalSessionLabel} sub="True foreground session time" color="var(--gold)" />
+            <MetricTile label="Pending Payments" value={analytics.stats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
+            <MetricTile label="Approved This Period" value={fmtMoney(analytics.stats.monthlyApprovedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
           </div>
         </div>
       </div>
 
-      <div className="section-label">Payment Verification</div>
-      <div className="card" style={{ padding: 14, marginBottom: 18 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {REQUEST_FILTERS.map(([value, label]) => (
-            <button
-              key={value}
-              className="btn-secondary"
-              style={{
-                padding: "8px 12px",
-                fontSize: 12,
-                background: requestFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
-                color: requestFilter === value ? "var(--text)" : "var(--text-sec)"
-              }}
-              onClick={() => setRequestFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 12, lineHeight: 1.7 }}>
-          Filter payment requests to review the newest submissions first. Only approve payments after matching UPI details and screenshot proof.
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 24 }}>
-        {!paymentRequestsEnabled ? (
-          <EmptyState
-            title="Payment requests are locked by rules"
-            message="User data is still loading, but the payment_requests collection is not readable yet. Add rules for payment_requests to enable this section."
-            accentColor="var(--gold)"
-          />
-        ) : filteredRequests.length === 0 ? (
-          <EmptyState
-            title="No payment requests"
-            message="Customer UPI payment submissions will appear here for admin verification."
-            accentColor="var(--gold)"
-          />
-        ) : (
-          filteredRequests.map(request => (
-            <div key={request.id} className="card-row" style={{ alignItems: "flex-start", gap: 14 }}>
-              <Avatar name={request.userName || request.userEmail || "?"} size={42} fontSize={14} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
-                  <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
-                    {request.requestedPlan === PLANS.BUSINESS ? "Business (Coming Soon)" : `${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
-                  </span>
-                  <span
-                    className="pill"
-                    style={{
-                      background:
-                        (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
-                          ? "var(--accent-deep)"
-                          : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
-                            ? "var(--danger-deep)"
-                            : "var(--gold-deep)",
-                      color:
-                        (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.APPROVED
-                          ? "var(--accent)"
-                          : (request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.REJECTED
-                            ? "var(--danger)"
-                            : "var(--gold)"
-                    }}
-                  >
-                    {request.status || PAYMENT_REQUEST_STATUS.PENDING}
-                  </span>
-                </div>
-
-                <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  Amount Rs {request.amount || 0} - UPI {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                  Payee {request.upiPayeeName || UPI_CONFIG.payeeName} - UPI ID {request.upiId || UPI_CONFIG.upiId}
-                </div>
-
-                {request.note && (
-                  <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, background: "var(--surface-high)", borderRadius: 12, padding: "10px 12px" }}>
-                    {request.note}
-                  </div>
-                )}
-
-                {request.screenshotUrl && (
-                  <a
-                    href={request.screenshotUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary"
-                    style={{ display: "inline-flex", marginTop: 12, padding: "8px 12px", fontSize: 12, textDecoration: "none", color: "var(--blue)" }}
-                  >
-                    View Payment Screenshot
-                  </a>
-                )}
-
-                {(request.status || PAYMENT_REQUEST_STATUS.PENDING) === PAYMENT_REQUEST_STATUS.PENDING && (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.APPROVED)}>
-                      Approve Payment
-                    </button>
-                    <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)" }} onClick={() => updatePaymentRequestStatus(request, PAYMENT_REQUEST_STATUS.REJECTED)}>
-                      Reject
-                    </button>
-                  </div>
-                )}
-              </div>
+      <div className="section-label">Subscription Intelligence</div>
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Subscription Funnel</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <MetricTile label="New Users" value={analytics.stats.newUsersThisMonth} sub={selectedPeriodLabel} color="var(--blue)" />
+            <MetricTile label="New Premium" value={analytics.stats.newPremiumUsersThisMonth} sub="New paid signups or assignments" color="var(--accent)" />
+            <MetricTile label="Trial Users" value={analytics.stats.trialUsers} sub={`${analytics.stats.expiringSoonCount} ending within 14 days`} color="var(--gold)" />
+            <MetricTile label="Approval Rate" value={`${analytics.stats.paymentApprovalRate}%`} sub={`${analytics.stats.approvedRequests} approved requests`} color="var(--purple)" />
+          </div>
+          <div className="card" style={{ padding: 14, marginTop: 12, marginBottom: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, color: "var(--text)" }}>Next subscription end date</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{analytics.nextExpiryLabel}</div>
             </div>
-          ))
-        )}
-      </div>
-
-      <div className="section-label">Recent Activity</div>
-      <div className="card" style={{ marginBottom: 18, padding: 14 }}>
-        {recentActivity.length === 0 ? (
-          <div style={{ padding: 18, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No recent admin activity found yet.</div>
-        ) : (
-          recentActivity.map((event, index) => (
-            <div key={`${event.time}-${index}`} className="card-row" style={{ justifyContent: "space-between", gap: 12, padding: "10px 0" }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{event.label}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{event.detail}</div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-sec)" }}>{new Date(event.time).toLocaleString("en-IN")}</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              Use this to prioritise trial conversion nudges and manual renewals before accounts fall inactive.
             </div>
-          ))
-        )}
-      </div>
+          </div>
+        </div>
 
-      <div className="section-label">User Management</div>
-      <div className="card" style={{ padding: 14, marginBottom: 18 }}>
-        <input
-          className="input-field"
-          placeholder="Search by name, email, or phone"
-          value={search}
-          onChange={event => setSearch(event.target.value)}
-          style={{ marginBottom: 12 }}
+        <DistributionCard
+          title="Plan Mix"
+          subtitle="How the current customer base is distributed across subscription tiers."
+          items={analytics.distributions.planMix}
+          emptyMessage="No user plans have been recorded yet."
+          accentColor="var(--blue)"
         />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {[
-            ["all", "All"],
-            ["active", "Unblocked"],
-            ["blocked", "Blocked"],
-            ["premium", "Premium"],
-            ["shared", "Shared"]
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              className="btn-secondary"
-              style={{
-                padding: "8px 12px",
-                fontSize: 12,
-                background: userFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
-                color: userFilter === value ? "var(--text)" : "var(--text-sec)"
-              }}
-              onClick={() => setUserFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
+      </div>
+
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <DistributionCard
+          title="Subscription Status"
+          subtitle="Useful for separating healthy accounts from trials and paused subscriptions."
+          items={analytics.distributions.statusMix}
+          emptyMessage="No subscription statuses are available yet."
+          accentColor="var(--accent)"
+        />
+
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Billing Pulse</div>
+          {!paymentRequestsEnabled ? (
+            <EmptyState title="Payment requests are locked by rules" message="User data is loading, but payment_requests is not readable yet. Add rules for payment_requests to unlock billing analytics." accentColor="var(--gold)" />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+              <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} submissions awaiting review`} color="var(--gold)" />
+              <MetricTile label="Rejected Requests" value={analytics.stats.rejectedRequests} sub="Needs manual follow-up" color="var(--danger)" />
+              <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk in paid users" color="var(--danger)" />
+              <MetricTile label="Shared Ledgers" value={analytics.stats.sharedLedgerUsers} sub="Collaboration usage signal" color="var(--purple)" />
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="card">
-        {filteredUsers.length === 0 ? (
-          <EmptyState title="No matching users" message="Try changing the search or filter to find the account you want." accentColor="var(--blue)" />
-        ) : (
-          filteredUsers.map(member => (
-            <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
-              <Avatar name={member.name || member.email || "?"} size={42} fontSize={14} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
-                  {member.role === "admin" && <span className="pill" style={{ background: "var(--purple-deep)", color: "var(--purple)" }}>Admin</span>}
-                  {member.role !== "admin" && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>{PLAN_LABELS[member.plan || PLANS.FREE] || "Free"}</span>}
-                  {member.blocked && <span className="pill" style={{ background: "var(--danger-deep)", color: "var(--danger)" }}>Blocked</span>}
-                  {member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL && (
-                    <span className="pill" style={{ background: "var(--gold-deep)", color: "var(--gold)" }}>
-                      Trial {member.subscriptionEndsAt ? `until ${formatSubscriptionDate(member.subscriptionEndsAt)}` : ""}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
-                  {member.phone || "No phone"} - {(member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE)} access
-                  {member.sharedLedgerId ? ` - Shared ledger ${member.sharedLedgerId}` : ""}
-                </div>
-                {member.id !== user.id && (
-                  <div className="desktop-grid-3" style={{ marginTop: 12 }}>
-                    <select
-                      className="input-field"
-                      value={member.plan || PLANS.FREE}
-                      onChange={event => updateUserPlan(member, event.target.value)}
-                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
-                    >
-                      <option value={PLANS.FREE}>Free</option>
-                      <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.BUSINESS}>Business (Internal)</option>
-                    </select>
-                    <select
-                      className="input-field"
-                      value={member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE}
-                      onChange={event => updateSubscriptionStatus(member, event.target.value)}
-                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
-                    >
-                      <option value={SUBSCRIPTION_STATUS.ACTIVE}>Active</option>
-                      <option value={SUBSCRIPTION_STATUS.INACTIVE}>Inactive</option>
-                      <option value={SUBSCRIPTION_STATUS.TRIAL}>Trial</option>
-                    </select>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "8px 12px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }}
-                        onClick={() => toggleBlock(member.id, member.blocked)}
-                      >
-                        {member.blocked ? "Unblock" : "Block"}
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)", borderColor: "var(--danger)44" }}
-                        onClick={() => deleteUserRecord(member)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+      <div className="section-label">Session Analytics</div>
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <TopUsersCard users={analytics.topUsers} />
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Time Spent Summary</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <MetricTile label="Total Time" value={analytics.totalSessionLabel} sub="Across all users and orgs" color="var(--accent)" />
+            <MetricTile label="Avg/User" value={analytics.averageSessionPerUserLabel} sub="Average tracked time per user" color="var(--blue)" />
+            <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Recent saved activity" color="var(--purple)" />
+            <MetricTile label="Session Coverage" value={`${analytics.readiness.sessionCoverage}%`} sub="Users with tracked session time" color="var(--gold)" />
+          </div>
+          <div className="card" style={{ padding: 14, marginTop: 12, marginBottom: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How session time works</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              Session time is now captured from real foreground usage, batched locally, and flushed to Firestore during org switches, visibility changes, and timed syncs. This is much closer to true time spent than the previous inferred activity model.
             </div>
-          ))
-        )}
+          </div>
+        </div>
       </div>
 
-      <div className="card" style={{ marginTop: 18, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How payment verification works</div>
-        <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          Customers now pay to your UPI ID ({UPI_CONFIG.upiId}), upload a screenshot, and submit the transaction reference from Settings. You verify the proof here and approve the subscription to activate it automatically.
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <TopWorkspacesCard items={analytics.topWorkspaces} />
+
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Engagement Signals</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <MetricTile label="Active 7 Days" value={analytics.stats.activeSevenDays} sub="Strong weekly usage" color="var(--accent)" />
+            <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Monthly returning users" color="var(--blue)" />
+            <MetricTile label="Dormant Users" value={analytics.stats.dormantUsers} sub="No recent product signal" color="var(--danger)" />
+            <MetricTile label="Power Users" value={analytics.stats.powerUsers} sub="20+ workspace records" color="var(--gold)" />
+          </div>
+        </div>
+      </div>
+
+      <div className="section-label">Usage And Organizations</div>
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Workspace Depth</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+            <MetricTile label="Activation Rate" value={`${analytics.stats.activationRate}%`} sub="Users with saved org activity" color="var(--accent)" />
+            <MetricTile label="Avg Orgs Per User" value={analytics.averageOrganizationsPerUser} sub="Workspace expansion depth" color="var(--blue)" />
+            <MetricTile label="Avg Entries Per User" value={analytics.averageEntriesPerUser} sub="Overall usage intensity" color="var(--purple)" />
+            <MetricTile label="Avg Entries Per Org" value={analytics.averageEntriesPerOrg} sub="Tenant-level activity density" color="var(--gold)" />
+            <MetricTile label="Invoices Logged" value={analytics.stats.totalInvoices} sub="Cross-workspace invoice usage" color="var(--blue)" />
+            <MetricTile label="Customers Managed" value={analytics.stats.totalCustomers} sub="Customer-directory adoption" color="var(--accent)" />
+          </div>
+        </div>
+
+        <DistributionCard
+          title="Organization Mix"
+          subtitle="Shows which business categories are driving the product footprint today."
+          items={analytics.distributions.orgTypeMix}
+          emptyMessage="No organizations have been created yet."
+          accentColor="var(--purple)"
+        />
+      </div>
+
+      <div className="section-label">Audience Intelligence</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18, marginBottom: 18 }}>
+        <DistributionCard
+          title="Top Markets"
+          subtitle={`${analytics.readiness.locationCoverage}% of users have structured city/state/country data or a workspace address signal.`}
+          items={analytics.distributions.locationMix}
+          emptyMessage="No location signals are captured yet. Ask users to fill city, state, and country in Personal Profile or keep workspace addresses updated."
+          accentColor="var(--blue)"
+        />
+
+        <DistributionCard
+          title="Gender Mix"
+          subtitle={`${analytics.readiness.genderCoverage}% of users have shared gender data.`}
+          items={analytics.distributions.genderMix}
+          emptyMessage="Gender data is optional and has not been captured yet."
+          accentColor="var(--accent)"
+        />
+
+        <DistributionCard
+          title="Age Groups"
+          subtitle={`${analytics.readiness.ageCoverage}% of users have shared age-group data.`}
+          items={analytics.distributions.ageMix}
+          emptyMessage="Age-group data is optional and has not been captured yet."
+          accentColor="var(--purple)"
+        />
+      </div>
+
+      <div className="section-label">Strategic Signals</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 18, marginBottom: 18 }}>
+        {analytics.insights.map(insight => (
+          <InsightCard key={`${insight.eyebrow}-${insight.title}`} eyebrow={insight.eyebrow} title={insight.title} body={insight.body} tone={insight.tone} />
+        ))}
+      </div>
+
+      <div className="section-label">Data Readiness</div>
+      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Insight Coverage</div>
+          {[
+            ["Location coverage", analytics.readiness.locationCoverage, "Profile location or workspace address"],
+            ["Gender coverage", analytics.readiness.genderCoverage, "Optional personal-profile field"],
+            ["Age-group coverage", analytics.readiness.ageCoverage, "Derived from date of birth"],
+            ["Session-duration coverage", analytics.readiness.sessionCoverage, "Tracked foreground session time"]
+          ].map(([label, value, hint]) => (
+            <div key={label} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: "var(--text)" }}>{label}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{hint}</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{value}%</div>
+              </div>
+              <ProgressBar pct={value} color="var(--accent)" />
+            </div>
+          ))}
+        </div>
+
+        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to improve next</div>
+          <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>1. Complete audience fields</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              The app now supports structured city, state, country, date of birth, gender, and phone country code in Personal Profile. Driving adoption there will make campaign targeting and regional planning much stronger.
+            </div>
+          </div>
+          <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>2. Increase session coverage</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              Session time is now tracked, but coverage still depends on users running the latest app version and remaining online long enough to flush local batches. As this version rolls out, the time-spent metrics will become more complete.
+            </div>
+          </div>
+          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>3. Watch paid quiet users</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              {analytics.stats.paidAtRisk > 0
+                ? `${analytics.stats.paidAtRisk} paid users have cooled off recently. A retention sequence or check-in campaign would likely outperform a broad message.`
+                : "No paid inactivity risk is obvious right now, which is a good sign for retention."}
+            </div>
+          </div>
         </div>
       </div>
     </div>
