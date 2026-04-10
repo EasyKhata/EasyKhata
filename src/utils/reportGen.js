@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { calculateDashboard, invoiceGrandTotal } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculatePersonalDashboard, invoiceGrandTotal, isApartmentOrgData, isPersonalOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 
 const PAGE = {
@@ -234,6 +234,177 @@ export function downloadAdminMonthlyReport(data, year, month, sym) {
 }
 
 export function downloadMonthlyReport(data, year, month, sym) {
+  if (isApartmentOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculateApartmentDashboard(data, year, month);
+    const title = `Society Report - ${MONTHS[month]} ${year}`;
+    const recentCollections = stats.recentCollections || [];
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Society Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Collections", value: money(stats.totalIncome, sym) },
+      { label: "Society Expenses", value: money(stats.totalExpense, sym) },
+      { label: "Monthly Reserve", value: money(stats.monthlyReserve, sym) },
+      { label: "Total Reserve", value: money(stats.totalReserve, sym) },
+      { label: "Flats", value: String(stats.flatsCount || 0) },
+      { label: "Residents", value: String(stats.residentsCount || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 44);
+    y = sectionTitle(doc, y + 2, "Collection Coverage");
+    y = drawRows(doc, y, [
+      { label: "Flats paid this month", value: String(stats.paidFlatsCount || 0) },
+      { label: "Flats pending this month", value: String(stats.unpaidFlats.length || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Expense Breakdown");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No society expenses recorded this month", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Recent Collections");
+    y = drawRows(
+      doc,
+      y,
+      recentCollections.length
+        ? recentCollections.map(item => ({
+            label: `${safeText(item.flatNumber || "Flat")} · ${safeText(item.residentName || "Resident")}`,
+            value: `${money(item.amount, sym)}  |  ${safeText(item.collectionType || "Collection")}`
+          }))
+        : [{ label: "No maintenance collections recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Pending Flats");
+    y = drawRows(
+      doc,
+      y,
+      stats.unpaidFlats.length
+        ? stats.unpaidFlats.slice(0, 18).map(flat => ({
+            label: `${safeText(flat.flatNumber || "Flat")} · ${safeText(flat.ownerName || flat.tenantName || "No resident assigned")}`,
+            value: flat.phone ? safeText(flat.phone) : "No phone number"
+          }))
+        : [{ label: "All tracked flats are covered this month", value: "--" }]
+    );
+
+    doc.save(`society-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
+  if (isPersonalOrgData(data)) {
+    const doc = new jsPDF({ unit: "mm", format: "a4" });
+    const stats = calculatePersonalDashboard(data, year, month);
+    const title = `Household Report - ${MONTHS[month]} ${year}`;
+
+    let y = PAGE.top;
+    doc.setFillColor(22, 22, 28);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text(title, PAGE.left + 4, y + 10);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10.5);
+    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    y += 32;
+
+    y = sectionTitle(doc, y, "Household Summary");
+    y = drawMetricGrid(doc, y, [
+      { label: "Earnings", value: money(stats.totalIncome, sym) },
+      { label: "Spending", value: money(stats.totalExpense, sym) },
+      { label: "Monthly EMI", value: money(stats.totalEmi, sym) },
+      { label: "Left for Goals", value: money(stats.goalContribution || stats.netAfterEmi || 0, sym) },
+      { label: "Goal Gap", value: stats.monthlySavingsGoal ? money(stats.goalLeft || 0, sym) : "--" },
+      { label: "Household Members", value: String(stats.peopleCount || 0) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 44);
+    y = sectionTitle(doc, y + 2, "Savings Goal");
+    y = drawRows(doc, y, [
+      { label: "Goal target", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
+      { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
+      { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
+      { label: "Still needed", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
+      { label: "Status", value: safeText(stats.goalStatus || "") },
+      { label: "Note", value: safeText(stats.goalNote || "--") }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Household Members");
+    y = drawRows(
+      doc,
+      y,
+      stats.memberTotals.length
+        ? stats.memberTotals.map(person => ({
+            label: person.name,
+            value: `${money(person.income, sym)} earned | ${money(person.spending, sym)} spent`
+          }))
+        : [{ label: "No member activity tagged yet", value: "Add People in Settings or tag entries with a person" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "EMI Commitments");
+    y = drawRows(
+      doc,
+      y,
+      stats.upcomingEmis.length
+        ? stats.upcomingEmis.map(item => ({
+            label: `${safeText(item.loanName || "EMI")} · ${safeText(item.lender || "Lender")}`,
+            value: `${money(item.monthlyEmi, sym)} | Due ${safeText(item.scheduledDate || item.dueDate || "--")}${item.endDate ? ` | Ends ${safeText(item.endDate)}` : ""}`
+          }))
+        : [{ label: "No EMI records found", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Spending Insights");
+    y = drawRows(doc, y, [
+      { label: "Spending ratio", value: `${Math.round(stats.spendingRatio || 0)}% of earnings` },
+      { label: "EMI ratio", value: `${Math.round(stats.emiRatio || 0)}% of earnings` },
+      { label: "Essential spending", value: money(stats.essentialSpending || 0, sym) },
+      { label: "Non-essential spending", value: money(stats.nonEssentialSpending || 0, sym) },
+      { label: "Overspend pressure", value: money(stats.spendingPressure || 0, sym) }
+    ]);
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Top Spending Categories");
+    y = drawRows(
+      doc,
+      y,
+      stats.topExpenseCategories.length
+        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
+        : [{ label: "No spending categories recorded", value: "--" }]
+    );
+
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Smart Suggestions");
+    y = drawRows(
+      doc,
+      y,
+      (stats.actionTips || []).map(item => ({ label: item.title, value: safeText(item.message) }))
+    );
+
+    doc.save(`household-report-${stats.monthKey}.pdf`);
+    return;
+  }
+
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const stats = calculateDashboard(data, year, month);
   const invoices = (data.invoices || []).filter(item => item.date?.slice(0, 7) === stats.monthKey);
@@ -277,7 +448,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "Profit / Loss", value: money(stats.profit, sym) },
     { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
     { label: "Burn Rate", value: stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days` },
-    { label: "Savings Goal", value: stats.monthlySavingsGoal ? money(stats.monthlySavingsGoal, sym) : "--" }
+    { label: "Savings Goal", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);
@@ -314,6 +485,16 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "SGST", value: money(taxSummary.sgst, sym) },
     { label: "IGST", value: money(taxSummary.igst, sym) },
     { label: "Invoice Total", value: money(invoices.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0), sym) }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 40);
+  y = sectionTitle(doc, y + 2, "Savings Goal");
+  y = drawRows(doc, y, [
+    { label: "Target amount", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
+    { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
+    { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
+    { label: "Remaining", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
+    { label: "Note", value: safeText(stats.goalNote || "--") }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);

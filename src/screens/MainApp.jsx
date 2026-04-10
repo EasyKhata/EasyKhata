@@ -7,6 +7,7 @@ import BrandLogo, { BrandMark } from "../components/BrandLogo";
 import Dashboard from "../sections/Dashboard";
 import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
+import EmiSection from "../sections/EmiSection";
 import InvoicesSection from "../sections/InvoicesSection";
 import SettingsSection from "../sections/SettingsSection";
 import AdminPanel from "../sections/AdminPanel";
@@ -18,7 +19,7 @@ import {
   saveDismissedReminderIds,
   saveSentBrowserReminderIds
 } from "../utils/reminders";
-import { getOrgConfig } from "../utils/orgTypes";
+import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 
 const now = new Date();
 
@@ -302,12 +303,14 @@ export default function MainApp() {
 
   const isAdmin = user?.role === "admin";
   const orgConfig = getOrgConfig(user?.organizationType);
+  const isPersonalOrg = getOrgType(user?.organizationType) === ORG_TYPES.PERSONAL;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const TABS = [
     { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "↑", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
+      ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
     ] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: orgConfig.invoicesLabel }] : []),
     { id: "settings", icon: "⚙", label: "Settings" }
@@ -317,6 +320,7 @@ export default function MainApp() {
     dashboard: isAdmin ? "var(--gold)" : "var(--accent)",
     income: "var(--accent)",
     expenses: "var(--danger)",
+    emi: "var(--gold)",
     invoices: "var(--blue)",
     settings: "var(--purple)"
   };
@@ -409,6 +413,7 @@ export default function MainApp() {
         {tab === "dashboard" && (isAdmin ? <AdminPanel /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={setTab} />)}
         {tab === "income" && <IncomeSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={user?.organizationType} />}
+        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={user?.organizationType} />}
         {tab === "settings" && <SettingsSection />}
       </div>

@@ -17,8 +17,11 @@ import {
   SectionSkeleton
 } from "../components/UI";
 import { getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
-import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
-import { getOrgConfig } from "../utils/orgTypes";
+import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
+import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+
+const TODAY = new Date().toISOString().slice(0, 10);
+const CURRENT_MONTH = TODAY.slice(0, 7);
 
 function buildBlankForm(year, month, config) {
   const base = {
@@ -58,12 +61,15 @@ function renderDynamicField(field, value, onChange) {
     return <Textarea {...commonProps} />;
   }
 
-  return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
+  return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : field.type === "month" ? CURRENT_MONTH : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
 export default function IncomeSection({ year, month, orgType }) {
   const d = useData();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
+  const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
+  const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
+  const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
@@ -71,10 +77,38 @@ export default function IncomeSection({ year, month, orgType }) {
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
 
-  const invIncome = config.hideInvoices ? [] : d.invoices.filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk);
-  const manualIncome = d.income.filter(item => item.month === mk);
+  const invIncome = config.hideInvoices || isApartmentOrg
+    ? []
+    : d.invoices.filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk);
+  const manualIncome = d.income.filter(item => {
+    if (isApartmentOrg) {
+      return (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk;
+    }
+    return item.month === mk;
+  });
   const totalInv = invIncome.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
   const totalManual = manualIncome.reduce((sum, item) => sum + Number(item.amount), 0);
+  const flatOptions = useMemo(() => [
+    ...(societyName ? [{
+      value: societyName,
+      label: [societyName, "Common Building"].filter(Boolean).join(" - "),
+      ownerName: "Common Building",
+      tenantName: "",
+      phone: "",
+      isBuilding: true
+    }] : []),
+    ...(d.customers || []).map(flat => ({
+      value: flat.name || "",
+      label: [flat.name, flat.ownerName || "", flat.tenantName || "", flat.phone || "", societyName].filter(Boolean).join(" - "),
+      ownerName: flat.ownerName || "",
+      tenantName: flat.tenantName || "",
+      phone: flat.phone || "",
+      isBuilding: false
+    })).filter(option => option.value)
+  ], [d.customers, societyName]);
+  const peopleOptions = useMemo(() => (
+    (d.customers || []).map(person => ({ value: person.name || "", label: [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.customers]);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -110,6 +144,10 @@ export default function IncomeSection({ year, month, orgType }) {
   }
 
   function save() {
+    if (isApartmentOrg && !flatOptions.length) {
+      setFormError("Add at least one resident/flat in Settings before recording a maintenance collection.");
+      return;
+    }
     if (!hasMinLength(form.label, 2)) {
       setFormError(`Add a clear ${config.incomeEntryLabel.toLowerCase()} description so you can recognize it later.`);
       return;
@@ -122,18 +160,40 @@ export default function IncomeSection({ year, month, orgType }) {
       setFormError(`Choose the date when this ${config.incomeEntryLabel.toLowerCase()} was received.`);
       return;
     }
+    if (isFutureDateValue(form.date)) {
+      setFormError("Future dates are not allowed for records.");
+      return;
+    }
+    if (isApartmentOrg && !String(form.flatNumber || "").trim()) {
+      setFormError("Select a flat from Settings before saving this maintenance collection.");
+      return;
+    }
+    if (isPersonalOrg && !String(form.personName || "").trim()) {
+      setFormError("Select a household person before saving this earning.");
+      return;
+    }
+    if (isApartmentOrg && !String(form.residentName || "").trim()) {
+      setFormError("Select the flat record from Settings before saving this maintenance collection.");
+      return;
+    }
 
     const payload = {
       label: form.label.trim(),
       amount: Number(form.amount),
       date: form.date,
-      month: form.date.slice(0, 7),
+      month: isApartmentOrg ? (form.collectionMonth || form.date.slice(0, 7)) : form.date.slice(0, 7),
       note: form.note.trim()
     };
 
     (config.incomeFields || []).forEach(field => {
       payload[field.key] = String(form[field.key] || "").trim();
     });
+
+    const hasFutureMonth = (config.incomeFields || []).some(field => field.type === "month" && isFutureMonthValue(payload[field.key]));
+    if (hasFutureMonth) {
+      setFormError("Future months are not allowed for records.");
+      return;
+    }
 
     if (editId) d.updateIncome({ ...payload, id: editId });
     else d.addIncome(payload);
@@ -150,7 +210,7 @@ export default function IncomeSection({ year, month, orgType }) {
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
-        {!config.hideInvoices && (
+        {!config.hideInvoices && !isApartmentOrg && (
           <>
             <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
               <span>From {config.invoicesLabel}</span>
@@ -184,14 +244,14 @@ export default function IncomeSection({ year, month, orgType }) {
         )}
 
         <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Manual {config.incomeLabel}</span>
+          <span>{isApartmentOrg ? config.incomeLabel : `Manual ${config.incomeLabel}`}</span>
           <span style={{ color: "var(--accent)" }}>{fmtMoney(totalManual, sym)}</span>
         </div>
         <div className="card">
           {manualIncome.length === 0 ? (
             <EmptyState
               title={`No ${config.incomeLabel.toLowerCase()} yet`}
-              message={`Track cash, transfers, or direct ${config.incomeEntryLabel.toLowerCase()} entries here.`}
+              message={isApartmentOrg ? "Use Add Collection to enter maintenance amounts already collected before onboarding or received after starting with the app." : `Track cash, transfers, or direct ${config.incomeEntryLabel.toLowerCase()} entries here.`}
               actionLabel={config.incomeActionLabel}
               onAction={openNew}
               accentColor="var(--accent)"
@@ -240,11 +300,41 @@ export default function IncomeSection({ year, month, orgType }) {
             <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
           </Field>
           <Field label="Date Received" required>
-            <Input type="date" value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} />
+            <Input type="date" max={TODAY} value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} />
           </Field>
           {(config.incomeFields || []).map(field => (
             <Field key={field.key} label={field.label}>
-              {renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
+              {isPersonalOrg && field.key === "personName" ? (
+                <Select value={form.personName || ""} onChange={event => setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` }))}>
+                  <option value="">{peopleOptions.length ? "Select person" : "Add people in Settings first"}</option>
+                  {peopleOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              ) : isApartmentOrg && field.key === "flatNumber" ? (
+                <Select
+                  value={form.flatNumber || ""}
+                  onChange={event => {
+                    const nextFlatNumber = event.target.value;
+                    const matchedFlat = flatOptions.find(option => option.value === nextFlatNumber);
+                    setForm(current => ({
+                      ...current,
+                      flatNumber: nextFlatNumber,
+                      residentName: matchedFlat?.ownerName || matchedFlat?.tenantName || current.residentName || "",
+                      label: current.label || `Maintenance Collection - ${nextFlatNumber}`
+                    }));
+                  }}
+                >
+                  <option value="">{flatOptions.length ? "Select flat" : "Add flats in Settings first"}</option>
+                  {flatOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              ) : isApartmentOrg && field.key === "residentName" ? (
+                <Input value={form.residentName || ""} placeholder="Owner / tenant auto-fills from flat" readOnly />
+              ) : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
             </Field>
           ))}
           <Field label="Note">

@@ -49,13 +49,14 @@ export function AuthProvider({ children }) {
   const registrationInProgressRef = useRef(false);
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
+    const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
     const userRef = doc(db, "users", firebaseUser.uid);
     const snap = await getDoc(userRef);
     const existing = snap.exists() ? snap.data() : {};
-    const baseName = profileOverrides.name || existing?.name || firebaseUser.displayName || "";
-    const baseEmail = profileOverrides.email || existing?.email || firebaseUser.email || "";
-    const basePhone = profileOverrides.phone || existing?.phone || "";
-    const baseOrganizationType = getOrgType(profileOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
+    const baseName = normalizedOverrides.name || existing?.name || firebaseUser.displayName || "";
+    const baseEmail = normalizedOverrides.email || existing?.email || firebaseUser.email || "";
+    const basePhone = normalizedOverrides.phone || existing?.phone || "";
+    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
 
     if (!snap.exists()) {
       await setDoc(userRef, {
@@ -227,7 +228,7 @@ export function AuthProvider({ children }) {
 
       return {
         success: true,
-        message: "Your account is ready. Please verify your email before signing in. Your free Pro trial will begin after your first verified login."
+        message: "Your account is ready. Please verify your email before signing in. Your 30-day free Pro trial will begin after your first verified login."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {

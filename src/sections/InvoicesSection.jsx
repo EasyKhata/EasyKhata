@@ -27,11 +27,17 @@ import {
   getNextInvoiceNumber,
   invoiceGrandTotal
 } from "../utils/analytics";
-import { hasMinLength, isPositiveAmount, isValidDateValue, isValidGstin } from "../utils/validator";
+import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue, isValidGstin } from "../utils/validator";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
-import { getOrgConfig } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+
+const APARTMENT_INVOICE_TYPE_LABELS = {
+  collections: "Maintenance Collection",
+  expenses: "Society Expense"
+};
+const TODAY = new Date().toISOString().slice(0, 10);
 
 function emptyItem() {
   return { id: uid(), desc: "", subDesc: "", hsn: "", qty: 1, rate: "", taxRate: 18 };
@@ -88,6 +94,8 @@ export default function InvoicesSection({ year, month }) {
   const d = useData();
   const { user } = useAuth();
   const config = getOrgConfig(user?.organizationType);
+  const isApartmentOrg = getOrgType(user?.organizationType) === ORG_TYPES.APARTMENT;
+  const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const [showForm, setShowForm] = useState(false);
@@ -97,6 +105,17 @@ export default function InvoicesSection({ year, month }) {
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const isAdmin = user?.role === "admin";
   const [users, setUsers] = useState([]);
+  const apartmentFlatOptions = [
+    ...(societyName ? [{ id: "__building__", flatNumber: societyName, ownerName: "Common Building", tenantName: "", phone: "", isBuilding: true }] : []),
+    ...(d.customers || []).map(flat => ({
+      id: flat.id,
+      flatNumber: flat.name || "",
+      ownerName: flat.ownerName || "",
+      tenantName: flat.tenantName || "",
+      phone: flat.phone || "",
+      isBuilding: false
+    })).filter(item => item.flatNumber)
+  ];
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -118,6 +137,7 @@ export default function InvoicesSection({ year, month }) {
 
   const blankForm = () => ({
     ...((config.invoiceFields || []).reduce((acc, field) => ({ ...acc, [field.key]: field.type === "select" ? field.options?.[0] || "" : "" }), {})),
+    apartmentInvoiceType: isApartmentOrg ? "collections" : "",
     number: getNextInvoiceNumber(d.invoices),
     customerId: "",
     billTo: { name: "", address: "", gstin: "" },
@@ -125,12 +145,12 @@ export default function InvoicesSection({ year, month }) {
     shipSameAsBill: true,
     date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
     dueDate: "",
-    status: "pending",
+    status: isApartmentOrg ? "paid" : "pending",
     paidDate: "",
     taxMode: "split",
     items: [emptyItem()],
-    notes: isAdmin ? "Invoice for subscription payment." : "Thanks for your business.",
-    terms: isAdmin ? "Payment processed via UPI." : "Payment is due within the agreed billing cycle."
+    notes: isAdmin ? "Invoice for subscription payment." : isApartmentOrg ? "Payment record for society accounting." : "Thanks for your business.",
+    terms: isAdmin ? "Payment processed via UPI." : isApartmentOrg ? "This document is generated for society records." : "Payment is due within the agreed billing cycle."
   });
 
   const [form, setForm] = useState(null);
@@ -141,7 +161,8 @@ export default function InvoicesSection({ year, month }) {
       ...invoice,
       computedStatus: getInvoiceStatus(invoice),
       dueMessage: getInvoiceDueMessage(invoice),
-      total: invoiceGrandTotal(invoice)
+      total: invoiceGrandTotal(invoice),
+      apartmentLabel: APARTMENT_INVOICE_TYPE_LABELS[invoice.apartmentInvoiceType] || "Document"
     }));
   const total = monthInv.reduce((sum, invoice) => sum + invoice.total, 0);
   const pendingCount = monthInv.filter(invoice => invoice.computedStatus !== "paid").length;
@@ -226,8 +247,14 @@ export default function InvoicesSection({ year, month }) {
     const entity = isAdmin
       ? users.find(u => u.id === currentForm.customerId)
       : d.customers.find(c => c.id === currentForm.customerId);
-    const resolvedBillTo = currentForm.customerId && entity
-      ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: String(entity.gstin || "").trim().toUpperCase() }
+    const selectedFlat = isApartmentOrg ? apartmentFlatOptions.find(item => item.id === currentForm.customerId) : null;
+    const isApartmentExpense = isApartmentOrg && currentForm.apartmentInvoiceType === "expenses";
+    const resolvedBillTo = currentForm.customerId && (entity || selectedFlat) && !isApartmentExpense
+      ? {
+        name: isApartmentOrg ? selectedFlat?.tenantName || selectedFlat?.ownerName || selectedFlat?.flatNumber || "" : entity.name || entity.email || "",
+        address: isApartmentOrg ? (selectedFlat?.phone ? `Phone: ${selectedFlat.phone}` : "") : entity?.address || "",
+        gstin: isApartmentOrg ? "" : String(entity?.gstin || "").trim().toUpperCase()
+      }
       : { ...currentForm.billTo, gstin: String(currentForm.billTo?.gstin || "").trim().toUpperCase() };
     const resolvedShipTo = currentForm.shipSameAsBill
       ? { name: resolvedBillTo.name, address: resolvedBillTo.address }
@@ -248,10 +275,25 @@ export default function InvoicesSection({ year, month }) {
       paidDate: currentForm.status === "paid" ? currentForm.paidDate || currentForm.date : "",
       shipSameAsBill: Boolean(currentForm.shipSameAsBill)
     };
+    if (isApartmentOrg && currentForm.apartmentInvoiceType === "collections" && !payload.billingPeriod) {
+      payload.billingPeriod = currentForm.date?.slice(0, 7) || "";
+    }
     (config.invoiceFields || []).forEach(field => {
       payload[field.key] = String(currentForm[field.key] || "").trim();
     });
     return payload;
+  }
+
+  function removeApartmentLinkedEntries(invoiceId) {
+    const linkedIncome = (d.income || []).find(item => item.sourceInvoiceId === invoiceId);
+    const linkedExpense = (d.expenses || []).find(item => item.sourceInvoiceId === invoiceId);
+    if (linkedIncome?.id) d.removeIncome(linkedIncome.id);
+    if (linkedExpense?.id) d.removeExpense(linkedExpense.id);
+  }
+
+  function syncApartmentLinkedEntries(invoice) {
+    removeApartmentLinkedEntries(invoice.id);
+    if (!isApartmentOrg) return;
   }
 
   function saveInv() {
@@ -271,8 +313,16 @@ export default function InvoicesSection({ year, month }) {
       setFormError("Choose a valid invoice date.");
       return;
     }
+    if (isFutureDateValue(form.date)) {
+      setFormError("Future dates are not allowed for records.");
+      return;
+    }
     if (form.dueDate && !isValidDateValue(form.dueDate)) {
       setFormError("Choose a valid due date or leave it empty.");
+      return;
+    }
+    if (form.dueDate && isFutureDateValue(form.dueDate)) {
+      setFormError("Future dates are not allowed for records.");
       return;
     }
     if (form.dueDate && form.dueDate < form.date) {
@@ -283,8 +333,20 @@ export default function InvoicesSection({ year, month }) {
       setFormError("Choose a valid paid date.");
       return;
     }
+    if (form.status === "paid" && form.paidDate && isFutureDateValue(form.paidDate)) {
+      setFormError("Future dates are not allowed for records.");
+      return;
+    }
     if (form.status === "paid" && form.paidDate && form.paidDate < form.date) {
       setFormError("Paid date must be on or after the invoice date.");
+      return;
+    }
+    if (isApartmentOrg && form.apartmentInvoiceType === "collections" && !form.customerId) {
+      setFormError("Select a flat record from Settings so collection details can auto-populate.");
+      return;
+    }
+    if (isApartmentOrg && form.apartmentInvoiceType === "expenses" && !hasMinLength(form.billTo?.name, 2)) {
+      setFormError("Enter who received this payment, such as a staff member or repair vendor.");
       return;
     }
     if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
@@ -317,8 +379,14 @@ export default function InvoicesSection({ year, month }) {
     }
 
     const invoice = buildInvoicePayload(form);
-    if (editInv) d.updateInvoice(invoice);
-    else d.addInvoice(invoice);
+    if (editInv) {
+      d.updateInvoice(invoice);
+      syncApartmentLinkedEntries(invoice);
+    } else {
+      const createdInvoice = { ...invoice, id: uid() };
+      d.addInvoice(createdInvoice);
+      syncApartmentLinkedEntries(createdInvoice);
+    }
 
     closeForm();
   }
@@ -342,13 +410,29 @@ export default function InvoicesSection({ year, month }) {
     const entity = isAdmin
       ? users.find(u => u.id === id)
       : d.customers.find(c => c.id === id);
+    const flatRecord = apartmentFlatOptions.find(item => item.id === id);
     setForm(current => ({
       ...current,
       customerId: id,
-      billTo: entity
-        ? { name: entity.name || entity.email || "", address: entity.address || "", gstin: entity.gstin || "" }
-        : current.billTo,
-      shipTo: entity ? { name: entity.name || entity.email || "", address: entity.address || "" } : current.shipTo
+      residentName: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || current.residentName || "" : current.residentName,
+      flatNumber: isApartmentOrg ? flatRecord?.flatNumber || current.flatNumber || "" : current.flatNumber,
+      billTo: isApartmentOrg && current.apartmentInvoiceType === "expenses"
+        ? current.billTo
+        : (entity || flatRecord)
+          ? {
+            name: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || flatRecord?.flatNumber || "" : entity.name || entity.email || "",
+            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : entity?.address || "",
+            gstin: isApartmentOrg ? "" : entity?.gstin || ""
+          }
+          : current.billTo,
+      shipTo: isApartmentOrg && current.apartmentInvoiceType === "expenses"
+        ? current.shipTo
+        : (entity || flatRecord)
+          ? {
+            name: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || flatRecord?.flatNumber || "" : entity.name || entity.email || "",
+            address: isApartmentOrg ? (flatRecord?.phone ? `Phone: ${flatRecord.phone}` : "") : entity?.address || ""
+          }
+          : current.shipTo
     }));
   }
 
@@ -359,6 +443,7 @@ export default function InvoicesSection({ year, month }) {
       paidDate: status === "paid" ? invoice.paidDate || new Date().toISOString().slice(0, 10) : ""
     };
     d.updateInvoice(nextInvoice);
+    syncApartmentLinkedEntries(nextInvoice);
     setDetail({ ...nextInvoice, computedStatus: getInvoiceStatus(nextInvoice), total: invoiceGrandTotal(nextInvoice) });
   }
 
@@ -386,6 +471,7 @@ export default function InvoicesSection({ year, month }) {
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name || "--"}</div>
                     <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {fmtDate(invoice.date)}</div>
+                    {isApartmentOrg && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{invoice.apartmentInvoiceType === "collections" ? "Collection" : invoice.apartmentInvoiceType === "expenses" ? "Expense" : invoice.apartmentLabel}</div>}
                     {invoice.dueMessage && (
                       <div style={{ fontSize: 11, color: getInvoiceStatusColor(invoice.computedStatus), marginTop: 3 }}>
                         {invoice.dueMessage}
@@ -535,7 +621,7 @@ export default function InvoicesSection({ year, month }) {
               </button>
             </div>
 
-            <button onClick={() => { if (window.confirm("Delete this invoice?")) { d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
+            <button onClick={() => { if (window.confirm("Delete this invoice?")) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
               Delete Invoice
             </button>
           </Modal>
@@ -558,18 +644,34 @@ export default function InvoicesSection({ year, month }) {
               <Input value={form.number} onChange={event => setForm(current => ({ ...current, number: event.target.value }))} />
             </Field>
 
-            <Field label={isAdmin ? "User" : config.customerEntryLabel} hint={isAdmin ? "Select a user who made the payment." : `Select an existing ${config.customerEntryLabel.toLowerCase()} or fill in bill-to details below.`}>
+            {isApartmentOrg && (
+              <Field label="Document Type">
+                <Select value={form.apartmentInvoiceType || "collections"} onChange={event => setForm(current => ({
+                  ...current,
+                  apartmentInvoiceType: event.target.value,
+                  customerId: event.target.value === "expenses" ? "" : current.customerId,
+                  dueDate: event.target.value === "collections" ? "" : current.dueDate,
+                  status: event.target.value === "collections" ? "paid" : current.status,
+                  paidDate: event.target.value === "collections" ? (current.paidDate || current.date) : current.paidDate
+                }))}>
+                  <option value="collections">Collections</option>
+                  <option value="expenses">Expenses</option>
+                </Select>
+              </Field>
+            )}
+
+            <Field label={isAdmin ? "User" : isApartmentOrg && form.apartmentInvoiceType === "expenses" ? "Flat Record (optional)" : config.customerEntryLabel} hint={isAdmin ? "Select a user who made the payment." : isApartmentOrg && form.apartmentInvoiceType === "expenses" ? "Leave this empty for salaries, repairs, and vendor payments, or select a flat or the building for common expenses." : `Select an existing ${config.customerEntryLabel.toLowerCase()} to auto-fill flat details.`}>
               <Select value={form.customerId} onChange={event => selectCustomer(event.target.value)}>
                 <option value="">{isAdmin ? "-- Select user --" : `-- Select ${config.customerEntryLabel.toLowerCase()} --`}</option>
-                {(isAdmin ? users : d.customers).map(entity => (
-                  <option key={entity.id} value={entity.id}>{entity.name || entity.email}</option>
+                {(isAdmin ? users : (isApartmentOrg ? apartmentFlatOptions : d.customers)).map(entity => (
+                  <option key={entity.id} value={entity.id}>{isApartmentOrg ? [entity.flatNumber, entity.ownerName || entity.tenantName || "", !entity.isBuilding ? societyName : ""].filter(Boolean).join(" - ") : entity.name || entity.email}</option>
                 ))}
               </Select>
             </Field>
 
-            {!form.customerId && (
+            {(!form.customerId || (isApartmentOrg && form.apartmentInvoiceType === "expenses")) && (
               <>
-                <Field label="Bill To Name" required>
+                <Field label={isApartmentOrg && form.apartmentInvoiceType === "expenses" ? "Paid To" : "Bill To Name"} required>
                   <Input placeholder={config.customerNamePlaceholder} value={form.billTo?.name || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } }))} />
                 </Field>
                 <Field label="Bill To Address">
@@ -600,12 +702,23 @@ export default function InvoicesSection({ year, month }) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Invoice Date" required>
-                <Input type="date" value={form.date} onChange={event => setForm(current => ({ ...current, date: event.target.value }))} />
+                <Input type="date" max={TODAY} value={form.date} onChange={event => setForm(current => ({ ...current, date: event.target.value }))} />
               </Field>
               <Field label="Due Date">
-                <Input type="date" value={form.dueDate || ""} min={form.date} onChange={event => setForm(current => ({ ...current, dueDate: event.target.value }))} />
+                <Input type="date" value={form.dueDate || ""} min={form.date} max={TODAY} onChange={event => setForm(current => ({ ...current, dueDate: event.target.value }))} />
               </Field>
             </div>
+
+            {isApartmentOrg && form.apartmentInvoiceType === "expenses" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Field label="Resident Name">
+                  <Input value={form.residentName || ""} placeholder="Auto-filled from flat record" readOnly />
+                </Field>
+                <Field label="Flat Number">
+                  <Input value={form.flatNumber || ""} placeholder="A-101" readOnly />
+                </Field>
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Payment Status">
@@ -624,7 +737,7 @@ export default function InvoicesSection({ year, month }) {
 
             {form.status === "paid" && (
               <Field label="Paid Date">
-                <Input type="date" value={form.paidDate || ""} min={form.date} onChange={event => setForm(current => ({ ...current, paidDate: event.target.value }))} />
+                <Input type="date" value={form.paidDate || ""} min={form.date} max={TODAY} onChange={event => setForm(current => ({ ...current, paidDate: event.target.value }))} />
               </Field>
             )}
 
@@ -701,7 +814,7 @@ export default function InvoicesSection({ year, month }) {
               </div>
             </div>
 
-            {(config.invoiceFields || []).map(field => (
+            {(isApartmentOrg && form.apartmentInvoiceType === "collections" ? [] : (config.invoiceFields || [])).map(field => (
               <Field key={field.key} label={field.label}>
                 {renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
               </Field>

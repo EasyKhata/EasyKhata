@@ -10,7 +10,7 @@ export const SUBSCRIPTION_STATUS = {
   TRIAL: "trial"
 };
 
-export const DEFAULT_TRIAL_DAYS = 7;
+export const DEFAULT_TRIAL_DAYS = 30;
 export const DEFAULT_MONTHLY_DAYS = 30;
 export const DEFAULT_YEARLY_DAYS = 365;
 
@@ -28,8 +28,8 @@ export const PAYMENT_REQUEST_STATUS = {
 export const UPI_CONFIG = {
   payeeName: "EasyKhata",
   upiId: "yourupi@bank",
-  monthlyAmount: 99,
-  yearlyAmount: 999
+  monthlyAmount: 49,
+  yearlyAmount: 499
 };
 
 export const PLAN_LABELS = {

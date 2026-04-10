@@ -12,6 +12,7 @@ import {
   isOptionalEmail,
   isOptionalPhone,
   isStrongPassword,
+  isValidDateValue,
   isValidEmail,
   isValidGstin,
   isValidName,
@@ -38,7 +39,7 @@ import { ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 export default function SettingsSection() {
   const { user, logout, updateProfile, changePassword } = useAuth();
-  const { account, currency, setCurrency, saveAccount, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, orgRecords, addOrgRecord, updateOrgRecord, removeOrgRecord, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
+  const { account, currency, setCurrency, saveAccount, resetForOrgTypeChange, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, orgRecords, addOrgRecord, updateOrgRecord, removeOrgRecord, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
   const { theme, toggle } = useTheme();
 
   const [screen, setScreen] = useState("main");
@@ -46,7 +47,12 @@ export default function SettingsSection() {
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true, organizationType: getOrgType(user?.organizationType || account?.organizationType) });
-  const [goalForm, setGoalForm] = useState({ monthlySavings: goals?.monthlySavings || "" });
+  const [goalForm, setGoalForm] = useState({
+    targetAmount: goals?.targetAmount ?? goals?.monthlySavings ?? "",
+    targetDate: goals?.targetDate || "",
+    savedAmount: goals?.savedAmount ?? "",
+    note: goals?.note || ""
+  });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
   const [planRequestForm, setPlanRequestForm] = useState({
@@ -74,10 +80,29 @@ export default function SettingsSection() {
     () => calculateCustomerInsights({ customers, invoices }),
     [customers, invoices]
   );
+  const customerDirectory = useMemo(
+    () => (orgConfig.showCustomerFinancials === false ? customers : customerInsights),
+    [customers, customerInsights, orgConfig.showCustomerFinancials]
+  );
   const activeOrgSection = useMemo(
     () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
     [orgConfig, orgSectionKey]
   );
+
+  function hasExistingOrgTypeData() {
+    return Boolean(
+      customers.length ||
+      income.length ||
+      expenses.length ||
+      invoices.length ||
+      Object.keys(orgRecords || {}).length ||
+      Object.keys(budgets || {}).length ||
+      Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0 ||
+      Number(goals?.savedAmount || 0) > 0 ||
+      String(goals?.targetDate || "").trim() ||
+      String(goals?.note || "").trim()
+    );
+  }
 
   function renderDynamicField(field, value, onChange) {
     const commonProps = {
@@ -132,8 +157,13 @@ export default function SettingsSection() {
   }, [user?.id]);
 
   useEffect(() => {
-    setGoalForm({ monthlySavings: goals?.monthlySavings || "" });
-  }, [goals?.monthlySavings]);
+    setGoalForm({
+      targetAmount: goals?.targetAmount ?? goals?.monthlySavings ?? "",
+      targetDate: goals?.targetDate || "",
+      savedAmount: goals?.savedAmount ?? "",
+      note: goals?.note || ""
+    });
+  }, [goals?.targetAmount, goals?.monthlySavings, goals?.targetDate, goals?.savedAmount, goals?.note]);
 
   useEffect(() => {
     setNotificationForm(notificationPrefs);
@@ -145,6 +175,8 @@ export default function SettingsSection() {
     const cleanName = String(accForm.name || "").trim();
     const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
     const cleanOrganizationType = getOrgType(accForm.organizationType);
+    const previousOrganizationType = getOrgType(user?.organizationType || account?.organizationType);
+    const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
 
     if (!isValidName(cleanName)) {
       alert("Please enter your full name.");
@@ -163,31 +195,15 @@ export default function SettingsSection() {
       return;
     }
 
-    const res = await updateProfile({
-      name: cleanName,
-      email: cleanEmail,
-      phone: cleanPhone,
-      address: String(accForm.address || "").trim(),
-      gstin: cleanGstin,
-      showHSN: Boolean(accForm.showHSN),
-      organizationType: cleanOrganizationType,
-      account: {
-        name: cleanName,
-        email: cleanEmail,
-        phone: cleanPhone,
-        address: String(accForm.address || "").trim(),
-        gstin: cleanGstin,
-        showHSN: Boolean(accForm.showHSN),
-        organizationType: cleanOrganizationType
+    if (isOrgTypeChanging && hasExistingOrgTypeData()) {
+      alert("Changing the usage type will permanently delete the records from your current setup. Download your Monthly Report and Export Backup before you continue.");
+      const confirmed = window.confirm("Proceed with changing the usage type? This will clear customers, income, expenses, invoices, budgets, goals, and org-specific records from the current type.");
+      if (!confirmed) {
+        return;
       }
-    });
-
-    if (res?.error) {
-      alert(res.error);
-      return;
     }
 
-    saveAccount({
+    const nextAccount = {
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
@@ -195,7 +211,24 @@ export default function SettingsSection() {
       gstin: cleanGstin,
       showHSN: Boolean(accForm.showHSN),
       organizationType: cleanOrganizationType
+    };
+
+    const res = await updateProfile({
+      ...nextAccount,
+      organizationType: cleanOrganizationType,
+      account: nextAccount
     });
+
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+
+    if (isOrgTypeChanging) {
+      resetForOrgTypeChange(nextAccount);
+    } else {
+      saveAccount(nextAccount);
+    }
     alert("Your profile has been updated.");
     setScreen("main");
   };
@@ -217,7 +250,9 @@ export default function SettingsSection() {
   }
 
   function openCustomerDetail(customer) {
-    const detail = customerInsights.find(item => item.id === customer.id) || customer;
+    const detail = orgConfig.showCustomerFinancials === false
+      ? customer
+      : customerInsights.find(item => item.id === customer.id) || customer;
     setSelectedCustomer(detail);
     setScreen("customer-detail");
   }
@@ -229,11 +264,16 @@ export default function SettingsSection() {
     const cleanAddress = String(custForm?.address || "").trim();
     const cleanGstin = String(custForm?.gstin || "").trim().toUpperCase();
 
-    if (!isValidName(cleanName)) {
+    if (orgType === "apartment") {
+      if (!cleanName) {
+        alert("Please enter the flat number.");
+        return;
+      }
+    } else if (!isValidName(cleanName)) {
       alert("Please enter the customer name.");
       return;
     }
-    if (!isOptionalEmail(cleanEmail)) {
+    if (orgType !== "apartment" && !isOptionalEmail(cleanEmail)) {
       alert("Please enter a valid customer email or leave it empty.");
       return;
     }
@@ -241,7 +281,7 @@ export default function SettingsSection() {
       alert("Please enter a valid customer phone number or leave it empty.");
       return;
     }
-    if (!isValidGstin(cleanGstin)) {
+    if (orgType !== "apartment" && !isValidGstin(cleanGstin)) {
       alert("Please enter a valid GSTIN or leave it empty.");
       return;
     }
@@ -252,10 +292,10 @@ export default function SettingsSection() {
 
     const payload = {
       name: cleanName,
-      email: cleanEmail,
+      email: orgType === "apartment" ? "" : cleanEmail,
       phone: cleanPhone,
-      address: cleanAddress,
-      gstin: cleanGstin
+      address: orgType === "apartment" ? "" : cleanAddress,
+      gstin: orgType === "apartment" ? "" : cleanGstin
     };
     (orgConfig.customerFields || []).forEach(field => {
       payload[field.key] = String(custForm?.[field.key] || "").trim();
@@ -340,13 +380,35 @@ export default function SettingsSection() {
   }
 
   function saveGoalSettings() {
-    const amount = Number(goalForm.monthlySavings);
-    if (!Number.isFinite(amount) || amount < 0) {
-      alert("Please enter a valid savings goal amount.");
+    const targetAmount = Number(goalForm.targetAmount || 0);
+    const savedAmount = Number(goalForm.savedAmount || 0);
+    const targetDate = String(goalForm.targetDate || "").trim();
+    const note = String(goalForm.note || "").trim();
+
+    if (!Number.isFinite(targetAmount) || targetAmount < 0) {
+      alert("Please enter a valid target amount.");
       return;
     }
-    saveGoals({ monthlySavings: amount });
-    alert(amount > 0 ? "Monthly savings goal updated." : "Monthly savings goal cleared.");
+    if (!Number.isFinite(savedAmount) || savedAmount < 0) {
+      alert("Please enter a valid saved amount.");
+      return;
+    }
+    if (targetDate && !isValidDateValue(targetDate)) {
+      alert("Please enter a valid target date.");
+      return;
+    }
+    if ((savedAmount > 0 || targetDate || note) && targetAmount <= 0) {
+      alert("Set a target amount before adding other goal details.");
+      return;
+    }
+    saveGoals({
+      monthlySavings: targetAmount,
+      targetAmount,
+      targetDate,
+      savedAmount,
+      note
+    });
+    alert(targetAmount > 0 ? "Savings goal updated." : "Savings goal cleared.");
     setScreen("main");
   }
 
@@ -389,7 +451,7 @@ export default function SettingsSection() {
       return;
     }
 
-    downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets }, year, month, currency?.symbol || "Rs");
+    downloadMonthlyReport({ account, currency, customers, income, expenses, invoices, goals, budgets, orgRecords }, year, month, currency?.symbol || "Rs");
   }
 
   async function handleCreateSharedLedger() {
@@ -591,8 +653,8 @@ export default function SettingsSection() {
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
               {currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                ? "You are currently exploring Pro on trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
-                : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, reminders, and secure backup tools."}
+                ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
+                : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, reminders, and secure backup tools for Rs 49 per month or Rs 499 per year."}
             </div>
             <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -602,7 +664,7 @@ export default function SettingsSection() {
                 </div>
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>Pro</div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>PDF exports, reports, smart alerts, advanced dashboard, backups, and priority business tools.</div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>PDF exports, reports, smart alerts, advanced dashboard, backups, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year.</div>
                 </div>
               </div>
             </div>
@@ -618,9 +680,9 @@ export default function SettingsSection() {
             <MenuRow icon="B" label="Account Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
             {user?.role !== "admin" && <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
-            <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Download admin activity, user, and subscription report" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
+            <MenuRow icon="R" label="Monthly Report" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Download admin activity, user, and subscription report" : orgType === "apartment" ? "Download maintenance collection and society expense summary PDF" : "Download profit, tax, and GST summary PDF"} onClick={handleReportDownload} />
             {user?.role !== "admin" && <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />}
-            {user?.role !== "admin" && (orgConfig.extraSections || []).map(section => (
+            {user?.role !== "admin" && (orgConfig.extraSections || []).filter(section => !(orgType === "personal" && section.key === "loans")).map(section => (
               <MenuRow
                 key={section.key}
                 icon="•"
@@ -651,7 +713,7 @@ export default function SettingsSection() {
                 setScreen("passcode");
               }}
             />
-            {user?.role !== "admin" && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={goals?.monthlySavings ? `Target ${currency?.symbol}${Number(goals.monthlySavings).toLocaleString("en-IN")}` : "Track monthly savings progress"} onClick={() => setScreen("goals")} />}
+            {user?.role !== "admin" && orgConfig.showSavingsGoal !== false && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={(Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0) ? `Target ${currency?.symbol}${Number((goals?.targetAmount ?? goals?.monthlySavings) || 0).toLocaleString("en-IN")} · Saved ${currency?.symbol}${Number(goals?.savedAmount || 0).toLocaleString("en-IN")}` : "Track your target, date, saved amount, and notes"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
           </div>
         </div>
@@ -724,19 +786,27 @@ export default function SettingsSection() {
     if (user?.role === "admin") return null;
     return (
       <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`+ Add ${orgConfig.customerEntryLabel}`}>
-        {customerInsights.length === 0 ? (
+        {customerDirectory.length === 0 ? (
           <EmptyState title={`No ${orgConfig.customerLabel.toLowerCase()} yet`} message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`} accentColor="var(--blue)" />
         ) : (
           <div className="card">
-            {customerInsights.map(customer => (
+            {customerDirectory.map(customer => (
               <div key={customer.id} className="card-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openCustomerDetail(customer)}>
                   <Avatar name={customer.name} size={38} fontSize={13} />
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                      Balance {fmtMoney(customer.outstanding, currency?.symbol || "Rs")} · Revenue {fmtMoney(customer.totalRevenue, currency?.symbol || "Rs")}
-                    </div>
+                    {orgConfig.showCustomerFinancials === false ? (
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        {[customer.ownerName || "No owner", customer.tenantName || "No tenant", customer.phone || "No phone"]
+                          .filter(Boolean)
+                          .join(" · ") || "Flat details"}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        Balance {fmtMoney(customer.outstanding, currency?.symbol || "Rs")} · Revenue {fmtMoney(customer.totalRevenue, currency?.symbol || "Rs")}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -753,6 +823,38 @@ export default function SettingsSection() {
 
   if (screen === "customer-detail" && selectedCustomer) {
     if (user?.role === "admin") return null;
+    if (orgConfig.showCustomerFinancials === false) {
+      return (
+        <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
+          <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Flat</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.name || "--"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Owner</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.ownerName || "--"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Tenant</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.tenantName || "--"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Phone</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.phone || "--"}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: "18px" }}>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
+              <div>This flat record is used to auto-fill apartment collections and apartment invoices.</div>
+            </div>
+          </div>
+        </Modal>
+      );
+    }
     return (
       <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
         <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
@@ -809,10 +911,10 @@ export default function SettingsSection() {
     return (
       <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
         <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>
         <Field label="Phone"><Input type="tel" placeholder="+1 555 000 0000" value={custForm?.phone || ""} onChange={e => setCustForm(f => ({ ...f, phone: e.target.value }))} /></Field>
-        <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address || ""} onChange={e => setCustForm(f => ({ ...f, address: e.target.value }))} /></Field>
-        <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
+        {orgType !== "apartment" && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
+        {orgType !== "apartment" && <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address || ""} onChange={e => setCustForm(f => ({ ...f, address: e.target.value }))} /></Field>}
+        {orgType !== "apartment" && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
         {(orgConfig.customerFields || []).map(field => (
           <Field key={field.key} label={field.label}>
             {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
@@ -823,11 +925,21 @@ export default function SettingsSection() {
   }
 
   if (screen === "goals") {
+    if (orgConfig.showSavingsGoal === false) return null;
     if (user?.role === "admin") return null;
     return (
       <Modal title="Savings Goal" onClose={() => setScreen("main")} onSave={saveGoalSettings} canSave={true}>
-        <Field label="Monthly Savings Goal" hint="Set the profit target you want to hit each month.">
-          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.monthlySavings} onChange={e => setGoalForm({ monthlySavings: e.target.value })} />
+        <Field label="Target Amount" hint="Set the full amount you want to reach for this goal.">
+          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.targetAmount} onChange={e => setGoalForm(current => ({ ...current, targetAmount: e.target.value }))} />
+        </Field>
+        <Field label="Target Date" hint="Choose the date by which you want to complete this goal.">
+          <Input type="date" value={goalForm.targetDate} onChange={e => setGoalForm(current => ({ ...current, targetDate: e.target.value }))} />
+        </Field>
+        <Field label="Saved Till Date" hint="Enter how much you have already moved into this goal.">
+          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.savedAmount} onChange={e => setGoalForm(current => ({ ...current, savedAmount: e.target.value }))} />
+        </Field>
+        <Field label="Note" hint="Add any context such as emergency fund, vacation, school fees, or how you plan to save for it.">
+          <Textarea placeholder="Additional info about this goal" value={goalForm.note} onChange={e => setGoalForm(current => ({ ...current, note: e.target.value }))} />
         </Field>
       </Modal>
     );
@@ -914,24 +1026,30 @@ export default function SettingsSection() {
             checked={Boolean(notificationForm?.browserEnabled)}
             onChange={() => setNotificationForm(current => ({ ...current, browserEnabled: !current.browserEnabled }))}
           />
-          <ToggleRow
-            label="Due Soon Invoices"
-            sub="Warn when invoices are due within the next 3 days."
-            checked={Boolean(notificationForm?.invoiceDue)}
-            onChange={() => setNotificationForm(current => ({ ...current, invoiceDue: !current.invoiceDue }))}
-          />
-          <ToggleRow
-            label="Overdue Invoices"
-            sub="Highlight invoices that have passed their due date."
-            checked={Boolean(notificationForm?.overdueInvoices)}
-            onChange={() => setNotificationForm(current => ({ ...current, overdueInvoices: !current.overdueInvoices }))}
-          />
-          <ToggleRow
-            label="Budget Alerts"
-            sub="Alert when category budgets are fully used."
-            checked={Boolean(notificationForm?.budgetAlerts)}
-            onChange={() => setNotificationForm(current => ({ ...current, budgetAlerts: !current.budgetAlerts }))}
-          />
+          {orgConfig.hideInvoices !== true && (
+            <>
+              <ToggleRow
+                label="Due Soon Invoices"
+                sub="Warn when invoices are due within the next 3 days."
+                checked={Boolean(notificationForm?.invoiceDue)}
+                onChange={() => setNotificationForm(current => ({ ...current, invoiceDue: !current.invoiceDue }))}
+              />
+              <ToggleRow
+                label="Overdue Invoices"
+                sub="Highlight invoices that have passed their due date."
+                checked={Boolean(notificationForm?.overdueInvoices)}
+                onChange={() => setNotificationForm(current => ({ ...current, overdueInvoices: !current.overdueInvoices }))}
+              />
+            </>
+          )}
+          {orgConfig.enableBudgets !== false && (
+            <ToggleRow
+              label="Budget Alerts"
+              sub="Alert when category budgets are fully used."
+              checked={Boolean(notificationForm?.budgetAlerts)}
+              onChange={() => setNotificationForm(current => ({ ...current, budgetAlerts: !current.budgetAlerts }))}
+            />
+          )}
           <ToggleRow
             label="Low Balance"
             sub="Warn when the current month is running at a loss."

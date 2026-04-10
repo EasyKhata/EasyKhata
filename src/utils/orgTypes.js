@@ -29,6 +29,10 @@ const BASE_CONFIG = {
   expenseFields: [],
   invoiceFields: [],
   customerFields: [],
+  expenseCategories: ["Operations", "Tools", "Marketing", "Payroll", "Utilities", "Travel", "Other"],
+  enableBudgets: true,
+  showSavingsGoal: true,
+  showCustomerFinancials: true,
   extraSections: []
 };
 
@@ -36,7 +40,7 @@ export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
   { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage client work, payments received, and projects." },
   { value: ORG_TYPES.SMALL_BUSINESS, label: "Small Business", description: "Run invoicing, expenses, vendors, staff, and stock." },
-  { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance bills, flats, residents, and complaints." },
+  { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." },
   { value: ORG_TYPES.RETAIL, label: "Kirana Shop / Retail", description: "Track sales, purchases, inventory, and supplier balances." }
 ];
 
@@ -61,22 +65,29 @@ export const ORG_TYPE_CONFIGS = {
     accountIntro: "Use this profile for your household or personal finance records.",
     hideInvoices: true,
     incomeFields: [
-      { key: "incomeType", label: "Earning Type", type: "select", options: ["Salary", "Bonus", "Rental", "Other"] }
+      { key: "personName", label: "Person", type: "text", placeholder: "Select household member" },
+      { key: "incomeType", label: "Earning Type", type: "select", options: ["Salary", "Bonus", "Rental", "Interest", "Gift", "Other"] }
     ],
     expenseFields: [
+      { key: "personName", label: "Person", type: "text", placeholder: "Select household member" },
       { key: "necessityType", label: "Need Type", type: "select", options: ["Essential", "Non-Essential"] }
     ],
+    expenseCategories: ["Groceries", "Rent", "Utilities", "Education", "Healthcare", "Transport", "Shopping", "Entertainment", "Insurance", "EMI", "Other"],
     extraSections: [
       {
         key: "loans",
         label: "Loans / EMIs",
-        entryLabel: "Loan",
-        empty: () => ({ lender: "", emiAmount: "", interestRate: "", dueDate: "" }),
+        entryLabel: "EMI",
+        empty: () => ({ loanName: "", lender: "", monthlyEmi: "", dueDate: "", endDate: "", interestRate: "", outstandingBalance: "", status: "Active" }),
         fields: [
+          { key: "loanName", label: "Loan / EMI Name", type: "text", required: true, placeholder: "Home loan" },
           { key: "lender", label: "Lender", type: "text", required: true, placeholder: "Bank or person name" },
-          { key: "emiAmount", label: "EMI Amount", type: "number", required: true, placeholder: "0.00" },
+          { key: "monthlyEmi", label: "Monthly EMI", type: "number", required: true, placeholder: "0.00" },
+          { key: "dueDate", label: "Due Date", type: "date", required: true },
+          { key: "endDate", label: "End Date", type: "date" },
           { key: "interestRate", label: "Interest Rate (%)", type: "number", placeholder: "0" },
-          { key: "dueDate", label: "Due Date", type: "date" }
+          { key: "outstandingBalance", label: "Outstanding Balance", type: "number", placeholder: "0.00" },
+          { key: "status", label: "Status", type: "select", options: ["Active", "Closed"] }
         ]
       }
     ]
@@ -182,57 +193,46 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.APARTMENT]: {
     ...BASE_CONFIG,
-    incomeLabel: "Maintenance Collection",
-    incomeEntryLabel: "Collection",
+    hideInvoices: false,
+    enableBudgets: false,
+    showSavingsGoal: false,
+    showCustomerFinancials: false,
+    incomeLabel: "Maintenance Collections",
+    incomeEntryLabel: "Maintenance Collection",
     incomeActionLabel: "Add Collection",
     expensesLabel: "Society Expenses",
     expensesEntryLabel: "Society Expense",
     expensesActionLabel: "Add Expense",
-    invoicesLabel: "Maintenance Bills",
-    customerLabel: "Members",
-    customerEntryLabel: "Member",
-    customerNameLabel: "Resident Name",
-    customerNamePlaceholder: "Resident or owner name",
-    profileNameLabel: "Society Name",
+    invoicesLabel: "Receipts & Bills",
+    invoiceEntryLabel: "Document",
+    invoiceActionLabel: "Create Document",
+    customerLabel: "Residents / Flats",
+    customerEntryLabel: "Flat Record",
+    customerNameLabel: "Flat Number",
+    customerNamePlaceholder: "A-101",
+    profileNameLabel: "Apartment / Society Name",
     profileNamePlaceholder: "E.g. Lake View Residency",
-    accountIntro: "Use this profile for maintenance collection, flats, and society records.",
+    accountIntro: "Use this profile for maintenance collections, society expenses, flats, and resident records.",
     incomeFields: [
       { key: "flatNumber", label: "Flat Number", type: "text", placeholder: "A-101" },
+      { key: "collectionType", label: "Collection Type", type: "select", options: ["Monthly Maintenance", "Corpus Fund", "Parking", "Amenities", "Penalty", "Opening Balance", "Other"] },
       { key: "residentName", label: "Resident Name", type: "text", placeholder: "Resident name" },
-      { key: "collectionMonth", label: "Month", type: "month" }
+      { key: "collectionMonth", label: "Collection Month", type: "month" }
     ],
     expenseFields: [
-      { key: "expenseType", label: "Expense Type", type: "select", options: ["Cleaning", "Security", "Repairs", "Other"] }
+      { key: "expenseType", label: "Expense Type", type: "select", options: ["Cleaning", "Security", "Repairs", "Water", "Electricity", "Lift", "Housekeeping", "Admin", "Legal", "Other"] },
+      { key: "serviceProvider", label: "Service Provider", type: "text", placeholder: "Vendor or contractor name" },
+      { key: "billReference", label: "Bill Reference", type: "text", placeholder: "Invoice or receipt number" }
     ],
     invoiceFields: [
-      { key: "flatNumber", label: "Flat Number", type: "text", placeholder: "A-101" },
-      { key: "maintenanceMonth", label: "Maintenance Month", type: "month" },
-      { key: "lateFee", label: "Late Fee", type: "number", placeholder: "0.00" }
+      { key: "expenseCategory", label: "Expense Category", type: "select", options: ["Repairs", "Cleaning", "Security", "Water", "Electricity", "Housekeeping", "Lift", "Amenities", "Admin", "Legal", "Other"] }
     ],
-    extraSections: [
-      {
-        key: "flats",
-        label: "Flats / Units",
-        entryLabel: "Flat",
-        empty: () => ({ flatNumber: "", ownerName: "", tenantName: "" }),
-        fields: [
-          { key: "flatNumber", label: "Flat Number", type: "text", required: true, placeholder: "A-101" },
-          { key: "ownerName", label: "Owner Name", type: "text", placeholder: "Owner name" },
-          { key: "tenantName", label: "Tenant Name", type: "text", placeholder: "Tenant name" }
-        ]
-      },
-      {
-        key: "complaints",
-        label: "Complaints",
-        entryLabel: "Complaint",
-        empty: () => ({ complaintTitle: "", flatNumber: "", status: "Open" }),
-        fields: [
-          { key: "complaintTitle", label: "Complaint Title", type: "text", required: true, placeholder: "Water leakage" },
-          { key: "flatNumber", label: "Flat Number", type: "text", placeholder: "A-101" },
-          { key: "status", label: "Status", type: "select", options: ["Open", "In Progress", "Resolved"] }
-        ]
-      }
-    ]
+    customerFields: [
+      { key: "ownerName", label: "Owner Name", type: "text", placeholder: "Owner name" },
+      { key: "tenantName", label: "Tenant Name", type: "text", placeholder: "Tenant name" }
+    ],
+    expenseCategories: ["Repairs", "Cleaning", "Security", "Water", "Electricity", "Housekeeping", "Lift", "Amenities", "Admin", "Legal", "Other"],
+    extraSections: []
   },
   [ORG_TYPES.RETAIL]: {
     ...BASE_CONFIG,
