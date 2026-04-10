@@ -1,19 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
-import { Modal, MONTHS } from "../components/UI";
+import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import BrandLogo, { BrandMark } from "../components/BrandLogo";
 import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
-import Dashboard from "../sections/Dashboard";
-import IncomeSection from "../sections/IncomeSection";
-import ExpensesSection from "../sections/ExpensesSection";
-import EmiSection from "../sections/EmiSection";
-import InvoicesSection from "../sections/InvoicesSection";
-import QuotesSection from "../sections/QuotesSection";
-import SettingsSection from "../sections/SettingsSection";
-import AdminPanel from "../sections/AdminPanel";
-import AdminUsersSection from "../sections/AdminUsersSection";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -23,6 +14,16 @@ import {
   saveSentBrowserReminderIds
 } from "../utils/reminders";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
+
+const Dashboard = lazy(() => import("../sections/Dashboard"));
+const IncomeSection = lazy(() => import("../sections/IncomeSection"));
+const ExpensesSection = lazy(() => import("../sections/ExpensesSection"));
+const EmiSection = lazy(() => import("../sections/EmiSection"));
+const InvoicesSection = lazy(() => import("../sections/InvoicesSection"));
+const QuotesSection = lazy(() => import("../sections/QuotesSection"));
+const SettingsSection = lazy(() => import("../sections/SettingsSection"));
+const AdminPanel = lazy(() => import("../sections/AdminPanel"));
+const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
 
 const now = new Date();
 
@@ -405,6 +406,25 @@ export default function MainApp() {
     setShowOrgSwitcher(false);
   }
 
+  function renderTabContent() {
+    const fallback = tab === "settings" || (isAdmin && tab === "users")
+      ? <SectionSkeleton rows={5} showHero={false} />
+      : <SectionSkeleton rows={4} />;
+
+    return (
+      <Suspense fallback={fallback}>
+        {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
+        {tab === "users" && isAdmin && <AdminUsersSection />}
+        {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "quotes" && !isAdmin && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
+      </Suspense>
+    );
+  }
+
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px 0", fontSize: 13, fontWeight: 700 }}>
@@ -484,14 +504,7 @@ export default function MainApp() {
       </div>
 
       <div className="content-scroll">
-        {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
-        {tab === "users" && isAdmin && <AdminUsersSection />}
-        {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "quotes" && !isAdmin && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
+        {renderTabContent()}
       </div>
 
       <div className="tab-bar">

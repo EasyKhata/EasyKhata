@@ -1,6 +1,4 @@
-import React from "react";
-import AuthScreen from "./screens/AuthScreen";
-import MainApp from "./screens/MainApp";
+import React, { Suspense, lazy } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
@@ -8,6 +6,9 @@ import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
 import { APP_SUPPORT_LABEL } from "./utils/brand";
 import "./index.css";
+
+const AuthScreen = lazy(() => import("./screens/AuthScreen"));
+const MainApp = lazy(() => import("./screens/MainApp"));
 
 function AppRouter() {
   const { user, loading, logout } = useAuth();
@@ -21,7 +22,11 @@ function AppRouter() {
   }
 
   if (!user) {
-    return <AuthScreen />;
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <AuthScreen />
+      </Suspense>
+    );
   }
 
   if (user.blocked) {
@@ -48,7 +53,9 @@ function AppRouter() {
 
   return (
     <DataProvider>
-      <MainApp />
+      <Suspense fallback={<DashboardSkeleton />}>
+        <MainApp />
+      </Suspense>
     </DataProvider>
   );
 }

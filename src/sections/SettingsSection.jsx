@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -70,6 +70,11 @@ const SUPPORT_TOPIC_OPTIONS = [
   ["data", "Data or reports"],
   ["other", "Other"]
 ];
+const SUPPORT_STATUS_LABELS = {
+  open: "Open",
+  in_progress: "In Progress",
+  resolved: "Resolved"
+};
 
 function buildAccountFormState(account, user) {
   const parsedLocation = parseLocationFields(account?.location || account?.address || "");
@@ -208,6 +213,9 @@ export default function SettingsSection({ navigationTarget }) {
     subject: "",
     message: ""
   });
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [submittingSupport, setSubmittingSupport] = useState(false);
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -1050,6 +1058,78 @@ export default function SettingsSection({ navigationTarget }) {
     }
   }
 
+  async function loadSupportTickets() {
+    if (!user?.id || user?.role === "admin") return;
+    setSupportLoading(true);
+    try {
+      const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", user.id));
+      const ticketsSnapshot = await getDocs(ticketsQuery);
+      setSupportTickets(
+        ticketsSnapshot.docs
+          .map(item => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      );
+    } catch (err) {
+      console.error("Support ticket load error:", err);
+      showNotice("We couldn't load your support tickets right now.");
+      setSupportTickets([]);
+    } finally {
+      setSupportLoading(false);
+    }
+  }
+
+  async function submitSupportTicket() {
+    const topic = String(supportForm.topic || "other").trim();
+    const subject = String(supportForm.subject || "").trim() || `${SUPPORT_TOPIC_OPTIONS.find(([value]) => value === topic)?.[1] || "Customer support"} - ${user?.name || "Customer"}`;
+    const message = String(supportForm.message || "").trim();
+
+    if (!message) {
+      showNotice("Please describe the issue before submitting a support ticket.");
+      return;
+    }
+
+    setSubmittingSupport(true);
+    try {
+      const ticketRef = doc(collection(db, "support_tickets"));
+      const nowIso = new Date().toISOString();
+      const payload = {
+        userId: user.id,
+        userName: user?.name || "",
+        userEmail: user?.email || "",
+        topic,
+        subject,
+        message,
+        status: "open",
+        activeOrgId: activeOrgId || "",
+        organizationName: account?.name || "",
+        organizationType: account?.organizationType || user?.organizationType || "",
+        supportContext: buildSupportContext(),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        resolvedAt: "",
+        adminNote: ""
+      };
+      await setDoc(ticketRef, payload);
+      showNotice("Support ticket submitted.", "success");
+      setSupportForm({ topic: "account", subject: "", message: "" });
+      await loadSupportTickets();
+    } catch (err) {
+      console.error("Support ticket submit error:", err);
+      if (err?.code === "permission-denied") {
+        showNotice("Support tickets are blocked by Firestore rules right now. Please allow support_tickets first.");
+      } else {
+        showNotice(err?.message || "We couldn't submit your support ticket right now.");
+      }
+    } finally {
+      setSubmittingSupport(false);
+    }
+  }
+
+  useEffect(() => {
+    if (screen !== "support") return;
+    loadSupportTickets();
+  }, [screen, user?.id]);
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1638,11 +1718,11 @@ export default function SettingsSection({ navigationTarget }) {
 
   if (screen === "support") {
     return withNotice(
-      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={openSupportComposer} saveLabel="Email Support" canSave={true} accentColor="var(--blue)">
+      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={submitSupportTicket} saveLabel={submittingSupport ? "Submitting..." : "Submit Ticket"} canSave={!submittingSupport && !!supportForm.message.trim()} accentColor="var(--blue)">
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Use this space to contact support for account issues, billing questions, bugs, or feature requests. We prefill your account context so support can respond faster.
+            Use this space to submit support tickets for account issues, billing questions, bugs, or feature requests. Your account context is attached automatically so support can respond faster.
           </div>
         </div>
 
@@ -1679,6 +1759,9 @@ export default function SettingsSection({ navigationTarget }) {
               <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
                 Copy Email
               </button>
+              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={openSupportComposer}>
+                Email Instead
+              </button>
               <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportContext}>
                 Copy Support Context
               </button>
@@ -1695,6 +1778,32 @@ export default function SettingsSection({ navigationTarget }) {
             <div>• Any invoice, customer, or report details that help reproduce it</div>
           </div>
         </div>
+
+        {user?.role !== "admin" && (
+          <div className="card" style={{ padding: 16, marginTop: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Your Recent Tickets</div>
+            {supportLoading ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
+            ) : supportTickets.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Submit one above and it will appear here.</div>
+            ) : (
+              <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+                {supportTickets.slice(0, 5).map((ticket, index) => (
+                  <div key={ticket.id} style={{ padding: index === supportTickets.slice(0, 5).length - 1 ? "0" : "0 0 12px", marginBottom: index === supportTickets.slice(0, 5).length - 1 ? 0 : 12, borderBottom: index === supportTickets.slice(0, 5).length - 1 ? "none" : "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 6 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
+                      <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
+                        {SUPPORT_STATUS_LABELS[ticket.status] || "Open"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>{ticket.message}</div>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     );
   }
