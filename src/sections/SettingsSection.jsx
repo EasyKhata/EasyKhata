@@ -4,7 +4,8 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, MONTHS, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
+import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, StructuredLocationFields, UpgradeModal, EmptyState, ToastNotice, PhoneNumberInput } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import {
@@ -21,6 +22,25 @@ import {
   sanitizePhone
 } from "../utils/validator";
 import {
+  buildDateOfBirthFromParts,
+  buildLocationLabel,
+  buildPhoneNumber,
+  COUNTRY_OPTIONS,
+  DEFAULT_PHONE_COUNTRY_CODE,
+  getBirthDayOptions,
+  getBirthYearOptions,
+  getStateProvinceOptions,
+  getAgeGroupFromDateOfBirth,
+  isValidDateOfBirth,
+  isValidUserPhoneNumber,
+  MONTH_OPTIONS,
+  parseLocationFields,
+  PHONE_COUNTRY_OPTIONS,
+  parseDateOfBirthParts,
+  sanitizePhoneDigits,
+  splitPhoneNumber
+} from "../utils/profile";
+import {
   BILLING_CYCLES,
   PAYMENT_REQUEST_STATUS,
   UPI_CONFIG,
@@ -30,6 +50,7 @@ import {
   getUserPlan,
   getPlanSummary,
   getUpgradeCopy,
+  isReviewAccessEnabled,
   PLAN_LABELS,
   PLANS
 } from "../utils/subscription";
@@ -40,16 +61,125 @@ function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
 }
 
-export default function SettingsSection() {
+const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
+
+function buildAccountFormState(account, user) {
+  const parsedLocation = parseLocationFields(account?.location || account?.address || "");
+  const phoneParts = splitPhoneNumber(account?.phone || user?.phone || "", account?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+  const addressLine = account?.addressLine || parsedLocation.addressLine || "";
+  const city = account?.city || parsedLocation.city || "";
+  const state = account?.state || parsedLocation.state || "";
+  const country = account?.country || parsedLocation.country || "India";
+  const location = account?.location || buildLocationLabel({ city, state, country });
+  return {
+    name: account?.name || "",
+    email: account?.email || user?.email || "",
+    phone: account?.phone || user?.phone || "",
+    phoneCountryCode: account?.phoneCountryCode || phoneParts.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    phoneNumber: phoneParts.phoneNumber,
+    addressLine,
+    city,
+    state,
+    country,
+    location,
+    address: account?.address || buildLocationLabel({ addressLine, city, state, country }),
+    gstin: account?.gstin || "",
+    showHSN: account?.showHSN ?? true,
+    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+  };
+}
+
+function buildCustomerFormState(customer = {}, orgType = "") {
+  const parsedLocation = parseLocationFields(customer?.location || customer?.address || "");
+  const country = customer?.country || parsedLocation.country || "India";
+  const phoneParts = splitPhoneNumber(customer?.phone || "", customer?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+  const addressLine = customer?.addressLine || parsedLocation.addressLine || "";
+  return {
+    ...customer,
+    name: customer?.name || "",
+    email: customer?.email || "",
+    phone: customer?.phone || "",
+    phoneCountryCode: customer?.phoneCountryCode || phoneParts.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    phoneNumber: phoneParts.phoneNumber,
+    addressLine,
+    city: customer?.city || parsedLocation.city || "",
+    state: customer?.state || parsedLocation.state || "",
+    country,
+    location: customer?.location || buildLocationLabel({
+      city: customer?.city || parsedLocation.city || "",
+      state: customer?.state || parsedLocation.state || "",
+      country
+    }),
+    address: orgType === "apartment" ? "" : customer?.address || buildLocationLabel({
+      addressLine,
+      city: customer?.city || parsedLocation.city || "",
+      state: customer?.state || parsedLocation.state || "",
+      country
+    }),
+    gstin: customer?.gstin || ""
+  };
+}
+
+export default function SettingsSection({ navigationTarget }) {
   const { user, logout, updateProfile, changePassword } = useAuth();
-  const { account, currency, setCurrency, saveAccount, resetForOrgTypeChange, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, orgRecords, addOrgRecord, updateOrgRecord, removeOrgRecord, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
+  const {
+    account,
+    currency,
+    setCurrency,
+    saveAccount,
+    customers,
+    addCustomer,
+    updateCustomer,
+    removeCustomer,
+    goals,
+    saveGoals,
+    budgets,
+    income,
+    expenses,
+    invoices,
+    notificationPrefs,
+    saveNotificationPrefs,
+    orgRecords,
+    addOrgRecord,
+    updateOrgRecord,
+    removeOrgRecord,
+    sharedLedger,
+    createSharedLedger,
+    joinSharedLedger,
+    leaveSharedLedger,
+    regenerateLedgerInvite,
+    organizations,
+    activeOrgId,
+    createOrganization,
+    switchOrganization,
+    deleteOrganization,
+    maxOrganizations,
+    canCreateOrganization
+  } = useData();
   const { theme, toggle } = useTheme();
 
   const [screen, setScreen] = useState("main");
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true, organizationType: getOrgType(user?.organizationType || account?.organizationType) });
+  const initialPhoneParts = splitPhoneNumber(user?.phone || "", user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+  const initialLocationParts = parseLocationFields(user?.location || "");
+  const initialDobParts = parseDateOfBirthParts(user?.dateOfBirth || "");
+  const [userForm, setUserForm] = useState({
+    name: user?.name || "",
+    email: user?.email || "",
+    phoneCountryCode: user?.phoneCountryCode || initialPhoneParts.phoneCountryCode,
+    phoneNumber: initialPhoneParts.phoneNumber,
+    gender: user?.gender || "",
+    birthDay: initialDobParts.birthDay,
+    birthMonth: initialDobParts.birthMonth,
+    birthYear: initialDobParts.birthYear,
+    addressLine: user?.addressLine || initialLocationParts.addressLine || "",
+    city: user?.city || initialLocationParts.city || "",
+    state: user?.state || initialLocationParts.state || "",
+    country: user?.country || initialLocationParts.country || "India"
+  });
+  const [accForm, setAccForm] = useState(buildAccountFormState(account, user));
   const [goalForm, setGoalForm] = useState({
     targetAmount: goals?.targetAmount ?? goals?.monthlySavings ?? "",
     targetDate: goals?.targetDate || "",
@@ -67,6 +197,11 @@ export default function SettingsSection() {
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
+  const [createOrgForm, setCreateOrgForm] = useState({
+    name: "",
+    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+  });
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -75,7 +210,6 @@ export default function SettingsSection() {
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
     return {
@@ -87,8 +221,8 @@ export default function SettingsSection() {
   });
   const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
-  const isFreePlanUser = currentPlan === PLANS.FREE;
-  const orgType = getOrgType(accForm.organizationType || user?.organizationType || account?.organizationType);
+  const reviewAccessEnabled = isReviewAccessEnabled();
+  const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const orgConfig = getOrgConfig(orgType);
 
   const customerInsights = useMemo(
@@ -103,6 +237,11 @@ export default function SettingsSection() {
     () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
     [orgConfig, orgSectionKey]
   );
+  const stateProvinceOptions = useMemo(() => getStateProvinceOptions(userForm.country), [userForm.country]);
+  const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions(accForm.country), [accForm.country]);
+  const customerStateProvinceOptions = useMemo(() => getStateProvinceOptions(custForm?.country || "India"), [custForm?.country]);
+  const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
+  const birthDayOptions = useMemo(() => getBirthDayOptions(userForm.birthMonth, userForm.birthYear), [userForm.birthMonth, userForm.birthYear]);
   const reportYearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear();
     return Array.from({ length: 8 }, (_, index) => currentYear - index);
@@ -114,6 +253,55 @@ export default function SettingsSection() {
 
   function showNotice(message, tone = "danger", title = "") {
     setNotice({ id: Date.now(), message, tone, title });
+  }
+
+  async function handleSwitchOrganization(orgId) {
+    const res = await switchOrganization(orgId);
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+    setShowOrgSwitcher(false);
+    setScreen("main");
+    showNotice("Organization switched.", "success");
+  }
+
+  async function handleDeleteOrganization(orgId) {
+    const res = await deleteOrganization(orgId);
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+    setShowOrgSwitcher(false);
+    setScreen("main");
+    showNotice("Organization deleted.", "success");
+  }
+
+  async function handleCreateOrganizationWorkspace() {
+    const cleanName = String(createOrgForm.name || "").trim();
+    if (!cleanName) {
+      showNotice("Please enter an organization name.");
+      return;
+    }
+
+    const res = await createOrganization({
+      name: cleanName,
+      organizationType: getOrgType(createOrgForm.organizationType),
+      email: user?.email || "",
+      phone: user?.phone || ""
+    });
+
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+
+    setCreateOrgForm({
+      name: "",
+      organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    });
+    setScreen("main");
+    showNotice("New organization workspace created.", "success");
   }
 
   const noticeNode = <ToastNotice notice={notice} onClose={() => setNotice(null)} />;
@@ -157,34 +345,73 @@ export default function SettingsSection() {
       return <Textarea {...commonProps} />;
     }
 
+    if (field.type === "date") {
+      return <DateSelectInput value={value || ""} onChange={onChange} />;
+    }
+
+    if (field.type === "month") {
+      return <MonthSelectInput value={value || ""} onChange={onChange} />;
+    }
+
     return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
   }
 
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!user?.id) return;
+    const nextPhoneParts = splitPhoneNumber(user?.phone || "", user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+    const nextLocationParts = parseLocationFields(user?.location || "");
+    const nextDobParts = parseDateOfBirthParts(user?.dateOfBirth || "");
+    setUserForm({
+      name: user?.name || "",
+      email: user?.email || "",
+      phoneCountryCode: user?.phoneCountryCode || nextPhoneParts.phoneCountryCode,
+      phoneNumber: nextPhoneParts.phoneNumber,
+      gender: user?.gender || "",
+      birthDay: nextDobParts.birthDay,
+      birthMonth: nextDobParts.birthMonth,
+      birthYear: nextDobParts.birthYear,
+      addressLine: user?.addressLine || nextLocationParts.addressLine || "",
+      city: user?.city || nextLocationParts.city || "",
+      state: user?.state || nextLocationParts.state || "",
+      country: user?.country || nextLocationParts.country || "India"
+    });
+  }, [user?.addressLine, user?.city, user?.country, user?.dateOfBirth, user?.email, user?.gender, user?.location, user?.name, user?.phone, user?.phoneCountryCode, user?.state]);
 
-      try {
-        const snap = await getDoc(doc(db, "users", user.id));
-        if (snap.exists()) {
-          const data = snap.data();
-          setAccForm({
-            name: data.name || "",
-            email: data.email || "",
-            phone: data.phone || "",
-            address: data.address || "",
-            gstin: data.gstin || "",
-            showHSN: Boolean(data.showHSN),
-            organizationType: getOrgType(data.organizationType || data.account?.organizationType || user?.organizationType)
-          });
-        }
-      } catch (err) {
-        console.error("LOAD PROFILE ERROR:", err);
-      }
-    };
+  useEffect(() => {
+    if (userForm.state && !stateProvinceOptions.includes(userForm.state)) {
+      setUserForm(current => ({ ...current, state: "" }));
+    }
+  }, [stateProvinceOptions, userForm.state]);
 
-    loadProfile();
-  }, [user?.id]);
+  useEffect(() => {
+    if (accForm.state && !orgStateProvinceOptions.includes(accForm.state)) {
+      setAccForm(current => ({ ...current, state: "" }));
+    }
+  }, [accForm.state, orgStateProvinceOptions]);
+
+  useEffect(() => {
+    if (!custForm) return;
+    if (custForm.state && !customerStateProvinceOptions.includes(custForm.state)) {
+      setCustForm(current => ({ ...current, state: "" }));
+      return;
+    }
+  }, [custForm, customerStateProvinceOptions]);
+
+  useEffect(() => {
+    if (userForm.birthDay && !birthDayOptions.includes(userForm.birthDay)) {
+      setUserForm(current => ({ ...current, birthDay: "" }));
+    }
+  }, [birthDayOptions, userForm.birthDay]);
+
+  useEffect(() => {
+    setAccForm(buildAccountFormState(account, user));
+  }, [account, user?.email, user?.organizationType, user?.phone]);
+
+  useEffect(() => {
+    setCreateOrgForm(current => ({
+      ...current,
+      organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    }));
+  }, [account?.organizationType, user?.organizationType]);
 
   useEffect(() => {
     setGoalForm({
@@ -199,37 +426,113 @@ export default function SettingsSection() {
     setNotificationForm(notificationPrefs);
   }, [notificationPrefs]);
 
-  async function persistAccount(nextAccount, isOrgTypeChanging) {
-    const cleanOrganizationType = getOrgType(nextAccount.organizationType);
-    const res = await updateProfile({
-      ...nextAccount,
-      organizationType: cleanOrganizationType,
-      account: nextAccount
-    });
+  useEffect(() => {
+    if (!navigationTarget?.token) return;
 
+    if (navigationTarget.screen === "customers") {
+      setScreen("customers");
+      return;
+    }
+
+    if (navigationTarget.screen === "account") {
+      if (user?.role === "admin") {
+        setScreen("main");
+        return;
+      }
+      setScreen("account");
+      return;
+    }
+
+    if (navigationTarget.screen === "org-records" && navigationTarget.orgSectionKey) {
+      setOrgSectionKey(navigationTarget.orgSectionKey);
+      setOrgRecordForm(null);
+      setEditOrgRecord(null);
+      setScreen("org-records");
+      return;
+    }
+
+    setScreen("main");
+  }, [navigationTarget, user?.role]);
+
+  async function saveUserProfile() {
+    const cleanName = String(userForm.name || "").trim();
+    const cleanEmail = normalizeEmail(userForm.email);
+    const cleanPhoneNumber = sanitizePhoneDigits(userForm.phoneNumber);
+    const cleanPhoneCountryCode = userForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
+    const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
+    const cleanGender = String(userForm.gender || "").trim();
+    const cleanDateOfBirth = buildDateOfBirthFromParts({
+      birthDay: userForm.birthDay,
+      birthMonth: userForm.birthMonth,
+      birthYear: userForm.birthYear
+    });
+    const cleanAddressLine = String(userForm.addressLine || "").trim();
+    const cleanCity = String(userForm.city || "").trim();
+    const cleanState = String(userForm.state || "").trim();
+    const cleanCountry = String(userForm.country || "").trim();
+    const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
+
+    if (!isValidName(cleanName)) {
+      showNotice("Please enter your full name.");
+      return;
+    }
+    if (!isValidEmail(cleanEmail)) {
+      showNotice("Please enter a valid email address.");
+      return;
+    }
+    if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
+      showNotice("Please enter a valid phone number.");
+      return;
+    }
+    if (cleanDateOfBirth && !isValidDateOfBirth(cleanDateOfBirth)) {
+      showNotice("Please enter a valid date of birth.");
+      return;
+    }
+    if (!cleanCity || !cleanState || !cleanCountry) {
+      showNotice("Please enter your city, state, and country.");
+      return;
+    }
+
+    const res = await updateProfile({
+      name: cleanName,
+      email: cleanEmail,
+      phone: cleanPhone,
+      phoneCountryCode: cleanPhoneCountryCode,
+      gender: cleanGender,
+      dateOfBirth: cleanDateOfBirth,
+      ageGroup: getAgeGroupFromDateOfBirth(cleanDateOfBirth),
+      addressLine: cleanAddressLine,
+      city: cleanCity,
+      state: cleanState,
+      country: cleanCountry,
+      location: cleanLocation,
+      address: cleanAddress
+    });
     if (res?.error) {
       showNotice(res.error);
-      return false;
+      return;
     }
 
-    if (isOrgTypeChanging) {
-      resetForOrgTypeChange(nextAccount);
-    } else {
-      saveAccount(nextAccount);
-    }
-    showNotice("Your profile has been updated.", "success");
-    setPendingOrgTypeChange(null);
+    showNotice("Your personal profile has been updated.", "success");
     setScreen("main");
-    return true;
   }
 
   const saveAcc = async () => {
     const cleanEmail = normalizeEmail(accForm.email);
-    const cleanPhone = sanitizePhone(accForm.phone);
+    const cleanPhoneNumber = sanitizePhoneDigits(accForm.phoneNumber);
+    const cleanPhoneCountryCode = accForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
+    const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
     const cleanName = String(accForm.name || "").trim();
     const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
+    const cleanAddressLine = String(accForm.addressLine || "").trim();
+    const cleanCity = String(accForm.city || "").trim();
+    const cleanState = String(accForm.state || "").trim();
+    const cleanCountry = String(accForm.country || "").trim();
+    const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
     const cleanOrganizationType = getOrgType(accForm.organizationType);
-    const previousOrganizationType = getOrgType(user?.organizationType || account?.organizationType);
+    const previousOrganizationType = getOrgType(account?.organizationType || user?.organizationType);
     const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
 
     if (!isValidName(cleanName)) {
@@ -240,12 +543,16 @@ export default function SettingsSection() {
       showNotice("Please enter a valid email address.");
       return;
     }
-    if (!isValidPhone(cleanPhone)) {
-      showNotice("Please enter a valid phone number with at least 10 digits.");
+    if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
+      showNotice("Please enter a valid phone number.");
       return;
     }
     if (!isValidGstin(cleanGstin)) {
       showNotice("Please enter a valid GSTIN or leave it empty.");
+      return;
+    }
+    if (!cleanCity || !cleanState || !cleanCountry) {
+      showNotice("Please enter your organization city, state, and country.");
       return;
     }
 
@@ -253,27 +560,48 @@ export default function SettingsSection() {
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
-      address: String(accForm.address || "").trim(),
+      phoneCountryCode: cleanPhoneCountryCode,
+      addressLine: cleanAddressLine,
+      city: cleanCity,
+      state: cleanState,
+      country: cleanCountry,
+      location: cleanLocation,
+      address: cleanAddress,
       gstin: cleanGstin,
       showHSN: Boolean(accForm.showHSN),
       organizationType: cleanOrganizationType
     };
 
     if (isOrgTypeChanging && hasExistingOrgTypeData()) {
-      setPendingOrgTypeChange({ nextAccount, isOrgTypeChanging: true });
+      const existingOrg = (organizations || []).find(org => org.id !== activeOrgId && org.organizationType === cleanOrganizationType);
+      if (existingOrg) {
+        const res = await switchOrganization(existingOrg.id);
+        if (res?.error) {
+          showNotice(res.error);
+          return;
+        }
+        showNotice("Switched to your existing organization workspace for that usage type.", "success");
+        setScreen("main");
+        return;
+      }
+
+      const res = await createOrganization(nextAccount);
+      if (res?.error) {
+        showNotice(res.error);
+        return;
+      }
+      showNotice("Created a new organization workspace and switched to it.", "success");
+      setScreen("main");
       return;
     }
 
-    await persistAccount(nextAccount, isOrgTypeChanging);
+    saveAccount(nextAccount);
+    showNotice("Your organization profile has been updated.", "success");
+    setScreen("main");
   };
 
-  async function confirmOrgTypeChange() {
-    if (!pendingOrgTypeChange?.nextAccount) return;
-    await persistAccount(pendingOrgTypeChange.nextAccount, true);
-  }
-
   function openNewCust() {
-    const next = { name: "", email: "", phone: "", address: "", gstin: "" };
+    const next = buildCustomerFormState({}, orgType);
     (orgConfig.customerFields || []).forEach(field => {
       next[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
     });
@@ -283,7 +611,7 @@ export default function SettingsSection() {
   }
 
   function openEditCust(customer) {
-    setCustForm({ ...customer });
+    setCustForm(buildCustomerFormState(customer, orgType));
     setEditCust(customer);
     setScreen("customer-form");
   }
@@ -299,8 +627,15 @@ export default function SettingsSection() {
   function saveCust() {
     const cleanName = String(custForm?.name || "").trim();
     const cleanEmail = normalizeEmail(custForm?.email);
-    const cleanPhone = sanitizePhone(custForm?.phone);
-    const cleanAddress = String(custForm?.address || "").trim();
+    const cleanPhoneNumber = sanitizePhoneDigits(custForm?.phoneNumber);
+    const cleanPhoneCountryCode = custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
+    const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
+    const cleanAddressLine = String(custForm?.addressLine || "").trim();
+    const cleanCity = String(custForm?.city || "").trim();
+    const cleanState = String(custForm?.state || "").trim();
+    const cleanCountry = String(custForm?.country || "").trim();
+    const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
     const cleanGstin = String(custForm?.gstin || "").trim().toUpperCase();
 
     if (orgType === "apartment") {
@@ -316,12 +651,16 @@ export default function SettingsSection() {
       showNotice("Please enter a valid customer email or leave it empty.");
       return;
     }
-    if (!isOptionalPhone(cleanPhone)) {
+    if (cleanPhone && !isValidUserPhoneNumber(cleanPhoneNumber)) {
       showNotice("Please enter a valid customer phone number or leave it empty.");
       return;
     }
     if (orgType !== "apartment" && !isValidGstin(cleanGstin)) {
       showNotice("Please enter a valid GSTIN or leave it empty.");
+      return;
+    }
+    if (orgType !== "apartment" && (!cleanCity || !cleanState || !cleanCountry)) {
+      showNotice("Please enter customer city, state, and country.");
       return;
     }
     if (!editCust && !canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
@@ -333,6 +672,13 @@ export default function SettingsSection() {
       name: cleanName,
       email: orgType === "apartment" ? "" : cleanEmail,
       phone: cleanPhone,
+      phoneCountryCode: orgType === "apartment" ? "" : cleanPhoneCountryCode,
+      phoneNumber: orgType === "apartment" ? "" : cleanPhoneNumber,
+      addressLine: orgType === "apartment" ? "" : cleanAddressLine,
+      city: orgType === "apartment" ? "" : cleanCity,
+      state: orgType === "apartment" ? "" : cleanState,
+      country: orgType === "apartment" ? "" : cleanCountry,
+      location: orgType === "apartment" ? "" : cleanLocation,
       address: orgType === "apartment" ? "" : cleanAddress,
       gstin: orgType === "apartment" ? "" : cleanGstin
     };
@@ -685,9 +1031,11 @@ export default function SettingsSection() {
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{user?.phone}</div>
+            {user?.location && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{user.location}</div>}
+            {user?.dateOfBirth && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>DOB: {user.dateOfBirth}</div>}
             <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.title}</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.message}</div>
-            {user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
+            {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
           </div>
@@ -697,7 +1045,7 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20, borderLeft: "4px solid var(--gold)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Admin Dashboard</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area still contains your account profile, currency controls, and notifications.
+              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area contains your personal profile, reporting tools, currency controls, and notifications.
             </div>
           </div>
         )}
@@ -706,32 +1054,50 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
-              {currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
-                : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders for Rs 49 per month or Rs 499 per year."}
+              {reviewAccessEnabled
+                ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
+                : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
+                  ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends. Subscription assignment is still handled manually by admin during testing."
+                  : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders. Subscription assignment is currently handled manually by admin during testing."}
             </div>
             <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>Free</div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>Basic bookkeeping, limited invoices/customers, and no reports.</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                    {reviewAccessEnabled ? "Review Access" : "Free"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                    {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Basic bookkeeping, limited invoices/customers, and no reports."}
+                  </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>Pro</div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year.</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>
+                    {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year."}
+                  </div>
                 </div>
               </div>
             </div>
-            <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
-              {isFreePlanUser ? "Upgrade to Pro" : "Manage Subscription"}
+            <button
+              className="btn-secondary"
+              style={{ width: "100%", opacity: 0.55, cursor: "not-allowed" }}
+              onClick={() => {}}
+              disabled
+            >
+              Manage Subscription Disabled During Testing
             </button>
           </div>
         )}
 
         <div style={{ marginBottom: 10 }}>
-          <div className="section-label">Workspace</div>
+          <div className="section-label">{user?.role === "admin" ? "Admin Account" : "Workspace"}</div>
           <div className="card">
-            <MenuRow icon="B" label="Account Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+            <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
+            {user?.role !== "admin" && <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />}
+            {user?.role !== "admin" && <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />}
+            {user?.role !== "admin" && <MenuRow icon="+" label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />}
             {user?.role !== "admin" && <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             <MenuRow icon="R" label="Reports" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF" : "Choose a month/year report or a full financial year PDF"} onClick={openReportPicker} />
@@ -746,6 +1112,16 @@ export default function SettingsSection() {
               />
             ))}
           </div>
+          {user?.role !== "admin" && (
+            <OrganizationSwitcherModal
+              open={showOrgSwitcher}
+              onClose={() => setShowOrgSwitcher(false)}
+              organizations={organizations}
+              activeOrgId={activeOrgId}
+              onSwitch={handleSwitchOrganization}
+              onDelete={handleDeleteOrganization}
+            />
+          )}
         </div>
 
         <div style={{ marginBottom: 10, marginTop: 20 }}>
@@ -839,9 +1215,12 @@ export default function SettingsSection() {
   }
 
   if (screen === "account") {
+    if (user?.role === "admin") {
+      return null;
+    }
     return withNotice(
       <>
-        <Modal title="Account Profile" onClose={() => { setPendingOrgTypeChange(null); setScreen("main"); }} onSave={saveAcc} canSave={!!accForm.name.trim()}>
+        <Modal title="Organization Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
           <Field label="Usage Type" required>
             <Select value={accForm.organizationType || orgType} onChange={e => setAccForm(f => ({ ...f, organizationType: e.target.value }))}>
               {ORG_TYPE_OPTIONS.map(option => (
@@ -852,9 +1231,42 @@ export default function SettingsSection() {
             </Select>
           </Field>
           <Field label={orgConfig.profileNameLabel} required><Input placeholder={orgConfig.profileNamePlaceholder} value={accForm.name || ""} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} /></Field>
-          <Field label="Address"><Textarea placeholder="Full address including state, PIN" value={accForm.address || ""} onChange={e => setAccForm(f => ({ ...f, address: e.target.value }))} /></Field>
+          <Field label="Address Line" hint="House number, street, road, or locality."><Input placeholder="Flat 12, MG Road" value={accForm.addressLine || ""} onChange={e => setAccForm(f => ({ ...f, addressLine: e.target.value }))} autoComplete="address-line1" /></Field>
+          <div className="desktop-grid-2">
+            <Field label="City" required>
+              <Input placeholder="Hyderabad" value={accForm.city || ""} onChange={e => setAccForm(f => ({ ...f, city: e.target.value }))} autoComplete="address-level2" />
+            </Field>
+            <Field label="Country" required>
+              <Select value={accForm.country || "India"} onChange={e => setAccForm(f => ({ ...f, country: e.target.value }))}>
+                {COUNTRY_OPTIONS.map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <Field label="State / Province" required>
+            <Select value={accForm.state || ""} onChange={e => setAccForm(f => ({ ...f, state: e.target.value }))}>
+              <option value="">Select state / province</option>
+              {orgStateProvinceOptions.map(option => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
-          <Field label="Phone"><Input type="tel" placeholder="+91-9391559067" value={accForm.phone || ""} onChange={e => setAccForm(f => ({ ...f, phone: e.target.value }))} /></Field>
+          <Field label="Phone">
+            <PhoneNumberInput
+              countryCode={accForm.phoneCountryCode}
+              phoneNumber={accForm.phoneNumber}
+              onCountryCodeChange={value => setAccForm(f => ({ ...f, phoneCountryCode: value }))}
+              onPhoneNumberChange={value => setAccForm(f => ({ ...f, phoneNumber: value }))}
+              countryOptions={PHONE_COUNTRY_OPTIONS}
+              phonePlaceholder="9876543210"
+            />
+          </Field>
           <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email || ""} onChange={e => setAccForm(f => ({ ...f, email: e.target.value }))} /></Field>
           <Field label="Show HSN/SAC on Invoices">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "var(--surface-high)", borderRadius: 12 }}>
@@ -865,29 +1277,134 @@ export default function SettingsSection() {
             </div>
           </Field>
         </Modal>
-        {pendingOrgTypeChange && (
-          <Modal
-            title="Confirm Usage Type Change"
-            onClose={() => setPendingOrgTypeChange(null)}
-            onSave={confirmOrgTypeChange}
-            saveLabel="Delete Old Data and Continue"
-            accentColor="var(--danger)"
-          >
-            <div className="card" style={{ padding: 16, marginBottom: 14, background: "var(--danger-deep)", border: "1px solid var(--danger)33" }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", marginBottom: 8 }}>This action clears the current type data</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-                Changing the usage type will permanently remove customers, income, expenses, invoices, budgets, goals, and org-specific records from the current setup.
-              </div>
-            </div>
-            <div className="card" style={{ padding: 16 }}>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-                <div>Before continuing, download any reports you may need.</div>
-                <div>Only after you confirm below will the type change and reset happen.</div>
-              </div>
-            </div>
-          </Modal>
-        )}
       </>
+    );
+  }
+
+  if (screen === "create-org") {
+    if (user?.role === "admin") {
+      return null;
+    }
+    return withNotice(
+      <Modal title="Create Organization" onClose={() => setScreen("main")} onSave={handleCreateOrganizationWorkspace} saveLabel="Create" canSave={canCreateOrganization && !!String(createOrgForm.name || "").trim()} accentColor="var(--blue)">
+        <Field label="Organization Name" required>
+          <Input placeholder="Example: Reddy Retail" value={createOrgForm.name} onChange={event => setCreateOrgForm(current => ({ ...current, name: event.target.value }))} />
+        </Field>
+        <Field label="Usage Type" required>
+          <Select value={createOrgForm.organizationType} onChange={event => setCreateOrgForm(current => ({ ...current, organizationType: event.target.value }))}>
+            {ORG_TYPE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            This creates a separate organization workspace with its own customers, invoices, expenses, and reports. Your personal sign-in details stay the same.
+          </div>
+        </div>
+        {!canCreateOrganization && (
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+            This account has reached the current organization workspace limit.
+          </div>
+        )}
+      </Modal>
+    );
+  }
+
+  if (screen === "profile") {
+    return withNotice(
+      <Modal title={user?.role === "admin" ? "Admin Account" : "Personal Profile"} onClose={() => setScreen("main")} onSave={saveUserProfile} canSave={!!userForm.name.trim()}>
+        <Field label="Full Name" required>
+          <Input placeholder="Your name" value={userForm.name} onChange={event => setUserForm(current => ({ ...current, name: event.target.value }))} />
+        </Field>
+        <Field label="Email" required>
+          <Input type="email" placeholder="you@example.com" value={userForm.email} onChange={event => setUserForm(current => ({ ...current, email: event.target.value }))} />
+        </Field>
+        <Field label="Phone" required>
+          <PhoneNumberInput
+            countryCode={userForm.phoneCountryCode}
+            phoneNumber={userForm.phoneNumber}
+            onCountryCodeChange={value => setUserForm(current => ({ ...current, phoneCountryCode: value }))}
+            onPhoneNumberChange={value => setUserForm(current => ({ ...current, phoneNumber: value }))}
+            countryOptions={PHONE_COUNTRY_OPTIONS}
+            phonePlaceholder="9876543210"
+          />
+        </Field>
+        <Field label="Date of Birth" hint="Used to derive age-group insights for admin analytics.">
+          <div className="desktop-grid-3">
+            <Select value={userForm.birthDay} onChange={event => setUserForm(current => ({ ...current, birthDay: event.target.value }))}>
+              <option value="">Day</option>
+              {birthDayOptions.map(option => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+            <Select value={userForm.birthMonth} onChange={event => setUserForm(current => ({ ...current, birthMonth: event.target.value }))}>
+              <option value="">Month</option>
+              {MONTH_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+            <Select value={userForm.birthYear} onChange={event => setUserForm(current => ({ ...current, birthYear: event.target.value }))}>
+              <option value="">Year</option>
+              {birthYearOptions.map(option => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </Field>
+        <Field label="Gender" hint="Optional. Used only for aggregated audience insights.">
+          <Select value={userForm.gender} onChange={event => setUserForm(current => ({ ...current, gender: event.target.value }))}>
+            <option value="">Prefer not to share</option>
+            {GENDER_OPTIONS.filter(option => option).map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Address Line" hint="House number, street, road, or locality.">
+          <Input placeholder="Flat 12, MG Road" value={userForm.addressLine} onChange={event => setUserForm(current => ({ ...current, addressLine: event.target.value }))} autoComplete="address-line1" />
+        </Field>
+        <div className="desktop-grid-2">
+          <Field label="City" required hint="Used for market-level segmentation.">
+            <Input placeholder="Hyderabad" value={userForm.city} onChange={event => setUserForm(current => ({ ...current, city: event.target.value }))} autoComplete="address-level2" />
+          </Field>
+          <Field label="Country" required>
+            <Select value={userForm.country} onChange={event => setUserForm(current => ({ ...current, country: event.target.value }))}>
+              {COUNTRY_OPTIONS.map(option => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <Field label="State / Province" required>
+          <Select value={userForm.state} onChange={event => setUserForm(current => ({ ...current, state: event.target.value }))}>
+            <option value="">Select state / province</option>
+            {stateProvinceOptions.map(option => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            {user?.role === "admin"
+              ? "This information belongs to your sign-in identity and admin account. Structured phone, date of birth, and location improve aggregate admin insights, not person-level tracking."
+              : "This information belongs to your sign-in identity. Organization name, GSTIN, org phone, and invoice details stay in the organization profile. Structured phone, date of birth, and location improve aggregate product and marketing insights."}
+          </div>
+        </div>
+      </Modal>
     );
   }
 
@@ -1020,9 +1537,30 @@ export default function SettingsSection() {
     return withNotice(
       <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
         <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Phone"><Input type="tel" placeholder="+1 555 000 0000" value={custForm?.phone || ""} onChange={e => setCustForm(f => ({ ...f, phone: e.target.value }))} /></Field>
+        <Field label="Phone">
+          <PhoneNumberInput
+            countryCode={custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
+            phoneNumber={custForm?.phoneNumber || ""}
+            onCountryCodeChange={value => setCustForm(f => ({ ...f, phoneCountryCode: value }))}
+            onPhoneNumberChange={value => setCustForm(f => ({ ...f, phoneNumber: value }))}
+            countryOptions={PHONE_COUNTRY_OPTIONS}
+            phonePlaceholder="9876543210"
+          />
+        </Field>
         {orgType !== "apartment" && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
-        {orgType !== "apartment" && <Field label="Address"><Textarea placeholder="Full billing address" value={custForm?.address || ""} onChange={e => setCustForm(f => ({ ...f, address: e.target.value }))} /></Field>}
+        {orgType !== "apartment" && (
+          <StructuredLocationFields
+            addressLine={custForm?.addressLine || ""}
+            city={custForm?.city || ""}
+            state={custForm?.state || ""}
+            country={custForm?.country || "India"}
+            onAddressLineChange={value => setCustForm(f => ({ ...f, addressLine: value }))}
+            onCityChange={value => setCustForm(f => ({ ...f, city: value }))}
+            onStateChange={value => setCustForm(f => ({ ...f, state: value }))}
+            onCountryChange={value => setCustForm(f => ({ ...f, country: value }))}
+            required
+          />
+        )}
         {orgType !== "apartment" && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
         {(orgConfig.customerFields || []).map(field => (
           <Field key={field.key} label={field.label}>
@@ -1042,7 +1580,7 @@ export default function SettingsSection() {
           <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.targetAmount} onChange={e => setGoalForm(current => ({ ...current, targetAmount: e.target.value }))} />
         </Field>
         <Field label="Target Date" hint="Choose the date by which you want to complete this goal.">
-          <Input type="date" value={goalForm.targetDate} onChange={e => setGoalForm(current => ({ ...current, targetDate: e.target.value }))} />
+          <DateSelectInput value={goalForm.targetDate} onChange={value => setGoalForm(current => ({ ...current, targetDate: value }))} yearOrder="asc" />
         </Field>
         <Field label="Saved Till Date" hint="Enter how much you have already moved into this goal.">
           <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.savedAmount} onChange={e => setGoalForm(current => ({ ...current, savedAmount: e.target.value }))} />

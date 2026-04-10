@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, FAB, DeleteBtn, fmtMoney, fmtDate, MONTHS, SectionSkeleton, EmptyState } from "../components/UI";
+import { Modal, Field, Input, Select, DateSelectInput, FAB, DeleteBtn, fmtMoney, fmtDate, MONTHS, SectionSkeleton, EmptyState } from "../components/UI";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDate, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -34,6 +34,10 @@ function renderField(field, value, onChange) {
         ))}
       </Select>
     );
+  }
+
+  if (field.type === "date") {
+    return <DateSelectInput value={value || ""} onChange={onChange} max={TODAY} />;
   }
 
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
@@ -184,9 +188,7 @@ export default function EmiSection({ year, month, orgType }) {
           )}
           {emiSection.fields.map(field => (
             <Field key={field.key} label={field.label} required={Boolean(field.required)}>
-              {field.type === "date"
-                ? <Input type="date" value={form[field.key] || ""} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} />
-                : renderField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
+              {renderField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
             </Field>
           ))}
         </Modal>

@@ -1,9 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
+  DateSelectInput,
   Modal,
   Field,
   Input,
+  MonthSelectInput,
   Textarea,
   Select,
   FAB,
@@ -59,6 +61,14 @@ function renderDynamicField(field, value, onChange) {
 
   if (field.type === "textarea") {
     return <Textarea {...commonProps} />;
+  }
+
+  if (field.type === "date") {
+    return <DateSelectInput value={value || ""} onChange={onChange} max={TODAY} />;
+  }
+
+  if (field.type === "month") {
+    return <MonthSelectInput value={value || ""} onChange={onChange} max={CURRENT_MONTH} />;
   }
 
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : field.type === "month" ? CURRENT_MONTH : undefined} step={field.type === "number" ? "0.01" : undefined} />;
@@ -317,7 +327,7 @@ export default function IncomeSection({ year, month, orgType }) {
             <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
           </Field>
           <Field label="Date Received" required>
-            <Input type="date" max={TODAY} value={form.date} onChange={e => setForm(current => ({ ...current, date: e.target.value }))} />
+            <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
           </Field>
           {(config.incomeFields || []).map(field => (
             <Field key={field.key} label={field.label}>

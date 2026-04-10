@@ -38,6 +38,8 @@ export const PLAN_LABELS = {
   business: "Business"
 };
 
+export const REVIEW_ACCESS_ENABLED = false;
+
 const FREE_LIMITS = {
   invoices: 10,
   customers: 10
@@ -45,6 +47,16 @@ const FREE_LIMITS = {
 
 export function isAdminUser(user) {
   return user?.role === "admin";
+}
+
+export function isReviewAccessEnabled() {
+  return REVIEW_ACCESS_ENABLED;
+}
+
+export function getMaxOrganizations(user) {
+  if (isAdminUser(user) || isReviewAccessEnabled()) return 2;
+  const plan = getUserPlan(user);
+  return plan === PLANS.PRO || plan === PLANS.BUSINESS ? 2 : 1;
 }
 
 export function getUserPlan(user) {
@@ -90,6 +102,7 @@ export function isTrialActive(user) {
 
 export function isSubscriptionActive(user) {
   if (isAdminUser(user)) return true;
+  if (isReviewAccessEnabled()) return true;
   const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
   if (status === SUBSCRIPTION_STATUS.ACTIVE) return true;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user);
@@ -98,6 +111,7 @@ export function isSubscriptionActive(user) {
 
 export function canUseFeature(user, feature, usage = {}) {
   if (isAdminUser(user)) return true;
+  if (isReviewAccessEnabled()) return feature !== "sharedLedger";
   const plan = getUserPlan(user);
   const active = isSubscriptionActive(user);
 
@@ -180,6 +194,13 @@ export function getPlanSummary(user) {
     return {
       title: "Owner access",
       message: "You have full admin access across all plan features."
+    };
+  }
+
+  if (isReviewAccessEnabled()) {
+    return {
+      title: "Review access enabled",
+      message: "All Pro features are unlocked right now. No upgrade or payment is needed during the review period."
     };
   }
 

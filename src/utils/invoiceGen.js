@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import { fmtDate } from "../components/UI";
 import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
+import { buildLocationLabel, parseLocationFields } from "./profile";
 
 const PAGE = {
   width: 210,
@@ -35,6 +36,16 @@ function moneyPlain(value) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
+}
+
+function contactAddress(contact = {}) {
+  const parsedLocation = parseLocationFields(contact?.location || contact?.address || "");
+  return buildLocationLabel({
+    addressLine: contact?.addressLine || parsedLocation.addressLine,
+    city: contact?.city || parsedLocation.city,
+    state: contact?.state || parsedLocation.state,
+    country: contact?.country || parsedLocation.country
+  }) || contact?.address || "";
 }
 
 function ensureSpace(doc, y, needed) {
@@ -104,7 +115,7 @@ export function downloadInvoice(invoice, account, sym) {
   y += 36;
 
   const businessLines = [
-    acc.address,
+    contactAddress(acc),
     acc.gstin ? `GSTIN: ${acc.gstin}` : "",
     acc.phone ? `Phone: ${acc.phone}` : "",
     acc.email ? `Email: ${acc.email}` : ""
@@ -134,7 +145,12 @@ export function downloadInvoice(invoice, account, sym) {
     y + 7,
     74,
     "BILL TO",
-    [customerName, invoice.billTo?.address || invoice.customer?.address || "", invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""]
+    [
+      customerName,
+      contactAddress(invoice.billTo || invoice.customer || {}),
+      invoice.billTo?.phone || invoice.customer?.phone ? `Phone: ${invoice.billTo?.phone || invoice.customer?.phone}` : "",
+      invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
+    ]
   );
   const shipEnd = drawWrappedBlock(
     doc,
@@ -142,7 +158,11 @@ export function downloadInvoice(invoice, account, sym) {
     y + 7,
     74,
     "SHIP TO",
-    [invoice.shipTo?.name || customerName, invoice.shipTo?.address || invoice.customer?.address || ""]
+    [
+      invoice.shipTo?.name || customerName,
+      contactAddress(invoice.shipTo || invoice.customer || {}),
+      invoice.shipTo?.phone ? `Phone: ${invoice.shipTo.phone}` : ""
+    ]
   );
   y += Math.max(38, Math.max(billEnd, shipEnd) - y + 6);
 

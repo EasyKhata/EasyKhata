@@ -4,6 +4,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS } from "../components/UI";
 import BrandLogo, { BrandMark } from "../components/BrandLogo";
+import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
 import Dashboard from "../sections/Dashboard";
 import IncomeSection from "../sections/IncomeSection";
 import ExpensesSection from "../sections/ExpensesSection";
@@ -12,6 +13,7 @@ import InvoicesSection from "../sections/InvoicesSection";
 import QuotesSection from "../sections/QuotesSection";
 import SettingsSection from "../sections/SettingsSection";
 import AdminPanel from "../sections/AdminPanel";
+import AdminUsersSection from "../sections/AdminUsersSection";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -253,19 +255,42 @@ export default function MainApp() {
   const { user } = useAuth();
   const { theme, toggle } = useTheme();
   const data = useData();
+  const { account, organizations = [], activeOrgId, switchOrganization, deleteOrganization } = data;
   const [tab, setTab] = useState("dashboard");
+  const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [viewMode, setViewMode] = useState("month"); // "month" or "year"
   const [showReminders, setShowReminders] = useState(false);
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
 
+  function handleNavigate(target) {
+    const nextTarget = typeof target === "string" ? { tab: target } : target;
+    const nextTab = nextTarget?.tab || "dashboard";
+
+    setTab(nextTab);
+
+    if (nextTab === "settings") {
+      setSettingsNavigation({
+        screen: nextTarget?.screen || "main",
+        orgSectionKey: nextTarget?.orgSectionKey || "",
+        token: Date.now()
+      });
+      return;
+    }
+
+    setSettingsNavigation(null);
+  }
+
   useEffect(() => {
-    const handleNavigate = event => {
-      if (event?.detail) setTab(event.detail);
+    const handleAppNavigate = event => {
+      if (event?.detail) {
+        handleNavigate(event.detail);
+      }
     };
-    window.addEventListener("ledger:navigate", handleNavigate);
-    return () => window.removeEventListener("ledger:navigate", handleNavigate);
+    window.addEventListener("ledger:navigate", handleAppNavigate);
+    return () => window.removeEventListener("ledger:navigate", handleAppNavigate);
   }, []);
 
   useEffect(() => {
@@ -303,24 +328,28 @@ export default function MainApp() {
   }, [dismissedIds, liveReminders, data.notificationPrefs?.browserEnabled, user?.id]);
 
   const isAdmin = user?.role === "admin";
-  const orgConfig = getOrgConfig(user?.organizationType);
-  const isPersonalOrg = getOrgType(user?.organizationType) === ORG_TYPES.PERSONAL;
-  const isSmallBusinessOrg = getOrgType(user?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
+  const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
+  const orgConfig = getOrgConfig(currentOrgType);
+  const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
+  const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
+  const currentOrgLabel = account?.name?.trim() || "Organization";
   const TABS = [
     { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
+    ...(isAdmin ? [{ id: "users", icon: "◎", label: "Users" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "↑", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
     ] : []),
-    ...(!hideInvoices && isSmallBusinessOrg ? [{ id: "quotes", icon: "◇", label: "Quotes" }] : []),
-    ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: orgConfig.invoicesLabel }] : []),
+    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "quotes", icon: "◇", label: "Quotes" }] : []),
+    ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     { id: "settings", icon: "⚙", label: "Settings" }
   ];
 
   const tabColor = {
     dashboard: isAdmin ? "var(--gold)" : "var(--accent)",
+    users: "var(--blue)",
     income: "var(--accent)",
     expenses: "var(--danger)",
     emi: "var(--gold)",
@@ -356,6 +385,26 @@ export default function MainApp() {
     }
   }, [hideInvoices, tab]);
 
+  async function handleSwitchOrganization(orgId) {
+    const res = await switchOrganization(orgId);
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    setTab("dashboard");
+    setShowOrgSwitcher(false);
+  }
+
+  async function handleDeleteOrganization(orgId) {
+    const res = await deleteOrganization(orgId);
+    if (res?.error) {
+      alert(res.error);
+      return;
+    }
+    setTab("dashboard");
+    setShowOrgSwitcher(false);
+  }
+
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px 0", fontSize: 13, fontWeight: 700 }}>
@@ -389,12 +438,33 @@ export default function MainApp() {
             <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
               {TABS.find(item => item.id === tab)?.label}
             </div>
-            <div style={{ fontSize: 11, color: activeColor, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", marginTop: 4 }}>
-              EasyKhata
-            </div>
+            {!isAdmin && (
+              <button
+                onClick={() => setShowOrgSwitcher(true)}
+                style={{
+                  marginTop: 6,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-high)",
+                  color: activeColor,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: 0.4,
+                  cursor: "pointer",
+                  fontFamily: "var(--font)"
+                }}
+              >
+                <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentOrgLabel}</span>
+                <span style={{ color: "var(--text-dim)" }}>v</span>
+              </button>
+            )}
           </div>
         </div>
-        {tab !== "settings" && (
+        {tab !== "settings" && !(isAdmin && tab === "users") && (
           <HeaderDatePicker
             year={year}
             month={month}
@@ -414,13 +484,14 @@ export default function MainApp() {
       </div>
 
       <div className="content-scroll">
-        {tab === "dashboard" && (isAdmin ? <AdminPanel /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={setTab} />)}
-        {tab === "income" && <IncomeSection year={year} month={month} orgType={user?.organizationType} />}
-        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={user?.organizationType} />}
-        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={user?.organizationType} />}
-        {tab === "quotes" && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={user?.organizationType} />}
-        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={user?.organizationType} />}
-        {tab === "settings" && <SettingsSection />}
+        {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
+        {tab === "users" && isAdmin && <AdminUsersSection />}
+        {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "quotes" && !isAdmin && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </div>
 
       <div className="tab-bar">
@@ -459,6 +530,17 @@ export default function MainApp() {
             )}
           </div>
         </Modal>
+      )}
+
+      {!isAdmin && (
+        <OrganizationSwitcherModal
+          open={showOrgSwitcher}
+          onClose={() => setShowOrgSwitcher(false)}
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+          onSwitch={handleSwitchOrganization}
+          onDelete={handleDeleteOrganization}
+        />
       )}
     </div>
   );

@@ -1,29 +1,109 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Field, Input, Select, Textarea } from "./UI";
+import { Field, Input, PhoneNumberInput, Select } from "./UI";
+import { buildLocationLabel, buildPhoneNumber, COUNTRY_OPTIONS, DEFAULT_PHONE_COUNTRY_CODE, getStateProvinceOptions, isValidUserPhoneNumber, parseLocationFields, PHONE_COUNTRY_OPTIONS, sanitizePhoneDigits, splitPhoneNumber } from "../utils/profile";
 import { ORG_TYPES, ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
+
+function buildAccountFormState(account, user) {
+  const parsedLocation = parseLocationFields(account?.location || account?.address || "");
+  const phoneParts = splitPhoneNumber(account?.phone || "", account?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+  const addressLine = account?.addressLine || parsedLocation.addressLine || "";
+  const city = account?.city || parsedLocation.city || "";
+  const state = account?.state || parsedLocation.state || "";
+  const country = account?.country || parsedLocation.country || "India";
+  const location = account?.location || buildLocationLabel({ city, state, country });
+  return {
+    name: account?.name || "",
+    addressLine,
+    city,
+    state,
+    country,
+    location,
+    address: account?.address || buildLocationLabel({ addressLine, city, state, country }),
+    gstin: account?.gstin || "",
+    phone: account?.phone || "",
+    phoneCountryCode: account?.phoneCountryCode || phoneParts.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    phoneNumber: phoneParts.phoneNumber,
+    email: account?.email || user?.email || "",
+    showHSN: Boolean(account?.showHSN),
+    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+  };
+}
+
+function getSetupStep(orgType, orgConfig) {
+  if (orgType === ORG_TYPES.SMALL_BUSINESS) {
+    return {
+      title: "Add Your First Service",
+      intro: "Add a core service or package first so quotes, receipts, and client invoices follow the same structure from the start.",
+      cardTitle: "Ready to add a service?",
+      cardBody: "Create one service or package in Settings so pricing, team planning, and future quotes stay consistent.",
+      ctaLabel: "Go to Services",
+      destination: { tab: "settings", screen: "org-records", orgSectionKey: "services" },
+      revisitLabel: "services"
+    };
+  }
+
+  if (orgType === ORG_TYPES.RETAIL) {
+    return {
+      title: "Add Your First Product",
+      intro: "Add a product first so daily sales, stock value, and low-stock alerts have a real inventory base to work from.",
+      cardTitle: "Ready to add a product?",
+      cardBody: "Create one inventory item with price and stock so shop sales and purchase tracking are easier from day one.",
+      ctaLabel: "Go to Inventory",
+      destination: { tab: "settings", screen: "org-records", orgSectionKey: "inventory" },
+      revisitLabel: "inventory"
+    };
+  }
+
+  return {
+    title: `Add Your First ${orgConfig.customerEntryLabel}`,
+    intro:
+      orgType === ORG_TYPES.APARTMENT
+        ? "Add your first flat or resident record so collections, dues, and society tracking all start from a clean unit list."
+        : orgType === ORG_TYPES.PERSONAL
+          ? "Add your first person so household entries, lending records, and tagged spending stay organized from the beginning."
+          : orgType === ORG_TYPES.FREELANCER
+            ? "Add your first client so invoices, follow-ups, and payment history start with a clean client record."
+            : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}. You can always add more from Settings later.`,
+    cardTitle: `Ready to add a ${orgConfig.customerEntryLabel.toLowerCase()}?`,
+    cardBody:
+      orgType === ORG_TYPES.APARTMENT
+        ? "Start with a flat or resident record so collections and pending units stay organized month by month."
+        : orgType === ORG_TYPES.PERSONAL
+          ? "Add a household member or contact so earnings, spending, and borrow or lend tracking can stay attached to real people."
+          : orgType === ORG_TYPES.FREELANCER
+            ? "Start with a real client record so invoices, payment follow-up, and work history stay organized from day one."
+            : "You will enter details like name, email, phone, and location so your records stay organized.",
+    ctaLabel: `Go to ${orgConfig.customerLabel}`,
+    destination: { tab: "settings", screen: "customers" },
+    revisitLabel: orgConfig.customerLabel.toLowerCase()
+  };
+}
 
 export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, account, onUpdateAccount }) {
   const [step, setStep] = useState(1);
-  const [accountForm, setAccountForm] = useState(
-    account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: false, organizationType: getOrgType(user?.organizationType || account?.organizationType) }
-  );
-
-  useEffect(() => {
-    setAccountForm(current => ({
-      ...current,
-      organizationType: current.organizationType || getOrgType(user?.organizationType || account?.organizationType)
-    }));
-  }, [user?.organizationType, account?.organizationType]);
-
+  const [accountForm, setAccountForm] = useState(buildAccountFormState(account, user));
   const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
+  const stateProvinceOptions = useMemo(() => getStateProvinceOptions(accountForm.country), [accountForm.country]);
+  const setupStep = useMemo(() => getSetupStep(orgType, orgConfig), [orgConfig, orgType]);
+
+  useEffect(() => {
+    setAccountForm(buildAccountFormState(account, user));
+  }, [account?.address, account?.addressLine, account?.city, account?.country, account?.email, account?.gstin, account?.location, account?.name, account?.organizationType, account?.phone, account?.showHSN, account?.state, user?.email, user?.organizationType]);
+
+  useEffect(() => {
+    if (accountForm.state && !stateProvinceOptions.includes(accountForm.state)) {
+      setAccountForm(current => ({ ...current, state: "" }));
+    }
+  }, [accountForm.state, stateProvinceOptions]);
+
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const isRetailOrg = orgType === ORG_TYPES.RETAIL;
   const totalSteps = 4;
   const isLastStep = step === totalSteps;
   const stepTitles = [
     `Set Your ${orgConfig.profileNameLabel}`,
-    `Add Your First ${orgConfig.customerEntryLabel}`,
+    setupStep.title,
     orgConfig.hideInvoices ? `Track Your First ${orgConfig.incomeEntryLabel}` : `Create Your First ${orgConfig.invoiceEntryLabel}`,
     `Record Your First ${orgConfig.expensesEntryLabel}`
   ];
@@ -45,7 +125,27 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
       alert(`Please enter your ${orgConfig.profileNameLabel.toLowerCase()}.`);
       return;
     }
-    onUpdateAccount?.(accountForm);
+    if (!String(accountForm.city || "").trim() || !String(accountForm.state || "").trim() || !String(accountForm.country || "").trim()) {
+      alert("Please enter city, state, and country for your organization profile.");
+      return;
+    }
+    const cleanPhoneNumber = sanitizePhoneDigits(accountForm.phoneNumber);
+    if (cleanPhoneNumber && !isValidUserPhoneNumber(cleanPhoneNumber)) {
+      alert("Please enter a valid phone number.");
+      return;
+    }
+    const nextAccount = {
+      ...accountForm,
+      addressLine: String(accountForm.addressLine || "").trim(),
+      city: String(accountForm.city || "").trim(),
+      state: String(accountForm.state || "").trim(),
+      country: String(accountForm.country || "").trim(),
+      phoneCountryCode: accountForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+      phone: buildPhoneNumber(accountForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE, cleanPhoneNumber)
+    };
+    nextAccount.location = buildLocationLabel({ city: nextAccount.city, state: nextAccount.state, country: nextAccount.country });
+    nextAccount.address = buildLocationLabel(nextAccount);
+    onUpdateAccount?.(nextAccount);
     handleNext();
   }
 
@@ -83,19 +183,50 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 onChange={e => setAccountForm(current => ({ ...current, gstin: e.target.value }))}
               />
             </Field>
-            <Field label="Address">
-              <Textarea
-                placeholder="Full address"
-                value={accountForm.address || ""}
-                onChange={e => setAccountForm(current => ({ ...current, address: e.target.value }))}
+            <Field label="Address Line" hint="House number, street, road, or locality.">
+              <Input
+                placeholder="Flat 12, MG Road"
+                value={accountForm.addressLine || ""}
+                onChange={e => setAccountForm(current => ({ ...current, addressLine: e.target.value }))}
+                autoComplete="address-line1"
               />
             </Field>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="City" required>
+                <Input
+                  placeholder="Hyderabad"
+                  value={accountForm.city || ""}
+                  onChange={e => setAccountForm(current => ({ ...current, city: e.target.value }))}
+                />
+              </Field>
+              <Field label="Country" required>
+                <Select value={accountForm.country || "India"} onChange={e => setAccountForm(current => ({ ...current, country: e.target.value }))}>
+                  {COUNTRY_OPTIONS.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <Field label="State / Province" required>
+              <Select value={accountForm.state || ""} onChange={e => setAccountForm(current => ({ ...current, state: e.target.value }))}>
+                <option value="">Select state / province</option>
+                {stateProvinceOptions.map(option => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Phone">
-              <Input
-                type="tel"
-                placeholder="+91-9123456789"
-                value={accountForm.phone || ""}
-                onChange={e => setAccountForm(current => ({ ...current, phone: e.target.value }))}
+              <PhoneNumberInput
+                countryCode={accountForm.phoneCountryCode}
+                phoneNumber={accountForm.phoneNumber}
+                onCountryCodeChange={value => setAccountForm(current => ({ ...current, phoneCountryCode: value }))}
+                onPhoneNumberChange={value => setAccountForm(current => ({ ...current, phoneNumber: value }))}
+                countryOptions={PHONE_COUNTRY_OPTIONS}
+                phonePlaceholder="9876543210"
               />
             </Field>
             <Field label="Email">
@@ -112,36 +243,28 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              {isSmallBusinessOrg
-                ? "Add your first customer so invoices, follow-ups, and repeat business all start from a clean contact base."
-                : isRetailOrg
-                  ? "Add a regular or credit customer if you want to track repeat buyers or udhar separately later."
-                : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}. You can always add more from Settings later.`}
+              {setupStep.intro}
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-                Ready to add a {orgConfig.customerEntryLabel.toLowerCase()}?
+                {setupStep.cardTitle}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
-                {isSmallBusinessOrg
-                  ? "Start with a real customer record so invoicing, payment follow-up, and sales history stay organized from day one."
-                  : isRetailOrg
-                    ? "This step is optional for a kirana flow, but useful if you want to keep repeat customers or udhar contacts organized."
-                  : "You will enter details like name, email, phone, and address so your records stay organized."}
+                {setupStep.cardBody}
               </div>
               <button
                 className="btn-secondary"
                 style={{ width: "100%" }}
                 onClick={() => {
-                  onNavigate("settings");
+                  onNavigate(setupStep.destination);
                   onComplete();
                 }}
               >
-                Go to {orgConfig.customerLabel}
+                {setupStep.ctaLabel}
               </button>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              You can revisit {orgConfig.customerLabel.toLowerCase()} anytime from Settings.
+              You can revisit {setupStep.revisitLabel} anytime from Settings.
             </div>
           </div>
         );
@@ -232,7 +355,18 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", display: "flex", alignItems: "flex-end", zIndex: 1000 }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        padding: "16px 16px calc(88px + env(safe-area-inset-bottom, 0px))",
+        zIndex: 1000
+      }}
+    >
       <style>{`
         @keyframes slideUp {
           from { transform: translateY(100%); opacity: 0; }
@@ -242,7 +376,19 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
           animation: slideUp 0.3s ease-out;
         }
       `}</style>
-      <div className="onboarding-modal" style={{ background: "var(--bg)", width: "100%", borderRadius: "16px 16px 0 0", maxHeight: "90vh", overflowY: "auto" }}>
+      <div
+        className="onboarding-modal"
+        style={{
+          background: "var(--bg)",
+          width: "min(100%, 720px)",
+          borderRadius: 16,
+          maxHeight: "min(780px, calc(100dvh - 104px))",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.22)"
+        }}
+      >
         <div style={{ padding: "20px 18px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.6 }}>
@@ -255,7 +401,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{stepTitles[step - 1]}</div>
         </div>
 
-        <div style={{ padding: "20px 18px" }}>
+        <div style={{ padding: "20px 18px", overflowY: "auto", flex: 1 }}>
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
               {[...Array(totalSteps)].map((_, index) => (
@@ -267,7 +413,16 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
           {renderStepContent()}
         </div>
 
-        <div style={{ padding: "16px 18px", borderTop: "1px solid var(--border)", display: "flex", gap: 10 }}>
+        <div
+          style={{
+            padding: "16px 18px calc(16px + env(safe-area-inset-bottom, 0px))",
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            gap: 10,
+            flexShrink: 0,
+            background: "var(--bg)"
+          }}
+        >
           {step > 1 && (
             <button className="btn-secondary" style={{ flex: 1 }} onClick={handleBack}>
               Back
