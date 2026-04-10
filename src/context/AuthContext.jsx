@@ -18,6 +18,7 @@ import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
 const AuthContext = createContext();
 const PENDING_PROFILE_KEY = "pending-profile:";
+const DEFAULT_ORG_ID = "org_primary";
 
 function getPendingProfileKey(email) {
   return `${PENDING_PROFILE_KEY}${String(email || "").trim().toLowerCase()}`;
@@ -43,6 +44,58 @@ function clearPendingProfile(email) {
   localStorage.removeItem(getPendingProfileKey(email));
 }
 
+function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.SMALL_BUSINESS } = {}) {
+  const cleanOrganizationType = getOrgType(organizationType);
+  return {
+    id: DEFAULT_ORG_ID,
+    income: [],
+    expenses: [],
+    invoices: [],
+    customers: [],
+    orgRecords: {},
+    goals: { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
+    budgets: {},
+    notificationPrefs: {
+      browserEnabled: false,
+      invoiceDue: true,
+      overdueInvoices: true,
+      budgetAlerts: true,
+      lowBalance: true,
+      spendingSpike: true
+    },
+    currency: {
+      code: "INR",
+      symbol: "Rs",
+      name: "Indian Rupee",
+      flag: "IN"
+    },
+    account: {
+      name: "",
+      email,
+      phone,
+      address: "",
+      gstin: "",
+      showHSN: false,
+      organizationType: cleanOrganizationType
+    }
+  };
+}
+
+function getActiveOrgProfile(profile = {}) {
+  const orgs = profile?.orgs || {};
+  const activeOrgId = profile?.activeOrgId || Object.keys(orgs)[0] || DEFAULT_ORG_ID;
+  return {
+    activeOrgId,
+    activeOrg:
+      orgs[activeOrgId] ||
+      createDefaultOrgProfile({
+        email: profile?.email || "",
+        phone: profile?.phone || "",
+        organizationType: profile?.organizationType || profile?.account?.organizationType
+      })
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,6 +117,11 @@ export function AuthProvider({ children }) {
         email: baseEmail,
         phone: basePhone,
         organizationType: baseOrganizationType,
+        activeOrgId: DEFAULT_ORG_ID,
+        orgs: {
+          [DEFAULT_ORG_ID]: createDefaultOrgProfile({ email: baseEmail, phone: basePhone, organizationType: baseOrganizationType })
+        },
+        onboardingSeenAt: "",
         role: "user",
         plan: PLANS.FREE,
         subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
@@ -73,26 +131,7 @@ export function AuthProvider({ children }) {
         blocked: false,
         sharedLedgerId: "",
         sharedLedgerRole: "",
-        createdAt: new Date().toISOString(),
-        income: [],
-        expenses: [],
-        invoices: [],
-        customers: [],
-        account: {
-          name: baseName,
-          email: baseEmail,
-          phone: basePhone,
-          address: "",
-          gstin: "",
-          showHSN: false,
-          organizationType: baseOrganizationType
-        },
-        currency: {
-          code: "INR",
-          symbol: "Rs",
-          name: "Indian Rupee",
-          flag: "IN"
-        }
+        createdAt: new Date().toISOString()
       });
       clearPendingProfile(baseEmail);
       return;
@@ -103,7 +142,46 @@ export function AuthProvider({ children }) {
     if (!existing?.email && baseEmail) updates.email = baseEmail;
     if (!existing?.phone && basePhone) updates.phone = basePhone;
     if (!existing?.organizationType) updates.organizationType = baseOrganizationType;
-    if (!existing?.account?.organizationType) updates.account = { ...(existing?.account || {}), organizationType: baseOrganizationType };
+
+    if (!existing?.orgs || Object.keys(existing.orgs || {}).length === 0) {
+      const activeOrgId = existing?.activeOrgId || DEFAULT_ORG_ID;
+      updates.activeOrgId = activeOrgId;
+      updates.orgs = {
+        [activeOrgId]: {
+          ...createDefaultOrgProfile({ email: baseEmail, phone: basePhone, organizationType: baseOrganizationType }),
+          income: existing?.income || [],
+          expenses: existing?.expenses || [],
+          invoices: existing?.invoices || [],
+          customers: existing?.customers || [],
+          orgRecords: existing?.orgRecords || {},
+          goals: existing?.goals || { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
+          budgets: existing?.budgets || {},
+          notificationPrefs: existing?.notificationPrefs || {
+            browserEnabled: false,
+            invoiceDue: true,
+            overdueInvoices: true,
+            budgetAlerts: true,
+            lowBalance: true,
+            spendingSpike: true
+          },
+          currency: existing?.currency || {
+            code: "INR",
+            symbol: "Rs",
+            name: "Indian Rupee",
+            flag: "IN"
+          },
+          account: {
+            name: existing?.account?.name || "",
+            email: existing?.account?.email || baseEmail,
+            phone: existing?.account?.phone || basePhone,
+            address: existing?.account?.address || "",
+            gstin: existing?.account?.gstin || "",
+            showHSN: Boolean(existing?.account?.showHSN),
+            organizationType: getOrgType(existing?.account?.organizationType || existing?.organizationType || baseOrganizationType)
+          }
+        }
+      };
+    }
 
     if (Object.keys(updates).length > 0) {
       await updateDoc(userRef, updates);
@@ -130,13 +208,16 @@ export function AuthProvider({ children }) {
   }
 
   function buildSessionUser(firebaseUser, profile = {}) {
+    const { activeOrgId, activeOrg } = getActiveOrgProfile(profile);
     return {
       id: firebaseUser.uid,
       name: profile?.name || "",
       email: profile?.email || firebaseUser.email || "",
       phone: profile?.phone || "",
       role: profile?.role || "user",
-      organizationType: getOrgType(profile?.organizationType || profile?.account?.organizationType),
+      onboardingSeenAt: profile?.onboardingSeenAt || "",
+      activeOrgId,
+      organizationType: getOrgType(activeOrg?.account?.organizationType || profile?.organizationType || profile?.account?.organizationType),
       plan: profile?.plan || PLANS.FREE,
       subscriptionStatus: profile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE,
       subscriptionEndsAt: profile?.subscriptionEndsAt || "",
@@ -228,7 +309,7 @@ export function AuthProvider({ children }) {
 
       return {
         success: true,
-        message: "Your account is ready. Please verify your email before signing in. Your 30-day free Pro trial will begin after your first verified login."
+        message: "Your account is ready. Please verify your email before signing in. Full review access will be available after your first verified login."
       };
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {

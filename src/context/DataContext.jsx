@@ -2,9 +2,12 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
+import { getMaxOrganizations } from "../utils/subscription";
+import { getOrgType } from "../utils/orgTypes";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext();
+const DEFAULT_ORG_ID = "org_primary";
 
 function uid() {
   return Math.random().toString(36).slice(2, 9);
@@ -18,13 +21,21 @@ function inviteCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
-const EMPTY_DATA = {
+const EMPTY_ORG_DATA = {
   income: [],
   expenses: [],
   invoices: [],
   customers: [],
   orgRecords: {},
-  account: null,
+  account: {
+    name: "",
+    email: "",
+    phone: "",
+    address: "",
+    gstin: "",
+    showHSN: false,
+    organizationType: "small_business"
+  },
   goals: { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
   budgets: {},
   notificationPrefs: {
@@ -35,9 +46,98 @@ const EMPTY_DATA = {
     lowBalance: true,
     spendingSpike: true
   },
-  sharedLedger: null,
   currency: { code: "INR", symbol: "Rs", name: "Indian Rupee", flag: "IN" }
 };
+
+const EMPTY_DATA = {
+  ...EMPTY_ORG_DATA,
+  orgs: {},
+  activeOrgId: "",
+  sharedLedger: null
+};
+
+function createEmptyAccount(overrides = {}) {
+  return {
+    ...EMPTY_ORG_DATA.account,
+    ...overrides,
+    organizationType: getOrgType(overrides.organizationType || EMPTY_ORG_DATA.account.organizationType)
+  };
+}
+
+function normalizeOrgData(source = {}, fallback = {}) {
+  const sourceGoals = source.goals || {};
+  const fallbackAccount = fallback.account || {};
+  return {
+    income: source.income || [],
+    expenses: source.expenses || [],
+    invoices: source.invoices || [],
+    customers: source.customers || [],
+    orgRecords: source.orgRecords || {},
+    goals: {
+      ...EMPTY_ORG_DATA.goals,
+      ...sourceGoals,
+      targetAmount: Number(sourceGoals.targetAmount ?? sourceGoals.monthlySavings) || 0,
+      targetDate: String(sourceGoals.targetDate || ""),
+      savedAmount: Number(sourceGoals.savedAmount) || 0,
+      note: String(sourceGoals.note || "")
+    },
+    budgets: source.budgets || EMPTY_ORG_DATA.budgets,
+    notificationPrefs: { ...EMPTY_ORG_DATA.notificationPrefs, ...(source.notificationPrefs || {}) },
+    currency: source.currency || EMPTY_ORG_DATA.currency,
+    account: createEmptyAccount(
+      source.account || {
+        name: source.name || fallbackAccount.name || "",
+        email: source.email || fallbackAccount.email || "",
+        phone: source.phone || fallbackAccount.phone || "",
+        address: source.address || fallbackAccount.address || "",
+        gstin: source.gstin || fallbackAccount.gstin || "",
+        showHSN: source.showHSN || fallbackAccount.showHSN || false,
+        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || "small_business"
+      }
+    )
+  };
+}
+
+function normalizeOrgCollection(source = {}, fallback = {}) {
+  if (source.orgs && typeof source.orgs === "object" && Object.keys(source.orgs).length > 0) {
+    return Object.entries(source.orgs).reduce((acc, [orgId, orgValue]) => {
+      acc[orgId] = normalizeOrgData(orgValue, fallback);
+      return acc;
+    }, {});
+  }
+
+  return {
+    [source.activeOrgId || DEFAULT_ORG_ID]: normalizeOrgData(source, fallback)
+  };
+}
+
+function buildStateFromOrganizations({ orgs = {}, activeOrgId = "", sharedLedger = null }) {
+  const nextOrgs = Object.keys(orgs || {}).length > 0 ? orgs : { [DEFAULT_ORG_ID]: normalizeOrgData() };
+  const resolvedActiveOrgId = nextOrgs[activeOrgId] ? activeOrgId : Object.keys(nextOrgs)[0];
+  const activeOrg = nextOrgs[resolvedActiveOrgId] || normalizeOrgData();
+  return {
+    ...EMPTY_DATA,
+    ...activeOrg,
+    orgs: nextOrgs,
+    activeOrgId: resolvedActiveOrgId,
+    sharedLedger
+  };
+}
+
+function extractActiveOrg(state = {}) {
+  return normalizeOrgData({
+    income: state.income,
+    expenses: state.expenses,
+    invoices: state.invoices,
+    customers: state.customers,
+    orgRecords: state.orgRecords,
+    account: state.account,
+    goals: state.goals,
+    budgets: state.budgets,
+    notificationPrefs: state.notificationPrefs,
+    currency: state.currency
+  });
+}
 
 function buildResetData(currentData, nextAccount) {
   return {
@@ -47,40 +147,9 @@ function buildResetData(currentData, nextAccount) {
     invoices: [],
     customers: [],
     orgRecords: {},
-    goals: { ...EMPTY_DATA.goals },
-    budgets: { ...EMPTY_DATA.budgets },
+    goals: { ...EMPTY_ORG_DATA.goals },
+    budgets: { ...EMPTY_ORG_DATA.budgets },
     account: nextAccount
-  };
-}
-
-function normalizeAppData(source = {}) {
-  const sourceGoals = source.goals || {};
-  return {
-    income: source.income || [],
-    expenses: source.expenses || [],
-    invoices: source.invoices || [],
-    customers: source.customers || [],
-    orgRecords: source.orgRecords || {},
-    goals: {
-      ...EMPTY_DATA.goals,
-      ...sourceGoals,
-      targetAmount: Number(sourceGoals.targetAmount ?? sourceGoals.monthlySavings) || 0,
-      targetDate: String(sourceGoals.targetDate || ""),
-      savedAmount: Number(sourceGoals.savedAmount) || 0,
-      note: String(sourceGoals.note || "")
-    },
-    budgets: source.budgets || EMPTY_DATA.budgets,
-    notificationPrefs: { ...EMPTY_DATA.notificationPrefs, ...(source.notificationPrefs || {}) },
-    currency: source.currency || EMPTY_DATA.currency,
-    account: source.account || {
-      name: source.name || "",
-      email: source.email || "",
-      phone: source.phone || "",
-      address: source.address || "",
-      gstin: source.gstin || "",
-      showHSN: source.showHSN || false,
-      organizationType: source.organizationType || source.account?.organizationType || "small_business"
-    }
   };
 }
 
@@ -111,6 +180,55 @@ export function DataProvider({ children }) {
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
 
+  const persistState = useCallback(
+    nextState => {
+      if (!user?.id) return;
+
+      setUserData(user.id, "appData", nextState);
+
+      if (nextState.sharedLedger?.id) {
+        const payload = {
+          income: nextState.income,
+          expenses: nextState.expenses,
+          invoices: nextState.invoices,
+          customers: nextState.customers,
+          orgRecords: nextState.orgRecords,
+          account: nextState.account,
+          goals: nextState.goals,
+          budgets: nextState.budgets,
+          notificationPrefs: nextState.notificationPrefs,
+          currency: nextState.currency
+        };
+        setDoc(doc(db, "shared_ledgers", nextState.sharedLedger.id), sanitizeForFirestore(payload), { merge: true });
+        return;
+      }
+
+      setDoc(
+        doc(db, "users", user.id),
+        sanitizeForFirestore({
+          activeOrgId: nextState.activeOrgId,
+          organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
+          orgs: {
+            ...nextState.orgs,
+            [nextState.activeOrgId]: extractActiveOrg(nextState)
+          }
+        }),
+        { merge: true }
+      );
+
+      setUser(prev =>
+        prev
+          ? {
+              ...prev,
+              activeOrgId: nextState.activeOrgId,
+              organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
+            }
+          : prev
+      );
+    },
+    [setUser, user?.id, user?.organizationType]
+  );
+
   useEffect(() => {
     async function loadData() {
       if (!user?.id) {
@@ -124,70 +242,117 @@ export function DataProvider({ children }) {
       try {
         const userSnap = await getDoc(doc(db, "users", user.id));
         const userDoc = userSnap.exists() ? userSnap.data() : {};
-        const personalData = normalizeAppData(userDoc);
 
         if (userDoc.sharedLedgerId) {
           const ledgerSnap = await getDoc(doc(db, "shared_ledgers", userDoc.sharedLedgerId));
           if (ledgerSnap.exists()) {
             const ledgerDoc = ledgerSnap.data();
-            setData({
-              ...normalizeAppData(ledgerDoc),
-              sharedLedger: {
-                id: ledgerSnap.id,
-                name: ledgerDoc.name || "Shared Ledger",
-                ownerId: ledgerDoc.ownerId || "",
-                inviteCode: ledgerDoc.inviteCode || "",
-                members: ledgerDoc.members || [],
-                role: userDoc.sharedLedgerRole || "member"
-              }
-            });
+            setData(
+              buildStateFromOrganizations({
+                orgs: {
+                  [DEFAULT_ORG_ID]: normalizeOrgData(ledgerDoc, {
+                    account: {
+                      email: userDoc.email || user.email || "",
+                      phone: userDoc.phone || user.phone || "",
+                      organizationType: ledgerDoc.account?.organizationType || userDoc.organizationType
+                    }
+                  })
+                },
+                activeOrgId: DEFAULT_ORG_ID,
+                sharedLedger: {
+                  id: ledgerSnap.id,
+                  name: ledgerDoc.name || "Shared Ledger",
+                  ownerId: ledgerDoc.ownerId || "",
+                  inviteCode: ledgerDoc.inviteCode || "",
+                  members: ledgerDoc.members || [],
+                  role: userDoc.sharedLedgerRole || "member"
+                }
+              })
+            );
             setLoaded(true);
             return;
           }
         }
 
-        setData({
-          ...personalData,
+        const fallback = {
+          account: {
+            email: userDoc.email || user.email || "",
+            phone: userDoc.phone || user.phone || "",
+            organizationType: userDoc.organizationType || user.organizationType
+          }
+        };
+        const orgs = normalizeOrgCollection(userDoc, fallback);
+        const nextState = buildStateFromOrganizations({
+          orgs,
+          activeOrgId: userDoc.activeOrgId || Object.keys(orgs)[0] || DEFAULT_ORG_ID,
           sharedLedger: null
         });
+
+        setData(nextState);
+        setUser(prev =>
+          prev
+            ? {
+                ...prev,
+                activeOrgId: nextState.activeOrgId,
+                organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
+              }
+            : prev
+        );
+
+        if (!userDoc.orgs || !userDoc.activeOrgId) {
+          setDoc(
+            doc(db, "users", user.id),
+            sanitizeForFirestore({
+              activeOrgId: nextState.activeOrgId,
+              organizationType: nextState.account?.organizationType || userDoc.organizationType || "small_business",
+              orgs: nextState.orgs
+            }),
+            { merge: true }
+          );
+        }
       } catch (err) {
         console.log("Firebase error, using local:", err);
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
-        setData(localData);
+        const nextState = buildStateFromOrganizations({
+          orgs: normalizeOrgCollection(localData, {
+            account: {
+              email: user?.email || "",
+              phone: user?.phone || "",
+              organizationType: user?.organizationType
+            }
+          }),
+          activeOrgId: localData.activeOrgId || DEFAULT_ORG_ID,
+          sharedLedger: localData.sharedLedger || null
+        });
+        setData(nextState);
       } finally {
         setLoaded(true);
       }
     }
 
     loadData();
-  }, [user?.id]);
+  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone]);
 
   const update = useCallback(
     updater => {
       if (!user?.id) return;
 
       setData(prev => {
-        const next = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-        setUserData(user.id, "appData", next);
-        const targetCollection = next.sharedLedger?.id ? "shared_ledgers" : "users";
-        const targetId = next.sharedLedger?.id || user.id;
-        const payload = {
-          income: next.income,
-          expenses: next.expenses,
-          invoices: next.invoices,
-          customers: next.customers,
-          orgRecords: next.orgRecords,
-          account: next.account,
-          goals: next.goals,
-          budgets: next.budgets,
-          notificationPrefs: next.notificationPrefs,
-          currency: next.currency
-        };
-        setDoc(doc(db, targetCollection, targetId), sanitizeForFirestore(payload), { merge: true });
-        return next;
+        const proposed = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+        const nextActiveOrgId = proposed.activeOrgId || prev.activeOrgId || DEFAULT_ORG_ID;
+        const nextState = buildStateFromOrganizations({
+          orgs: {
+            ...proposed.orgs,
+            [nextActiveOrgId]: extractActiveOrg({ ...proposed, activeOrgId: nextActiveOrgId })
+          },
+          activeOrgId: nextActiveOrgId,
+          sharedLedger: proposed.sharedLedger
+        });
+        persistState(nextState);
+        return nextState;
       });
     },
-    [user?.id]
+    [persistState, user?.id]
   );
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
@@ -228,6 +393,118 @@ export function DataProvider({ children }) {
   const updateInvoice = inv => update(d => ({ ...d, invoices: d.invoices.map(i => (i.id === inv.id ? inv : i)) }));
   const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
+  async function switchOrganization(orgId) {
+    if (!user?.id) return { error: "No active user found." };
+    if (data.sharedLedger?.id) return { error: "Org switching is not available inside a shared ledger." };
+    if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
+
+    const nextState = buildStateFromOrganizations({
+      orgs: data.orgs,
+      activeOrgId: orgId,
+      sharedLedger: data.sharedLedger
+    });
+
+    setData(nextState);
+    persistState(nextState);
+    return { success: true };
+  }
+
+  async function createOrganization(accountInput = {}) {
+    if (!user?.id) return { error: "No active user found." };
+    if (data.sharedLedger?.id) return { error: "Org creation is not available inside a shared ledger." };
+
+    const orgCount = Object.keys(data.orgs || {}).length;
+    const maxOrganizations = getMaxOrganizations(user);
+    if (orgCount >= maxOrganizations) {
+      return { error: `Your account can use up to ${maxOrganizations} organization workspace${maxOrganizations > 1 ? "s" : ""}.` };
+    }
+
+    const nextOrgId = `org_${uid()}${uid()}`;
+    const nextOrg = normalizeOrgData(
+      {
+        account: {
+          ...createEmptyAccount({
+            email: accountInput.email || user.email || "",
+            phone: accountInput.phone || user.phone || "",
+            organizationType: accountInput.organizationType || user.organizationType
+          }),
+          ...accountInput,
+          organizationType: getOrgType(accountInput.organizationType || user.organizationType)
+        }
+      },
+      {
+        account: {
+          email: user.email || "",
+          phone: user.phone || "",
+          organizationType: accountInput.organizationType || user.organizationType
+        }
+      }
+    );
+
+    const nextState = buildStateFromOrganizations({
+      orgs: {
+        ...data.orgs,
+        [nextOrgId]: nextOrg
+      },
+      activeOrgId: nextOrgId,
+      sharedLedger: data.sharedLedger
+    });
+
+    setData(nextState);
+    persistState(nextState);
+    return { success: true, orgId: nextOrgId };
+  }
+
+  async function deleteOrganization(orgId) {
+    if (!user?.id) return { error: "No active user found." };
+    if (data.sharedLedger?.id) return { error: "Org deletion is not available inside a shared ledger." };
+    if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
+
+    const orgIds = Object.keys(data.orgs || {});
+    if (orgIds.length <= 1) {
+      return { error: "At least one organization workspace must remain." };
+    }
+
+    const nextOrgs = { ...data.orgs };
+    delete nextOrgs[orgId];
+
+    const nextActiveOrgId = data.activeOrgId === orgId ? Object.keys(nextOrgs)[0] : data.activeOrgId;
+    const nextState = buildStateFromOrganizations({
+      orgs: nextOrgs,
+      activeOrgId: nextActiveOrgId,
+      sharedLedger: data.sharedLedger
+    });
+
+    setData(nextState);
+    persistState(nextState);
+
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        activeOrgId: nextActiveOrgId,
+        organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
+        orgs: sanitizeForFirestore(nextState.orgs)
+      });
+    } catch (err) {
+      return { error: err.message || "We couldn't finish deleting that organization right now." };
+    }
+
+    return { success: true, activeOrgId: nextActiveOrgId };
+  }
+
+  const organizations = Object.entries(data.orgs || {}).map(([orgId, orgValue]) => ({
+    id: orgId,
+    name: orgValue.account?.name || "Untitled Organization",
+    organizationType: getOrgType(orgValue.account?.organizationType),
+    hasData: Boolean(
+      orgValue.customers?.length ||
+      orgValue.income?.length ||
+      orgValue.expenses?.length ||
+      orgValue.invoices?.length ||
+      Object.keys(orgValue.orgRecords || {}).length
+    )
+  }));
+  const maxOrganizations = getMaxOrganizations(user);
+
   async function createSharedLedger(name) {
     if (!user?.id) return { error: "No active user found." };
     if (data.sharedLedger?.id) return { error: "You are already inside a shared ledger." };
@@ -251,7 +528,7 @@ export function DataProvider({ children }) {
         ownerId: user.id,
         inviteCode: nextInviteCode,
         members,
-        ...normalizeAppData(data)
+        ...extractActiveOrg(data)
       });
 
       await updateDoc(doc(db, "users", user.id), {
@@ -330,17 +607,22 @@ export function DataProvider({ children }) {
       });
 
       setUser(prev => (prev ? { ...prev, sharedLedgerId: ledgerRef.id, sharedLedgerRole: "member" } : prev));
-      setData({
-        ...normalizeAppData(ledgerDoc),
-        sharedLedger: {
-          id: ledgerRef.id,
-          name: ledgerDoc.name || "Shared Ledger",
-          ownerId: ledgerDoc.ownerId || "",
-          inviteCode: ledgerDoc.inviteCode || "",
-          members: nextMembers,
-          role: "member"
-        }
-      });
+      setData(
+        buildStateFromOrganizations({
+          orgs: {
+            [DEFAULT_ORG_ID]: normalizeOrgData(ledgerDoc)
+          },
+          activeOrgId: DEFAULT_ORG_ID,
+          sharedLedger: {
+            id: ledgerRef.id,
+            name: ledgerDoc.name || "Shared Ledger",
+            ownerId: ledgerDoc.ownerId || "",
+            inviteCode: ledgerDoc.inviteCode || "",
+            members: nextMembers,
+            role: "member"
+          }
+        })
+      );
 
       return { success: true };
     } catch (err) {
@@ -369,10 +651,20 @@ export function DataProvider({ children }) {
       setUser(prev => (prev ? { ...prev, sharedLedgerId: "", sharedLedgerRole: "" } : prev));
 
       const userSnap = await getDoc(doc(db, "users", user.id));
-      setData({
-        ...normalizeAppData(userSnap.exists() ? userSnap.data() : {}),
-        sharedLedger: null
-      });
+      const nextDoc = userSnap.exists() ? userSnap.data() : {};
+      setData(
+        buildStateFromOrganizations({
+          orgs: normalizeOrgCollection(nextDoc, {
+            account: {
+              email: nextDoc.email || user.email || "",
+              phone: nextDoc.phone || user.phone || "",
+              organizationType: nextDoc.organizationType || user.organizationType
+            }
+          }),
+          activeOrgId: nextDoc.activeOrgId || DEFAULT_ORG_ID,
+          sharedLedger: null
+        })
+      );
 
       return { success: true };
     } catch (err) {
@@ -403,6 +695,13 @@ export function DataProvider({ children }) {
       value={{
         ...data,
         loaded,
+        organizations,
+        activeOrgId: data.activeOrgId,
+        maxOrganizations,
+        canCreateOrganization: organizations.length < maxOrganizations,
+        switchOrganization,
+        createOrganization,
+        deleteOrganization,
         setCurrency,
         saveAccount,
         resetForOrgTypeChange,

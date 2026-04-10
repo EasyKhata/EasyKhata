@@ -18,7 +18,7 @@ import {
   getInvoiceStatusLabel
 } from "../utils/analytics";
 import { useAuth } from "../context/AuthContext";
-import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan } from "../utils/subscription";
+import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan, isReviewAccessEnabled } from "../utils/subscription";
 import OnboardingGuide from "../components/OnboardingGuide";
 import Collapsible from "../components/Collapsible";
 import { collection, getDocs, updateDoc, doc, setDoc, deleteDoc } from "firebase/firestore";
@@ -56,19 +56,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   }, [propViewMode]);
 
   useEffect(() => {
-    if (isAdmin || !data.loaded) return;
-    
-    const hasCompletedSetup = localStorage.getItem(`setup-guide-${user?.id}`);
-    const accountNameSet = !!(data.account?.name && data.account.name.trim());
-    const hasCustomers = data.customers?.length > 0;
-    const hasInvoices = data.invoices?.length > 0;
-    const hasExpenses = data.expenses?.length > 0;
+    if (isAdmin || !data.loaded || !user?.id || user?.onboardingSeenAt) return;
 
-    // Show setup guide if account not set or no activity yet
-    if (!hasCompletedSetup && (!accountNameSet || (!hasCustomers && !hasInvoices && !hasExpenses))) {
-      setShowSetupGuide(true);
-    }
-  }, [user?.id, data.loaded, isAdmin, data.account?.name, data.customers?.length, data.invoices?.length, data.expenses?.length]);
+    setShowSetupGuide(true);
+    updateProfile({ onboardingSeenAt: new Date().toISOString() });
+  }, [data.loaded, isAdmin, updateProfile, user?.id, user?.onboardingSeenAt]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -528,7 +520,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
     );
   }
 
-  const orgType = getOrgType(user?.organizationType || data.account?.organizationType);
+  const orgType = getOrgType(data.account?.organizationType || user?.organizationType);
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
@@ -548,6 +540,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
+  const reviewAccessEnabled = isReviewAccessEnabled();
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = isRetailOrg
@@ -594,7 +587,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
     <OnboardingGuide
       isOpen={showSetupGuide}
       onComplete={() => {
-        localStorage.setItem(`setup-guide-${user?.id}`, "true");
         setShowSetupGuide(false);
       }}
       data={data}
@@ -603,23 +595,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
       account={data.account}
       onUpdateAccount={async (accountInfo) => {
         try {
-          await updateProfile({
-            name: accountInfo.name || "",
-            email: accountInfo.email || "",
-            phone: accountInfo.phone || "",
-            address: accountInfo.address || "",
-            gstin: accountInfo.gstin || "",
-            showHSN: Boolean(accountInfo.showHSN),
-            organizationType: accountInfo.organizationType || user?.organizationType,
-            account: {
-              name: accountInfo.name || "",
-              email: accountInfo.email || "",
-              phone: accountInfo.phone || "",
-              address: accountInfo.address || "",
-              gstin: accountInfo.gstin || "",
-              showHSN: Boolean(accountInfo.showHSN),
-              organizationType: accountInfo.organizationType || user?.organizationType
-            }
+          data.saveAccount({
+            ...data.account,
+            ...accountInfo,
+            organizationType: accountInfo.organizationType || data.account?.organizationType || user?.organizationType
           });
         } catch (err) {
           console.error("Account update error:", err);
@@ -1268,18 +1247,18 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
       </div>
 
       <div style={{ padding: "20px 18px 0" }}>
-        {(currentPlan === PLANS.FREE || isTrial) && (
-          <div style={{ marginBottom: 18, padding: "12px 14px", background: currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+        {(reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
+          <div style={{ marginBottom: 18, padding: "12px 14px", background: reviewAccessEnabled ? "var(--blue-deep)" : currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6 }}>
-                {currentPlan === PLANS.FREE ? "📌 Upgrade to Pro" : "✨ Pro Trial Active"}
+              <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Upgrade to Pro" : "Pro Trial Active"}
               </div>
-              <div style={{ fontSize: 12, color: currentPlan === PLANS.FREE ? "var(--gold-text)" : "var(--accent-text)", marginTop: 2 }}>
-                {currentPlan === PLANS.FREE ? "Unlock reports, PDF exports, alerts, and a 30-day free trial" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
+              <div style={{ fontSize: 12, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold-text)" : "var(--accent-text)", marginTop: 2 }}>
+                {reviewAccessEnabled ? "All premium features are unlocked right now and upgrade prompts are turned off." : currentPlan === PLANS.FREE ? "Unlock reports, PDF exports, alerts, and a 30-day free trial" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
               </div>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
-              {currentPlan === PLANS.FREE ? "Rs 49/mo" : ""}
+            <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
+              {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "Rs 49/mo" : ""}
             </div>
           </div>
         )}

@@ -263,7 +263,7 @@ export function UpgradeModal({ open, title, message, onClose }) {
           {message || "This feature is not available on your current plan. Contact admin to upgrade your account."}
         </div>
         <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 12, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13 }}>
-          Open Settings and use "Request Plan Upgrade" to ask admin for Pro or Business access.
+          Subscription access is assigned manually by admin during testing.
         </div>
       </div>
     </Modal>

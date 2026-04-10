@@ -177,7 +177,7 @@ export default function AuthScreen() {
             {screen === "login"
               ? `Sign in to ${APP_NAME} and keep ${APP_TAGLINE.toLowerCase()}.`
               : screen === "register"
-                ? "Create your account, verify your email, and unlock your 30-day free Pro trial."
+                ? "Create your account, verify your email, and start using the full app during the review period."
                 : "Reset your password from your inbox."}
           </div>
         </div>

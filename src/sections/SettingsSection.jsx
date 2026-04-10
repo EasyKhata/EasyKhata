@@ -4,6 +4,7 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
+import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DeleteBtn, fmtMoney, MONTHS, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
@@ -30,6 +31,7 @@ import {
   getUserPlan,
   getPlanSummary,
   getUpgradeCopy,
+  isReviewAccessEnabled,
   PLAN_LABELS,
   PLANS
 } from "../utils/subscription";
@@ -40,16 +42,50 @@ function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
 }
 
-export default function SettingsSection() {
+export default function SettingsSection({ navigationTarget }) {
   const { user, logout, updateProfile, changePassword } = useAuth();
-  const { account, currency, setCurrency, saveAccount, resetForOrgTypeChange, customers, addCustomer, updateCustomer, removeCustomer, goals, saveGoals, budgets, income, expenses, invoices, notificationPrefs, saveNotificationPrefs, orgRecords, addOrgRecord, updateOrgRecord, removeOrgRecord, sharedLedger, createSharedLedger, joinSharedLedger, leaveSharedLedger, regenerateLedgerInvite } = useData();
+  const {
+    account,
+    currency,
+    setCurrency,
+    saveAccount,
+    customers,
+    addCustomer,
+    updateCustomer,
+    removeCustomer,
+    goals,
+    saveGoals,
+    budgets,
+    income,
+    expenses,
+    invoices,
+    notificationPrefs,
+    saveNotificationPrefs,
+    orgRecords,
+    addOrgRecord,
+    updateOrgRecord,
+    removeOrgRecord,
+    sharedLedger,
+    createSharedLedger,
+    joinSharedLedger,
+    leaveSharedLedger,
+    regenerateLedgerInvite,
+    organizations,
+    activeOrgId,
+    createOrganization,
+    switchOrganization,
+    deleteOrganization,
+    maxOrganizations,
+    canCreateOrganization
+  } = useData();
   const { theme, toggle } = useTheme();
 
   const [screen, setScreen] = useState("main");
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true, organizationType: getOrgType(user?.organizationType || account?.organizationType) });
+  const [userForm, setUserForm] = useState({ name: user?.name || "", email: user?.email || "", phone: user?.phone || "" });
+  const [accForm, setAccForm] = useState(account || { name: "", address: "", gstin: "", phone: "", email: "", showHSN: true, organizationType: getOrgType(account?.organizationType || user?.organizationType) });
   const [goalForm, setGoalForm] = useState({
     targetAmount: goals?.targetAmount ?? goals?.monthlySavings ?? "",
     targetDate: goals?.targetDate || "",
@@ -67,6 +103,11 @@ export default function SettingsSection() {
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
+  const [createOrgForm, setCreateOrgForm] = useState({
+    name: "",
+    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+  });
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -75,7 +116,6 @@ export default function SettingsSection() {
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
   const [notice, setNotice] = useState(null);
-  const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
     return {
@@ -87,8 +127,8 @@ export default function SettingsSection() {
   });
   const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
-  const isFreePlanUser = currentPlan === PLANS.FREE;
-  const orgType = getOrgType(accForm.organizationType || user?.organizationType || account?.organizationType);
+  const reviewAccessEnabled = isReviewAccessEnabled();
+  const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const orgConfig = getOrgConfig(orgType);
 
   const customerInsights = useMemo(
@@ -114,6 +154,55 @@ export default function SettingsSection() {
 
   function showNotice(message, tone = "danger", title = "") {
     setNotice({ id: Date.now(), message, tone, title });
+  }
+
+  async function handleSwitchOrganization(orgId) {
+    const res = await switchOrganization(orgId);
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+    setShowOrgSwitcher(false);
+    setScreen("main");
+    showNotice("Organization switched.", "success");
+  }
+
+  async function handleDeleteOrganization(orgId) {
+    const res = await deleteOrganization(orgId);
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+    setShowOrgSwitcher(false);
+    setScreen("main");
+    showNotice("Organization deleted.", "success");
+  }
+
+  async function handleCreateOrganizationWorkspace() {
+    const cleanName = String(createOrgForm.name || "").trim();
+    if (!cleanName) {
+      showNotice("Please enter an organization name.");
+      return;
+    }
+
+    const res = await createOrganization({
+      name: cleanName,
+      organizationType: getOrgType(createOrgForm.organizationType),
+      email: user?.email || "",
+      phone: user?.phone || ""
+    });
+
+    if (res?.error) {
+      showNotice(res.error);
+      return;
+    }
+
+    setCreateOrgForm({
+      name: "",
+      organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    });
+    setScreen("main");
+    showNotice("New organization workspace created.", "success");
   }
 
   const noticeNode = <ToastNotice notice={notice} onClose={() => setNotice(null)} />;
@@ -161,30 +250,33 @@ export default function SettingsSection() {
   }
 
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!user?.id) return;
+    setUserForm({
+      name: user?.name || "",
+      email: user?.email || "",
+      phone: user?.phone || ""
+    });
+  }, [user?.email, user?.name, user?.phone]);
 
-      try {
-        const snap = await getDoc(doc(db, "users", user.id));
-        if (snap.exists()) {
-          const data = snap.data();
-          setAccForm({
-            name: data.name || "",
-            email: data.email || "",
-            phone: data.phone || "",
-            address: data.address || "",
-            gstin: data.gstin || "",
-            showHSN: Boolean(data.showHSN),
-            organizationType: getOrgType(data.organizationType || data.account?.organizationType || user?.organizationType)
-          });
-        }
-      } catch (err) {
-        console.error("LOAD PROFILE ERROR:", err);
+  useEffect(() => {
+    setAccForm(
+      account || {
+        name: "",
+        email: user?.email || "",
+        phone: user?.phone || "",
+        address: "",
+        gstin: "",
+        showHSN: true,
+        organizationType: getOrgType(account?.organizationType || user?.organizationType)
       }
-    };
+    );
+  }, [account, user?.email, user?.organizationType, user?.phone]);
 
-    loadProfile();
-  }, [user?.id]);
+  useEffect(() => {
+    setCreateOrgForm(current => ({
+      ...current,
+      organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    }));
+  }, [account?.organizationType, user?.organizationType]);
 
   useEffect(() => {
     setGoalForm({
@@ -199,28 +291,56 @@ export default function SettingsSection() {
     setNotificationForm(notificationPrefs);
   }, [notificationPrefs]);
 
-  async function persistAccount(nextAccount, isOrgTypeChanging) {
-    const cleanOrganizationType = getOrgType(nextAccount.organizationType);
-    const res = await updateProfile({
-      ...nextAccount,
-      organizationType: cleanOrganizationType,
-      account: nextAccount
-    });
+  useEffect(() => {
+    if (!navigationTarget?.token) return;
 
+    if (navigationTarget.screen === "customers") {
+      setScreen("customers");
+      return;
+    }
+
+    if (navigationTarget.screen === "account") {
+      setScreen("account");
+      return;
+    }
+
+    if (navigationTarget.screen === "org-records" && navigationTarget.orgSectionKey) {
+      setOrgSectionKey(navigationTarget.orgSectionKey);
+      setOrgRecordForm(null);
+      setEditOrgRecord(null);
+      setScreen("org-records");
+      return;
+    }
+
+    setScreen("main");
+  }, [navigationTarget]);
+
+  async function saveUserProfile() {
+    const cleanName = String(userForm.name || "").trim();
+    const cleanEmail = normalizeEmail(userForm.email);
+    const cleanPhone = sanitizePhone(userForm.phone);
+
+    if (!isValidName(cleanName)) {
+      showNotice("Please enter your full name.");
+      return;
+    }
+    if (!isValidEmail(cleanEmail)) {
+      showNotice("Please enter a valid email address.");
+      return;
+    }
+    if (!isValidPhone(cleanPhone)) {
+      showNotice("Please enter a valid phone number with at least 10 digits.");
+      return;
+    }
+
+    const res = await updateProfile({ name: cleanName, email: cleanEmail, phone: cleanPhone });
     if (res?.error) {
       showNotice(res.error);
-      return false;
+      return;
     }
 
-    if (isOrgTypeChanging) {
-      resetForOrgTypeChange(nextAccount);
-    } else {
-      saveAccount(nextAccount);
-    }
-    showNotice("Your profile has been updated.", "success");
-    setPendingOrgTypeChange(null);
+    showNotice("Your personal profile has been updated.", "success");
     setScreen("main");
-    return true;
   }
 
   const saveAcc = async () => {
@@ -229,7 +349,7 @@ export default function SettingsSection() {
     const cleanName = String(accForm.name || "").trim();
     const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
     const cleanOrganizationType = getOrgType(accForm.organizationType);
-    const previousOrganizationType = getOrgType(user?.organizationType || account?.organizationType);
+    const previousOrganizationType = getOrgType(account?.organizationType || user?.organizationType);
     const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
 
     if (!isValidName(cleanName)) {
@@ -260,17 +380,32 @@ export default function SettingsSection() {
     };
 
     if (isOrgTypeChanging && hasExistingOrgTypeData()) {
-      setPendingOrgTypeChange({ nextAccount, isOrgTypeChanging: true });
+      const existingOrg = (organizations || []).find(org => org.id !== activeOrgId && org.organizationType === cleanOrganizationType);
+      if (existingOrg) {
+        const res = await switchOrganization(existingOrg.id);
+        if (res?.error) {
+          showNotice(res.error);
+          return;
+        }
+        showNotice("Switched to your existing organization workspace for that usage type.", "success");
+        setScreen("main");
+        return;
+      }
+
+      const res = await createOrganization(nextAccount);
+      if (res?.error) {
+        showNotice(res.error);
+        return;
+      }
+      showNotice("Created a new organization workspace and switched to it.", "success");
+      setScreen("main");
       return;
     }
 
-    await persistAccount(nextAccount, isOrgTypeChanging);
+    saveAccount(nextAccount);
+    showNotice("Your organization profile has been updated.", "success");
+    setScreen("main");
   };
-
-  async function confirmOrgTypeChange() {
-    if (!pendingOrgTypeChange?.nextAccount) return;
-    await persistAccount(pendingOrgTypeChange.nextAccount, true);
-  }
 
   function openNewCust() {
     const next = { name: "", email: "", phone: "", address: "", gstin: "" };
@@ -687,7 +822,7 @@ export default function SettingsSection() {
             <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{user?.phone}</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.title}</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.message}</div>
-            {user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
+            {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
           </div>
@@ -697,7 +832,7 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20, borderLeft: "4px solid var(--gold)" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Admin Dashboard</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area still contains your account profile, currency controls, and notifications.
+              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area still contains your personal profile, org profile, currency controls, and notifications.
             </div>
           </div>
         )}
@@ -706,24 +841,39 @@ export default function SettingsSection() {
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
-              {currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
-                : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders for Rs 49 per month or Rs 499 per year."}
+              {reviewAccessEnabled
+                ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
+                : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
+                  ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends. Subscription assignment is still handled manually by admin during testing."
+                  : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders. Subscription assignment is currently handled manually by admin during testing."}
             </div>
             <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>Free</div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>Basic bookkeeping, limited invoices/customers, and no reports.</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                    {reviewAccessEnabled ? "Review Access" : "Free"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                    {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Basic bookkeeping, limited invoices/customers, and no reports."}
+                  </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>Pro</div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year.</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>
+                    {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year."}
+                  </div>
                 </div>
               </div>
             </div>
-            <button className="btn-secondary" style={{ width: "100%" }} onClick={() => setScreen("plan-request")}>
-              {isFreePlanUser ? "Upgrade to Pro" : "Manage Subscription"}
+            <button
+              className="btn-secondary"
+              style={{ width: "100%", opacity: 0.55, cursor: "not-allowed" }}
+              onClick={() => {}}
+              disabled
+            >
+              Manage Subscription Disabled During Testing
             </button>
           </div>
         )}
@@ -731,7 +881,10 @@ export default function SettingsSection() {
         <div style={{ marginBottom: 10 }}>
           <div className="section-label">Workspace</div>
           <div className="card">
-            <MenuRow icon="B" label="Account Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+            <MenuRow icon="P" label="Personal Profile" sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
+            <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+            <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />
+            <MenuRow icon="+" label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />
             {user?.role !== "admin" && <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             <MenuRow icon="R" label="Reports" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF" : "Choose a month/year report or a full financial year PDF"} onClick={openReportPicker} />
@@ -746,6 +899,14 @@ export default function SettingsSection() {
               />
             ))}
           </div>
+          <OrganizationSwitcherModal
+            open={showOrgSwitcher}
+            onClose={() => setShowOrgSwitcher(false)}
+            organizations={organizations}
+            activeOrgId={activeOrgId}
+            onSwitch={handleSwitchOrganization}
+            onDelete={handleDeleteOrganization}
+          />
         </div>
 
         <div style={{ marginBottom: 10, marginTop: 20 }}>
@@ -841,7 +1002,7 @@ export default function SettingsSection() {
   if (screen === "account") {
     return withNotice(
       <>
-        <Modal title="Account Profile" onClose={() => { setPendingOrgTypeChange(null); setScreen("main"); }} onSave={saveAcc} canSave={!!accForm.name.trim()}>
+        <Modal title="Organization Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
           <Field label="Usage Type" required>
             <Select value={accForm.organizationType || orgType} onChange={e => setAccForm(f => ({ ...f, organizationType: e.target.value }))}>
               {ORG_TYPE_OPTIONS.map(option => (
@@ -865,29 +1026,57 @@ export default function SettingsSection() {
             </div>
           </Field>
         </Modal>
-        {pendingOrgTypeChange && (
-          <Modal
-            title="Confirm Usage Type Change"
-            onClose={() => setPendingOrgTypeChange(null)}
-            onSave={confirmOrgTypeChange}
-            saveLabel="Delete Old Data and Continue"
-            accentColor="var(--danger)"
-          >
-            <div className="card" style={{ padding: 16, marginBottom: 14, background: "var(--danger-deep)", border: "1px solid var(--danger)33" }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", marginBottom: 8 }}>This action clears the current type data</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-                Changing the usage type will permanently remove customers, income, expenses, invoices, budgets, goals, and org-specific records from the current setup.
-              </div>
-            </div>
-            <div className="card" style={{ padding: 16 }}>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-                <div>Before continuing, download any reports you may need.</div>
-                <div>Only after you confirm below will the type change and reset happen.</div>
-              </div>
-            </div>
-          </Modal>
-        )}
       </>
+    );
+  }
+
+  if (screen === "create-org") {
+    return withNotice(
+      <Modal title="Create Organization" onClose={() => setScreen("main")} onSave={handleCreateOrganizationWorkspace} saveLabel="Create" canSave={canCreateOrganization && !!String(createOrgForm.name || "").trim()} accentColor="var(--blue)">
+        <Field label="Organization Name" required>
+          <Input placeholder="Example: Reddy Retail" value={createOrgForm.name} onChange={event => setCreateOrgForm(current => ({ ...current, name: event.target.value }))} />
+        </Field>
+        <Field label="Usage Type" required>
+          <Select value={createOrgForm.organizationType} onChange={event => setCreateOrgForm(current => ({ ...current, organizationType: event.target.value }))}>
+            {ORG_TYPE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            This creates a separate organization workspace with its own customers, invoices, expenses, and reports. Your personal sign-in details stay the same.
+          </div>
+        </div>
+        {!canCreateOrganization && (
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+            This account has reached the current organization workspace limit.
+          </div>
+        )}
+      </Modal>
+    );
+  }
+
+  if (screen === "profile") {
+    return withNotice(
+      <Modal title="Personal Profile" onClose={() => setScreen("main")} onSave={saveUserProfile} canSave={!!userForm.name.trim()}>
+        <Field label="Full Name" required>
+          <Input placeholder="Your name" value={userForm.name} onChange={event => setUserForm(current => ({ ...current, name: event.target.value }))} />
+        </Field>
+        <Field label="Email" required>
+          <Input type="email" placeholder="you@example.com" value={userForm.email} onChange={event => setUserForm(current => ({ ...current, email: event.target.value }))} />
+        </Field>
+        <Field label="Phone" required>
+          <Input type="tel" placeholder="+91-9876543210" value={userForm.phone} onChange={event => setUserForm(current => ({ ...current, phone: event.target.value }))} />
+        </Field>
+        <div className="card" style={{ padding: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            This information belongs to your sign-in identity. Organization name, GSTIN, org phone, and invoice details stay in the organization profile.
+          </div>
+        </div>
+      </Modal>
     );
   }
 
