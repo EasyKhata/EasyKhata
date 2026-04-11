@@ -103,6 +103,7 @@ export default function ExpensesSection({ year, month, orgType }) {
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [form, setForm] = useState(buildBlankForm(year, month, config, categoryOptions));
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
+  const openFlatManager = openPeopleManager;
   const [budgetDraft, setBudgetDraft] = useState(() =>
     categoryOptions.reduce((map, category) => ({ ...map, [category]: String(d.budgets?.[category] || "") }), {})
   );
@@ -131,6 +132,7 @@ export default function ExpensesSection({ year, month, orgType }) {
     (d.orgRecords?.suppliers || []).map(supplier => ({ value: supplier.supplierName || "", label: [supplier.supplierName || "", supplier.contact || "", supplier.creditBalance ? `${sym} ${supplier.creditBalance}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.orgRecords, sym]);
   const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
+  const hasApartmentFlats = !isApartmentOrg || (d.customers || []).some(flat => String(flat?.name || "").trim());
 
   const active = d.expenses.filter(expense => {
     if (!expense.recurring) return expense.month === mk;
@@ -183,6 +185,10 @@ export default function ExpensesSection({ year, month, orgType }) {
   );
 
   function openNew() {
+    if (isApartmentOrg && !hasApartmentFlats) {
+      openFlatManager();
+      return;
+    }
     if (!hasHouseholdPeople) {
       openPeopleManager();
       return;
@@ -252,6 +258,9 @@ export default function ExpensesSection({ year, month, orgType }) {
   }
 
   function validateForm() {
+    if (isApartmentOrg && !hasApartmentFlats) {
+      return "Add at least one flat record before saving society expenses.";
+    }
     if (!hasMinLength(form.label, 2)) {
       return `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
     }
@@ -434,6 +443,17 @@ export default function ExpensesSection({ year, month, orgType }) {
               </>
             )}
 
+            {active.length > 0 && (
+              <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+                <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, vendor, note, or linked name.">
+                  <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
+                </Field>
+                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                  {filteredExpenses.length} of {active.length} entry{active.length === 1 ? "" : "ies"} shown for {MONTHS[month]} {year}
+                </div>
+              </div>
+            )}
+
             {isSmallBusinessOrg ? (
               <>
                 <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
@@ -504,7 +524,7 @@ export default function ExpensesSection({ year, month, orgType }) {
               </Collapsible>
             )}
 
-            {!isSmallBusinessOrg && !isRetailOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
+            {!isApartmentOrg && !isSmallBusinessOrg && !isRetailOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
               <div className="card">
                 {oneTime.length === 0 ? (
                   <EmptyState
@@ -519,6 +539,42 @@ export default function ExpensesSection({ year, month, orgType }) {
                 )}
               </div>
             </Collapsible>}
+
+            {isApartmentOrg && hasApartmentFlats && (
+              <div className="card">
+                {active.length === 0 ? (
+                  <EmptyState
+                    title={`No ${config.expensesLabel.toLowerCase()} yet`}
+                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    actionLabel={config.expensesActionLabel}
+                    onAction={openNew}
+                    accentColor="var(--danger)"
+                  />
+                ) : filteredExpenses.length === 0 ? (
+                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                ) : (
+                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            )}
+
+            {isApartmentOrg && !hasApartmentFlats && (
+              <div className="card">
+                {active.length === 0 ? (
+                  <EmptyState
+                    title="Add flats before tracking society expenses"
+                    message="Society expenses stay locked until you create at least one flat record in Org."
+                    actionLabel="Open Flats"
+                    onAction={openFlatManager}
+                    accentColor="var(--danger)"
+                  />
+                ) : filteredExpenses.length === 0 ? (
+                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                ) : (
+                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -607,6 +663,10 @@ export default function ExpensesSection({ year, month, orgType }) {
                   <Toggle
                     value={form.recurring ? "recurring" : "once"}
                     onChange={value => setForm(current => ({ ...current, recurring: value === "recurring", endDate: value === "recurring" ? current.endDate : "" }))}
+                    options={[
+                      { value: "once", label: "One Time" },
+                      { value: "recurring", label: "Recurring" }
+                    ]}
                   />
                 </Field>
                 {form.recurring && (
@@ -639,6 +699,16 @@ export default function ExpensesSection({ year, month, orgType }) {
       )}
 
       {!isPersonalOrg && <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />}
+
+      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
+        <button
+          className="btn-primary"
+          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
+          onClick={openNew}
+        >
+          {config.expensesActionLabel}
+        </button>
+      </div>
     </div>
   );
 }
