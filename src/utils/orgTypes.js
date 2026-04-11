@@ -78,16 +78,14 @@ export const ORG_TYPE_CONFIGS = {
         key: "loans",
         label: "Loans / EMIs",
         entryLabel: "EMI",
-        empty: () => ({ loanName: "", lender: "", monthlyEmi: "", dueDate: "", endDate: "", interestRate: "", outstandingBalance: "", status: "Active" }),
+        empty: () => ({ loanName: "", lender: "", monthlyEmi: "", startDate: "", dueDay: "", endDate: "" }),
         fields: [
           { key: "loanName", label: "Loan / EMI Name", type: "text", required: true, placeholder: "Home loan" },
           { key: "lender", label: "Lender", type: "text", required: true, placeholder: "Bank or person name" },
           { key: "monthlyEmi", label: "Monthly EMI", type: "number", required: true, placeholder: "0.00" },
-          { key: "dueDate", label: "Due Date", type: "date", required: true },
-          { key: "endDate", label: "End Date", type: "date" },
-          { key: "interestRate", label: "Interest Rate (%)", type: "number", placeholder: "0" },
-          { key: "outstandingBalance", label: "Outstanding Balance", type: "number", placeholder: "0.00" },
-          { key: "status", label: "Status", type: "select", options: ["Active", "Closed"] }
+          { key: "startDate", label: "Start Date", type: "date" },
+          { key: "dueDay", label: "Due Date", type: "select", required: true, options: Array.from({ length: 31 }, (_, index) => String(index + 1)) },
+          { key: "endDate", label: "End Date", type: "date" }
         ]
       }
     ]

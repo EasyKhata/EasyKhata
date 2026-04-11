@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { collection, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
+import { ORG_COLLECTION_KEYS, buildOrgSummary, deleteOrgCollectionDocs, sortOrgCollectionRecords, syncOrgCollection, hydrateUserOrgCollections } from "../utils/firestoreOrgCollections";
 import { useAuth } from "./AuthContext";
 
 const DataContext = createContext();
@@ -31,6 +32,15 @@ const EMPTY_ORG_DATA = {
   invoices: [],
   customers: [],
   orgRecords: {},
+  summary: {
+    incomeCount: 0,
+    expenseCount: 0,
+    invoiceCount: 0,
+    customerCount: 0,
+    orgRecordCount: 0,
+    totalEntries: 0,
+    updatedAt: ""
+  },
   account: {
     name: "",
     email: "",
@@ -100,12 +110,20 @@ function normalizeOrgData(source = {}, fallback = {}) {
   const normalizedCountry = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
   const normalizedLocation = buildLocationLabel({ city: normalizedCity, state: normalizedState, country: normalizedCountry });
   const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, state: normalizedState, country: normalizedCountry });
-  return {
-    income: source.income || [],
-    expenses: source.expenses || [],
-    invoices: source.invoices || [],
+  const normalizedCollections = {
+    income: sortOrgCollectionRecords("income", source.income || []),
+    expenses: sortOrgCollectionRecords("expenses", source.expenses || []),
+    invoices: sortOrgCollectionRecords("invoices", source.invoices || []),
     customers: source.customers || [],
-    orgRecords: source.orgRecords || {},
+    orgRecords: source.orgRecords || {}
+  };
+  return {
+    ...normalizedCollections,
+    summary: {
+      ...EMPTY_ORG_DATA.summary,
+      ...(source.summary || {}),
+      ...buildOrgSummary(normalizedCollections)
+    },
     goals: {
       ...EMPTY_ORG_DATA.goals,
       ...sourceGoals,
@@ -169,6 +187,7 @@ function extractActiveOrg(state = {}) {
     invoices: state.invoices,
     customers: state.customers,
     orgRecords: state.orgRecords,
+    summary: buildOrgSummary(state),
     account: state.account,
     goals: state.goals,
     budgets: state.budgets,
@@ -267,7 +286,97 @@ export function DataProvider({ children }) {
   const [loaded, setLoaded] = useState(false);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
+  const collectionSyncRef = useRef({});
   const invoiceSyncRef = useRef({});
+
+  const syncActiveOrgCollections = useCallback(async (nextState, { force = false } = {}) => {
+    if (!user?.id || !nextState?.activeOrgId) return;
+
+    await Promise.allSettled(
+      ORG_COLLECTION_KEYS.map(collectionKey =>
+        syncOrgCollection({
+          db,
+          userId: user.id,
+          orgId: nextState.activeOrgId,
+          collectionKey,
+          records: nextState[collectionKey] || [],
+          signatureStore: collectionSyncRef.current,
+          force
+        })
+      )
+    );
+  }, [user?.id]);
+
+  const syncSharedLedgerCollections = useCallback(async (ledgerId, nextState, { force = false } = {}) => {
+    if (!ledgerId || !nextState) return;
+
+    await Promise.allSettled(
+      ORG_COLLECTION_KEYS.map(collectionKey =>
+        syncOrgCollection({
+          db,
+          userId: `shared-ledger-${ledgerId}`,
+          orgId: DEFAULT_ORG_ID,
+          collectionKey,
+          records: nextState[collectionKey] || [],
+          signatureStore: collectionSyncRef.current,
+          force,
+          pathSegments: ["shared_ledgers", ledgerId],
+          scopeKey: `shared-ledger:${ledgerId}`
+        })
+      )
+    );
+  }, []);
+
+  const deleteOrgCollectionsForOrg = useCallback(async (userId, orgId) => {
+    if (!userId || !orgId) return;
+
+    await Promise.allSettled(
+      ORG_COLLECTION_KEYS.map(collectionKey =>
+        deleteOrgCollectionDocs({
+          db,
+          userId,
+          orgId,
+          collectionKey,
+          signatureStore: collectionSyncRef.current
+        })
+      )
+    );
+  }, []);
+
+  const hydrateSharedLedgerCollections = useCallback(async (ledgerId, ledgerDoc = {}) => {
+    const nextLedgerDoc = { ...ledgerDoc };
+    const backfillTargets = [];
+
+    for (const collectionKey of ORG_COLLECTION_KEYS) {
+      try {
+        const snapshot = await getDocs(collection(db, "shared_ledgers", ledgerId, collectionKey));
+        if (snapshot.empty) {
+          const embeddedRecords = sortOrgCollectionRecords(collectionKey, nextLedgerDoc?.[collectionKey] || []);
+          nextLedgerDoc[collectionKey] = embeddedRecords;
+          collectionSyncRef.current[`shared-ledger:${ledgerId}:${collectionKey}`] = JSON.stringify(embeddedRecords);
+          if (embeddedRecords.length) {
+            backfillTargets.push({ collectionKey, records: embeddedRecords });
+          }
+          continue;
+        }
+
+        nextLedgerDoc[collectionKey] = sortOrgCollectionRecords(
+          collectionKey,
+          snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
+        );
+      } catch (err) {
+        console.error(`Shared ledger ${collectionKey} load failed for ${ledgerId}:`, err);
+        nextLedgerDoc[collectionKey] = sortOrgCollectionRecords(collectionKey, nextLedgerDoc?.[collectionKey] || []);
+      }
+    }
+
+    nextLedgerDoc.summary = {
+      ...buildOrgSummary(nextLedgerDoc),
+      ...(ledgerDoc.summary || {})
+    };
+
+    return { ledgerDoc: nextLedgerDoc, backfillTargets };
+  }, []);
 
   const syncOrgInvoices = useCallback(async (userId, orgId, invoices = [], { force = false } = {}) => {
     if (!userId || !orgId) return;
@@ -537,19 +646,9 @@ export function DataProvider({ children }) {
       setUserData(user.id, "appData", nextState);
 
       if (nextState.sharedLedger?.id) {
-        const payload = {
-          income: nextState.income,
-          expenses: nextState.expenses,
-          invoices: nextState.invoices,
-          customers: nextState.customers,
-          orgRecords: nextState.orgRecords,
-          account: nextState.account,
-          goals: nextState.goals,
-          budgets: nextState.budgets,
-          notificationPrefs: nextState.notificationPrefs,
-          currency: nextState.currency
-        };
+        const payload = extractActiveOrg(nextState);
         setDoc(doc(db, "shared_ledgers", nextState.sharedLedger.id), sanitizeForFirestore(payload), { merge: true });
+        syncSharedLedgerCollections(nextState.sharedLedger.id, nextState);
         setDoc(
           doc(db, "users", user.id),
           sanitizeForFirestore({ updatedAt: activityAt, lastActivityAt: activityAt }),
@@ -573,7 +672,7 @@ export function DataProvider({ children }) {
         { merge: true }
       );
 
-      syncOrgInvoices(user.id, nextState.activeOrgId, nextState.invoices);
+      syncActiveOrgCollections(nextState);
 
       setUser(prev =>
         prev
@@ -585,12 +684,13 @@ export function DataProvider({ children }) {
           : prev
       );
     },
-    [setUser, syncOrgInvoices, user?.id, user?.organizationType]
+    [setUser, syncActiveOrgCollections, syncSharedLedgerCollections, user?.id, user?.organizationType]
   );
 
   useEffect(() => {
     async function loadData() {
       if (!user?.id) {
+        collectionSyncRef.current = {};
         invoiceSyncRef.current = {};
         setData(EMPTY_DATA);
         setLoaded(true);
@@ -606,7 +706,7 @@ export function DataProvider({ children }) {
         if (userDoc.sharedLedgerId) {
           const ledgerSnap = await getDoc(doc(db, "shared_ledgers", userDoc.sharedLedgerId));
           if (ledgerSnap.exists()) {
-            const ledgerDoc = ledgerSnap.data();
+            const { ledgerDoc, backfillTargets } = await hydrateSharedLedgerCollections(userDoc.sharedLedgerId, ledgerSnap.data());
             setData(
               buildStateFromOrganizations({
                 orgs: {
@@ -629,6 +729,24 @@ export function DataProvider({ children }) {
                 }
               })
             );
+            if (backfillTargets.length) {
+              Promise.allSettled(
+                backfillTargets.map(target =>
+                  syncOrgCollection({
+                    db,
+                    userId: `shared-ledger-${userDoc.sharedLedgerId}`,
+                    orgId: DEFAULT_ORG_ID,
+                    collectionKey: target.collectionKey,
+                    records: target.records,
+                    signatureStore: collectionSyncRef.current,
+                    force: true,
+                    deleteMissing: false,
+                    pathSegments: ["shared_ledgers", userDoc.sharedLedgerId],
+                    scopeKey: `shared-ledger:${userDoc.sharedLedgerId}`
+                  })
+                )
+              );
+            }
             setLoaded(true);
             return;
           }
@@ -642,7 +760,13 @@ export function DataProvider({ children }) {
           }
         };
         const normalizedOrgs = normalizeOrgCollection(userDoc, fallback);
-        const { orgs, orgIdsToBackfill } = await hydrateOrgInvoices(user.id, normalizedOrgs);
+        const { orgs, backfillTargets } = await hydrateUserOrgCollections({
+          db,
+          userId: user.id,
+          orgs: normalizedOrgs,
+          collectionKeys: ORG_COLLECTION_KEYS,
+          signatureStore: collectionSyncRef.current
+        });
         const nextState = buildStateFromOrganizations({
           orgs,
           activeOrgId: userDoc.activeOrgId || Object.keys(orgs)[0] || DEFAULT_ORG_ID,
@@ -672,8 +796,21 @@ export function DataProvider({ children }) {
           );
         }
 
-        if (orgIdsToBackfill.length) {
-          Promise.allSettled(orgIdsToBackfill.map(orgId => syncOrgInvoices(user.id, orgId, orgs[orgId]?.invoices || [], { force: true })));
+        if (backfillTargets.length) {
+          Promise.allSettled(
+            backfillTargets.map(target =>
+              syncOrgCollection({
+                db,
+                userId: user.id,
+                orgId: target.orgId,
+                collectionKey: target.collectionKey,
+                records: target.records,
+                signatureStore: collectionSyncRef.current,
+                force: true,
+                deleteMissing: false
+              })
+            )
+          );
         }
       } catch (err) {
         console.log("Firebase error, using local:", err);
@@ -696,7 +833,7 @@ export function DataProvider({ children }) {
     }
 
     loadData();
-  }, [hydrateOrgInvoices, setUser, syncOrgInvoices, user?.email, user?.id, user?.organizationType, user?.phone]);
+  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone]);
 
   useEffect(() => {
     if (!user?.id || !loaded) {
@@ -846,14 +983,14 @@ export function DataProvider({ children }) {
         [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
       }
     }));
-  const addIncome = i => update(d => ({ ...d, income: [withId(i), ...d.income] }));
-  const updateIncome = income => update(d => ({ ...d, income: d.income.map(i => (i.id === income.id ? income : i)) }));
+  const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(i), ...d.income]) }));
+  const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => (i.id === income.id ? income : i))) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
-  const addExpense = e => update(d => ({ ...d, expenses: [withId(e), ...d.expenses] }));
-  const updateExpense = expense => update(d => ({ ...d, expenses: d.expenses.map(e => (e.id === expense.id ? expense : e)) }));
+  const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(e), ...d.expenses]) }));
+  const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => (e.id === expense.id ? expense : e))) }));
   const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
-  const addInvoice = inv => update(d => ({ ...d, invoices: sortInvoices([withId(inv), ...d.invoices]) }));
-  const updateInvoice = inv => update(d => ({ ...d, invoices: sortInvoices(d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
+  const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(inv), ...d.invoices]) }));
+  const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
   const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
   async function switchOrganization(orgId) {
@@ -940,7 +1077,8 @@ export function DataProvider({ children }) {
 
     setData(nextState);
     persistState(nextState);
-    deleteOrgInvoiceCollection(user.id, orgId);
+    deleteOrgCollectionsForOrg(user.id, orgId);
+    deleteDoc(doc(db, "users", user.id, "orgs", orgId));
 
     try {
       await updateDoc(doc(db, "users", user.id), {
@@ -994,6 +1132,7 @@ export function DataProvider({ children }) {
         members,
         ...extractActiveOrg(data)
       });
+      await syncSharedLedgerCollections(ledgerId, data, { force: true });
 
       await updateDoc(doc(db, "users", user.id), {
         sharedLedgerId: ledgerId,
@@ -1070,18 +1209,38 @@ export function DataProvider({ children }) {
         sharedLedgerRole: "member"
       });
 
+      const { ledgerDoc: hydratedLedgerDoc, backfillTargets } = await hydrateSharedLedgerCollections(ledgerRef.id, ledgerDoc);
+      if (backfillTargets.length) {
+        Promise.allSettled(
+          backfillTargets.map(target =>
+            syncOrgCollection({
+              db,
+              userId: `shared-ledger-${ledgerRef.id}`,
+              orgId: DEFAULT_ORG_ID,
+              collectionKey: target.collectionKey,
+              records: target.records,
+              signatureStore: collectionSyncRef.current,
+              force: true,
+              deleteMissing: false,
+              pathSegments: ["shared_ledgers", ledgerRef.id],
+              scopeKey: `shared-ledger:${ledgerRef.id}`
+            })
+          )
+        );
+      }
+
       setUser(prev => (prev ? { ...prev, sharedLedgerId: ledgerRef.id, sharedLedgerRole: "member" } : prev));
       setData(
         buildStateFromOrganizations({
           orgs: {
-            [DEFAULT_ORG_ID]: normalizeOrgData(ledgerDoc)
+            [DEFAULT_ORG_ID]: normalizeOrgData(hydratedLedgerDoc)
           },
           activeOrgId: DEFAULT_ORG_ID,
           sharedLedger: {
             id: ledgerRef.id,
-            name: ledgerDoc.name || "Shared Ledger",
-            ownerId: ledgerDoc.ownerId || "",
-            inviteCode: ledgerDoc.inviteCode || "",
+            name: hydratedLedgerDoc.name || "Shared Ledger",
+            ownerId: hydratedLedgerDoc.ownerId || "",
+            inviteCode: hydratedLedgerDoc.inviteCode || "",
             members: nextMembers,
             role: "member"
           }

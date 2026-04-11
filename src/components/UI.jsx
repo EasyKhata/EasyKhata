@@ -486,7 +486,7 @@ export function DashboardSkeleton() {
 export function EmptyState({ title, message, actionLabel, onAction, accentColor = "var(--accent)" }) {
   return (
     <div className="empty-state fade-in">
-      <div className="empty-state-orb" style={{ background: `${accentColor}22`, color: accentColor }}>+</div>
+      <div className="empty-state-orb" style={{ background: `${accentColor}22`, color: accentColor }} />
       <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{title}</div>
       <div style={{ fontSize: 14, color: "var(--text-sec)", lineHeight: 1.6, maxWidth: 260 }}>{message}</div>
       {actionLabel && onAction && (
@@ -697,14 +697,6 @@ export function MonthNav({ year, month, onChange, viewMode = "month", onViewMode
         {"▶"}
       </button>
     </div>
-  );
-}
-
-export function FAB({ bg, shadow, onClick }) {
-  return (
-    <button className="fab" onClick={onClick} style={{ background: bg, boxShadow: `0 4px 24px ${shadow}` }}>
-      +
-    </button>
   );
 }
 

@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, updateDoc } from "firebase/firestore";
+import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import { PAYMENT_REQUEST_STATUS, PLANS, SUBSCRIPTION_STATUS, formatSubscriptionDate } from "../utils/subscription";
 import { downloadAdminMonthlyReport, downloadAdminUsersCsv, downloadAdminRequestsCsv } from "../utils/reportGen";
+import { ORG_COLLECTION_KEYS, buildOrgSummary, hydrateUserOrgCollections, migrateUserOrgCollections, sortOrgCollectionRecords, syncOrgCollection } from "../utils/firestoreOrgCollections";
 import { ORG_TYPE_OPTIONS, getOrgType } from "../utils/orgTypes";
 
 const ORG_TYPE_LABELS = ORG_TYPE_OPTIONS.reduce((acc, option) => {
@@ -207,6 +208,7 @@ export default function AdminPanel({ year, month }) {
   const [loading, setLoading] = useState(true);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
+  const [migrationInfo, setMigrationInfo] = useState({ running: false, message: "", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
 
   if (user?.role !== "admin") {
     return <div style={{ padding: 20 }}>Access denied.</div>;
@@ -217,12 +219,33 @@ export default function AdminPanel({ year, month }) {
     setAdminError("");
     try {
       const usersSnapshot = await getDocs(collection(db, "users"));
-      setUsers(
-        usersSnapshot.docs.map(item => ({
-          id: item.id,
-          ...item.data()
-        }))
+      const rawUsers = usersSnapshot.docs.map(item => ({
+        id: item.id,
+        ...item.data()
+      }));
+
+      const hydratedUsers = await Promise.all(
+        rawUsers.map(async item => {
+          if (!item?.id || !item?.orgs || typeof item.orgs !== "object" || !Object.keys(item.orgs).length) {
+            return item;
+          }
+
+          try {
+            const { orgs } = await hydrateUserOrgCollections({
+              db,
+              userId: item.id,
+              orgs: item.orgs,
+              collectionKeys: ORG_COLLECTION_KEYS
+            });
+            return { ...item, orgs };
+          } catch (err) {
+            console.error(`Admin invoice hydration failed for ${item.id}:`, err);
+            return item;
+          }
+        })
       );
+
+      setUsers(hydratedUsers);
 
       try {
         const requestsSnapshot = await getDocs(collection(db, "payment_requests"));
@@ -265,6 +288,93 @@ export default function AdminPanel({ year, month }) {
   useEffect(() => {
     fetchAdminData();
   }, []);
+
+  async function runHistoricalOrgMigration() {
+    setMigrationInfo({ running: true, message: "Backfilling invoices, income, and expenses into org subcollections...", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
+    setAdminError("");
+
+    try {
+      let migratedUsers = 0;
+      let migratedOrgs = 0;
+      let migratedRecords = 0;
+      let migratedLedgers = 0;
+
+      for (const member of users) {
+        if (!member?.id || !member?.orgs || typeof member.orgs !== "object" || !Object.keys(member.orgs).length) {
+          continue;
+        }
+
+        const result = await migrateUserOrgCollections({
+          db,
+          userId: member.id,
+          orgs: member.orgs,
+          collectionKeys: ORG_COLLECTION_KEYS
+        });
+
+        const nextOrgs = Object.entries(member.orgs || {}).reduce((acc, [orgId, orgValue]) => {
+          acc[orgId] = { ...orgValue, summary: buildOrgSummary(orgValue) };
+          return acc;
+        }, {});
+        await setDoc(doc(db, "users", member.id), { orgs: nextOrgs }, { merge: true });
+
+        if (result.migratedOrgCount > 0 || result.migratedRecordCount > 0) {
+          migratedUsers += 1;
+          migratedOrgs += result.migratedOrgCount;
+          migratedRecords += result.migratedRecordCount;
+          setMigrationInfo({
+            running: true,
+            message: `Migrated ${migratedUsers} user${migratedUsers === 1 ? "" : "s"} so far...`,
+            migratedUsers,
+            migratedOrgs,
+            migratedRecords
+          });
+        }
+      }
+
+      const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
+      for (const ledgerItem of ledgersSnapshot.docs) {
+        const ledgerData = ledgerItem.data();
+        let touched = false;
+
+        for (const collectionKey of ORG_COLLECTION_KEYS) {
+          const records = sortOrgCollectionRecords(collectionKey, ledgerData?.[collectionKey] || []);
+          if (!records.length) continue;
+
+          await syncOrgCollection({
+            db,
+            userId: `shared-ledger-${ledgerItem.id}`,
+            orgId: "org_primary",
+            collectionKey,
+            records,
+            force: true,
+            deleteMissing: false,
+            pathSegments: ["shared_ledgers", ledgerItem.id],
+            scopeKey: `shared-ledger:${ledgerItem.id}`
+          });
+          migratedRecords += records.length;
+          touched = true;
+        }
+
+        await setDoc(doc(db, "shared_ledgers", ledgerItem.id), { summary: buildOrgSummary(ledgerData) }, { merge: true });
+        if (touched) {
+          migratedLedgers += 1;
+        }
+      }
+
+      setMigrationInfo({
+        running: false,
+        message: `Migration finished. ${migratedUsers} user${migratedUsers === 1 ? "" : "s"}, ${migratedOrgs} org${migratedOrgs === 1 ? "" : "s"}, ${migratedLedgers} shared ledger${migratedLedgers === 1 ? "" : "s"}, ${migratedRecords} record${migratedRecords === 1 ? "" : "s"} synced.`,
+        migratedUsers,
+        migratedOrgs,
+        migratedRecords
+      });
+      await fetchAdminData();
+    } catch (err) {
+      console.error("Historical org migration error:", err);
+      setMigrationInfo(current => ({ ...current, running: false, message: "Migration failed before completion." }));
+      setAdminError(err?.message || "Unable to backfill org subcollections right now.");
+    }
+  }
 
   async function updateSupportTicketStatus(ticket, status) {
     setAdminError("");
@@ -325,11 +435,12 @@ export default function AdminPanel({ year, month }) {
           };
 
       const organizations = Object.entries(orgSource).map(([orgId, orgValue]) => {
-        const incomeCount = Array.isArray(orgValue?.income) ? orgValue.income.length : 0;
-        const expenseCount = Array.isArray(orgValue?.expenses) ? orgValue.expenses.length : 0;
-        const invoiceCount = Array.isArray(orgValue?.invoices) ? orgValue.invoices.length : 0;
-        const customerCount = Array.isArray(orgValue?.customers) ? orgValue.customers.length : 0;
-        const orgRecordCount = countOrgRecords(orgValue?.orgRecords);
+        const summary = orgValue?.summary || {};
+        const incomeCount = Number(summary.incomeCount ?? (Array.isArray(orgValue?.income) ? orgValue.income.length : 0));
+        const expenseCount = Number(summary.expenseCount ?? (Array.isArray(orgValue?.expenses) ? orgValue.expenses.length : 0));
+        const invoiceCount = Number(summary.invoiceCount ?? (Array.isArray(orgValue?.invoices) ? orgValue.invoices.length : 0));
+        const customerCount = Number(summary.customerCount ?? (Array.isArray(orgValue?.customers) ? orgValue.customers.length : 0));
+        const orgRecordCount = Number(summary.orgRecordCount ?? countOrgRecords(orgValue?.orgRecords));
         const orgType = getOrgType(orgValue?.account?.organizationType || item.organizationType);
         const parsedOrgLocation = parseLocationFields(orgValue?.account?.location || orgValue?.account?.address || "");
         return {
@@ -350,7 +461,7 @@ export default function AdminPanel({ year, month }) {
           invoiceCount,
           customerCount,
           orgRecordCount,
-          totalEntries: incomeCount + expenseCount + invoiceCount + customerCount + orgRecordCount
+          totalEntries: Number(summary.totalEntries ?? (incomeCount + expenseCount + invoiceCount + customerCount + orgRecordCount))
         };
       });
 
@@ -658,6 +769,15 @@ export default function AdminPanel({ year, month }) {
               className="btn-secondary"
               type="button"
               style={{ padding: "10px 14px", fontSize: 12 }}
+              onClick={runHistoricalOrgMigration}
+              disabled={Boolean(exporting) || loading || migrationInfo.running || !users.length}
+            >
+              {migrationInfo.running ? "Migrating collections..." : "Backfill Org Collections"}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12 }}
               onClick={() => {
                 setExporting("pdf");
                 try {
@@ -709,6 +829,11 @@ export default function AdminPanel({ year, month }) {
               ? "Preparing your export, please wait..."
               : `Selected period: ${selectedPeriodLabel}. Refresh anytime to recalculate subscription, audience, and workspace analytics.`}
           </div>
+          {!!migrationInfo.message && (
+            <div style={{ fontSize: 12, color: migrationInfo.running ? "var(--gold)" : "var(--text-sec)", marginTop: 10, lineHeight: 1.6 }}>
+              {migrationInfo.message}
+            </div>
+          )}
         </div>
 
         <div className="card" style={{ padding: 18 }}>

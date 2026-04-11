@@ -9,7 +9,6 @@ import {
   StructuredLocationFields,
   Textarea,
   Select,
-  FAB,
   Avatar,
   fmtMoney,
   fmtDate,
@@ -819,7 +818,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         >
           ⚡
         </button>
-        <FAB bg="var(--blue)" shadow="rgba(103,178,255,0.35)" onClick={openNew} />
       </div>
 
       {detail && (() => {
@@ -1163,7 +1161,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             ))}
 
             <button onClick={addItem} style={{ width: "100%", border: "1px solid var(--blue)44", borderRadius: 13, padding: "13px", fontFamily: "var(--font)", fontSize: 15, fontWeight: 600, cursor: "pointer", background: "var(--blue-deep)", color: "var(--blue)", marginBottom: 16 }}>
-              + Add Line Item
+              Add Line Item
             </button>
 
             <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }}>

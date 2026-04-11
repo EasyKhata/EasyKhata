@@ -8,7 +8,6 @@ import {
   MonthSelectInput,
   Textarea,
   Select,
-  FAB,
   DeleteBtn,
   fmtMoney,
   fmtDate,
@@ -18,7 +17,7 @@ import {
   EmptyState,
   SectionSkeleton
 } from "../components/UI";
-import { getFinancialInvoices, getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
+import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
@@ -88,6 +87,8 @@ export default function IncomeSection({ year, month, orgType }) {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
 
   const invIncome = config.hideInvoices || isApartmentOrg
     ? []
@@ -100,6 +101,36 @@ export default function IncomeSection({ year, month, orgType }) {
   });
   const totalInv = invIncome.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
   const totalManual = manualIncome.reduce((sum, item) => sum + Number(item.amount), 0);
+  const totalIncome = totalInv + totalManual;
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredInvIncome = invIncome.filter(invoice => {
+    if (!normalizedSearch) return true;
+    const invoiceSearch = [
+      invoice.customer?.name,
+      invoice.billTo?.name,
+      invoice.number,
+      invoice.paidDate,
+      String(invoiceGrandTotal(invoice) || "")
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return invoiceSearch.includes(normalizedSearch);
+  });
+  const filteredManualIncome = manualIncome.filter(item => {
+    if (!normalizedSearch) return true;
+    const manualSearch = [
+      item.label,
+      item.note,
+      item.date,
+      String(item.amount || ""),
+      ...(config.incomeFields || []).map(field => item[field.key])
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return manualSearch.includes(normalizedSearch);
+  });
   const flatOptions = useMemo(() => [
     ...(societyName ? [{
       value: societyName,
@@ -118,9 +149,22 @@ export default function IncomeSection({ year, month, orgType }) {
       isBuilding: false
     })).filter(option => option.value)
   ], [d.customers, societyName]);
-  const peopleOptions = useMemo(() => (
-    (d.customers || []).map(person => ({ value: person.name || "", label: [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
-  ), [d.customers]);
+  const peopleOptions = useMemo(() => {
+    const customerMeta = new Map(
+      (d.customers || [])
+        .filter(person => String(person?.name || "").trim())
+        .map(person => [
+          String(person.name).trim().toLowerCase(),
+          [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ")
+        ])
+    );
+
+    return getPersonalMemberOptions(d).map(option => ({
+      value: option.value,
+      label: customerMeta.get(String(option.value || "").trim().toLowerCase()) || option.label
+    }));
+  }, [d]);
+  const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
   const clientOptions = useMemo(() => (
     (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.email || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
@@ -142,6 +186,10 @@ export default function IncomeSection({ year, month, orgType }) {
   }
 
   function openNew() {
+    if (!hasHouseholdPeople) {
+      openPeopleManager();
+      return;
+    }
     setEditId(null);
     setForm(buildBlankForm(year, month, config));
     setFormError("");
@@ -234,9 +282,22 @@ export default function IncomeSection({ year, month, orgType }) {
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
           Total {config.incomeLabel} - {MONTHS[month]} {year}
         </div>
+        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--accent)", letterSpacing: -0.5 }}>{fmtMoney(totalIncome, sym)}</div>
+        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+          {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
+        </div>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
+        {(invIncome.length > 0 || manualIncome.length > 0) && (
+          <div style={{ marginBottom: 18 }}>
+            <Input
+              placeholder={`Search ${config.incomeLabel.toLowerCase()} by name, note, date, or amount`}
+              value={searchTerm}
+              onChange={event => setSearchTerm(event.target.value)}
+            />
+          </div>
+        )}
         {!config.hideInvoices && !isApartmentOrg && (
           <>
             <div className="section-label" style={{ display: "flex", justifyContent: "space-between" }}>
@@ -252,8 +313,12 @@ export default function IncomeSection({ year, month, orgType }) {
                   onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))}
                   accentColor="var(--blue)"
                 />
+              ) : filteredInvIncome.length === 0 ? (
+                <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
+                  No {config.invoicesLabel.toLowerCase()} match this search.
+                </div>
               ) : (
-                invIncome.map(invoice => (
+                filteredInvIncome.map(invoice => (
                   <div key={invoice.id} className="card-row">
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <Avatar name={invoice.customer?.name || "?"} size={34} fontSize={12} />
@@ -275,7 +340,15 @@ export default function IncomeSection({ year, month, orgType }) {
           <span style={{ color: "var(--accent)" }}>{fmtMoney(totalManual, sym)}</span>
         </div>
         <div className="card">
-          {manualIncome.length === 0 ? (
+          {!hasHouseholdPeople ? (
+            <EmptyState
+              title="Add a person before tracking earnings"
+              message="Household earnings must be tagged to at least one person. Add your first person in Org to continue."
+              actionLabel="Open People"
+              onAction={openPeopleManager}
+              accentColor="var(--accent)"
+            />
+          ) : manualIncome.length === 0 ? (
             <EmptyState
               title={`No ${config.incomeLabel.toLowerCase()} yet`}
               message={isApartmentOrg ? "Use Add Collection to enter maintenance amounts already collected before onboarding or received after starting with the app." : `Track cash, transfers, or direct ${config.incomeEntryLabel.toLowerCase()} entries here.`}
@@ -283,8 +356,12 @@ export default function IncomeSection({ year, month, orgType }) {
               onAction={openNew}
               accentColor="var(--accent)"
             />
+          ) : filteredManualIncome.length === 0 ? (
+            <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
+              No {config.incomeLabel.toLowerCase()} match this search.
+            </div>
           ) : (
-            manualIncome.map(item => (
+            filteredManualIncome.map(item => (
               <div key={item.id} className="card-row">
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.label}</div>
@@ -304,8 +381,6 @@ export default function IncomeSection({ year, month, orgType }) {
           )}
         </div>
       </div>
-
-      <FAB bg="var(--accent)" shadow="rgba(126,232,162,0.35)" onClick={openNew} />
 
       {showForm && (
         <Modal
