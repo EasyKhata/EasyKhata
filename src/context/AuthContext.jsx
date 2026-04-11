@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import {
   EmailAuthProvider,
   createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendEmailVerification,
@@ -361,8 +362,19 @@ export function AuthProvider({ children }) {
       setCurrentUser(nextUser.id);
       return { success: true, user: nextUser };
     } catch (err) {
-      if (err.code === "auth/user-not-found") return { error: "User not found. Please register." };
-      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") return { error: "Incorrect password." };
+      if (err.code === "auth/user-not-found") return { error: "No account exists with this email address." };
+      if (err.code === "auth/wrong-password") return { error: "Incorrect password." };
+      if (err.code === "auth/invalid-credential") {
+        try {
+          const signInMethods = await fetchSignInMethodsForEmail(auth, email);
+          if (!signInMethods.length) {
+            return { error: "No account exists with this email address." };
+          }
+        } catch {
+          return { error: "We couldn't verify this account right now. Please try again." };
+        }
+        return { error: "Incorrect password." };
+      }
       if (err.code === "auth/invalid-email") return { error: "Invalid email format." };
       return { error: err.message };
     }
@@ -485,6 +497,7 @@ export function AuthProvider({ children }) {
     try {
       const timestamp = new Date().toISOString();
       const nextUpdates = { ...updates, updatedAt: timestamp, lastActivityAt: timestamp };
+      delete nextUpdates.email;
       if ("dateOfBirth" in nextUpdates) {
         nextUpdates.ageGroup = getAgeGroupFromDateOfBirth(nextUpdates.dateOfBirth);
       }

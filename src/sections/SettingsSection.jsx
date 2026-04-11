@@ -506,7 +506,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function saveUserProfile() {
     const cleanName = String(userForm.name || "").trim();
-    const cleanEmail = normalizeEmail(userForm.email);
+    const cleanEmail = normalizeEmail(user?.email || userForm.email);
     const cleanPhoneNumber = sanitizePhoneDigits(userForm.phoneNumber);
     const cleanPhoneCountryCode = userForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
@@ -1576,8 +1576,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Field label="Full Name" required>
           <Input placeholder="Your name" value={userForm.name} onChange={event => setUserForm(current => ({ ...current, name: event.target.value }))} />
         </Field>
-        <Field label="Email" required>
-          <Input type="email" placeholder="you@example.com" value={userForm.email} onChange={event => setUserForm(current => ({ ...current, email: event.target.value }))} />
+        <Field label="Email" required hint="Linked to your sign-in account and cannot be edited here.">
+          <Input type="email" placeholder="you@example.com" value={userForm.email} readOnly aria-readonly="true" style={{ background: "var(--surface-high)", color: "var(--text-sec)", cursor: "not-allowed" }} />
         </Field>
         <Field label="Phone" required>
           <PhoneNumberInput
