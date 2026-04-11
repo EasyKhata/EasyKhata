@@ -1,0 +1,1 @@
+import{R as r}from"./index-BmWMN10c.js";import i from"./InvoicesSection-C9Mh3pFB.js";import"./jspdf.es.min-Dcv_ZyP3.js";import"./MainApp-CaLtxUfV.js";import"./validator-CnV_Z2ES.js";function a({year:t,month:e,orgType:o}){return r.createElement(i,{year:t,month:e,orgType:o,documentType:"quote"})}export{a as default};

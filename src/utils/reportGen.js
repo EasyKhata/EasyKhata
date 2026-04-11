@@ -76,6 +76,79 @@ function drawRows(doc, y, rows) {
   return y;
 }
 
+function formatDateValue(value) {
+  if (!value) return "--";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return safeText(value);
+  return parsed.toLocaleDateString("en-IN");
+}
+
+function getApartmentCollectionEntries(data, year, month) {
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  return (data?.income || [])
+    .filter(item => (item.collectionMonth || item.month || item.date?.slice(0, 7) || "") === monthKey)
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function getApartmentExpenseEntries(data, year, month) {
+  const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+  return (data?.expenses || [])
+    .filter(expense => {
+      if (expense.recurring) {
+        const started = expense.startMonth <= monthKey;
+        const notEnded = !expense.endMonth || expense.endMonth >= monthKey;
+        return started && notEnded;
+      }
+      return expense.month === monthKey;
+    })
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function getApartmentCollectionDetailRows(entries, sym) {
+  return entries.map(item => ({
+    label: [
+      safeText(item.flatNumber || "Flat"),
+      safeText(item.residentName || item.ownerName || item.source || item.collectionType || "Collection")
+    ].filter(Boolean).join(" · "),
+    value: `${formatDateValue(item.date)} | ${money(item.amount, sym)} | ${safeText(item.collectionType || "Collection")}`
+  }));
+}
+
+function getApartmentExpenseDetailRows(entries, sym) {
+  return entries.map(item => ({
+    label: [
+      safeText(item.category || item.expenseType || "Expense"),
+      safeText(item.serviceProvider || item.vendor || item.paidTo || item.source || item.billReference || "")
+    ].filter(Boolean).join(" · "),
+    value: `${formatDateValue(item.date)} | ${money(item.amount, sym)}${item.billReference ? ` | Ref ${safeText(item.billReference)}` : ""}`
+  }));
+}
+
+function getApartmentFinancialYearCollectionEntries(data, startYear) {
+  const periods = getFinancialYearPeriods(startYear).map(period => period.key);
+  const validPeriods = new Set(periods);
+  return (data?.income || [])
+    .filter(item => validPeriods.has(item.collectionMonth || item.month || item.date?.slice(0, 7) || ""))
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function getApartmentFinancialYearExpenseEntries(data, startYear) {
+  const periods = getFinancialYearPeriods(startYear).map(period => period.key);
+  const validPeriods = new Set(periods);
+  return (data?.expenses || [])
+    .filter(expense => {
+      if (expense.recurring) {
+        return periods.some(periodKey => expense.startMonth <= periodKey && (!expense.endMonth || expense.endMonth >= periodKey));
+      }
+      return validPeriods.has(expense.month || "");
+    })
+    .slice()
+    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
 function formatUserSubscription(user) {
   const plan = safeText(user.plan || user.subscriptionPlan || "free");
   const status = safeText(user.subscriptionStatus || user.status || "active");
@@ -190,7 +263,7 @@ function getFinancialYearMetricItems(data, overview, sym) {
       { label: "Net Reserve", value: money(overview.totalNet, sym) },
       { label: "Avg Collections", value: money(overview.totalIncome / 12, sym) },
       { label: "Flats", value: String(stats.flatsCount || 0) },
-      { label: "Residents", value: String(stats.residentsCount || 0) }
+      { label: "Collection Rate", value: `${Math.round(stats.collectionRate || 0)}%` }
     ];
   }
 
@@ -314,6 +387,244 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
       { label: "Invoices overdue", value: String(stats.overdueInvoices?.length || 0) }
     ]
   };
+}
+
+const STATEMENT_THEME = {
+  header: [16, 42, 67],
+  headerSoft: [226, 236, 248],
+  credit: [34, 139, 94],
+  creditSoft: [229, 245, 237],
+  debit: [189, 69, 69],
+  debitSoft: [250, 232, 232],
+  neutral: [186, 137, 57],
+  neutralSoft: [248, 241, 223],
+  row: [247, 249, 252],
+  border: [219, 227, 236],
+  text: [20, 20, 28],
+  textDim: [96, 104, 116]
+};
+
+function setRgbFill(doc, rgb) {
+  doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+}
+
+function setRgbText(doc, rgb) {
+  doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+}
+
+function drawStatementHero(doc, y, title, subtitle, apartmentName) {
+  setRgbFill(doc, STATEMENT_THEME.header);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 34, 7, 7, "F");
+  setRgbText(doc, [255, 255, 255]);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(safeText(title), PAGE.left + 5, y + 11);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10.5);
+  doc.text(safeText(apartmentName), PAGE.left + 5, y + 19);
+  doc.text(safeText(subtitle), PAGE.left + 5, y + 26);
+  return y + 42;
+}
+
+function drawStatementSummaryCards(doc, y, items) {
+  const cardWidth = 86;
+  const cardHeight = 28;
+  items.forEach((item, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = col === 0 ? PAGE.left : 108;
+    const cy = y + row * (cardHeight + 8);
+    setRgbFill(doc, item.softColor);
+    doc.roundedRect(x, cy, cardWidth, cardHeight, 4, 4, "F");
+    setRgbFill(doc, item.color);
+    doc.roundedRect(x, cy, 4, cardHeight, 4, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    setRgbText(doc, STATEMENT_THEME.textDim);
+    doc.text(safeText(item.label), x + 8, cy + 8);
+    doc.setFontSize(14);
+    setRgbText(doc, item.color);
+    doc.text(safeText(item.value), x + 8, cy + 19);
+  });
+  return y + Math.ceil(items.length / 2) * (cardHeight + 8);
+}
+
+function buildApartmentStatementRows(collections, expenses, openingBalance) {
+  const transactions = [
+    ...collections.map(item => ({
+      date: item.date || `${item.collectionMonth || item.month || ""}-01`,
+      details: [
+        item.flatNumber ? `Flat ${safeText(item.flatNumber)}` : "Collection",
+        safeText(item.residentName || item.ownerName || item.collectionType || "Collection")
+      ].filter(Boolean).join(" | "),
+      credit: Number(item.amount || 0),
+      debit: 0
+    })),
+    ...expenses.map(item => ({
+      date: item.date || `${item.month || ""}-01`,
+      details: [
+        safeText(item.category || item.expenseType || "Expense"),
+        safeText(item.serviceProvider || item.vendor || item.billReference || item.note || "")
+      ].filter(Boolean).join(" | "),
+      credit: 0,
+      debit: Number(item.amount || 0)
+    }))
+  ].sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+
+  let runningBalance = Number(openingBalance || 0);
+  return transactions.map(item => {
+    runningBalance += item.credit - item.debit;
+    return {
+      date: formatDateValue(item.date),
+      details: item.details || "--",
+      credit: item.credit,
+      debit: item.debit,
+      balance: runningBalance
+    };
+  });
+}
+
+function drawApartmentStatementTable(doc, y, title, rows, sym) {
+  y = ensureSpace(doc, y, 22);
+  setRgbText(doc, STATEMENT_THEME.text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(safeText(title), PAGE.left, y);
+  y += 8;
+
+  const columns = [
+    { key: "date", label: "Date", width: 22, align: "left" },
+    { key: "details", label: "Details", width: 82, align: "left" },
+    { key: "credit", label: "Credit", width: 22, align: "right" },
+    { key: "debit", label: "Debit", width: 22, align: "right" },
+    { key: "balance", label: "Balance", width: 30, align: "right" }
+  ];
+
+  const drawHeader = headerY => {
+    setRgbFill(doc, STATEMENT_THEME.headerSoft);
+    doc.roundedRect(PAGE.left, headerY, PAGE.right - PAGE.left, 10, 3, 3, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    setRgbText(doc, STATEMENT_THEME.header);
+    let x = PAGE.left + 2;
+    columns.forEach(column => {
+      const textX = column.align === "right" ? x + column.width - 2 : x;
+      doc.text(column.label, textX, headerY + 6.5, column.align === "right" ? { align: "right" } : undefined);
+      x += column.width;
+    });
+  };
+
+  drawHeader(y);
+  y += 14;
+
+  if (!rows.length) {
+    return drawRows(doc, y, [{ label: "No transactions recorded", value: "--" }]);
+  }
+
+  rows.forEach((row, index) => {
+    const detailLines = doc.splitTextToSize(safeText(row.details), 78);
+    const rowHeight = Math.max(10, detailLines.length * 4.6 + 2);
+    y = ensureSpace(doc, y, rowHeight + 4);
+    if (y === PAGE.top) {
+      drawHeader(y);
+      y += 14;
+    }
+    if (index % 2 === 0) {
+      setRgbFill(doc, STATEMENT_THEME.row);
+      doc.rect(PAGE.left, y - 5, PAGE.right - PAGE.left, rowHeight + 2, "F");
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.7);
+    setRgbText(doc, STATEMENT_THEME.text);
+
+    let x = PAGE.left + 2;
+    doc.text(safeText(row.date), x, y + 1);
+    x += 22;
+    doc.text(detailLines, x, y + 1);
+    x += 82;
+
+    if (row.credit > 0) {
+      setRgbText(doc, STATEMENT_THEME.credit);
+      doc.text(money(row.credit, sym), x + 20, y + 1, { align: "right" });
+    }
+    x += 22;
+    if (row.debit > 0) {
+      setRgbText(doc, STATEMENT_THEME.debit);
+      doc.text(money(row.debit, sym), x + 20, y + 1, { align: "right" });
+    }
+    x += 22;
+    setRgbText(doc, row.balance >= 0 ? STATEMENT_THEME.header : STATEMENT_THEME.debit);
+    doc.text(money(row.balance, sym), x + 28, y + 1, { align: "right" });
+    y += rowHeight + 4;
+  });
+
+  return y;
+}
+
+function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const overview = buildFinancialYearOverview(data, startYear);
+  const apartmentName = safeText(data?.account?.name || "Apartment / Society");
+  const title = `Society Statement - ${overview.label}`;
+  const statementRows = buildApartmentStatementRows(
+    getApartmentFinancialYearCollectionEntries(data, startYear),
+    getApartmentFinancialYearExpenseEntries(data, startYear),
+    0
+  );
+
+  let y = PAGE.top;
+  y = drawStatementHero(doc, y, title, `Generated on ${new Date().toLocaleDateString("en-IN")}`, apartmentName);
+  y = drawStatementSummaryCards(doc, y, [
+    { label: "Collections", value: money(overview.totalIncome, sym), color: STATEMENT_THEME.credit, softColor: STATEMENT_THEME.creditSoft },
+    { label: "Expenses", value: money(overview.totalExpense, sym), color: STATEMENT_THEME.debit, softColor: STATEMENT_THEME.debitSoft },
+    { label: "Net Reserve", value: money(overview.totalNet, sym), color: STATEMENT_THEME.header, softColor: STATEMENT_THEME.headerSoft },
+    { label: "Avg Monthly", value: money(overview.totalIncome / 12, sym), color: STATEMENT_THEME.neutral, softColor: STATEMENT_THEME.neutralSoft }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 30);
+  y = sectionTitle(doc, y + 2, "Statement Snapshot");
+  y = drawRows(doc, y, [
+    { label: "Apartment Name", value: apartmentName },
+    { label: "Financial Year", value: overview.label },
+    { label: "Flats Covered", value: String(overview.endingStats?.flatsCount || 0) },
+    { label: "Collection Rate", value: `${Math.round(overview.endingStats?.collectionRate || 0)}%` }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 60);
+  y = drawApartmentStatementTable(doc, y + 2, "Transaction Statement", statementRows, sym);
+  doc.save(getFinancialYearFilename(data, startYear));
+}
+
+function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const stats = calculateApartmentDashboard(data, year, month);
+  const apartmentName = safeText(data?.account?.name || "Apartment / Society");
+  const monthlyCollections = getApartmentCollectionEntries(data, year, month);
+  const monthlyExpenses = getApartmentExpenseEntries(data, year, month);
+  const openingBalance = Number(stats.totalReserve || 0) - Number(stats.monthlyReserve || 0);
+  const statementRows = buildApartmentStatementRows(monthlyCollections, monthlyExpenses, openingBalance);
+
+  let y = PAGE.top;
+  y = drawStatementHero(doc, y, `Society Statement - ${MONTHS[month]} ${year}`, `Generated on ${new Date().toLocaleDateString("en-IN")}`, apartmentName);
+  y = drawStatementSummaryCards(doc, y, [
+    { label: "Opening Balance", value: money(openingBalance, sym), color: STATEMENT_THEME.neutral, softColor: STATEMENT_THEME.neutralSoft },
+    { label: "Collections", value: money(stats.totalIncome, sym), color: STATEMENT_THEME.credit, softColor: STATEMENT_THEME.creditSoft },
+    { label: "Expenses", value: money(stats.totalExpense, sym), color: STATEMENT_THEME.debit, softColor: STATEMENT_THEME.debitSoft },
+    { label: "Closing Balance", value: money(stats.totalReserve, sym), color: STATEMENT_THEME.header, softColor: STATEMENT_THEME.headerSoft }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 30);
+  y = sectionTitle(doc, y + 2, "Statement Snapshot");
+  y = drawRows(doc, y, [
+    { label: "Apartment Name", value: apartmentName },
+    { label: "Statement Period", value: `${MONTHS[month]} ${year}` },
+    { label: "Flats Covered", value: String(stats.flatsCount || 0) },
+    { label: "Collection Rate", value: `${Math.round(stats.collectionRate || 0)}%` }
+  ]);
+
+  y = ensureSpace(doc, y + 2, 60);
+  y = drawApartmentStatementTable(doc, y + 2, "Transaction Statement", statementRows, sym);
+  doc.save(`society-report-${stats.monthKey}.pdf`);
 }
 
 function downloadCsv(filename, rows) {
@@ -467,10 +778,16 @@ export function downloadAdminMonthlyReport(data, year, month, sym) {
 }
 
 export function downloadFinancialYearReport(data, startYear, sym) {
+  if (isApartmentOrgData(data)) {
+    downloadApartmentFinancialYearStatementReport(data, startYear, sym);
+    return;
+  }
+
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const overview = buildFinancialYearOverview(data, startYear);
   const title = getFinancialYearTitle(data, startYear);
   const snapshot = getFinancialYearSnapshotRows(data, overview, sym);
+  const apartmentName = safeText(data?.account?.name || "Apartment / Society");
 
   let y = PAGE.top;
   doc.setFillColor(22, 22, 28);
@@ -483,6 +800,11 @@ export function downloadFinancialYearReport(data, startYear, sym) {
   doc.setFontSize(10.5);
   doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
   y += 32;
+
+  if (isApartmentOrgData(data)) {
+    y = sectionTitle(doc, y, "Apartment");
+    y = drawRows(doc, y, [{ label: "Apartment Name", value: apartmentName }]);
+  }
 
   y = sectionTitle(doc, y, "Financial Year Summary");
   y = drawMetricGrid(doc, y, getFinancialYearMetricItems(data, overview, sym));
@@ -529,82 +851,32 @@ export function downloadFinancialYearReport(data, startYear, sym) {
       : [{ label: "No active alerts", value: "This financial year looks steady across the tracked records" }]
   );
 
+  if (isApartmentOrgData(data)) {
+    const collectionRows = getApartmentCollectionDetailRows(getApartmentFinancialYearCollectionEntries(data, startYear), sym);
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Collection Details");
+    y = drawRows(
+      doc,
+      y,
+      collectionRows.length ? collectionRows : [{ label: "No collections recorded", value: "--" }]
+    );
+
+    const expenseRows = getApartmentExpenseDetailRows(getApartmentFinancialYearExpenseEntries(data, startYear), sym);
+    y = ensureSpace(doc, y + 2, 40);
+    y = sectionTitle(doc, y + 2, "Expense Details");
+    y = drawRows(
+      doc,
+      y,
+      expenseRows.length ? expenseRows : [{ label: "No expenses recorded", value: "--" }]
+    );
+  }
+
   doc.save(getFinancialYearFilename(data, startYear));
 }
 
 export function downloadMonthlyReport(data, year, month, sym) {
   if (isApartmentOrgData(data)) {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const stats = calculateApartmentDashboard(data, year, month);
-    const title = `Society Report - ${MONTHS[month]} ${year}`;
-    const recentCollections = stats.recentCollections || [];
-
-    let y = PAGE.top;
-    doc.setFillColor(22, 22, 28);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text(title, PAGE.left + 4, y + 10);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-    y += 32;
-
-    y = sectionTitle(doc, y, "Society Summary");
-    y = drawMetricGrid(doc, y, [
-      { label: "Collections", value: money(stats.totalIncome, sym) },
-      { label: "Society Expenses", value: money(stats.totalExpense, sym) },
-      { label: "Monthly Reserve", value: money(stats.monthlyReserve, sym) },
-      { label: "Total Reserve", value: money(stats.totalReserve, sym) },
-      { label: "Flats", value: String(stats.flatsCount || 0) },
-      { label: "Residents", value: String(stats.residentsCount || 0) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 44);
-    y = sectionTitle(doc, y + 2, "Collection Coverage");
-    y = drawRows(doc, y, [
-      { label: "Flats paid this month", value: String(stats.paidFlatsCount || 0) },
-      { label: "Flats pending this month", value: String(stats.unpaidFlats.length || 0) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Expense Breakdown");
-    y = drawRows(
-      doc,
-      y,
-      stats.topExpenseCategories.length
-        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
-        : [{ label: "No society expenses recorded this month", value: "--" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Recent Collections");
-    y = drawRows(
-      doc,
-      y,
-      recentCollections.length
-        ? recentCollections.map(item => ({
-            label: `${safeText(item.flatNumber || "Flat")} · ${safeText(item.residentName || "Resident")}`,
-            value: `${money(item.amount, sym)}  |  ${safeText(item.collectionType || "Collection")}`
-          }))
-        : [{ label: "No maintenance collections recorded", value: "--" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Pending Flats");
-    y = drawRows(
-      doc,
-      y,
-      stats.unpaidFlats.length
-        ? stats.unpaidFlats.slice(0, 18).map(flat => ({
-            label: `${safeText(flat.flatNumber || "Flat")} · ${safeText(flat.ownerName || flat.tenantName || "No resident assigned")}`,
-            value: flat.phone ? safeText(flat.phone) : "No phone number"
-          }))
-        : [{ label: "All tracked flats are covered this month", value: "--" }]
-    );
-
-    doc.save(`society-report-${stats.monthKey}.pdf`);
+    downloadApartmentMonthlyStatementReport(data, year, month, sym);
     return;
   }
 
