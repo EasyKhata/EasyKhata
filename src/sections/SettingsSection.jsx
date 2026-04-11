@@ -1214,6 +1214,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />
               <MenuRow label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
+              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
               <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
               {(orgConfig.extraSections || []).filter(section => !(orgType === "personal" && section.key === "loans")).map(section => (
                 <MenuRow
@@ -1235,6 +1236,58 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             onSwitch={handleSwitchOrganization}
             onDelete={handleDeleteOrganization}
           />
+          {showReportPicker && (
+            <Modal
+              title="Download Report"
+              onClose={() => !generatingReport && setShowReportPicker(false)}
+              onSave={handleReportDownload}
+              saveLabel={generatingReport ? "Generating..." : "Download PDF"}
+              canSave={!generatingReport}
+              accentColor="var(--blue)"
+            >
+              <Field label="Report Type" required hint="Choose a single month report or the full April to March financial year.">
+                <Select value={reportForm.period} onChange={e => setReportForm(current => ({ ...current, period: e.target.value }))}>
+                  <option value="month">Month Report</option>
+                  <option value="financial-year">Financial Year Report</option>
+                </Select>
+              </Field>
+
+              {reportForm.period === "month" ? (
+                <>
+                  <Field label="Month" required>
+                    <Select value={reportForm.month} onChange={e => setReportForm(current => ({ ...current, month: Number(e.target.value) }))}>
+                      {MONTHS.map((monthLabel, index) => (
+                        <option key={monthLabel} value={index}>{monthLabel}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Year" required>
+                    <Select value={reportForm.year} onChange={e => setReportForm(current => ({ ...current, year: Number(e.target.value) }))}>
+                      {reportYearOptions.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                </>
+              ) : (
+                <Field label="Financial Year" required hint="Each financial year runs from April to March.">
+                  <Select value={reportForm.financialYearStart} onChange={e => setReportForm(current => ({ ...current, financialYearStart: Number(e.target.value) }))}>
+                    {financialYearOptions.map(option => (
+                      <option key={option} value={option}>{`FY ${option}-${String(option + 1).slice(-2)} (Apr ${option} - Mar ${option + 1})`}</option>
+                    ))}
+                  </Select>
+                </Field>
+              )}
+
+              <div className="card" style={{ padding: 16 }}>
+                <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+                  {reportForm.period === "financial-year"
+                    ? "This will export one PDF covering the full April to March financial year."
+                    : "This will export the selected month as a PDF report."}
+                </div>
+              </div>
+            </Modal>
+          )}
         </div>
       );
     }
@@ -1311,7 +1364,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div className="card">
             <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
-            <MenuRow icon="R" label="Reports" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF" : "Choose a month/year report or a full financial year PDF"} onClick={openReportPicker} />
+            {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
           </div>
         </div>
 
