@@ -1,11 +1,26 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, DateSelectInput, FAB, DeleteBtn, fmtMoney, fmtDate, MONTHS, SectionSkeleton, EmptyState } from "../components/UI";
+import { Modal, Field, Input, Select, DateSelectInput, DeleteBtn, fmtMoney, fmtDate, MONTHS, SectionSkeleton, EmptyState } from "../components/UI";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
-import { getPersonalEmiAmount, getPersonalEmiDueDate, getPersonalEmiEndDate } from "../utils/analytics";
+import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const EMI_END_DATE_MAX = `${new Date().getFullYear() + 50}-12-31`;
+const CURRENT_MONTH_START = `${TODAY.slice(0, 7)}-01`;
+
+function startOfMonthValue(year, month) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-01`;
+}
+
+function endOfMonthValue(year, month) {
+  const lastDay = new Date(year, month + 1, 0);
+  return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
+}
+
+function getLoanStartDate(item) {
+  return String(item?.startDate || CURRENT_MONTH_START);
+}
 
 function buildBlankForm(section) {
   const base = section?.empty?.() || {};
@@ -37,7 +52,7 @@ function renderField(field, value, onChange) {
   }
 
   if (field.type === "date") {
-    return <DateSelectInput value={value || ""} onChange={onChange} max={TODAY} />;
+    return <DateSelectInput value={value || ""} onChange={onChange} max={field.key === "startDate" || field.key === "endDate" ? EMI_END_DATE_MAX : undefined} yearOrder={field.key === "startDate" || field.key === "endDate" ? "asc" : "desc"} />;
   }
 
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
@@ -53,11 +68,35 @@ export default function EmiSection({ year, month, orgType }) {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(buildBlankForm(emiSection));
   const [formError, setFormError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
 
-  const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => String(getPersonalEmiDueDate(a) || "").localeCompare(String(getPersonalEmiDueDate(b) || "")));
-  const activeLoans = loans.filter(item => String(item.status || "Active").toLowerCase() !== "closed");
+  const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => getPersonalEmiDueDay(a) - getPersonalEmiDueDay(b));
+  const peopleCount = (d.customers || []).filter(person => String(person?.name || "").trim()).length;
+  const hasHouseholdPeople = peopleCount > 0;
+  const viewStart = startOfMonthValue(year, month);
+  const viewEnd = endOfMonthValue(year, month);
+  const activeLoans = loans.filter(item => {
+    const startDate = getLoanStartDate(item);
+    const endDate = getPersonalEmiEndDate(item);
+    return (!startDate || startDate <= viewEnd) && (!endDate || endDate >= viewStart);
+  });
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredLoans = activeLoans.filter(item => {
+    if (!normalizedSearch) return true;
+    const searchFields = [
+      item.loanName,
+      item.lender,
+      String(getPersonalEmiDueDay(item) || ""),
+      getPersonalEmiEndDate(item),
+      String(getPersonalEmiAmount(item) || "")
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchFields.includes(normalizedSearch);
+  });
   const monthlyEmi = activeLoans.reduce((sum, item) => sum + getPersonalEmiAmount(item), 0);
-  const outstanding = activeLoans.reduce((sum, item) => sum + (Number(item.outstandingBalance) || 0), 0);
 
   if (resolvedOrgType !== ORG_TYPES.PERSONAL || !emiSection) {
     return null;
@@ -68,6 +107,10 @@ export default function EmiSection({ year, month, orgType }) {
   }
 
   function openNew() {
+    if (!hasHouseholdPeople) {
+      openPeopleManager();
+      return;
+    }
     setEditId(null);
     setForm(buildBlankForm(emiSection));
     setFormError("");
@@ -80,7 +123,8 @@ export default function EmiSection({ year, month, orgType }) {
       ...buildBlankForm(emiSection),
       ...record,
       monthlyEmi: String(record.monthlyEmi ?? record.emiAmount ?? ""),
-      dueDate: record.dueDate || record.nextDueDate || "",
+      startDate: record.startDate || "",
+      dueDay: String(getPersonalEmiDueDay(record) || ""),
       endDate: record.endDate || ""
     });
     setFormError("");
@@ -107,16 +151,22 @@ export default function EmiSection({ year, month, orgType }) {
       setFormError("Enter a monthly EMI amount greater than 0.");
       return;
     }
-    if (!form.dueDate || !isValidDateValue(form.dueDate)) {
-      setFormError("Choose a valid EMI due date.");
+    const dueDay = Number(form.dueDay);
+    if (!Number.isFinite(dueDay) || dueDay < 1 || dueDay > 31) {
+      setFormError("Choose a valid EMI due date between 1 and 31.");
       return;
     }
-    if (form.endDate && !isValidDateValue(form.endDate)) {
-      setFormError("Choose a valid EMI end date or leave it empty.");
+    if (!form.endDate || !isValidDateValue(form.endDate)) {
+      setFormError("Choose a valid EMI end date.");
       return;
     }
-    if (form.endDate && form.endDate < form.dueDate) {
-      setFormError("End date should be on or after the EMI due date.");
+    if (form.startDate && !isValidDateValue(form.startDate)) {
+      setFormError("Choose a valid EMI start date or leave it empty.");
+      return;
+    }
+    const effectiveStartDate = form.startDate || CURRENT_MONTH_START;
+    if (form.endDate < effectiveStartDate) {
+      setFormError("End date should be on or after the EMI start date.");
       return;
     }
 
@@ -124,6 +174,7 @@ export default function EmiSection({ year, month, orgType }) {
     emiSection.fields.forEach(field => {
       payload[field.key] = String(form[field.key] || "").trim();
     });
+    payload.startDate = payload.startDate || CURRENT_MONTH_START;
 
     if (editId) d.updateOrgRecord("loans", { ...payload, id: editId });
     else d.addOrgRecord("loans", payload);
@@ -138,29 +189,41 @@ export default function EmiSection({ year, month, orgType }) {
         </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--gold)", letterSpacing: -0.5 }}>{fmtMoney(monthlyEmi, sym)}</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {activeLoans.length} active EMI record(s) · Outstanding {fmtMoney(outstanding, sym)}
+          {activeLoans.length} active EMI record(s)
         </div>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
+        <div style={{ marginBottom: 14 }}>
+          <Input
+            placeholder="Search EMI by loan, lender, due day, or amount"
+            value={searchTerm}
+            onChange={event => setSearchTerm(event.target.value)}
+          />
+        </div>
         <div className="card">
-          {loans.length === 0 ? (
+          {!hasHouseholdPeople ? (
+            <EmptyState title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Org." actionLabel="Open People" onAction={openPeopleManager} accentColor="var(--gold)" />
+          ) : loans.length === 0 ? (
             <EmptyState title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
+          ) : activeLoans.length === 0 ? (
+            <EmptyState title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs will only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
+          ) : filteredLoans.length === 0 ? (
+            <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
+              No EMI records match this search.
+            </div>
           ) : (
-            loans.map(item => (
+            filteredLoans.map(item => (
               <div key={item.id} className="card-row">
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.loanName || "EMI"}</span>
-                    <span className="pill" style={{ background: String(item.status || "Active").toLowerCase() === "closed" ? "var(--surface-high)" : "var(--gold-deep)", color: String(item.status || "Active").toLowerCase() === "closed" ? "var(--text-sec)" : "var(--gold)" }}>{item.status || "Active"}</span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                     {[
                       item.lender || "",
-                      getPersonalEmiDueDate(item) ? `Due ${fmtDate(getPersonalEmiDueDate(item))}` : "No due date",
-                      getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : "",
-                      item.interestRate ? `${item.interestRate}% interest` : "",
-                      item.outstandingBalance ? `Outstanding ${fmtMoney(item.outstandingBalance, sym)}` : ""
+                      getPersonalEmiDueDay(item) ? `Due on ${getPersonalEmiDueDay(item)}` : "No due date",
+                      getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : ""
                     ]
                       .filter(Boolean)
                       .join(" · ")}
@@ -176,8 +239,6 @@ export default function EmiSection({ year, month, orgType }) {
           )}
         </div>
       </div>
-
-      <FAB bg="var(--gold)" shadow="rgba(246,201,78,0.35)" onClick={openNew} />
 
       {showForm && (
         <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">

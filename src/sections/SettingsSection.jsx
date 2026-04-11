@@ -55,7 +55,7 @@ import {
   PLANS
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL } from "../utils/brand";
-import { ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
@@ -133,7 +133,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
   };
 }
 
-export default function SettingsSection({ navigationTarget }) {
+export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
   const { user, logout, updateProfile, changePassword } = useAuth();
   const {
     account,
@@ -243,7 +243,11 @@ export default function SettingsSection({ navigationTarget }) {
   const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
   const reviewAccessEnabled = isReviewAccessEnabled();
+  const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
+  const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
+  const showOrgBusinessFields = !isPersonalOrg;
+  const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
 
   const customerInsights = useMemo(
@@ -540,12 +544,12 @@ export default function SettingsSection({ navigationTarget }) {
   }
 
   const saveAcc = async () => {
-    const cleanEmail = normalizeEmail(accForm.email);
-    const cleanPhoneNumber = sanitizePhoneDigits(accForm.phoneNumber);
+    const cleanEmail = showOrgBusinessFields ? normalizeEmail(accForm.email) : "";
+    const cleanPhoneNumber = showOrgBusinessFields ? sanitizePhoneDigits(accForm.phoneNumber) : "";
     const cleanPhoneCountryCode = accForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
     const cleanName = String(accForm.name || "").trim();
-    const cleanGstin = String(accForm.gstin || "").trim().toUpperCase();
+    const cleanGstin = showOrgBusinessFields ? String(accForm.gstin || "").trim().toUpperCase() : "";
     const cleanAddressLine = String(accForm.addressLine || "").trim();
     const cleanCity = String(accForm.city || "").trim();
     const cleanState = String(accForm.state || "").trim();
@@ -560,15 +564,15 @@ export default function SettingsSection({ navigationTarget }) {
       showNotice("Please enter your full name.");
       return;
     }
-    if (!isValidEmail(cleanEmail)) {
+    if (showOrgBusinessFields && !isValidEmail(cleanEmail)) {
       showNotice("Please enter a valid email address.");
       return;
     }
-    if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
+    if (showOrgBusinessFields && !isValidUserPhoneNumber(cleanPhoneNumber)) {
       showNotice("Please enter a valid phone number.");
       return;
     }
-    if (!isValidGstin(cleanGstin)) {
+    if (showOrgBusinessFields && !isValidGstin(cleanGstin)) {
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
@@ -589,7 +593,7 @@ export default function SettingsSection({ navigationTarget }) {
       location: cleanLocation,
       address: cleanAddress,
       gstin: cleanGstin,
-      showHSN: Boolean(accForm.showHSN),
+      showHSN: showOrgBusinessFields ? Boolean(accForm.showHSN) : false,
       organizationType: cleanOrganizationType
     };
 
@@ -647,17 +651,17 @@ export default function SettingsSection({ navigationTarget }) {
 
   function saveCust() {
     const cleanName = String(custForm?.name || "").trim();
-    const cleanEmail = normalizeEmail(custForm?.email);
-    const cleanPhoneNumber = sanitizePhoneDigits(custForm?.phoneNumber);
+    const cleanEmail = showPersonContactFields ? normalizeEmail(custForm?.email) : "";
+    const cleanPhoneNumber = showPersonContactFields ? sanitizePhoneDigits(custForm?.phoneNumber) : "";
     const cleanPhoneCountryCode = custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
-    const cleanAddressLine = String(custForm?.addressLine || "").trim();
-    const cleanCity = String(custForm?.city || "").trim();
-    const cleanState = String(custForm?.state || "").trim();
-    const cleanCountry = String(custForm?.country || "").trim();
+    const cleanAddressLine = showPersonContactFields ? String(custForm?.addressLine || "").trim() : "";
+    const cleanCity = showPersonContactFields ? String(custForm?.city || "").trim() : "";
+    const cleanState = showPersonContactFields ? String(custForm?.state || "").trim() : "";
+    const cleanCountry = showPersonContactFields ? String(custForm?.country || "").trim() : "";
     const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
     const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
-    const cleanGstin = String(custForm?.gstin || "").trim().toUpperCase();
+    const cleanGstin = showPersonContactFields ? String(custForm?.gstin || "").trim().toUpperCase() : "";
 
     if (orgType === "apartment") {
       if (!cleanName) {
@@ -668,7 +672,7 @@ export default function SettingsSection({ navigationTarget }) {
       showNotice("Please enter the customer name.");
       return;
     }
-    if (orgType !== "apartment" && !isOptionalEmail(cleanEmail)) {
+    if (showPersonContactFields && !isOptionalEmail(cleanEmail)) {
       showNotice("Please enter a valid customer email or leave it empty.");
       return;
     }
@@ -676,11 +680,11 @@ export default function SettingsSection({ navigationTarget }) {
       showNotice("Please enter a valid customer phone number or leave it empty.");
       return;
     }
-    if (orgType !== "apartment" && !isValidGstin(cleanGstin)) {
+    if (showPersonContactFields && !isValidGstin(cleanGstin)) {
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
-    if (orgType !== "apartment" && (!cleanCity || !cleanState || !cleanCountry)) {
+    if (showPersonContactFields && (!cleanCity || !cleanState || !cleanCountry)) {
       showNotice("Please enter customer city, state, and country.");
       return;
     }
@@ -695,13 +699,13 @@ export default function SettingsSection({ navigationTarget }) {
       phone: cleanPhone,
       phoneCountryCode: orgType === "apartment" ? "" : cleanPhoneCountryCode,
       phoneNumber: orgType === "apartment" ? "" : cleanPhoneNumber,
-      addressLine: orgType === "apartment" ? "" : cleanAddressLine,
-      city: orgType === "apartment" ? "" : cleanCity,
-      state: orgType === "apartment" ? "" : cleanState,
-      country: orgType === "apartment" ? "" : cleanCountry,
-      location: orgType === "apartment" ? "" : cleanLocation,
-      address: orgType === "apartment" ? "" : cleanAddress,
-      gstin: orgType === "apartment" ? "" : cleanGstin
+      addressLine: showPersonContactFields ? cleanAddressLine : "",
+      city: showPersonContactFields ? cleanCity : "",
+      state: showPersonContactFields ? cleanState : "",
+      country: showPersonContactFields ? cleanCountry : "",
+      location: showPersonContactFields ? cleanLocation : "",
+      address: showPersonContactFields ? cleanAddress : "",
+      gstin: showPersonContactFields ? cleanGstin : ""
     };
     (orgConfig.customerFields || []).forEach(field => {
       payload[field.key] = String(custForm?.[field.key] || "").trim();
@@ -1133,7 +1137,7 @@ export default function SettingsSection({ navigationTarget }) {
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{icon}</div>
+        {icon ? <div style={{ width: 36, height: 36, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{icon}</div> : null}
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, color: danger ? "var(--danger)" : "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>{label}</span>
@@ -1147,6 +1151,56 @@ export default function SettingsSection({ navigationTarget }) {
   );
 
   if (screen === "main") {
+    if (isOrgMode && user?.role !== "admin") {
+      return withNotice(
+        <div style={{ padding: "20px 18px", paddingBottom: 100 }}>
+          <div className="card" style={{ padding: "20px 18px", marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
+              Active Workspace
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{account?.name || "Organization"}</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              {orgConfig.profileNameLabel} profile, customer directory, and organization-specific records live here for every organization type.
+            </div>
+            {(account?.location || account?.phone || account?.email) && (
+              <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7, marginTop: 12 }}>
+                {[account?.location, account?.phone, account?.email].filter(Boolean).join(" · ")}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <div className="section-label">Organization</div>
+            <div className="card">
+              <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />
+              <MenuRow label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />
+              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
+              <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
+              {(orgConfig.extraSections || []).filter(section => !(orgType === "personal" && section.key === "loans")).map(section => (
+                <MenuRow
+                  key={section.key}
+                  icon="•"
+                  label={section.label}
+                  sub={`${(orgRecords?.[section.key] || []).length} ${section.entryLabel.toLowerCase()} record(s)`}
+                  onClick={() => openOrgSection(section.key)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <OrganizationSwitcherModal
+            open={showOrgSwitcher}
+            onClose={() => setShowOrgSwitcher(false)}
+            organizations={organizations}
+            activeOrgId={activeOrgId}
+            onSwitch={handleSwitchOrganization}
+            onDelete={handleDeleteOrganization}
+          />
+        </div>
+      );
+    }
+
     return withNotice(
       <div style={{ padding: "20px 18px", paddingBottom: 100 }}>
         <div className="card" style={{ padding: "20px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
@@ -1215,36 +1269,12 @@ export default function SettingsSection({ navigationTarget }) {
         )}
 
         <div style={{ marginBottom: 10 }}>
-          <div className="section-label">{user?.role === "admin" ? "Admin Account" : "Workspace"}</div>
+          <div className="section-label">{user?.role === "admin" ? "Admin Account" : "Account"}</div>
           <div className="card">
             <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
-            {user?.role !== "admin" && <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />}
-            {user?.role !== "admin" && <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />}
-            {user?.role !== "admin" && <MenuRow icon="+" label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />}
-            {user?.role !== "admin" && <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />}
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             <MenuRow icon="R" label="Reports" sub={user?.role === "admin" ? generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF" : "Choose a month/year report or a full financial year PDF"} onClick={openReportPicker} />
-            {user?.role !== "admin" && <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />}
-            {user?.role !== "admin" && (orgConfig.extraSections || []).filter(section => !(orgType === "personal" && section.key === "loans")).map(section => (
-              <MenuRow
-                key={section.key}
-                icon="•"
-                label={section.label}
-                sub={`${(orgRecords?.[section.key] || []).length} ${section.entryLabel.toLowerCase()} record(s)`}
-                onClick={() => openOrgSection(section.key)}
-              />
-            ))}
           </div>
-          {user?.role !== "admin" && (
-            <OrganizationSwitcherModal
-              open={showOrgSwitcher}
-              onClose={() => setShowOrgSwitcher(false)}
-              organizations={organizations}
-              activeOrgId={activeOrgId}
-              onSwitch={handleSwitchOrganization}
-              onDelete={handleDeleteOrganization}
-            />
-          )}
         </div>
 
         <div style={{ marginBottom: 10, marginTop: 20 }}>
@@ -1266,7 +1296,6 @@ export default function SettingsSection({ navigationTarget }) {
                 setScreen("passcode");
               }}
             />
-            {user?.role !== "admin" && orgConfig.showSavingsGoal !== false && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={(Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0) ? `Target ${currency?.symbol}${Number((goals?.targetAmount ?? goals?.monthlySavings) || 0).toLocaleString("en-IN")} · Saved ${currency?.symbol}${Number(goals?.savedAmount || 0).toLocaleString("en-IN")}` : "Track your target, date, saved amount, and notes"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
             {user?.role === "admin" ? (
               <MenuRow
@@ -1389,8 +1418,8 @@ export default function SettingsSection({ navigationTarget }) {
               ))}
             </Select>
           </Field>
-          <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>
-          <Field label="Phone">
+          {showOrgBusinessFields && <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
+          {showOrgBusinessFields && <Field label="Phone">
             <PhoneNumberInput
               countryCode={accForm.phoneCountryCode}
               phoneNumber={accForm.phoneNumber}
@@ -1399,16 +1428,16 @@ export default function SettingsSection({ navigationTarget }) {
               countryOptions={PHONE_COUNTRY_OPTIONS}
               phonePlaceholder="9876543210"
             />
-          </Field>
-          <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email || ""} onChange={e => setAccForm(f => ({ ...f, email: e.target.value }))} /></Field>
-          <Field label="Show HSN/SAC on Invoices">
+          </Field>}
+          {showOrgBusinessFields && <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email || ""} onChange={e => setAccForm(f => ({ ...f, email: e.target.value }))} /></Field>}
+          {showOrgBusinessFields && <Field label="Show HSN/SAC on Invoices">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "var(--surface-high)", borderRadius: 12 }}>
               <span style={{ fontSize: 15, color: "var(--text)" }}>Include HSN/SAC column</span>
               <button onClick={() => setAccForm(f => ({ ...f, showHSN: !f.showHSN }))} style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: accForm.showHSN ? "var(--accent)" : "var(--border)" }}>
                 <div style={{ position: "absolute", top: 3, left: accForm.showHSN ? undefined : 3, right: accForm.showHSN ? 3 : undefined, width: 22, height: 22, borderRadius: 11, background: "#fff", transition: "all 0.3s" }} />
               </button>
             </div>
-          </Field>
+          </Field>}
         </Modal>
       </>
     );
@@ -1544,7 +1573,7 @@ export default function SettingsSection({ navigationTarget }) {
   if (screen === "customers") {
     if (user?.role === "admin") return null;
     return withNotice(
-      <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`+ Add ${orgConfig.customerEntryLabel}`}>
+      <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`Add ${orgConfig.customerEntryLabel}`}>
         {customerDirectory.length === 0 ? (
           <EmptyState title={`No ${orgConfig.customerLabel.toLowerCase()} yet`} message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`} accentColor="var(--blue)" />
         ) : (
@@ -1670,7 +1699,7 @@ export default function SettingsSection({ navigationTarget }) {
     return withNotice(
       <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
         <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        <Field label="Phone">
+        {showPersonContactFields && <Field label="Phone">
           <PhoneNumberInput
             countryCode={custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
             phoneNumber={custForm?.phoneNumber || ""}
@@ -1679,9 +1708,9 @@ export default function SettingsSection({ navigationTarget }) {
             countryOptions={PHONE_COUNTRY_OPTIONS}
             phonePlaceholder="9876543210"
           />
-        </Field>
-        {orgType !== "apartment" && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
-        {orgType !== "apartment" && (
+        </Field>}
+        {showPersonContactFields && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
+        {showPersonContactFields && (
           <StructuredLocationFields
             addressLine={custForm?.addressLine || ""}
             city={custForm?.city || ""}
@@ -1694,33 +1723,12 @@ export default function SettingsSection({ navigationTarget }) {
             required
           />
         )}
-        {orgType !== "apartment" && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
+        {showPersonContactFields && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
         {(orgConfig.customerFields || []).map(field => (
           <Field key={field.key} label={field.label}>
             {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
           </Field>
         ))}
-      </Modal>
-    );
-  }
-
-  if (screen === "goals") {
-    if (orgConfig.showSavingsGoal === false) return null;
-    if (user?.role === "admin") return null;
-    return withNotice(
-      <Modal title="Savings Goal" onClose={() => setScreen("main")} onSave={saveGoalSettings} canSave={true}>
-        <Field label="Target Amount" hint="Set the full amount you want to reach for this goal.">
-          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.targetAmount} onChange={e => setGoalForm(current => ({ ...current, targetAmount: e.target.value }))} />
-        </Field>
-        <Field label="Target Date" hint="Choose the date by which you want to complete this goal.">
-          <DateSelectInput value={goalForm.targetDate} onChange={value => setGoalForm(current => ({ ...current, targetDate: value }))} yearOrder="asc" />
-        </Field>
-        <Field label="Saved Till Date" hint="Enter how much you have already moved into this goal.">
-          <Input type="number" min="0" step="0.01" placeholder="0.00" value={goalForm.savedAmount} onChange={e => setGoalForm(current => ({ ...current, savedAmount: e.target.value }))} />
-        </Field>
-        <Field label="Note" hint="Add any context such as emergency fund, vacation, school fees, or how you plan to save for it.">
-          <Textarea placeholder="Additional info about this goal" value={goalForm.note} onChange={e => setGoalForm(current => ({ ...current, note: e.target.value }))} />
-        </Field>
       </Modal>
     );
   }
@@ -1820,7 +1828,7 @@ export default function SettingsSection({ navigationTarget }) {
   if (screen === "org-records" && activeOrgSection) {
     const items = orgRecords?.[activeOrgSection.key] || [];
     return withNotice(
-      <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`+ Add ${activeOrgSection.entryLabel}`}>
+      <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`Add ${activeOrgSection.entryLabel}`}>
         {items.length === 0 ? (
           <EmptyState title={`No ${activeOrgSection.label.toLowerCase()} yet`} message={`Add your first ${activeOrgSection.entryLabel.toLowerCase()} record to tailor EasyKhata to your workflow.`} accentColor="var(--blue)" />
         ) : (

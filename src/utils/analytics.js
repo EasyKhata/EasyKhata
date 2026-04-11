@@ -602,6 +602,24 @@ export function getPersonalEmiAmount(emi) {
   return toNumber(emi?.monthlyEmi ?? emi?.emiAmount);
 }
 
+export function getPersonalEmiDueDay(emi) {
+  const explicitDay = Number(emi?.dueDay);
+  if (Number.isFinite(explicitDay) && explicitDay >= 1 && explicitDay <= 31) {
+    return explicitDay;
+  }
+
+  const legacyValue = String(emi?.dueDate || emi?.nextDueDate || "").trim();
+  if (/^\d{1,2}$/.test(legacyValue)) {
+    const legacyDay = Number(legacyValue);
+    if (legacyDay >= 1 && legacyDay <= 31) {
+      return legacyDay;
+    }
+  }
+
+  const parsedLegacyDate = parseDateParts(legacyValue);
+  return parsedLegacyDate?.day || 0;
+}
+
 export function getPersonalEmiDueDate(emi) {
   return String(emi?.dueDate || emi?.nextDueDate || "");
 }
@@ -611,12 +629,22 @@ export function getPersonalEmiEndDate(emi) {
 }
 
 function getPersonalEmiStartDate(emi) {
-  return String(emi?.startDate || getPersonalEmiDueDate(emi) || "");
+  if (emi?.startDate) {
+    return String(emi.startDate);
+  }
+
+  const dueDate = getPersonalEmiDueDate(emi);
+  if (dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+    return dueDate;
+  }
+
+  return `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-01`;
 }
 
 export function getScheduledEmiDate(emi, year, month) {
-  const baseDate = parseDateParts(getPersonalEmiDueDate(emi)) || parseDateParts(getPersonalEmiStartDate(emi));
-  if (!baseDate) return "";
+  const dueDay = getPersonalEmiDueDay(emi);
+  const baseDate = dueDay ? { day: dueDay } : (parseDateParts(getPersonalEmiDueDate(emi)) || parseDateParts(getPersonalEmiStartDate(emi)));
+  if (!baseDate?.day) return "";
   const lastDay = new Date(year, month + 1, 0).getDate();
   return isoDate(year, month, Math.min(baseDate.day, lastDay));
 }
@@ -628,6 +656,7 @@ export function normalizePersonalEmi(emi, year, month) {
   const scheduledDate = getScheduledEmiDate(emi, year, month);
   return {
     ...emi,
+    dueDay: getPersonalEmiDueDay(emi),
     dueDate,
     endDate,
     startDate,
@@ -638,7 +667,6 @@ export function normalizePersonalEmi(emi, year, month) {
 
 function isActiveEmiForMonth(emi, year, month) {
   if (!emi) return false;
-  if (String(emi.status || "Active").toLowerCase() === "closed") return false;
   const periodStart = startOfMonthValue(year, month);
   const periodEnd = endOfMonthValue(year, month);
   const startDate = getPersonalEmiStartDate(emi);
@@ -661,6 +689,25 @@ function getPersonalMemberNames(data) {
   return Array.from(names.values());
 }
 
+export function getPersonalMemberOptions(data) {
+  return getPersonalMemberNames(data).map(name => ({
+    value: name,
+    label: name
+  }));
+}
+
+function getRecordMonth(record) {
+  return String(record?.month || record?.date?.slice(0, 7) || "");
+}
+
+function getRecurringStartMonth(record) {
+  return String(record?.startMonth || record?.date?.slice(0, 7) || "");
+}
+
+function getRecurringEndMonth(record) {
+  return String(record?.endMonth || record?.endDate?.slice(0, 7) || "");
+}
+
 function endOfMonthValue(year, month) {
   const lastDay = new Date(year, month + 1, 0);
   return `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, "0")}-${String(lastDay.getDate()).padStart(2, "0")}`;
@@ -675,15 +722,17 @@ function calculateEmiDueForMonth(data, year, month) {
 export function calculatePersonalDashboard(data, year, month) {
   const mk = monthKey(year, month);
   const totalIncome = (data?.income || [])
-    .filter(item => item.month === mk)
+    .filter(item => getRecordMonth(item) === mk)
     .reduce((sum, item) => sum + toNumber(item.amount), 0);
   const spendingEntries = (data?.expenses || []).filter(expense => {
     if (expense.recurring) {
-      const started = expense.startMonth <= mk;
-      const notEnded = !expense.endMonth || expense.endMonth >= mk;
+      const startMonth = getRecurringStartMonth(expense);
+      const endMonth = getRecurringEndMonth(expense);
+      const started = !startMonth || startMonth <= mk;
+      const notEnded = !endMonth || endMonth >= mk;
       return started && notEnded;
     }
-    return expense.month === mk;
+    return getRecordMonth(expense) === mk;
   });
   const totalExpense = spendingEntries.reduce((sum, item) => sum + toNumber(item.amount), 0);
   const totalEmi = calculateEmiDueForMonth(data, year, month);
@@ -692,9 +741,8 @@ export function calculatePersonalDashboard(data, year, month) {
   const activeEmis = getPersonalEmis(data)
     .filter(emi => isActiveEmiForMonth(emi, year, month))
     .map(emi => normalizePersonalEmi(emi, year, month));
-  const totalOutstanding = activeEmis.reduce((sum, emi) => sum + toNumber(emi.outstandingBalance), 0);
   const memberTotals = people.map(name => {
-    const income = (data?.income || []).filter(item => item.month === mk && (item.personName || "") === name).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const income = (data?.income || []).filter(item => getRecordMonth(item) === mk && (item.personName || "") === name).reduce((sum, item) => sum + toNumber(item.amount), 0);
     const spending = spendingEntries.filter(item => (item.personName || "") === name).reduce((sum, item) => sum + toNumber(item.amount), 0);
     return { name, income, spending, net: income - spending, hasActivity: Boolean(income || spending) };
   });
@@ -710,7 +758,7 @@ export function calculatePersonalDashboard(data, year, month) {
   const cashFlow = Array.from({ length: 6 }, (_, index) => {
     const date = new Date(year, month - (5 - index), 1);
     const flowKey = monthKey(date.getFullYear(), date.getMonth());
-    const income = (data?.income || []).filter(item => item.month === flowKey).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const income = (data?.income || []).filter(item => getRecordMonth(item) === flowKey).reduce((sum, item) => sum + toNumber(item.amount), 0);
     const expenses = sumExpensesForMonth(data, flowKey);
     const emi = calculateEmiDueForMonth(data, date.getFullYear(), date.getMonth());
     return {
@@ -819,7 +867,6 @@ export function calculatePersonalDashboard(data, year, month) {
     netAfterEmi,
     peopleCount: people.length,
     activeLoansCount: activeEmis.length,
-    totalOutstanding,
     memberTotals,
     topExpenseCategories,
     cashFlow,
@@ -850,7 +897,7 @@ export function calculatePersonalYearlyDashboard(data, year) {
   let totalEmi = 0;
   const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
     const mk = monthKey(year, monthIdx);
-    const income = (data?.income || []).filter(item => item.month === mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const income = (data?.income || []).filter(item => getRecordMonth(item) === mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
     const expenses = sumExpensesForMonth(data, mk);
     const emi = calculateEmiDueForMonth(data, year, monthIdx);
     totalIncome += income;
@@ -869,19 +916,18 @@ export function calculatePersonalYearlyDashboard(data, year) {
   });
   const today = new Date();
   const activeEmis = getPersonalEmis(data)
-    .filter(emi => String(emi.status || "Active").toLowerCase() !== "closed")
+    .filter(emi => !getPersonalEmiEndDate(emi) || getPersonalEmiEndDate(emi) >= `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`)
     .map(emi => normalizePersonalEmi(emi, today.getFullYear(), today.getMonth()));
-  const totalOutstanding = activeEmis.reduce((sum, emi) => sum + toNumber(emi.outstandingBalance), 0);
   const people = getPersonalMemberNames(data);
   const topExpenseCategories = Object.entries(
     ((data?.expenses || []).filter(expense => {
       if (expense.recurring) {
         const yearKey = String(year);
-        const startYear = expense.startMonth?.slice(0, 4);
-        const endYear = expense.endMonth?.slice(0, 4);
+        const startYear = getRecurringStartMonth(expense).slice(0, 4);
+        const endYear = getRecurringEndMonth(expense).slice(0, 4);
         return (!startYear || startYear <= yearKey) && (!endYear || endYear >= yearKey);
       }
-      return expense.month?.slice(0, 4) === String(year);
+      return getRecordMonth(expense).slice(0, 4) === String(year);
     })).reduce((map, item) => {
       const category = item.category || "Other";
       map[category] = (map[category] || 0) + toNumber(item.amount);
@@ -951,7 +997,6 @@ export function calculatePersonalYearlyDashboard(data, year) {
     avgMonthlyEmi: totalEmi / 12,
     peopleCount: people.length,
     activeLoansCount: activeEmis.length,
-    totalOutstanding,
     topExpenseCategories,
     monthlyBreakdown,
     upcomingEmis: activeEmis.slice().sort((a, b) => String(a.scheduledDate || a.dueDate || "").localeCompare(String(b.scheduledDate || b.dueDate || ""))).slice(0, 6),
@@ -1003,7 +1048,7 @@ function monthLabel(year, month) {
 
 function sumIncomeForMonth(data, mk) {
   const manual = (data.income || [])
-    .filter(item => item.month === mk)
+    .filter(item => getRecordMonth(item) === mk)
     .reduce((sum, item) => sum + toNumber(item.amount), 0);
 
   if (isApartmentOrgData(data)) {
@@ -1020,12 +1065,14 @@ function sumIncomeForMonth(data, mk) {
 function sumExpensesForMonth(data, mk) {
   return (data.expenses || []).reduce((sum, expense) => {
     if (expense.recurring) {
-      const started = expense.startMonth <= mk;
-      const notEnded = !expense.endMonth || expense.endMonth >= mk;
+      const startMonth = getRecurringStartMonth(expense);
+      const endMonth = getRecurringEndMonth(expense);
+      const started = !startMonth || startMonth <= mk;
+      const notEnded = !endMonth || endMonth >= mk;
       return started && notEnded ? sum + toNumber(expense.amount) : sum;
     }
 
-    return expense.month === mk ? sum + toNumber(expense.amount) : sum;
+    return getRecordMonth(expense) === mk ? sum + toNumber(expense.amount) : sum;
   }, 0);
 }
 

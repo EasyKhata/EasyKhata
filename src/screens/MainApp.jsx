@@ -22,6 +22,7 @@ const EmiSection = lazy(() => import("../sections/EmiSection"));
 const InvoicesSection = lazy(() => import("../sections/InvoicesSection"));
 const QuotesSection = lazy(() => import("../sections/QuotesSection"));
 const SettingsSection = lazy(() => import("../sections/SettingsSection"));
+const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
 const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
 
@@ -200,25 +201,33 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
           {viewMode === "month" ? (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
               {MONTHS.map((label, index) => (
+                (() => {
+                  const monthDisabled = year === currentYear && index > currentMonth;
+                  return (
                 <button
                   key={label}
                   onClick={() => {
+                    if (monthDisabled) return;
                     onChange(year, index);
                     setOpen(false);
                   }}
+                  disabled={monthDisabled}
                   style={{
                     padding: "12px 10px",
                     borderRadius: 12,
                     border: "1px solid var(--border)",
                     background: index === month ? "var(--accent-deep)" : "var(--surface-high)",
-                    color: index === month ? "var(--accent)" : "var(--text)",
+                    color: monthDisabled ? "var(--text-dim)" : index === month ? "var(--accent)" : "var(--text)",
                     fontSize: 13,
                     fontWeight: 700,
-                    cursor: "pointer"
+                    cursor: monthDisabled ? "not-allowed" : "pointer",
+                    opacity: monthDisabled ? 0.45 : 1
                   }}
                 >
                   {label}
                 </button>
+                  );
+                })()
               ))}
             </div>
           ) : (
@@ -268,11 +277,14 @@ export default function MainApp() {
 
   function handleNavigate(target) {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
-    const nextTab = nextTarget?.tab || "dashboard";
+    const routedTab = nextTarget?.tab || "dashboard";
+    const nextTab = routedTab === "settings" && ["account", "customers", "create-org", "org-records"].includes(nextTarget?.screen)
+      ? "org"
+      : routedTab;
 
     setTab(nextTab);
 
-    if (nextTab === "settings") {
+    if (nextTab === "settings" || nextTab === "org") {
       setSettingsNavigation({
         screen: nextTarget?.screen || "main",
         orgSectionKey: nextTarget?.orgSectionKey || "",
@@ -336,9 +348,10 @@ export default function MainApp() {
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const currentOrgLabel = account?.name?.trim() || "Organization";
   const TABS = [
-    { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Home" },
+    { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Dashboard" },
     ...(isAdmin ? [{ id: "users", icon: "◎", label: "Users" }] : []),
     ...(user?.role !== "admin" ? [
+      { id: "org", icon: "▣", label: currentOrgLabel },
       { id: "income", icon: "↑", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
@@ -351,6 +364,7 @@ export default function MainApp() {
   const tabColor = {
     dashboard: isAdmin ? "var(--gold)" : "var(--accent)",
     users: "var(--blue)",
+    org: "var(--blue)",
     income: "var(--accent)",
     expenses: "var(--danger)",
     emi: "var(--gold)",
@@ -415,6 +429,7 @@ export default function MainApp() {
       <Suspense fallback={fallback}>
         {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
         {tab === "users" && isAdmin && <AdminUsersSection />}
+        {tab === "org" && !isAdmin && <OrgSection navigationTarget={settingsNavigation} sectionMode="org" />}
         {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
@@ -484,7 +499,7 @@ export default function MainApp() {
             )}
           </div>
         </div>
-        {tab !== "settings" && !(isAdmin && tab === "users") && (
+        {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
           <HeaderDatePicker
             year={year}
             month={month}
@@ -496,7 +511,7 @@ export default function MainApp() {
             onViewModeChange={setViewMode}
           />
         )}
-        {tab === "settings" && (
+        {(tab === "settings" || tab === "org") && (
           <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {user?.name}
           </span>

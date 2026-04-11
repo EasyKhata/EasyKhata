@@ -37,7 +37,7 @@ function getSetupStep(orgType, orgConfig) {
       cardTitle: "Ready to add a service?",
       cardBody: "Create one service or package in Settings so pricing, team planning, and future quotes stay consistent.",
       ctaLabel: "Go to Services",
-      destination: { tab: "settings", screen: "org-records", orgSectionKey: "services" },
+      destination: { tab: "org", screen: "org-records", orgSectionKey: "services" },
       revisitLabel: "services"
     };
   }
@@ -49,7 +49,7 @@ function getSetupStep(orgType, orgConfig) {
       cardTitle: "Ready to add a product?",
       cardBody: "Create one inventory item with price and stock so shop sales and purchase tracking are easier from day one.",
       ctaLabel: "Go to Inventory",
-      destination: { tab: "settings", screen: "org-records", orgSectionKey: "inventory" },
+      destination: { tab: "org", screen: "org-records", orgSectionKey: "inventory" },
       revisitLabel: "inventory"
     };
   }
@@ -74,7 +74,7 @@ function getSetupStep(orgType, orgConfig) {
             ? "Start with a real client record so invoices, payment follow-up, and work history stay organized from day one."
             : "You will enter details like name, email, phone, and location so your records stay organized.",
     ctaLabel: `Go to ${orgConfig.customerLabel}`,
-    destination: { tab: "settings", screen: "customers" },
+    destination: { tab: "org", screen: "customers" },
     revisitLabel: orgConfig.customerLabel.toLowerCase()
   };
 }
@@ -84,6 +84,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
   const [accountForm, setAccountForm] = useState(buildAccountFormState(account, user));
   const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
+  const showOrgBusinessFields = orgType !== ORG_TYPES.PERSONAL;
   const stateProvinceOptions = useMemo(() => getStateProvinceOptions(accountForm.country), [accountForm.country]);
   const setupStep = useMemo(() => getSetupStep(orgType, orgConfig), [orgConfig, orgType]);
 
@@ -130,7 +131,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
       return;
     }
     const cleanPhoneNumber = sanitizePhoneDigits(accountForm.phoneNumber);
-    if (cleanPhoneNumber && !isValidUserPhoneNumber(cleanPhoneNumber)) {
+    if (showOrgBusinessFields && cleanPhoneNumber && !isValidUserPhoneNumber(cleanPhoneNumber)) {
       alert("Please enter a valid phone number.");
       return;
     }
@@ -140,8 +141,11 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
       city: String(accountForm.city || "").trim(),
       state: String(accountForm.state || "").trim(),
       country: String(accountForm.country || "").trim(),
+      gstin: showOrgBusinessFields ? String(accountForm.gstin || "").trim() : "",
+      email: showOrgBusinessFields ? String(accountForm.email || "").trim() : "",
+      showHSN: showOrgBusinessFields ? Boolean(accountForm.showHSN) : false,
       phoneCountryCode: accountForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
-      phone: buildPhoneNumber(accountForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE, cleanPhoneNumber)
+      phone: showOrgBusinessFields ? buildPhoneNumber(accountForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE, cleanPhoneNumber) : ""
     };
     nextAccount.location = buildLocationLabel({ city: nextAccount.city, state: nextAccount.state, country: nextAccount.country });
     nextAccount.address = buildLocationLabel(nextAccount);
@@ -176,13 +180,13 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 onChange={e => setAccountForm(current => ({ ...current, name: e.target.value }))}
               />
             </Field>
-            <Field label="GSTIN">
+            {showOrgBusinessFields && <Field label="GSTIN">
               <Input
                 placeholder="Your GST registration number"
                 value={accountForm.gstin || ""}
                 onChange={e => setAccountForm(current => ({ ...current, gstin: e.target.value }))}
               />
-            </Field>
+            </Field>}
             <Field label="Address Line" hint="House number, street, road, or locality.">
               <Input
                 placeholder="Flat 12, MG Road"
@@ -219,7 +223,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 ))}
               </Select>
             </Field>
-            <Field label="Phone">
+            {showOrgBusinessFields && <Field label="Phone">
               <PhoneNumberInput
                 countryCode={accountForm.phoneCountryCode}
                 phoneNumber={accountForm.phoneNumber}
@@ -228,15 +232,15 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 countryOptions={PHONE_COUNTRY_OPTIONS}
                 phonePlaceholder="9876543210"
               />
-            </Field>
-            <Field label="Email">
+            </Field>}
+            {showOrgBusinessFields && <Field label="Email">
               <Input
                 type="email"
                 placeholder="you@example.com"
                 value={accountForm.email || ""}
                 onChange={e => setAccountForm(current => ({ ...current, email: e.target.value }))}
               />
-            </Field>
+            </Field>}
           </div>
         );
       case 2:
@@ -257,14 +261,13 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 style={{ width: "100%" }}
                 onClick={() => {
                   onNavigate(setupStep.destination);
-                  onComplete();
                 }}
               >
                 {setupStep.ctaLabel}
               </button>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              You can revisit {setupStep.revisitLabel} anytime from Settings.
+              You can revisit {setupStep.revisitLabel} anytime from Org.
             </div>
           </div>
         );
@@ -309,7 +312,6 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 style={{ width: "100%" }}
                 onClick={() => {
                   onNavigate(orgConfig.hideInvoices ? "income" : "invoices");
-                  onComplete();
                 }}
               >
                 Go to {orgConfig.hideInvoices ? orgConfig.incomeLabel : orgConfig.invoicesLabel}
@@ -339,7 +341,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                 style={{ width: "100%" }}
                 onClick={() => {
                   onNavigate("expenses");
-                  onComplete();
+                  handleNext();
                 }}
               >
                 Go to {orgConfig.expensesLabel}
@@ -394,9 +396,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.6 }}>
               Setup Guide · Step {step} of {totalSteps}
             </div>
-            <button onClick={onComplete} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--text-sec)" }}>
-              ×
-            </button>
+            <span style={{ width: 18, height: 18, display: "inline-block" }} />
           </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{stepTitles[step - 1]}</div>
         </div>

@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateRetailDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isRetailOrgData, isSmallBusinessOrgData } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateRetailDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isRetailOrgData, isSmallBusinessOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 
 const PAGE = {
@@ -201,7 +201,7 @@ function getFinancialYearMetricItems(data, overview, sym) {
       { label: "EMI", value: money(overview.totalEmi, sym) },
       { label: "Net After EMI", value: money(overview.totalNet, sym) },
       { label: "People", value: String(stats.peopleCount || 0) },
-      { label: "Goal Gap", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" }
+      { label: "Active EMIs", value: String(stats.activeLoansCount || 0) }
     ];
   }
 
@@ -267,8 +267,8 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
       title: "Household Snapshot",
       rows: [
         { label: "Active EMIs", value: String(stats.activeLoansCount || 0) },
-        { label: "Outstanding balance", value: money(stats.totalOutstanding || 0, sym) },
-        { label: "Goal status", value: safeText(stats.goalStatus || "--") }
+        { label: "Monthly EMI", value: money(stats.totalEmi || 0, sym) },
+        { label: "Net after EMI", value: money(stats.netAfterEmi || 0, sym) }
       ]
     };
   }
@@ -311,7 +311,7 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
     rows: [
       { label: "Pending invoices", value: money(stats.pendingInvoiceTotal || 0, sym) },
       { label: "Burn rate", value: stats.burnRateDays == null ? "--" : `${stats.burnRateDays} days` },
-      { label: "Goal status", value: safeText(stats.goalStatus || "--") }
+      { label: "Invoices overdue", value: String(stats.overdueInvoices?.length || 0) }
     ]
   };
 }
@@ -630,20 +630,9 @@ export function downloadMonthlyReport(data, year, month, sym) {
       { label: "Earnings", value: money(stats.totalIncome, sym) },
       { label: "Spending", value: money(stats.totalExpense, sym) },
       { label: "Monthly EMI", value: money(stats.totalEmi, sym) },
-      { label: "Left for Goals", value: money(stats.goalContribution || stats.netAfterEmi || 0, sym) },
-      { label: "Goal Gap", value: stats.monthlySavingsGoal ? money(stats.goalLeft || 0, sym) : "--" },
+      { label: "Net After EMI", value: money(stats.netAfterEmi || 0, sym) },
+      { label: "Active EMIs", value: String(stats.activeLoansCount || 0) },
       { label: "Household Members", value: String(stats.peopleCount || 0) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 44);
-    y = sectionTitle(doc, y + 2, "Savings Goal");
-    y = drawRows(doc, y, [
-      { label: "Goal target", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
-      { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
-      { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
-      { label: "Still needed", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
-      { label: "Status", value: safeText(stats.goalStatus || "") },
-      { label: "Note", value: safeText(stats.goalNote || "--") }
     ]);
 
     y = ensureSpace(doc, y + 2, 40);
@@ -667,7 +656,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
       stats.upcomingEmis.length
         ? stats.upcomingEmis.map(item => ({
             label: `${safeText(item.loanName || "EMI")} · ${safeText(item.lender || "Lender")}`,
-            value: `${money(item.monthlyEmi, sym)} | Due ${safeText(item.scheduledDate || item.dueDate || "--")}${item.endDate ? ` | Ends ${safeText(item.endDate)}` : ""}`
+            value: `${money(item.monthlyEmi, sym)} | Due on ${safeText(getPersonalEmiDueDay(item) || "--")}${item.endDate ? ` | Ends ${safeText(item.endDate)}` : ""}`
           }))
         : [{ label: "No EMI records found", value: "--" }]
     );
@@ -1011,7 +1000,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "Profit / Loss", value: money(stats.profit, sym) },
     { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
     { label: "Burn Rate", value: stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days` },
-    { label: "Savings Goal", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" }
+    { label: "Overdue Invoices", value: String(stats.overdueInvoices?.length || 0) }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);
@@ -1048,16 +1037,6 @@ export function downloadMonthlyReport(data, year, month, sym) {
     { label: "SGST", value: money(taxSummary.sgst, sym) },
     { label: "IGST", value: money(taxSummary.igst, sym) },
     { label: "Invoice Total", value: money(invoices.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0), sym) }
-  ]);
-
-  y = ensureSpace(doc, y + 2, 40);
-  y = sectionTitle(doc, y + 2, "Savings Goal");
-  y = drawRows(doc, y, [
-    { label: "Target amount", value: stats.goalTargetAmount ? money(stats.goalTargetAmount, sym) : "--" },
-    { label: "Saved till date", value: money(stats.goalSavedAmount || 0, sym) },
-    { label: "Target date", value: safeText(stats.goalTargetDate || "--") },
-    { label: "Remaining", value: stats.goalTargetAmount ? money(stats.goalLeft || 0, sym) : "--" },
-    { label: "Note", value: safeText(stats.goalNote || "--") }
   ]);
 
   y = ensureSpace(doc, y + 2, 40);
