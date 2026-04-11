@@ -937,10 +937,12 @@ export function DataProvider({ children }) {
     updater => {
       if (!user?.id) return;
 
+      let nextState;
+
       setData(prev => {
         const proposed = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
         const nextActiveOrgId = proposed.activeOrgId || prev.activeOrgId || DEFAULT_ORG_ID;
-        const nextState = buildStateFromOrganizations({
+        nextState = buildStateFromOrganizations({
           orgs: {
             ...proposed.orgs,
             [nextActiveOrgId]: extractActiveOrg({ ...proposed, activeOrgId: nextActiveOrgId })
@@ -948,9 +950,12 @@ export function DataProvider({ children }) {
           activeOrgId: nextActiveOrgId,
           sharedLedger: proposed.sharedLedger
         });
-        persistState(nextState);
         return nextState;
       });
+
+      if (nextState) {
+        persistState(nextState);
+      }
     },
     [persistState, user?.id]
   );

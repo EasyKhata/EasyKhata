@@ -74,6 +74,7 @@ export function initials(s) {
 
 export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = true, accentColor, children }) {
   const btnBg = accentColor || "var(--accent)";
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -84,6 +85,16 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     };
   }, []);
 
+  async function handleSave() {
+    if (!canSave || isSaving) return;
+    setIsSaving(true);
+    try {
+      await Promise.resolve(onSave?.());
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   const modalNode = (
     <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
       <div className="modal-surface">
@@ -93,22 +104,22 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
           </button>
           <span style={{ fontFamily: "var(--serif)", fontSize: 17, color: "var(--text)", textAlign: "center" }}>{title}</span>
           <button
-            onClick={() => canSave && onSave()}
-            disabled={!canSave}
+            onClick={handleSave}
+            disabled={!canSave || isSaving}
             style={{
-              background: canSave ? btnBg : "var(--surface-high)",
+              background: canSave && !isSaving ? btnBg : "var(--surface-high)",
               border: "none",
               borderRadius: 12,
               padding: "8px 16px",
               fontSize: 13,
               fontWeight: 700,
-              color: canSave ? "#0C0C10" : "var(--text-dim)",
-              cursor: canSave ? "pointer" : "not-allowed",
+              color: canSave && !isSaving ? "#0C0C10" : "var(--text-dim)",
+              cursor: canSave && !isSaving ? "pointer" : "not-allowed",
               fontFamily: "var(--font)",
               transition: "all 0.2s"
             }}
           >
-            {saveLabel}
+            {isSaving ? "Saving..." : saveLabel}
           </button>
         </div>
         <div className="modal-body">{children}</div>
@@ -392,7 +403,7 @@ export function MonthSelectInput({ value, onChange, min, max, allowEmpty = true,
   );
 }
 
-export function Toggle({ value, onChange, options }) {
+export function Toggle({ value, onChange, options = [] }) {
   return (
     <div className="toggle-switch">
       {options.map(option => (

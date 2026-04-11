@@ -121,6 +121,87 @@ function PersonalUsagePie({ stats, sym, viewMode }) {
   );
 }
 
+function ApartmentUsagePie({ stats, sym, viewMode }) {
+  const segments = [
+    { label: "Expenses", value: Math.max(0, Number(stats.totalExpense || 0)), color: "var(--danger)" },
+    {
+      label: (stats.profit || 0) >= 0 ? "Reserve" : "Shortfall",
+      value: Math.abs(Number(stats.profit || 0)),
+      color: (stats.profit || 0) >= 0 ? "var(--accent)" : "var(--gold)"
+    }
+  ].filter(item => item.value > 0);
+
+  const total = segments.reduce((sum, item) => sum + item.value, 0);
+
+  if (total <= 0) {
+    return (
+      <div className="card" style={{ padding: 18, marginBottom: 22 }}>
+        <EmptyState
+          title="No society usage yet"
+          message={`Add collections and society expenses to see how funds are being used for this ${viewMode === "month" ? "month" : "year"}.`}
+          accentColor="var(--blue)"
+        />
+      </div>
+    );
+  }
+
+  let startAngle = 0;
+
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 22 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Collections Usage</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+            {viewMode === "month" ? "How this month’s collections are being used." : "How this year’s collections are being used."}
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          Total tracked {fmtMoney(total, sym)}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <svg width="190" height="190" viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
+            <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
+            {segments.map(segment => {
+              const angle = (segment.value / total) * 360;
+              const endAngle = startAngle + angle;
+              const path = describeArc(95, 95, 78, startAngle, endAngle);
+              startAngle = endAngle;
+              return <path key={segment.label} d={path} fill={segment.color} stroke="var(--bg)" strokeWidth="2" />;
+            })}
+            <circle cx="95" cy="95" r="42" fill="var(--bg)" />
+            <text x="95" y="90" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text-dim)", fontWeight: 700 }}>Net</text>
+            <text x="95" y="108" textAnchor="middle" style={{ fontSize: 13, fill: "var(--text)", fontWeight: 700 }}>
+              {fmtMoney(stats.profit || 0, sym)}
+            </text>
+          </svg>
+        </div>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {segments.map(segment => {
+            const pct = Math.round((segment.value / total) * 100);
+            return (
+              <div key={segment.label} className="card-row" style={{ padding: 0, border: "none" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{segment.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{pct}% of tracked usage</div>
+                  </div>
+                </div>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{fmtMoney(segment.value, sym)}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav }) {
   const data = useData();
   const { user, updateProfile } = useAuth();
@@ -235,8 +316,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
     const apartmentHeroSub = viewMode === "month"
       ? (stats.profit >= 0 ? "Collections are covering society expenses this month." : "Society expenses are ahead of collections this month.")
       : (stats.profit >= 0 ? "Collections are covering society expenses this year." : "Society expenses are ahead of collections this year.");
-    const apartmentCashFlow = viewMode === "month" ? stats.cashFlow : stats.monthlyBreakdown;
-    const apartmentMaxCashFlow = Math.max(1, ...apartmentCashFlow.map(item => Math.max(item.income, item.expenses)));
 
     return (
       <div style={{ paddingBottom: 20 }}>
@@ -256,62 +335,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             <Tile label={viewMode === "month" ? "Society Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, utilities, repairs, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "Monthly Reserve" : "Latest Month Reserve"} value={fmtMoney(stats.monthlyReserve || 0, sym)} color={(stats.monthlyReserve || 0) >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collections minus expenses for this month" : "Net result of the latest month in this year"} />
             <Tile label="Total Reserve" value={fmtMoney(stats.totalReserve || 0, sym)} color={(stats.totalReserve || 0) >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? "Running reserve up to this month" : "Collections minus expenses for the year"} />
-            <Tile label="Residents / Flats" value={String(stats.flatsCount || 0)} color="var(--gold)" sub={`${stats.residentsCount || 0} owner / tenant names linked in Settings`} onClick={() => onNav("settings")} />
+            <Tile label="Flats" value={String(stats.flatsCount || 0)} color="var(--gold)" sub={`${stats.residentsCount || 0} owner names linked in Settings`} onClick={() => onNav("settings")} />
           </div>
 
-          <Collapsible title="Collection Status" icon="🏠" color="var(--blue)" count={viewMode === "month" ? stats.unpaidFlats.length : stats.flatsCount || 0} defaultOpen>
-            <div className="card">
-              {viewMode === "month" && stats.flatsCount === 0 ? (
-                <EmptyState title="Add flats first" message="Create your flat list in Settings so maintenance collections can be tracked unit by unit." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--blue)" />
-              ) : viewMode === "month" && stats.unpaidFlats.length === 0 ? (
-                <EmptyState title="All tracked flats are covered" message="Every flat in Settings has a recorded collection for this month." accentColor="var(--accent)" />
-              ) : viewMode === "month" ? (
-                stats.unpaidFlats.map(flat => (
-                  <div key={flat.id || flat.flatNumber} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{flat.flatNumber || "Flat"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[flat.ownerName || flat.tenantName || "No resident assigned", flat.phone || "No phone number added"]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>Pending</span>
-                  </div>
-                ))
-              ) : (
-                <div className="card-row">
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>Flat records tracked</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Use monthly view to see which flat numbers have a recorded collection.</div>
-                  </div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{stats.flatsCount || 0}</span>
-                </div>
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Recent Collections" icon="⬇" color="var(--accent)" count={viewMode === "month" ? stats.recentCollections.length : 0} defaultOpen={viewMode === "month" && stats.recentCollections.length > 0}>
-            <div className="card">
-              {viewMode !== "month" ? (
-                <EmptyState title="Switch to monthly view" message="Recent collection activity is shown in monthly view so you can track which flats paid this month." accentColor="var(--accent)" />
-              ) : stats.recentCollections.length === 0 ? (
-                <EmptyState title="No collections recorded" message="Add maintenance collections from the Income tab after creating residents and flats in Settings." actionLabel="Go to Collections" onAction={() => onNav("income")} accentColor="var(--accent)" />
-              ) : (
-                stats.recentCollections.map(item => (
-                  <div key={item.id} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.flatNumber || "Flat"} · {item.residentName || "Resident"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[item.collectionType || "Collection", item.collectionMonth || item.month || "", item.date || ""].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(item.amount, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
+          <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} />
 
           <Collapsible title="Society Alerts" icon="🚨" color="var(--gold)" count={stats.alertItems.length} defaultOpen={stats.alertItems.length > 0}>
             <div className="card">
@@ -349,39 +376,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             </div>
           </Collapsible>
 
-          <Collapsible title="Collection Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
-            <div className="card" style={{ padding: "18px" }}>
-              {!showAdvanced ? (
-                <EmptyState title="Trend view is on Pro" message="Upgrade to Pro to compare society collections and expenses over time." accentColor="var(--blue)" />
-              ) : viewMode === "month" ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
-                  {stats.cashFlow.map(item => (
-                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
-                        <div style={{ width: 12, height: `${Math.max(10, (item.income / apartmentMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                        <div style={{ width: 12, height: `${Math.max(10, (item.expenses / apartmentMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)" }}>{item.shortLabel}</div>
-                      <div style={{ fontSize: 11, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
-                  {stats.monthlyBreakdown.map(item => (
-                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
-                        <div style={{ width: 8, height: `${Math.max(8, (item.income / apartmentMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                        <div style={{ width: 8, height: `${Math.max(8, (item.expenses / apartmentMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                      </div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
-                      <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Collapsible>
         </div>
 
         {onboardingGuide}

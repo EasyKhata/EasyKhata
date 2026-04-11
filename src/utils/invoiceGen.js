@@ -86,9 +86,10 @@ function drawWrappedBlock(doc, x, y, width, title, lines) {
   return y + Math.max(6, wrapped.length * 4.8);
 }
 
-export function downloadInvoice(invoice, account, sym) {
+export function downloadInvoice(invoice, account, sym, options = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
+  const isApartment = Boolean(options.isApartment);
   const tax = getInvoiceTaxBreakdown(invoice);
   const total = tax.taxable + tax.cgst + tax.sgst + tax.igst;
   const customerName = invoice.billTo?.name || invoice.customer?.name || "--";
@@ -115,16 +116,16 @@ export function downloadInvoice(invoice, account, sym) {
   y += 36;
 
   const businessLines = [
-    contactAddress(acc),
+    isApartment ? "" : contactAddress(acc),
     acc.gstin ? `GSTIN: ${acc.gstin}` : "",
     acc.phone ? `Phone: ${acc.phone}` : "",
     acc.email ? `Email: ${acc.email}` : ""
   ];
   const metaLines = [
     `${isQuote ? "Prepared" : "Issued"}: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
-    invoice.dueDate ? `${isQuote ? "Valid Until" : "Due"}: ${fmtDate(invoice.dueDate)}` : `${isQuote ? "Valid Until" : "Due"}: --`,
-    `Status: ${safeText(invoice.status || "pending").toUpperCase()}`,
-    invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
+    !isApartment ? (invoice.dueDate ? `${isQuote ? "Valid Until" : "Due"}: ${fmtDate(invoice.dueDate)}` : `${isQuote ? "Valid Until" : "Due"}: --`) : "",
+    !isApartment ? `Status: ${safeText(invoice.status || "pending").toUpperCase()}` : "",
+    !isApartment && invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
   ];
 
   doc.setDrawColor(225);
@@ -135,36 +136,55 @@ export function downloadInvoice(invoice, account, sym) {
   const rightEnd = drawWrappedBlock(doc, 114, y + 7, 74, "DETAILS", metaLines);
   y += Math.max(42, Math.max(leftEnd, rightEnd) - y + 6);
 
-  y = ensureSpace(doc, y, 36);
-  doc.setFillColor(238, 242, 247);
-  doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "F");
-  doc.roundedRect(110, y, 84, 30, 4, 4, "F");
-  const billEnd = drawWrappedBlock(
-    doc,
-    PAGE.left + 4,
-    y + 7,
-    74,
-    "BILL TO",
-    [
-      customerName,
-      contactAddress(invoice.billTo || invoice.customer || {}),
-      invoice.billTo?.phone || invoice.customer?.phone ? `Phone: ${invoice.billTo?.phone || invoice.customer?.phone}` : "",
-      invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
-    ]
-  );
-  const shipEnd = drawWrappedBlock(
-    doc,
-    114,
-    y + 7,
-    74,
-    "SHIP TO",
-    [
-      invoice.shipTo?.name || customerName,
-      contactAddress(invoice.shipTo || invoice.customer || {}),
-      invoice.shipTo?.phone ? `Phone: ${invoice.shipTo.phone}` : ""
-    ]
-  );
-  y += Math.max(38, Math.max(billEnd, shipEnd) - y + 6);
+  if (isApartment) {
+    y = ensureSpace(doc, y, 24);
+    doc.setFillColor(238, 242, 247);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 22, 4, 4, "F");
+    const billEnd = drawWrappedBlock(
+      doc,
+      PAGE.left + 4,
+      y + 7,
+      170,
+      "CUSTOMER",
+      [
+        customerName,
+        invoice.billTo?.phone || invoice.customer?.phone ? `Phone: ${invoice.billTo?.phone || invoice.customer?.phone}` : "",
+        invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
+      ]
+    );
+    y += Math.max(30, billEnd - y + 6);
+  } else {
+    y = ensureSpace(doc, y, 36);
+    doc.setFillColor(238, 242, 247);
+    doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "F");
+    doc.roundedRect(110, y, 84, 30, 4, 4, "F");
+    const billEnd = drawWrappedBlock(
+      doc,
+      PAGE.left + 4,
+      y + 7,
+      74,
+      "BILL TO",
+      [
+        customerName,
+        contactAddress(invoice.billTo || invoice.customer || {}),
+        invoice.billTo?.phone || invoice.customer?.phone ? `Phone: ${invoice.billTo?.phone || invoice.customer?.phone}` : "",
+        invoice.billTo?.gstin || invoice.customer?.gstin ? `GSTIN: ${invoice.billTo?.gstin || invoice.customer?.gstin}` : ""
+      ]
+    );
+    const shipEnd = drawWrappedBlock(
+      doc,
+      114,
+      y + 7,
+      74,
+      "SHIP TO",
+      [
+        invoice.shipTo?.name || customerName,
+        contactAddress(invoice.shipTo || invoice.customer || {}),
+        invoice.shipTo?.phone ? `Phone: ${invoice.shipTo.phone}` : ""
+      ]
+    );
+    y += Math.max(38, Math.max(billEnd, shipEnd) - y + 6);
+  }
 
   y = ensureSpace(doc, y, 22);
   doc.setFillColor(30, 36, 44);
@@ -211,10 +231,12 @@ export function downloadInvoice(invoice, account, sym) {
   y = ensureSpace(doc, y, 34);
   drawRule(doc, y);
   y += 8;
-  drawLabelValue(doc, y, "Subtotal", money(tax.subtotal, sym));
-  y += 7;
-  drawLabelValue(doc, y, "Discount", `- ${money(getInvoiceDiscount(invoice), sym)}`);
-  y += 7;
+  if (!isApartment) {
+    drawLabelValue(doc, y, "Subtotal", money(tax.subtotal, sym));
+    y += 7;
+    drawLabelValue(doc, y, "Discount", `- ${money(getInvoiceDiscount(invoice), sym)}`);
+    y += 7;
+  }
   drawLabelValue(doc, y, "Taxable Value", money(tax.taxable, sym));
   y += 7;
   if ((invoice.taxMode || "split") === "split") {

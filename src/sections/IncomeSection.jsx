@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
   DateSelectInput,
@@ -23,6 +23,10 @@ import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CURRENT_MONTH = TODAY.slice(0, 7);
+
+function getApartmentMaintenanceKey(orgId, monthKeyValue) {
+  return `easykhata:apartment-maintenance:${orgId || "default"}:${monthKeyValue}`;
+}
 
 function buildBlankForm(year, month, config) {
   const base = {
@@ -88,7 +92,10 @@ export default function IncomeSection({ year, month, orgType }) {
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [bulkMaintenanceAmount, setBulkMaintenanceAmount] = useState("");
+  const [pendingFlatPayments, setPendingFlatPayments] = useState([]);
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
+  const openFlatManager = openPeopleManager;
 
   const invIncome = config.hideInvoices || isApartmentOrg
     ? []
@@ -131,24 +138,15 @@ export default function IncomeSection({ year, month, orgType }) {
       .toLowerCase();
     return manualSearch.includes(normalizedSearch);
   });
-  const flatOptions = useMemo(() => [
-    ...(societyName ? [{
-      value: societyName,
-      label: [societyName, "Common Building"].filter(Boolean).join(" - "),
-      ownerName: "Common Building",
-      tenantName: "",
-      phone: "",
-      isBuilding: true
-    }] : []),
-    ...(d.customers || []).map(flat => ({
+  const apartmentFlats = useMemo(() => (
+    (d.customers || []).map(flat => ({
       value: flat.name || "",
-      label: [flat.name, flat.ownerName || "", flat.tenantName || "", flat.phone || "", societyName].filter(Boolean).join(" - "),
+      label: [flat.name, flat.ownerName || "", societyName].filter(Boolean).join(" - "),
       ownerName: flat.ownerName || "",
-      tenantName: flat.tenantName || "",
-      phone: flat.phone || "",
-      isBuilding: false
+      id: flat.id
     })).filter(option => option.value)
-  ], [d.customers, societyName]);
+  ), [d.customers, societyName, sym]);
+  const flatOptions = apartmentFlats;
   const peopleOptions = useMemo(() => {
     const customerMeta = new Map(
       (d.customers || [])
@@ -165,6 +163,7 @@ export default function IncomeSection({ year, month, orgType }) {
     }));
   }, [d]);
   const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
+  const hasApartmentFlats = !isApartmentOrg || apartmentFlats.length > 0;
   const clientOptions = useMemo(() => (
     (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.email || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
@@ -181,11 +180,49 @@ export default function IncomeSection({ year, month, orgType }) {
     })).filter(option => option.value)
   ), [d.orgRecords, sym]);
 
+  useEffect(() => {
+    if (!isApartmentOrg) return;
+    if (typeof window === "undefined") return;
+    const savedValue = window.localStorage.getItem(getApartmentMaintenanceKey(d.activeOrgId, mk)) || "";
+    setBulkMaintenanceAmount(savedValue);
+  }, [d.activeOrgId, isApartmentOrg, mk]);
+
+  useEffect(() => {
+    if (!isApartmentOrg || typeof window === "undefined") return;
+    const storageKey = getApartmentMaintenanceKey(d.activeOrgId, mk);
+    if (bulkMaintenanceAmount) {
+      window.localStorage.setItem(storageKey, bulkMaintenanceAmount);
+      return;
+    }
+    window.localStorage.removeItem(storageKey);
+  }, [bulkMaintenanceAmount, d.activeOrgId, isApartmentOrg, mk]);
+
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
   }
 
+  const selectedMonthDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+  const defaultCollectionDate = selectedMonthDate > TODAY ? TODAY : selectedMonthDate;
+  const apartmentCollectionStatus = apartmentFlats.map(flat => {
+    const monthlyAmount = Number(bulkMaintenanceAmount || 0);
+    const paidEntry = manualIncome.find(item => (
+      String(item.flatNumber || "").trim() === String(flat.value || "").trim() &&
+      (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk &&
+      String(item.collectionType || "Monthly Maintenance").trim() === "Monthly Maintenance"
+    ));
+
+    return {
+      ...flat,
+      monthlyAmount,
+      paidEntry
+    };
+  });
+
   function openNew() {
+    if (isApartmentOrg && !hasApartmentFlats) {
+      openFlatManager();
+      return;
+    }
     if (!hasHouseholdPeople) {
       openPeopleManager();
       return;
@@ -219,7 +256,7 @@ export default function IncomeSection({ year, month, orgType }) {
   }
 
   function save() {
-    if (isApartmentOrg && !flatOptions.length) {
+    if (isApartmentOrg && !hasApartmentFlats) {
       setFormError("Add at least one resident/flat in Settings before recording a maintenance collection.");
       return;
     }
@@ -276,6 +313,51 @@ export default function IncomeSection({ year, month, orgType }) {
     closeForm();
   }
 
+  function applyMaintenanceAmountToAllFlats() {
+    const amount = Number(bulkMaintenanceAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return;
+
+    setBulkMaintenanceAmount(String(amount));
+  }
+
+  function markFlatAsPaid(flat) {
+    if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0) || pendingFlatPayments.includes(flat.id)) return;
+
+    setPendingFlatPayments(current => [...current, flat.id]);
+
+    try {
+      d.addIncome({
+        label: `Monthly Maintenance - ${flat.value}`,
+        amount: flat.monthlyAmount,
+        date: defaultCollectionDate,
+        month: mk,
+        note: "",
+        flatNumber: flat.value,
+        collectionType: "Monthly Maintenance",
+        residentName: flat.ownerName || "",
+        collectionMonth: mk
+      });
+    } finally {
+      setPendingFlatPayments(current => current.filter(item => item !== flat.id));
+    }
+  }
+
+  function openBulkCollectionDraft(flat) {
+    setEditId(null);
+    setForm({
+      ...buildBlankForm(year, month, config),
+      label: `Monthly Maintenance - ${flat.value}`,
+      amount: flat.monthlyAmount > 0 ? String(flat.monthlyAmount) : "",
+      date: defaultCollectionDate,
+      flatNumber: flat.value,
+      residentName: flat.ownerName || "",
+      collectionType: "Monthly Maintenance",
+      collectionMonth: mk
+    });
+    setFormError("");
+    setShowForm(true);
+  }
+
   return (
     <div style={{ paddingBottom: 100 }}>
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
@@ -289,6 +371,63 @@ export default function IncomeSection({ year, month, orgType }) {
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
+        {isApartmentOrg && (
+          <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+                Set one monthly amount for all flats, then mark individual flats as paid for {MONTHS[month]} {year}.
+              </div>
+            </div>
+
+            {!hasApartmentFlats ? (
+              <EmptyState
+                title="Add flats first"
+                message="Create flat records in Org before recording maintenance collections."
+                actionLabel="Open Flats"
+                onAction={openFlatManager}
+                accentColor="var(--accent)"
+              />
+            ) : (
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 10, marginBottom: 14 }}>
+                  <Input type="number" min="0" step="0.01" placeholder="Monthly amount for all flats" value={bulkMaintenanceAmount} onChange={event => setBulkMaintenanceAmount(event.target.value)} />
+                  <button className="btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0)}>
+                    Apply to All Flats
+                  </button>
+                </div>
+                <div className="card" style={{ marginBottom: 0 }}>
+                  {apartmentCollectionStatus.map(flat => (
+                    <div key={flat.id} className="card-row" style={{ alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{flat.value}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                          {[flat.ownerName || "No owner", flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        {flat.paidEntry ? (
+                          <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
+                        ) : (
+                          <>
+                            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
+                              Review
+                            </button>
+                            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12, color: flat.monthlyAmount > 0 ? "var(--accent)" : "var(--text-dim)" }} disabled={!(flat.monthlyAmount > 0) || pendingFlatPayments.includes(flat.id)} onClick={() => markFlatAsPaid(flat)}>
+                              {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark as Paid"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {(invIncome.length > 0 || manualIncome.length > 0) && (
           <div style={{ marginBottom: 18 }}>
             <Input
@@ -340,7 +479,15 @@ export default function IncomeSection({ year, month, orgType }) {
           <span style={{ color: "var(--accent)" }}>{fmtMoney(totalManual, sym)}</span>
         </div>
         <div className="card">
-          {!hasHouseholdPeople ? (
+          {isApartmentOrg && !hasApartmentFlats && manualIncome.length === 0 ? (
+            <EmptyState
+              title="Add flats before tracking collections"
+              message="Maintenance collections need at least one flat record in Org."
+              actionLabel="Open Flats"
+              onAction={openFlatManager}
+              accentColor="var(--accent)"
+            />
+          ) : !hasHouseholdPeople ? (
             <EmptyState
               title="Add a person before tracking earnings"
               message="Household earnings must be tagged to at least one person. Add your first person in Org to continue."
@@ -422,7 +569,7 @@ export default function IncomeSection({ year, month, orgType }) {
                     setForm(current => ({
                       ...current,
                       flatNumber: nextFlatNumber,
-                      residentName: matchedFlat?.ownerName || matchedFlat?.tenantName || current.residentName || "",
+                      residentName: matchedFlat?.ownerName || current.residentName || "",
                       label: current.label || `Maintenance Collection - ${nextFlatNumber}`
                     }));
                   }}
@@ -435,7 +582,7 @@ export default function IncomeSection({ year, month, orgType }) {
                   ))}
                 </Select>
               ) : isApartmentOrg && field.key === "residentName" ? (
-                <Input value={form.residentName || ""} placeholder="Owner / tenant auto-fills from flat" readOnly />
+                <Input value={form.residentName || ""} placeholder="Owner auto-fills from flat" readOnly />
               ) : field.key === "clientName" ? (
                 <Select value={form.clientName || ""} onChange={event => setForm(current => ({ ...current, clientName: event.target.value, label: current.label || `${event.target.value} Payment` }))}>
                   <option value="">{clientOptions.length ? "Select client" : "Add clients in Settings first"}</option>
@@ -465,6 +612,16 @@ export default function IncomeSection({ year, month, orgType }) {
           </Field>
         </Modal>
       )}
+
+      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
+        <button
+          className="btn-primary"
+          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
+          onClick={openNew}
+        >
+          {config.incomeActionLabel}
+        </button>
+      </div>
     </div>
   );
 }

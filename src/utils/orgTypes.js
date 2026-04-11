@@ -221,12 +221,9 @@ export const ORG_TYPE_CONFIGS = {
       { key: "serviceProvider", label: "Service Provider", type: "text", placeholder: "Vendor or contractor name" },
       { key: "billReference", label: "Bill Reference", type: "text", placeholder: "Invoice or receipt number" }
     ],
-    invoiceFields: [
-      { key: "expenseCategory", label: "Expense Category", type: "select", options: ["Repairs", "Cleaning", "Security", "Water", "Electricity", "Housekeeping", "Lift", "Amenities", "Admin", "Legal", "Other"] }
-    ],
+    invoiceFields: [],
     customerFields: [
-      { key: "ownerName", label: "Owner Name", type: "text", placeholder: "Owner name" },
-      { key: "tenantName", label: "Tenant Name", type: "text", placeholder: "Tenant name" }
+      { key: "ownerName", label: "Owner Name", type: "text", required: true, placeholder: "Owner name" }
     ],
     expenseCategories: ["Repairs", "Cleaning", "Security", "Water", "Electricity", "Housekeeping", "Lift", "Amenities", "Admin", "Legal", "Other"],
     extraSections: []

@@ -9,6 +9,12 @@ const TODAY = new Date().toISOString().slice(0, 10);
 const EMI_END_DATE_MAX = `${new Date().getFullYear() + 50}-12-31`;
 const CURRENT_MONTH_START = `${TODAY.slice(0, 7)}-01`;
 
+function nextMonthStart(dateValue = CURRENT_MONTH_START) {
+  const [yearPart, monthPart] = String(dateValue || CURRENT_MONTH_START).split("-");
+  const nextDate = new Date(Number(yearPart), Number(monthPart), 1);
+  return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
 function startOfMonthValue(year, month) {
   return `${year}-${String(month + 1).padStart(2, "0")}-01`;
 }
@@ -32,7 +38,7 @@ function buildBlankForm(section) {
   return base;
 }
 
-function renderField(field, value, onChange) {
+function renderField(field, value, onChange, options = {}) {
   const commonProps = {
     value: value || "",
     onChange: event => onChange(event.target.value),
@@ -52,7 +58,7 @@ function renderField(field, value, onChange) {
   }
 
   if (field.type === "date") {
-    return <DateSelectInput value={value || ""} onChange={onChange} max={field.key === "startDate" || field.key === "endDate" ? EMI_END_DATE_MAX : undefined} yearOrder={field.key === "startDate" || field.key === "endDate" ? "asc" : "desc"} />;
+    return <DateSelectInput value={value || ""} onChange={onChange} min={options.min} max={options.max} yearOrder={field.key === "startDate" || field.key === "endDate" ? "asc" : "desc"} />;
   }
 
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
@@ -164,7 +170,16 @@ export default function EmiSection({ year, month, orgType }) {
       setFormError("Choose a valid EMI start date or leave it empty.");
       return;
     }
+    if (form.startDate && form.startDate > TODAY) {
+      setFormError("EMI start date cannot be in the future.");
+      return;
+    }
     const effectiveStartDate = form.startDate || CURRENT_MONTH_START;
+    const minimumEndDate = nextMonthStart(effectiveStartDate);
+    if (form.endDate < minimumEndDate) {
+      setFormError("EMI end date should start from the next month after the start date.");
+      return;
+    }
     if (form.endDate < effectiveStartDate) {
       setFormError("End date should be on or after the EMI start date.");
       return;
@@ -249,11 +264,30 @@ export default function EmiSection({ year, month, orgType }) {
           )}
           {emiSection.fields.map(field => (
             <Field key={field.key} label={field.label} required={Boolean(field.required)}>
-              {renderField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
+              {renderField(
+                field,
+                form[field.key],
+                value => setForm(current => ({ ...current, [field.key]: value })),
+                field.key === "startDate"
+                  ? { max: TODAY }
+                  : field.key === "endDate"
+                    ? { min: nextMonthStart(form.startDate || CURRENT_MONTH_START), max: EMI_END_DATE_MAX }
+                    : {}
+              )}
             </Field>
           ))}
         </Modal>
       )}
+
+      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
+        <button
+          className="btn-primary"
+          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
+          onClick={openNew}
+        >
+          Add EMI
+        </button>
+      </div>
     </div>
   );
 }

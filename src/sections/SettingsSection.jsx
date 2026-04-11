@@ -231,6 +231,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
     return {
@@ -246,6 +247,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
+  const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const showOrgBusinessFields = !isPersonalOrg;
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
@@ -258,6 +260,29 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     () => (orgConfig.showCustomerFinancials === false ? customers : customerInsights),
     [customers, customerInsights, orgConfig.showCustomerFinancials]
   );
+  const filteredCustomerDirectory = useMemo(() => {
+    const needle = customerSearch.trim().toLowerCase();
+    if (!needle) return customerDirectory;
+
+    return customerDirectory.filter(customer => {
+      const fields = [
+        customer.name,
+        customer.ownerName,
+        customer.tenantName,
+        customer.phone,
+        customer.email,
+        customer.location,
+        customer.monthlyMaintenance,
+        customer.outstanding,
+        customer.totalRevenue
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return fields.includes(needle);
+    });
+  }, [customerDirectory, customerSearch]);
   const activeOrgSection = useMemo(
     () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
     [orgConfig, orgSectionKey]
@@ -554,8 +579,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const cleanCity = String(accForm.city || "").trim();
     const cleanState = String(accForm.state || "").trim();
     const cleanCountry = String(accForm.country || "").trim();
-    const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
-    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanLocation = isApartmentOrg ? cleanAddressLine : buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanAddress = isApartmentOrg ? cleanAddressLine : buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
     const cleanOrganizationType = getOrgType(accForm.organizationType);
     const previousOrganizationType = getOrgType(account?.organizationType || user?.organizationType);
     const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
@@ -576,12 +601,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
-    if (!cleanCity || !cleanState || !cleanCountry) {
+    if (!isApartmentOrg && (!cleanCity || !cleanState || !cleanCountry)) {
       showNotice("Please enter your organization city, state, and country.");
+      return;
+    }
+    if (isApartmentOrg && !cleanAddressLine) {
+      showNotice("Please enter the apartment or society address.");
       return;
     }
 
     const nextAccount = {
+      ...account,
       name: cleanName,
       email: cleanEmail,
       phone: cleanPhone,
@@ -630,6 +660,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     (orgConfig.customerFields || []).forEach(field => {
       next[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
     });
+    if (orgType === ORG_TYPES.APARTMENT && account?.monthlyMaintenanceAmount) {
+      next.monthlyMaintenance = String(account.monthlyMaintenanceAmount);
+    }
     setCustForm(next);
     setEditCust(null);
     setScreen("customer-form");
@@ -674,6 +707,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     if (showPersonContactFields && !isOptionalEmail(cleanEmail)) {
       showNotice("Please enter a valid customer email or leave it empty.");
+      return;
+    }
+    const missingRequiredField = (orgConfig.customerFields || []).find(field => field.required && !String(custForm?.[field.key] || "").trim());
+    if (missingRequiredField) {
+      showNotice(`Please enter ${missingRequiredField.label.toLowerCase()}.`);
       return;
     }
     if (cleanPhone && !isValidUserPhoneNumber(cleanPhoneNumber)) {
@@ -1393,31 +1431,35 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </Select>
           </Field>
           <Field label={orgConfig.profileNameLabel} required><Input placeholder={orgConfig.profileNamePlaceholder} value={accForm.name || ""} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} /></Field>
-          <Field label="Address Line" hint="House number, street, road, or locality."><Input placeholder="Flat 12, MG Road" value={accForm.addressLine || ""} onChange={e => setAccForm(f => ({ ...f, addressLine: e.target.value }))} autoComplete="address-line1" /></Field>
-          <div className="desktop-grid-2">
-            <Field label="City" required>
-              <Input placeholder="Hyderabad" value={accForm.city || ""} onChange={e => setAccForm(f => ({ ...f, city: e.target.value }))} autoComplete="address-level2" />
-            </Field>
-            <Field label="Country" required>
-              <Select value={accForm.country || "India"} onChange={e => setAccForm(f => ({ ...f, country: e.target.value }))}>
-                {COUNTRY_OPTIONS.map(option => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-          <Field label="State / Province" required>
-            <Select value={accForm.state || ""} onChange={e => setAccForm(f => ({ ...f, state: e.target.value }))}>
-              <option value="">Select state / province</option>
-              {orgStateProvinceOptions.map(option => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <Field label="Address" required hint="Society name, street, area, and any landmark."><Input placeholder="Lake View Residency, MG Road, Hyderabad" value={accForm.addressLine || ""} onChange={e => setAccForm(f => ({ ...f, addressLine: e.target.value }))} autoComplete="street-address" /></Field>
+          {!isApartmentOrg && (
+            <>
+              <div className="desktop-grid-2">
+                <Field label="City" required>
+                  <Input placeholder="Hyderabad" value={accForm.city || ""} onChange={e => setAccForm(f => ({ ...f, city: e.target.value }))} autoComplete="address-level2" />
+                </Field>
+                <Field label="Country" required>
+                  <Select value={accForm.country || "India"} onChange={e => setAccForm(f => ({ ...f, country: e.target.value }))}>
+                    {COUNTRY_OPTIONS.map(option => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+              <Field label="State / Province" required>
+                <Select value={accForm.state || ""} onChange={e => setAccForm(f => ({ ...f, state: e.target.value }))}>
+                  <option value="">Select state / province</option>
+                  {orgStateProvinceOptions.map(option => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </>
+          )}
           {showOrgBusinessFields && <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
           {showOrgBusinessFields && <Field label="Phone">
             <PhoneNumberInput
@@ -1574,11 +1616,18 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (user?.role === "admin") return null;
     return withNotice(
       <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`Add ${orgConfig.customerEntryLabel}`}>
+        {customerDirectory.length > 0 && (
+          <Field label={`Search ${orgConfig.customerLabel}`} hint="Find records by flat number, owner, or contact.">
+            <Input placeholder={`Search ${orgConfig.customerLabel.toLowerCase()}...`} value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} />
+          </Field>
+        )}
         {customerDirectory.length === 0 ? (
           <EmptyState title={`No ${orgConfig.customerLabel.toLowerCase()} yet`} message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`} accentColor="var(--blue)" />
+        ) : filteredCustomerDirectory.length === 0 ? (
+          <EmptyState title="No matching records" message="Try a different search term to find the flat or customer you need." accentColor="var(--blue)" />
         ) : (
           <div className="card">
-            {customerDirectory.map(customer => (
+            {filteredCustomerDirectory.map(customer => (
               <div key={customer.id} className="card-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openCustomerDetail(customer)}>
                   <Avatar name={customer.name} size={38} fontSize={13} />
@@ -1586,7 +1635,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
                     {orgConfig.showCustomerFinancials === false ? (
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[customer.ownerName || "No owner", customer.tenantName || "No tenant", customer.phone || "No phone"]
+                        {[customer.ownerName || "No owner"]
                           .filter(Boolean)
                           .join(" · ") || "Flat details"}
                       </div>
@@ -1625,12 +1674,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.ownerName || "--"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Tenant</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.tenantName || "--"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Phone</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.phone || "--"}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Record Type</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>Flat record</div>
               </div>
             </div>
           </div>
@@ -1725,7 +1770,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         )}
         {showPersonContactFields && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
         {(orgConfig.customerFields || []).map(field => (
-          <Field key={field.key} label={field.label}>
+          <Field key={field.key} label={field.label} required={Boolean(field.required)}>
             {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
           </Field>
         ))}
