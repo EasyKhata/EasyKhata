@@ -1268,7 +1268,16 @@ export default function SettingsSection({ navigationTarget }) {
             />
             {user?.role !== "admin" && orgConfig.showSavingsGoal !== false && <MenuRow icon="G" label={orgType === "personal" ? "Savings Goals" : "Savings Goal"} sub={(Number((goals?.targetAmount ?? goals?.monthlySavings) || 0) > 0) ? `Target ${currency?.symbol}${Number((goals?.targetAmount ?? goals?.monthlySavings) || 0).toLocaleString("en-IN")} · Saved ${currency?.symbol}${Number(goals?.savedAmount || 0).toLocaleString("en-IN")}` : "Track your target, date, saved amount, and notes"} onClick={() => setScreen("goals")} />}
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
-            <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
+            {user?.role === "admin" ? (
+              <MenuRow
+                icon="?"
+                label="Support Queue"
+                sub="Review and resolve customer support tickets from the admin dashboard"
+                onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "dashboard" } }))}
+              />
+            ) : (
+              <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
+            )}
           </div>
         </div>
 

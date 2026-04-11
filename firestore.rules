@@ -29,6 +29,14 @@ service cloud.firestore {
       match /orgs/{orgId}/invoices/{invoiceId} {
         allow create, read, update, delete: if isOwner(userId) || isAdmin();
       }
+
+      match /orgs/{orgId}/income/{incomeId} {
+        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      }
+
+      match /orgs/{orgId}/expenses/{expenseId} {
+        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /shared_ledgers/{ledgerId} {
@@ -39,6 +47,24 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId
         ));
       allow delete: if isAdmin();
+
+      match /invoices/{invoiceId} {
+        allow create, read, update, delete: if isAdmin() ||
+          (isSignedIn() &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId);
+      }
+
+      match /income/{incomeId} {
+        allow create, read, update, delete: if isAdmin() ||
+          (isSignedIn() &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId);
+      }
+
+      match /expenses/{expenseId} {
+        allow create, read, update, delete: if isAdmin() ||
+          (isSignedIn() &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId);
+      }
     }
 
     match /admin_cleanup_queue/{requestId} {
