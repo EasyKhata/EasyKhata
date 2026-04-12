@@ -91,6 +91,14 @@ function getApartmentCollectionEntries(data, year, month) {
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 }
 
+function isOpeningBalanceCollection(item) {
+  return String(item?.collectionType || "").trim().toLowerCase() === "opening balance";
+}
+
+function sumCollectionAmounts(entries) {
+  return (entries || []).reduce((total, entry) => total + Number(entry?.amount || 0), 0);
+}
+
 function getApartmentExpenseEntries(data, year, month) {
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   return (data?.expenses || [])
@@ -110,7 +118,7 @@ function getApartmentCollectionDetailRows(entries, sym) {
   return entries.map(item => ({
     label: [
       safeText(item.flatNumber || "Flat"),
-      safeText(item.residentName || item.ownerName || item.source || item.collectionType || "Collection")
+      safeText(item.collectionType || item.source || "Collection")
     ].filter(Boolean).join(" · "),
     value: `${formatDateValue(item.date)} | ${money(item.amount, sym)} | ${safeText(item.collectionType || "Collection")}`
   }));
@@ -412,16 +420,18 @@ function setRgbText(doc, rgb) {
   doc.setTextColor(rgb[0], rgb[1], rgb[2]);
 }
 
-function drawStatementHero(doc, y, title, subtitle, apartmentName) {
+function drawStatementHero(doc, y, title, subtitle, metaLine) {
   setRgbFill(doc, STATEMENT_THEME.header);
   doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 34, 7, 7, "F");
   setRgbText(doc, [255, 255, 255]);
+  const safeTitle = safeText(title);
+  const titleFontSize = safeTitle.length > 34 ? 16 : 20;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(safeText(title), PAGE.left + 5, y + 11);
+  doc.setFontSize(titleFontSize);
+  doc.text(safeTitle, PAGE.left + 5, y + 11);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
-  doc.text(safeText(apartmentName), PAGE.left + 5, y + 19);
+  doc.text(safeText(metaLine), PAGE.left + 5, y + 19);
   doc.text(safeText(subtitle), PAGE.left + 5, y + 26);
   return y + 42;
 }
@@ -455,7 +465,7 @@ function buildApartmentStatementRows(collections, expenses, openingBalance) {
       date: item.date || `${item.collectionMonth || item.month || ""}-01`,
       details: [
         item.flatNumber ? `Flat ${safeText(item.flatNumber)}` : "Collection",
-        safeText(item.residentName || item.ownerName || item.collectionType || "Collection")
+        safeText(item.collectionType || "Collection")
       ].filter(Boolean).join(" | "),
       credit: Number(item.amount || 0),
       debit: 0
@@ -565,7 +575,7 @@ function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const overview = buildFinancialYearOverview(data, startYear);
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
-  const title = `Society Statement - ${overview.label}`;
+  const title = `${apartmentName} Statement`;
   const statementRows = buildApartmentStatementRows(
     getApartmentFinancialYearCollectionEntries(data, startYear),
     getApartmentFinancialYearExpenseEntries(data, startYear),
@@ -573,7 +583,7 @@ function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
   );
 
   let y = PAGE.top;
-  y = drawStatementHero(doc, y, title, `Generated on ${new Date().toLocaleDateString("en-IN")}`, apartmentName);
+  y = drawStatementHero(doc, y, title, `Generated on ${new Date().toLocaleDateString("en-IN")}`, overview.label);
   y = drawStatementSummaryCards(doc, y, [
     { label: "Collections", value: money(overview.totalIncome, sym), color: STATEMENT_THEME.credit, softColor: STATEMENT_THEME.creditSoft },
     { label: "Expenses", value: money(overview.totalExpense, sym), color: STATEMENT_THEME.debit, softColor: STATEMENT_THEME.debitSoft },
@@ -586,8 +596,7 @@ function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
   y = drawRows(doc, y, [
     { label: "Apartment Name", value: apartmentName },
     { label: "Financial Year", value: overview.label },
-    { label: "Flats Covered", value: String(overview.endingStats?.flatsCount || 0) },
-    { label: "Collection Rate", value: `${Math.round(overview.endingStats?.collectionRate || 0)}%` }
+    { label: "Pending Flats", value: String(overview.endingStats?.unpaidFlats?.length || 0) }
   ]);
 
   y = ensureSpace(doc, y + 2, 60);
@@ -600,15 +609,19 @@ function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
   const stats = calculateApartmentDashboard(data, year, month);
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
   const monthlyCollections = getApartmentCollectionEntries(data, year, month);
+  const openingBalanceCollections = monthlyCollections.filter(isOpeningBalanceCollection);
+  const regularCollections = monthlyCollections.filter(item => !isOpeningBalanceCollection(item));
   const monthlyExpenses = getApartmentExpenseEntries(data, year, month);
   const openingBalance = Number(stats.totalReserve || 0) - Number(stats.monthlyReserve || 0);
-  const statementRows = buildApartmentStatementRows(monthlyCollections, monthlyExpenses, openingBalance);
+  const adjustedOpeningBalance = openingBalance + sumCollectionAmounts(openingBalanceCollections);
+  const statementRows = buildApartmentStatementRows(regularCollections, monthlyExpenses, adjustedOpeningBalance);
+  const regularCollectionTotal = sumCollectionAmounts(regularCollections);
 
   let y = PAGE.top;
-  y = drawStatementHero(doc, y, `Society Statement - ${MONTHS[month]} ${year}`, `Generated on ${new Date().toLocaleDateString("en-IN")}`, apartmentName);
+  y = drawStatementHero(doc, y, `${apartmentName} Statement`, `Generated on ${new Date().toLocaleDateString("en-IN")}`, `${MONTHS[month]} ${year}`);
   y = drawStatementSummaryCards(doc, y, [
-    { label: "Opening Balance", value: money(openingBalance, sym), color: STATEMENT_THEME.neutral, softColor: STATEMENT_THEME.neutralSoft },
-    { label: "Collections", value: money(stats.totalIncome, sym), color: STATEMENT_THEME.credit, softColor: STATEMENT_THEME.creditSoft },
+    { label: "Opening Balance", value: money(adjustedOpeningBalance, sym), color: STATEMENT_THEME.neutral, softColor: STATEMENT_THEME.neutralSoft },
+    { label: "Collections", value: money(regularCollectionTotal, sym), color: STATEMENT_THEME.credit, softColor: STATEMENT_THEME.creditSoft },
     { label: "Expenses", value: money(stats.totalExpense, sym), color: STATEMENT_THEME.debit, softColor: STATEMENT_THEME.debitSoft },
     { label: "Closing Balance", value: money(stats.totalReserve, sym), color: STATEMENT_THEME.header, softColor: STATEMENT_THEME.headerSoft }
   ]);
@@ -618,8 +631,7 @@ function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
   y = drawRows(doc, y, [
     { label: "Apartment Name", value: apartmentName },
     { label: "Statement Period", value: `${MONTHS[month]} ${year}` },
-    { label: "Flats Covered", value: String(stats.flatsCount || 0) },
-    { label: "Collection Rate", value: `${Math.round(stats.collectionRate || 0)}%` }
+    { label: "Pending Flats", value: String(stats.unpaidFlats?.length || 0) }
   ]);
 
   y = ensureSpace(doc, y + 2, 60);

@@ -335,7 +335,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             <Tile label={viewMode === "month" ? "Society Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, utilities, repairs, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "Monthly Reserve" : "Latest Month Reserve"} value={fmtMoney(stats.monthlyReserve || 0, sym)} color={(stats.monthlyReserve || 0) >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collections minus expenses for this month" : "Net result of the latest month in this year"} />
             <Tile label="Total Reserve" value={fmtMoney(stats.totalReserve || 0, sym)} color={(stats.totalReserve || 0) >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? "Running reserve up to this month" : "Collections minus expenses for the year"} />
-            <Tile label="Flats" value={String(stats.flatsCount || 0)} color="var(--gold)" sub={`${stats.residentsCount || 0} owner names linked in Settings`} onClick={() => onNav("settings")} />
+            <Tile
+              label="Flats"
+              value={String(stats.flatsCount || 0)}
+              color="var(--gold)"
+              sub={`${stats.unpaidFlats?.length || 0} pending in ${viewMode === "month" ? "this month" : "the latest month"} · open Org flats`}
+              onClick={() => onNav({ tab: "org", screen: "customers" })}
+            />
           </div>
 
           <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} />

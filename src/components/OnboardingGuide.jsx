@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Field, Input, Select } from "./UI";
-import { ORG_TYPES, ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
 function buildAccountFormState(account, user) {
   return {
@@ -14,6 +14,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
   const [accountForm, setAccountForm] = useState(buildAccountFormState(account, user));
   const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
+  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(orgType), [orgType]);
   const totalSteps = 4;
   const isLastStep = step === totalSteps;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
@@ -70,7 +71,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
             </div>
             <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EasyKhata.">
               <Select value={orgType} onChange={e => setAccountForm(current => ({ ...current, organizationType: e.target.value }))}>
-                {ORG_TYPE_OPTIONS.map(option => (
+                {selectableOrgTypeOptions.map(option => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -78,7 +79,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
               </Select>
             </Field>
             <div style={{ marginBottom: 16, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              {ORG_TYPE_OPTIONS.find(option => option.value === orgType)?.description}
+              {selectableOrgTypeOptions.find(option => option.value === orgType)?.description}
             </div>
             <Field label={orgConfig.profileNameLabel} required>
               <Input

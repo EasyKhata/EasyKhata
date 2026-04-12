@@ -4,7 +4,7 @@ import { Field, Input, PhoneNumberInput, Select } from "../components/UI";
 import { isStrongPassword, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
-import { ORG_TYPE_OPTIONS, ORG_TYPES } from "../utils/orgTypes";
+import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 import {
   buildDateOfBirthFromParts,
   buildPhoneNumber,
@@ -49,6 +49,7 @@ export default function AuthScreen() {
   const stateOptions = useMemo(() => getStateProvinceOptions(country), [country]);
   const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
   const birthDayOptions = useMemo(() => getBirthDayOptions(birthMonth, birthYear), [birthMonth, birthYear]);
+  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(organizationType), [organizationType]);
 
   // Password strength indicator
   const passStrength = password ? {
@@ -373,7 +374,7 @@ export default function AuthScreen() {
             </Field>
             <Field label="What Are You Using EasyKhata For?" required hint="This helps us tailor labels, fields, and sections for your workflow.">
               <Select value={organizationType} onChange={e => setOrganizationType(e.target.value)}>
-                {ORG_TYPE_OPTIONS.map(option => (
+                {selectableOrgTypeOptions.map(option => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
