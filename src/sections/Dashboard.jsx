@@ -260,16 +260,16 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
           : "Purchases and shop costs are ahead of sales across the year."))
     : isSmallBusinessOrg
     ? (viewMode === "month"
-      ? (stats.pendingInvoiceTotal > 0
-        ? `${fmtMoney(stats.pendingInvoiceTotal, sym)} is still awaiting collection from customers this month.`
+      ? (stats.pendingSalesTotal > 0
+        ? `${fmtMoney(stats.pendingSalesTotal, sym)} is still awaiting collection from customers this month.`
         : stats.profit >= 0
-          ? "Client work and collections are staying ahead of business costs this month."
-          : "Expenses are ahead of business receipts this month.")
+          ? "Customer work and collections are staying ahead of business costs this month."
+          : "Expenses are ahead of sales this month.")
       : (stats.partnerBalanceTotal > 0
         ? `${fmtMoney(stats.partnerBalanceTotal, sym)} is still due across partner balances this year.`
         : stats.profit >= 0
           ? "The business stayed profitable across the year."
-          : "Expenses are ahead of receipts across the year."))
+          : "Expenses are ahead of sales across the year."))
     : viewMode === "month" 
     ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
     : (stats.profit >= 0 ? "You're profitable for the year." : "Expenses exceed receipts for the year.");
@@ -786,25 +786,32 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
           {viewMode === "month" ? (
             <>
-          <Tile label="Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg ? "Client payments, advances, and paid invoices" : "Manual + invoice receipts"} onClick={() => onNav("income")} />
+          <Tile label="Sales" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
               <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />
-              <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
               {isSmallBusinessOrg ? (
-                <Tile label="Services" value={String(stats.servicesCount || 0)} color="var(--blue)" sub={`${stats.teamCount || 0} team member(s) configured`} onClick={() => onNav("settings")} />
+                <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending sale(s)`} onClick={() => onNav("income")} />
+              ) : (
+                <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
+              )}
+              {isSmallBusinessOrg ? (
+                <Tile label="Refunds Issued" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
               ) : showAdvanced ? (
                 <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
               ) : (
                 <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
               )}
+              {isSmallBusinessOrg && (
+                <Tile label="Low Stock (<10)" value={String((stats.lowStockProducts || []).length)} color={(stats.lowStockProducts || []).length ? "var(--gold)" : "var(--accent)"} sub={`${stats.totalProductsCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
+              )}
             </>
           ) : (
             <>
-              <Tile label="Total Receipts" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
+              <Tile label="Total Sales" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
               <Tile label="Total Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={`Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} />
               {isSmallBusinessOrg ? (
                 <>
                   <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--gold)" sub={`${stats.partnersWithBalance.length || 0} partner account(s) still open`} onClick={() => onNav("settings")} />
-                  <Tile label="Team Payout Plan" value={fmtMoney(stats.monthlyPayoutEstimate || 0, sym)} color="var(--blue)" sub={`${stats.teamCount || 0} team member(s) tracked`} onClick={() => onNav("settings")} />
+                  <Tile label="Refunded Sales" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
                 </>
               ) : (
                 <>
@@ -818,32 +825,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
 
         {isSmallBusinessOrg && (
           <>
-            <Collapsible 
-              title="Service Catalog" 
-              icon="📦" 
-              color="var(--blue)"
-              count={stats.servicesCount || 0}
-              defaultOpen
-            >
-              <div className="card">
-                {stats.servicesCount === 0 ? (
-                  <EmptyState title="No services added yet" message="Add your main services or packages in Settings so quotes, receipts, and invoices stay simple and consistent." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--blue)" />
-                ) : (stats.topServices || []).slice(0, 5).map(item => (
-                  <div key={item.serviceName} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.serviceName}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[item.packageName || "Custom work", item.notes || "No extra notes"].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>
-                      {item.defaultAmount ? fmtMoney(item.defaultAmount, sym) : "--"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Collapsible>
-
             <Collapsible 
               title="Partner Balances" 
               icon="🏷" 
@@ -864,30 +845,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
                         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{partner.contact || "No contact added"}</div>
                       </div>
                       <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(partner.balanceDue, sym)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Collapsible>
-
-            <Collapsible 
-              title="Team Snapshot" 
-              icon="👥" 
-              color="var(--purple)"
-              count={stats.teamCount || 0}
-              defaultOpen={stats.teamCount > 0}
-            >
-              <div className="card">
-                {stats.teamCount === 0 ? (
-                  <EmptyState title="No team records yet" message="Add up to 5-10 team members in Settings to keep roles and payout plans visible on the dashboard." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--purple)" />
-                ) : (
-                  (stats.teamMembers || []).slice(0, 5).map(member => (
-                    <div key={member.name} className="card-row">
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{member.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{member.role || "Role not added"}</div>
-                      </div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--purple)" }}>{member.payout ? fmtMoney(member.payout, sym) : "--"}</span>
                     </div>
                   ))
                 )}
@@ -991,35 +948,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
           </div>
         </Collapsible>
 
-        <Collapsible 
-          title="Top Customers" 
-          icon="⭐" 
-          color="var(--blue)"
-          count={showAdvanced ? stats.topCustomers.length : 0}
-          defaultOpen={showAdvanced && stats.topCustomers.length > 0}
-        >
-          <div className="card">
-            {!showAdvanced ? (
-              <EmptyState title="Customer intelligence is on Pro" message="Upgrade to Pro to see top customers, open balances, and payment patterns." accentColor="var(--blue)" />
-            ) : stats.topCustomers.length === 0 ? (
-              <EmptyState title="No customer revenue yet" message="Create invoices for your customers to see top accounts and open balances here." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
-            ) : (
-              stats.topCustomers.map(customer => (
-                <div key={customer.name} className="card-row">
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <Avatar name={customer.name} size={38} fontSize={13} />
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Open balance {fmtMoney(customer.balance, sym)}</div>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(customer.revenue, sym)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </Collapsible>
-
+        {!isSmallBusinessOrg && (
         <Collapsible 
           title="High-Risk Customers" 
           icon="⚠️" 
@@ -1045,7 +974,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             )}
           </div>
         </Collapsible>
+        )}
 
+        {!isSmallBusinessOrg && (
         <Collapsible 
           title="Pending Invoice Queue" 
           icon="⏰" 
@@ -1075,6 +1006,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             )}
           </div>
         </Collapsible>
+        )}
       </div>
 
       {onboardingGuide}

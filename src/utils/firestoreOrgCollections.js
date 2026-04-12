@@ -170,8 +170,9 @@ export async function hydrateUserOrgCollections({ db, userId, orgs = {}, collect
       for (const collectionKey of collectionKeys) {
         try {
           const snapshot = await getDocs(getOrgCollectionRef(db, userId, orgId, collectionKey));
+          const embeddedRecords = sortOrgCollectionRecords(collectionKey, nextOrgValue?.[collectionKey] || []);
+
           if (snapshot.empty) {
-            const embeddedRecords = sortOrgCollectionRecords(collectionKey, nextOrgValue?.[collectionKey] || []);
             nextOrgValue[collectionKey] = embeddedRecords;
             if (signatureStore) {
               signatureStore[getSignatureKey(userId, orgId, collectionKey)] = buildOrgCollectionSignature(collectionKey, embeddedRecords);
@@ -186,9 +187,16 @@ export async function hydrateUserOrgCollections({ db, userId, orgs = {}, collect
             collectionKey,
             snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
           );
-          nextOrgValue[collectionKey] = subcollectionRecords;
+          const subcollectionById = new Set(subcollectionRecords.map(record => record.id).filter(Boolean));
+          const missingFromSubcollection = embeddedRecords.filter(record => record.id && !subcollectionById.has(record.id));
+          const mergedRecords = sortOrgCollectionRecords(collectionKey, [...subcollectionRecords, ...missingFromSubcollection]);
+
+          nextOrgValue[collectionKey] = mergedRecords;
           if (signatureStore) {
-            signatureStore[getSignatureKey(userId, orgId, collectionKey)] = buildOrgCollectionSignature(collectionKey, subcollectionRecords);
+            signatureStore[getSignatureKey(userId, orgId, collectionKey)] = buildOrgCollectionSignature(collectionKey, mergedRecords);
+          }
+          if (missingFromSubcollection.length) {
+            backfillTargets.push({ orgId, collectionKey, records: mergedRecords });
           }
         } catch {
           const embeddedRecords = sortOrgCollectionRecords(collectionKey, nextOrgValue?.[collectionKey] || []);

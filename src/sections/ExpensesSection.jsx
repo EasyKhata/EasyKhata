@@ -366,7 +366,7 @@ export default function ExpensesSection({ year, month, orgType }) {
         </div>
         <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--danger)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {isPersonalOrg ? "Search and review every spending entry for this month in one place." : config.enableBudgets === false ? "Track all society bills, utilities, and repairs here." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
+          {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
         </div>
       </div>
 
