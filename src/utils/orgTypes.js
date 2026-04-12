@@ -44,6 +44,11 @@ export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.RETAIL, label: "Kirana Shop / Retail", description: "Track sales, purchases, inventory, and supplier balances." }
 ];
 
+export function getSelectableOrgTypeOptions(currentType = "") {
+  const cleanCurrentType = getOrgType(currentType);
+  return ORG_TYPE_OPTIONS.filter(option => option.value !== ORG_TYPES.RETAIL || cleanCurrentType === ORG_TYPES.RETAIL);
+}
+
 export const ORG_TYPE_CONFIGS = {
   [ORG_TYPES.PERSONAL]: {
     ...BASE_CONFIG,

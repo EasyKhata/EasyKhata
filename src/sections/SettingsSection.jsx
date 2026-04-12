@@ -55,7 +55,7 @@ import {
   PLANS
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL } from "../utils/brand";
-import { ORG_TYPES, ORG_TYPE_OPTIONS, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
 function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
@@ -251,6 +251,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const showOrgBusinessFields = !isPersonalOrg;
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
+  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(accForm.organizationType || orgType), [accForm.organizationType, orgType]);
+  const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const customerInsights = useMemo(
     () => calculateCustomerInsights({ customers, invoices }),
@@ -1476,7 +1478,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Modal title="Organization Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
           <Field label="Usage Type" required>
             <Select value={accForm.organizationType || orgType} onChange={e => setAccForm(f => ({ ...f, organizationType: e.target.value }))}>
-              {ORG_TYPE_OPTIONS.map(option => (
+              {selectableOrgTypeOptions.map(option => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -1549,7 +1551,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         </Field>
         <Field label="Usage Type" required>
           <Select value={createOrgForm.organizationType} onChange={event => setCreateOrgForm(current => ({ ...current, organizationType: event.target.value }))}>
-            {ORG_TYPE_OPTIONS.map(option => (
+            {selectableCreateOrgTypeOptions.map(option => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>

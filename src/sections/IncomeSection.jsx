@@ -87,12 +87,14 @@ export default function IncomeSection({ year, month, orgType }) {
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
+  const isCurrentViewedMonth = mk === CURRENT_MONTH;
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [bulkMaintenanceAmount, setBulkMaintenanceAmount] = useState("");
+  const [maintenanceAmountHydrated, setMaintenanceAmountHydrated] = useState(false);
   const [pendingFlatPayments, setPendingFlatPayments] = useState([]);
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
   const openFlatManager = openPeopleManager;
@@ -185,17 +187,19 @@ export default function IncomeSection({ year, month, orgType }) {
     if (typeof window === "undefined") return;
     const savedValue = window.localStorage.getItem(getApartmentMaintenanceKey(d.activeOrgId, mk)) || "";
     setBulkMaintenanceAmount(savedValue);
+    setMaintenanceAmountHydrated(true);
   }, [d.activeOrgId, isApartmentOrg, mk]);
 
   useEffect(() => {
     if (!isApartmentOrg || typeof window === "undefined") return;
+    if (!maintenanceAmountHydrated) return;
     const storageKey = getApartmentMaintenanceKey(d.activeOrgId, mk);
     if (bulkMaintenanceAmount) {
       window.localStorage.setItem(storageKey, bulkMaintenanceAmount);
       return;
     }
     window.localStorage.removeItem(storageKey);
-  }, [bulkMaintenanceAmount, d.activeOrgId, isApartmentOrg, mk]);
+  }, [bulkMaintenanceAmount, d.activeOrgId, isApartmentOrg, maintenanceAmountHydrated, mk]);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -217,6 +221,14 @@ export default function IncomeSection({ year, month, orgType }) {
       paidEntry
     };
   });
+  const activeMaintenanceFlat = useMemo(() => {
+    if (!isApartmentOrg) return null;
+    const flatNumber = String(form.flatNumber || "").trim();
+    const collectionType = String(form.collectionType || "Monthly Maintenance").trim();
+    const collectionMonth = String(form.collectionMonth || form.date?.slice(0, 7) || "").trim();
+    if (!flatNumber || collectionType !== "Monthly Maintenance" || collectionMonth !== mk) return null;
+    return apartmentCollectionStatus.find(flat => String(flat.value || "").trim() === flatNumber) || null;
+  }, [apartmentCollectionStatus, form.collectionMonth, form.collectionType, form.date, form.flatNumber, isApartmentOrg, mk]);
 
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {
@@ -255,50 +267,52 @@ export default function IncomeSection({ year, month, orgType }) {
     setFormError("");
   }
 
-  function save() {
+  function save(overrides = {}) {
+    const nextForm = { ...form, ...overrides };
+
     if (isApartmentOrg && !hasApartmentFlats) {
       setFormError("Add at least one resident/flat in Settings before recording a maintenance collection.");
       return;
     }
-    if (!hasMinLength(form.label, 2)) {
+    if (!hasMinLength(nextForm.label, 2)) {
       setFormError(`Add a clear ${config.incomeEntryLabel.toLowerCase()} description so you can recognize it later.`);
       return;
     }
-    if (!isPositiveAmount(form.amount)) {
+    if (!isPositiveAmount(nextForm.amount)) {
       setFormError("Enter an amount greater than 0.");
       return;
     }
-    if (!isValidDateValue(form.date)) {
+    if (!isValidDateValue(nextForm.date)) {
       setFormError(`Choose the date when this ${config.incomeEntryLabel.toLowerCase()} was received.`);
       return;
     }
-    if (isFutureDateValue(form.date)) {
+    if (isFutureDateValue(nextForm.date)) {
       setFormError("Future dates are not allowed for records.");
       return;
     }
-    if (isApartmentOrg && !String(form.flatNumber || "").trim()) {
+    if (isApartmentOrg && !String(nextForm.flatNumber || "").trim()) {
       setFormError("Select a flat from Settings before saving this maintenance collection.");
       return;
     }
-    if (isPersonalOrg && !String(form.personName || "").trim()) {
+    if (isPersonalOrg && !String(nextForm.personName || "").trim()) {
       setFormError("Select a household person before saving this earning.");
       return;
     }
-    if (isApartmentOrg && !String(form.residentName || "").trim()) {
+    if (isApartmentOrg && !String(nextForm.residentName || "").trim()) {
       setFormError("Select the flat record from Settings before saving this maintenance collection.");
       return;
     }
 
     const payload = {
-      label: form.label.trim(),
-      amount: Number(form.amount),
-      date: form.date,
-      month: isApartmentOrg ? (form.collectionMonth || form.date.slice(0, 7)) : form.date.slice(0, 7),
-      note: form.note.trim()
+      label: nextForm.label.trim(),
+      amount: Number(nextForm.amount),
+      date: nextForm.date,
+      month: isApartmentOrg ? (nextForm.collectionMonth || nextForm.date.slice(0, 7)) : nextForm.date.slice(0, 7),
+      note: nextForm.note.trim()
     };
 
     (config.incomeFields || []).forEach(field => {
-      payload[field.key] = String(form[field.key] || "").trim();
+      payload[field.key] = String(nextForm[field.key] || "").trim();
     });
 
     const hasFutureMonth = (config.incomeFields || []).some(field => field.type === "month" && isFutureMonthValue(payload[field.key]));
@@ -329,7 +343,7 @@ export default function IncomeSection({ year, month, orgType }) {
       d.addIncome({
         label: `Monthly Maintenance - ${flat.value}`,
         amount: flat.monthlyAmount,
-        date: defaultCollectionDate,
+        date: TODAY,
         month: mk,
         note: "",
         flatNumber: flat.value,
@@ -342,7 +356,19 @@ export default function IncomeSection({ year, month, orgType }) {
     }
   }
 
+  function markFlatAsPending(flat) {
+    if (!flat?.paidEntry?.id) return;
+    d.removeIncome(flat.paidEntry.id);
+    setPendingFlatPayments(current => current.filter(item => item !== flat.id));
+    closeForm();
+  }
+
   function openBulkCollectionDraft(flat) {
+    if (flat?.paidEntry) {
+      openEdit(flat.paidEntry);
+      return;
+    }
+
     setEditId(null);
     setForm({
       ...buildBlankForm(year, month, config),
@@ -408,17 +434,21 @@ export default function IncomeSection({ year, month, orgType }) {
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        {flat.paidEntry ? (
+                        {flat.paidEntry && (
                           <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
-                        ) : (
-                          <>
-                            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
-                              Review
-                            </button>
-                            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12, color: flat.monthlyAmount > 0 ? "var(--accent)" : "var(--text-dim)" }} disabled={!(flat.monthlyAmount > 0) || pendingFlatPayments.includes(flat.id)} onClick={() => markFlatAsPaid(flat)}>
-                              {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark as Paid"}
-                            </button>
-                          </>
+                        )}
+                        <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
+                          Review
+                        </button>
+                        {isCurrentViewedMonth && !flat.paidEntry && (
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: "7px 12px", fontSize: 12, color: "var(--accent)" }}
+                            disabled={pendingFlatPayments.includes(flat.id) || !(flat.monthlyAmount > 0)}
+                            onClick={() => markFlatAsPaid(flat)}
+                          >
+                            {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark as Paid"}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -540,6 +570,35 @@ export default function IncomeSection({ year, month, orgType }) {
           {formError && (
             <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
               {formError}
+            </div>
+          )}
+          {activeMaintenanceFlat && (
+            <div style={{ marginBottom: 16, padding: 14, borderRadius: 12, background: "var(--surface-high)" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Maintenance Status</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 12 }}>
+                {activeMaintenanceFlat.value} for {MONTHS[month]} {year} is currently {activeMaintenanceFlat.paidEntry ? "paid" : "pending"}.
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {!activeMaintenanceFlat.paidEntry ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ color: "var(--accent)" }}
+                    onClick={() => save({ date: TODAY })}
+                  >
+                    Mark as Paid
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ color: "var(--danger)" }}
+                    onClick={() => markFlatAsPending(activeMaintenanceFlat)}
+                  >
+                    Mark as Pending
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <Field label="Description" required>
