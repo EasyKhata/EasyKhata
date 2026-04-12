@@ -432,6 +432,56 @@ function getSmallBusinessTeam(data) {
   return data?.orgRecords?.team || [];
 }
 
+function getSmallBusinessSales(data) {
+  return (data?.income || []).filter(item => Array.isArray(item?.saleItems) && item.saleItems.length > 0);
+}
+
+function isSaleExcludedFromRevenue(status) {
+  const cleanStatus = String(status || "pending").trim().toLowerCase();
+  return cleanStatus === "canceled" || cleanStatus === "refunded";
+}
+
+function summarizeSmallBusinessSales(sales = []) {
+  const summary = {
+    salesCount: sales.length,
+    paidSalesCount: 0,
+    pendingSalesCount: 0,
+    refundedSalesCount: 0,
+    paidSalesTotal: 0,
+    pendingSalesTotal: 0,
+    refundedSalesTotal: 0,
+    netSalesTotal: 0
+  };
+
+  sales.forEach(sale => {
+    const amount = Math.max(0, toNumber(sale.amount));
+    const status = String(sale.saleStatus || "pending").trim().toLowerCase();
+
+    if (status === "paid") {
+      summary.paidSalesCount += 1;
+      summary.paidSalesTotal += amount;
+      summary.netSalesTotal += amount;
+      return;
+    }
+
+    if (status === "refunded") {
+      summary.refundedSalesCount += 1;
+      summary.refundedSalesTotal += amount;
+      return;
+    }
+
+    if (status === "canceled") {
+      return;
+    }
+
+    summary.pendingSalesCount += 1;
+    summary.pendingSalesTotal += amount;
+    summary.netSalesTotal += amount;
+  });
+
+  return summary;
+}
+
 function getRetailInventory(data) {
   return data?.orgRecords?.inventory || [];
 }
@@ -442,26 +492,53 @@ function getRetailSuppliers(data) {
 
 function buildSmallBusinessServiceInsights(services) {
   const normalizedServices = (services || []).map(item => {
-    const defaultAmount = Math.max(0, toNumber(item.defaultAmount ?? item.sellingPrice ?? item.costPrice));
+    const products = (item.products || []).map(product => ({
+      id: product.id,
+      productName: String(product.productName || product.name || "").trim(),
+      price: Math.max(0, toNumber(product.price ?? product.rate ?? product.defaultAmount)),
+      quantity: Math.max(0, toNumber(product.quantity ?? product.stock ?? product.qty)),
+      unit: String(product.unit || "").trim() || (String(product.productType || "unit").trim().toLowerCase() === "weight" ? "kg" : "pcs"),
+      lowStockAt: Math.max(0, toNumber(product.lowStockAt ?? (String(product.productType || "unit").trim().toLowerCase() === "weight" ? 2 : 10)))
+    })).filter(product => product.productName);
+
     return {
       ...item,
       serviceName: String(item.serviceName || item.productName || item.name || "").trim(),
-      packageName: String(item.packageName || "").trim(),
       notes: String(item.notes || "").trim(),
-      defaultAmount
+      products,
+      productsCount: products.length
     };
   }).filter(item => item.serviceName);
 
   const topServices = normalizedServices
     .slice()
-    .sort((a, b) => b.defaultAmount - a.defaultAmount || a.serviceName.localeCompare(b.serviceName))
+    .sort((a, b) => b.productsCount - a.productsCount || a.serviceName.localeCompare(b.serviceName))
     .slice(0, 5);
+
+  const topProducts = normalizedServices
+    .flatMap(service => service.products.map(product => ({
+      ...product,
+      serviceName: service.serviceName
+    })))
+    .sort((a, b) => b.price - a.price || a.productName.localeCompare(b.productName))
+    .slice(0, 8);
+
+  const lowStockProducts = normalizedServices
+    .flatMap(service => service.products.map(product => ({
+      ...product,
+      serviceName: service.serviceName
+    })))
+    .filter(product => product.quantity < product.lowStockAt)
+    .sort((a, b) => a.quantity - b.quantity || a.productName.localeCompare(b.productName));
 
   return {
     services: normalizedServices,
     topServices,
+    topProducts,
+    lowStockProducts,
     servicesCount: normalizedServices.length,
-    serviceCatalogValue: normalizedServices.reduce((sum, item) => sum + item.defaultAmount, 0)
+    totalProductsCount: normalizedServices.reduce((sum, item) => sum + item.productsCount, 0),
+    serviceCatalogValue: normalizedServices.reduce((sum, item) => sum + item.products.reduce((inner, product) => inner + product.price, 0), 0)
   };
 }
 
@@ -1504,18 +1581,71 @@ export function calculateSmallBusinessDashboard(data, year, month) {
   const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
   const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
   const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const monthSales = getSmallBusinessSales(data).filter(item => getRecordMonth(item) === monthKey(year, month));
+  const salesSummary = summarizeSmallBusinessSales(monthSales);
   const mk = monthKey(year, month);
   const activeExpenses = getActiveExpensesForMonth(data, mk);
   const teamPayoutTotal = activeExpenses
     .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
     .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
 
-  const alertItems = [...base.alertItems];
+  const salesByCustomerMap = {};
+  monthSales.forEach(sale => {
+    const status = String(sale.saleStatus || "pending").trim().toLowerCase();
+    if (isSaleExcludedFromRevenue(status)) return;
+    const customerName = String(sale.customerName || "Walk-in Customer").trim() || "Walk-in Customer";
+    salesByCustomerMap[customerName] = (salesByCustomerMap[customerName] || 0) + toNumber(sale.amount);
+  });
+  const topSaleCustomers = Object.entries(salesByCustomerMap)
+    .map(([name, revenue]) => ({ name, revenue }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
+  const adjustedCashFlow = Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(year, month - (5 - index), 1);
+    const flowKey = monthKey(date.getFullYear(), date.getMonth());
+    const flowSales = summarizeSmallBusinessSales(getSmallBusinessSales(data).filter(item => getRecordMonth(item) === flowKey));
+    const flowExpense = sumExpensesForMonth(data, flowKey);
+    return {
+      key: flowKey,
+      label: monthLabel(date.getFullYear(), date.getMonth()),
+      shortLabel: MONTHS[date.getMonth()],
+      income: flowSales.netSalesTotal,
+      expenses: flowExpense,
+      net: flowSales.netSalesTotal - flowExpense
+    };
+  });
+
+  const adjustedIncome = salesSummary.netSalesTotal;
+  const adjustedProfit = adjustedIncome - base.totalExpense;
+
+  const alertItems = [];
   if (serviceInsights.servicesCount === 0) {
     alertItems.push({
       tone: "gold",
       title: "No services listed yet",
-      message: "Add your core services or packages in Settings so the business setup stays focused and reusable."
+      message: "Add your core services in Settings and attach products so sales entry stays fast and consistent."
+    });
+  }
+  if (salesSummary.pendingSalesCount > 0) {
+    alertItems.push({
+      tone: salesSummary.pendingSalesTotal > Math.max(adjustedIncome * 0.4, 1) ? "danger" : "gold",
+      title: `${salesSummary.pendingSalesCount} pending sale(s)` ,
+      message: `${fmtMoneyValue(salesSummary.pendingSalesTotal)} is still awaiting payment.`
+    });
+  }
+  if (salesSummary.refundedSalesCount > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: `${salesSummary.refundedSalesCount} refunded sale(s)`,
+      message: `${fmtMoneyValue(salesSummary.refundedSalesTotal)} moved out as refunds in this period.`
+    });
+  }
+  if ((serviceInsights.lowStockProducts || []).length > 0) {
+    alertItems.push({
+      tone: (serviceInsights.lowStockProducts || []).some(product => product.quantity <= 3) ? "danger" : "gold",
+      title: `${serviceInsights.lowStockProducts.length} product(s) low on stock`,
+      message: "Some service products have less than 10 quantity left. Refill before next bookings."
     });
   }
   if (partnerInsights.partnerBalanceTotal > 0) {
@@ -1532,12 +1662,24 @@ export function calculateSmallBusinessDashboard(data, year, month) {
       message: "Team members are listed in Settings, but no team payout expense is recorded for this month yet."
     });
   }
+  if (adjustedProfit < 0) {
+    alertItems.push({
+      tone: "danger",
+      title: "Expenses are ahead of sales",
+      message: "This period is currently running at a loss after excluding refunded or canceled sales."
+    });
+  }
 
   return {
     ...base,
+    totalIncome: adjustedIncome,
+    profit: adjustedProfit,
+    cashFlow: adjustedCashFlow,
     ...serviceInsights,
     ...partnerInsights,
     ...teamInsights,
+    ...salesSummary,
+    topSaleCustomers,
     teamPayoutTotal,
     alertItems
   };
@@ -1548,17 +1690,69 @@ export function calculateSmallBusinessYearlyDashboard(data, year) {
   const serviceInsights = buildSmallBusinessServiceInsights(getSmallBusinessServices(data));
   const partnerInsights = buildSmallBusinessPartnerInsights(getSmallBusinessPartners(data));
   const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
+  const yearSales = getSmallBusinessSales(data).filter(item => getRecordMonth(item)?.slice(0, 4) === String(year));
+  const salesSummary = summarizeSmallBusinessSales(yearSales);
   const yearExpenses = getExpensesForYear(data, year);
   const teamPayoutTotal = yearExpenses
     .filter(expense => String(expense.expenseType || expense.category || "").trim().toLowerCase() === "team payout" || String(expense.category || "").trim().toLowerCase() === "payroll")
     .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
 
-  const alertItems = [...base.alertItems];
+  const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
+    const mk = monthKey(year, monthIdx);
+    const monthSales = summarizeSmallBusinessSales(getSmallBusinessSales(data).filter(item => getRecordMonth(item) === mk));
+    const expenses = sumExpensesForMonth(data, mk);
+    return {
+      key: mk,
+      month: monthIdx,
+      label: MONTHS[monthIdx],
+      income: monthSales.netSalesTotal,
+      expenses,
+      net: monthSales.netSalesTotal - expenses
+    };
+  });
+
+  const adjustedIncome = salesSummary.netSalesTotal;
+  const adjustedProfit = adjustedIncome - base.totalExpense;
+
+  const salesByCustomerMap = {};
+  yearSales.forEach(sale => {
+    const status = String(sale.saleStatus || "pending").trim().toLowerCase();
+    if (isSaleExcludedFromRevenue(status)) return;
+    const customerName = String(sale.customerName || "Walk-in Customer").trim() || "Walk-in Customer";
+    salesByCustomerMap[customerName] = (salesByCustomerMap[customerName] || 0) + toNumber(sale.amount);
+  });
+  const topSaleCustomers = Object.entries(salesByCustomerMap)
+    .map(([name, revenue]) => ({ name, revenue }))
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 5);
+
+  const alertItems = [];
   if (serviceInsights.servicesCount === 0) {
     alertItems.push({
       tone: "gold",
       title: "Service catalog is still empty",
-      message: "Add your main services or packages in Settings to keep work types consistent across the year."
+      message: "Add your services and products in Settings to keep work types consistent across the year."
+    });
+  }
+  if (salesSummary.pendingSalesCount > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: `${salesSummary.pendingSalesCount} pending sale(s) this year`,
+      message: `${fmtMoneyValue(salesSummary.pendingSalesTotal)} is awaiting payment in recorded sales.`
+    });
+  }
+  if (salesSummary.refundedSalesCount > 0) {
+    alertItems.push({
+      tone: "gold",
+      title: `${salesSummary.refundedSalesCount} refunded sale(s) this year`,
+      message: `${fmtMoneyValue(salesSummary.refundedSalesTotal)} moved out as refunds.`
+    });
+  }
+  if ((serviceInsights.lowStockProducts || []).length > 0) {
+    alertItems.push({
+      tone: (serviceInsights.lowStockProducts || []).some(product => product.quantity <= 3) ? "danger" : "gold",
+      title: `${serviceInsights.lowStockProducts.length} product(s) low on stock`,
+      message: "Some products are below 10 quantity. Review and refill inventory in Settings."
     });
   }
   if (partnerInsights.partnerBalanceTotal > 0) {
@@ -1571,9 +1765,14 @@ export function calculateSmallBusinessYearlyDashboard(data, year) {
 
   return {
     ...base,
+    totalIncome: adjustedIncome,
+    profit: adjustedProfit,
+    monthlyBreakdown,
     ...serviceInsights,
     ...partnerInsights,
     ...teamInsights,
+    ...salesSummary,
+    topSaleCustomers,
     teamPayoutTotal,
     alertItems
   };

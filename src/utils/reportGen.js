@@ -299,7 +299,7 @@ function getFinancialYearMetricItems(data, overview, sym) {
 
   if (isSmallBusinessOrgData(data)) {
     return [
-      { label: "Receipts", value: money(overview.totalIncome, sym) },
+      { label: "Sales", value: money(overview.totalIncome, sym) },
       { label: "Expenses", value: money(overview.totalExpense, sym) },
       { label: "Net", value: money(overview.totalNet, sym) },
       { label: "Services", value: String(stats.servicesCount || 0) },
@@ -1073,7 +1073,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
 
     y = sectionTitle(doc, y, "Business Summary");
     y = drawMetricGrid(doc, y, [
-      { label: "Receipts", value: money(stats.totalIncome, sym) },
+      { label: "Sales", value: money(stats.totalIncome, sym) },
       { label: "Expenses", value: money(stats.totalExpense, sym) },
       { label: "Profit / Loss", value: money(stats.profit, sym) },
       { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
@@ -1279,7 +1279,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
 
   y = sectionTitle(doc, y, "Financial Summary");
   y = drawMetricGrid(doc, y, [
-    { label: "Total Receipts", value: money(stats.totalIncome, sym) },
+    { label: "Total Sales", value: money(stats.totalIncome, sym) },
     { label: "Total Expenses", value: money(stats.totalExpense, sym) },
     { label: "Profit / Loss", value: money(stats.profit, sym) },
     { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },

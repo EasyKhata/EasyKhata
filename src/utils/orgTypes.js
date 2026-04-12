@@ -126,23 +126,25 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.SMALL_BUSINESS]: {
     ...BASE_CONFIG,
-    incomeLabel: "Receipts",
-    incomeEntryLabel: "Receipt",
-    incomeActionLabel: "Add Receipt",
-    expensesLabel: "Business Expenses",
+    enableBudgets: false,
+    simpleCustomerForm: true,
+    incomeLabel: "Sales",
+    incomeEntryLabel: "Sale",
+    incomeActionLabel: "Add Sale",
+    expensesLabel: "Expenses",
     expensesEntryLabel: "Expense",
     expensesActionLabel: "Add Expense",
     invoicesLabel: "Client Invoices",
-    customerLabel: "Clients",
-    customerEntryLabel: "Client",
-    customerNameLabel: "Client Name",
-    customerNamePlaceholder: "Client or company name",
+    hideInvoices: true,
+    customerLabel: "Customers",
+    customerEntryLabel: "Customer",
+    customerNameLabel: "Customer Name",
+    customerNamePlaceholder: "Customer name",
     profileNameLabel: "Business / Studio Name",
     profileNamePlaceholder: "E.g. Reddy Photo Studio",
-    accountIntro: "Use this profile for a small service business with one owner, a small team, client invoices, and everyday operating costs.",
+    accountIntro: "Use this profile for a small service business with one owner, a small team, customer invoices, and everyday operating costs.",
     incomeFields: [
-      { key: "receiptType", label: "Receipt Type", type: "select", options: ["Client Payment", "Advance", "Retainer", "Commission", "Other"] },
-      { key: "serviceName", label: "Service / Deal / Event", type: "text", placeholder: "What was this payment for?" }
+      { key: "customerName", label: "Customer", type: "text", placeholder: "Type or select customer" }
     ],
     expenseFields: [
       { key: "expenseType", label: "Expense Type", type: "select", options: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"] }
@@ -152,20 +154,16 @@ export const ORG_TYPE_CONFIGS = {
       { key: "discount", label: "Discount", type: "number", placeholder: "0.00" },
       { key: "paymentTerms", label: "Payment Terms", type: "text", placeholder: "E.g. Net 15" }
     ],
-    customerFields: [
-      { key: "company", label: "Company", type: "text", placeholder: "Company or brand name" }
-    ],
+    customerFields: [],
     expenseCategories: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"],
     extraSections: [
       {
         key: "services",
         label: "Services",
         entryLabel: "Service",
-        empty: () => ({ serviceName: "", packageName: "", defaultAmount: "", notes: "" }),
+        empty: () => ({ serviceName: "", notes: "", products: [] }),
         fields: [
           { key: "serviceName", label: "Service Name", type: "text", required: true, placeholder: "Wedding shoot, flat resale, ad campaign" },
-          { key: "packageName", label: "Package / Plan", type: "text", placeholder: "Optional package name" },
-          { key: "defaultAmount", label: "Default Amount", type: "number", placeholder: "0.00" },
           { key: "notes", label: "Notes", type: "textarea", placeholder: "Short notes or scope" }
         ]
       },

@@ -20,7 +20,7 @@ const IncomeSection = lazy(() => import("../sections/IncomeSection"));
 const ExpensesSection = lazy(() => import("../sections/ExpensesSection"));
 const EmiSection = lazy(() => import("../sections/EmiSection"));
 const InvoicesSection = lazy(() => import("../sections/InvoicesSection"));
-const QuotesSection = lazy(() => import("../sections/QuotesSection"));
+const KhataSection = lazy(() => import("../sections/KhataSection"));
 const SettingsSection = lazy(() => import("../sections/SettingsSection"));
 const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
@@ -356,7 +356,7 @@ export default function MainApp() {
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
     ] : []),
-    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "quotes", icon: "◇", label: "Quotes" }] : []),
+    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "◇", label: "Khata" }] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     { id: "settings", icon: "⚙", label: "Settings" }
   ];
@@ -368,7 +368,7 @@ export default function MainApp() {
     income: "var(--accent)",
     expenses: "var(--danger)",
     emi: "var(--gold)",
-    quotes: "var(--gold)",
+    khata: "var(--gold)",
     invoices: "var(--blue)",
     settings: "var(--purple)"
   };
@@ -433,7 +433,7 @@ export default function MainApp() {
         {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "quotes" && !isAdmin && isSmallBusinessOrg && <QuotesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "khata" && !isAdmin && isSmallBusinessOrg && <KhataSection orgType={currentOrgType} />}
         {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>

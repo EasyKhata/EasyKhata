@@ -76,6 +76,37 @@ const SUPPORT_STATUS_LABELS = {
   resolved: "Resolved"
 };
 
+function createEmptyServiceProduct() {
+  return {
+    id: `product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    productName: "",
+    productType: "unit",
+    unit: "pcs",
+    price: "",
+    quantity: "",
+    lowStockAt: "10"
+  };
+}
+
+function normalizeServiceProducts(products = []) {
+  return products
+    .map(product => ({
+      id: product.id || `product-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      productName: String(product.productName || "").trim(),
+      productType: String(product.productType || "unit").trim().toLowerCase() === "weight" ? "weight" : "unit",
+      unit: String(product.unit || "").trim(),
+      price: String(product.price || "").trim(),
+      quantity: String(product.quantity || "").trim(),
+      lowStockAt: String(product.lowStockAt || "").trim()
+    }))
+    .map(product => ({
+      ...product,
+      unit: product.unit || (product.productType === "weight" ? "kg" : "pcs"),
+      lowStockAt: product.lowStockAt !== "" ? product.lowStockAt : (product.productType === "weight" ? "2" : "10")
+    }))
+    .filter(product => product.productName && Number(product.price || 0) > 0 && product.quantity !== "" && Number(product.quantity || 0) >= 0 && Number(product.lowStockAt || 0) >= 0);
+}
+
 function buildAccountFormState(account, user) {
   const parsedLocation = parseLocationFields(account?.location || account?.address || "");
   const phoneParts = splitPhoneNumber(account?.phone || user?.phone || "", account?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
@@ -251,6 +282,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const showOrgBusinessFields = !isPersonalOrg;
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
+  const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
   const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(accForm.organizationType || orgType), [accForm.organizationType, orgType]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
@@ -686,17 +718,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   function saveCust() {
     const cleanName = String(custForm?.name || "").trim();
-    const cleanEmail = showPersonContactFields ? normalizeEmail(custForm?.email) : "";
+    const cleanEmail = showFullCustomerForm ? normalizeEmail(custForm?.email) : "";
     const cleanPhoneNumber = showPersonContactFields ? sanitizePhoneDigits(custForm?.phoneNumber) : "";
     const cleanPhoneCountryCode = custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
-    const cleanAddressLine = showPersonContactFields ? String(custForm?.addressLine || "").trim() : "";
-    const cleanCity = showPersonContactFields ? String(custForm?.city || "").trim() : "";
-    const cleanState = showPersonContactFields ? String(custForm?.state || "").trim() : "";
-    const cleanCountry = showPersonContactFields ? String(custForm?.country || "").trim() : "";
+    const cleanAddressLine = showFullCustomerForm ? String(custForm?.addressLine || "").trim() : "";
+    const cleanCity = showFullCustomerForm ? String(custForm?.city || "").trim() : "";
+    const cleanState = showFullCustomerForm ? String(custForm?.state || "").trim() : "";
+    const cleanCountry = showFullCustomerForm ? String(custForm?.country || "").trim() : "";
     const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
     const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
-    const cleanGstin = showPersonContactFields ? String(custForm?.gstin || "").trim().toUpperCase() : "";
+    const cleanGstin = showFullCustomerForm ? String(custForm?.gstin || "").trim().toUpperCase() : "";
 
     if (orgType === "apartment") {
       if (!cleanName) {
@@ -707,7 +739,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter the customer name.");
       return;
     }
-    if (showPersonContactFields && !isOptionalEmail(cleanEmail)) {
+    if (showFullCustomerForm && !isOptionalEmail(cleanEmail)) {
       showNotice("Please enter a valid customer email or leave it empty.");
       return;
     }
@@ -720,11 +752,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid customer phone number or leave it empty.");
       return;
     }
-    if (showPersonContactFields && !isValidGstin(cleanGstin)) {
+    if (showFullCustomerForm && !isValidGstin(cleanGstin)) {
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
-    if (showPersonContactFields && (!cleanCity || !cleanState || !cleanCountry)) {
+    if (showFullCustomerForm && (!cleanCity || !cleanState || !cleanCountry)) {
       showNotice("Please enter customer city, state, and country.");
       return;
     }
@@ -739,13 +771,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       phone: cleanPhone,
       phoneCountryCode: orgType === "apartment" ? "" : cleanPhoneCountryCode,
       phoneNumber: orgType === "apartment" ? "" : cleanPhoneNumber,
-      addressLine: showPersonContactFields ? cleanAddressLine : "",
-      city: showPersonContactFields ? cleanCity : "",
-      state: showPersonContactFields ? cleanState : "",
-      country: showPersonContactFields ? cleanCountry : "",
-      location: showPersonContactFields ? cleanLocation : "",
-      address: showPersonContactFields ? cleanAddress : "",
-      gstin: showPersonContactFields ? cleanGstin : ""
+      addressLine: showFullCustomerForm ? cleanAddressLine : "",
+      city: showFullCustomerForm ? cleanCity : "",
+      state: showFullCustomerForm ? cleanState : "",
+      country: showFullCustomerForm ? cleanCountry : "",
+      location: showFullCustomerForm ? cleanLocation : "",
+      address: showFullCustomerForm ? cleanAddress : "",
+      gstin: showFullCustomerForm ? cleanGstin : ""
     };
     (orgConfig.customerFields || []).forEach(field => {
       payload[field.key] = String(custForm?.[field.key] || "").trim();
@@ -766,13 +798,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function openNewOrgRecord() {
     if (!activeOrgSection) return;
     setEditOrgRecord(null);
-    setOrgRecordForm(activeOrgSection.empty());
+    const base = activeOrgSection.empty();
+    if (activeOrgSection.key === "services") {
+      base.products = [createEmptyServiceProduct()];
+    }
+    setOrgRecordForm(base);
     setScreen("org-record-form");
   }
 
   function openEditOrgRecord(record) {
     setEditOrgRecord(record);
-    setOrgRecordForm({ ...record });
+    setOrgRecordForm({
+      ...record,
+      products: activeOrgSection?.key === "services"
+        ? (Array.isArray(record.products) && record.products.length ? record.products : [createEmptyServiceProduct()])
+        : record.products
+    });
     setScreen("org-record-form");
   }
 
@@ -789,6 +830,15 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     activeOrgSection.fields.forEach(field => {
       payload[field.key] = String(orgRecordForm[field.key] || "").trim();
     });
+
+    if (activeOrgSection.key === "services") {
+      const normalizedProducts = normalizeServiceProducts(orgRecordForm.products || []);
+      if (!normalizedProducts.length) {
+        showNotice("Please add at least one product with price and quantity for this service.");
+        return;
+      }
+      payload.products = normalizedProducts;
+    }
 
     if (editOrgRecord?.id) updateOrgRecord(activeOrgSection.key, { ...payload, id: editOrgRecord.id });
     else addOrgRecord(activeOrgSection.key, payload);
@@ -1809,8 +1859,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             phonePlaceholder="9876543210"
           />
         </Field>}
-        {showPersonContactFields && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
-        {showPersonContactFields && (
+        {showFullCustomerForm && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
+        {showFullCustomerForm && (
           <StructuredLocationFields
             addressLine={custForm?.addressLine || ""}
             city={custForm?.city || ""}
@@ -1823,7 +1873,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             required
           />
         )}
-        {showPersonContactFields && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
+        {showFullCustomerForm && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
         {(orgConfig.customerFields || []).map(field => (
           <Field key={field.key} label={field.label} required={Boolean(field.required)}>
             {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
@@ -1939,6 +1989,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item[activeOrgSection.fields[0]?.key] || activeOrgSection.entryLabel}</div>
                   <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                     {activeOrgSection.fields.slice(1).map(field => item[field.key]).filter(Boolean).join(" - ")}
+                    {activeOrgSection.key === "services" ? ` - ${Array.isArray(item.products) ? item.products.length : 0} product(s)` : ""}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1961,6 +2012,108 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             {renderDynamicField(field, orgRecordForm[field.key], value => setOrgRecordForm(current => ({ ...current, [field.key]: value })))}
           </Field>
         ))}
+        {activeOrgSection.key === "services" && (
+          <div className="card" style={{ padding: 14, marginTop: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Products for this service</div>
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: "7px 10px", fontSize: 12 }}
+                onClick={() => setOrgRecordForm(current => ({
+                  ...current,
+                  products: [...(current.products || []), createEmptyServiceProduct()]
+                }))}
+              >
+                + Add Product
+              </button>
+            </div>
+            {(orgRecordForm.products || []).map(product => (
+              <div key={product.id} className="card" style={{ padding: 10, marginBottom: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                  <Input
+                    placeholder="Product name"
+                    value={product.productName || ""}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, productName: event.target.value } : row)
+                    }))}
+                  />
+                  <Select
+                    value={product.productType || "unit"}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, productType: event.target.value, unit: row.unit || (event.target.value === "weight" ? "kg" : "pcs") } : row)
+                    }))}
+                  >
+                    <option value="unit">Per Piece</option>
+                    <option value="weight">By Weight</option>
+                  </Select>
+                  <Input
+                    placeholder="Unit (pcs/kg/g/l/ml)"
+                    value={product.unit || ""}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, unit: event.target.value } : row)
+                    }))}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Price"
+                    value={product.price || ""}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, price: event.target.value } : row)
+                    }))}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step={String(product.productType || "unit") === "weight" ? "0.01" : "1"}
+                    placeholder="Opening stock"
+                    value={product.quantity || ""}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, quantity: event.target.value } : row)
+                    }))}
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    step={String(product.productType || "unit") === "weight" ? "0.01" : "1"}
+                    placeholder="Low stock alert at"
+                    value={product.lowStockAt || ""}
+                    onChange={event => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).map(row => row.id === product.id ? { ...row, lowStockAt: event.target.value } : row)
+                    }))}
+                  />
+                </div>
+                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: "8px 10px", fontSize: 12, color: "var(--danger)" }}
+                    onClick={() => setOrgRecordForm(current => ({
+                      ...current,
+                      products: (current.products || []).length <= 1
+                        ? current.products
+                        : (current.products || []).filter(row => row.id !== product.id)
+                    }))}
+                    disabled={(orgRecordForm.products || []).length <= 1}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+              For each product, choose Per Piece or By Weight, set unit, opening stock, and low-stock alert level.
+            </div>
+          </div>
+        )}
       </Modal>
     );
   }

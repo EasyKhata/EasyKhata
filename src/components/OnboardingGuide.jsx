@@ -115,7 +115,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                     : orgType === ORG_TYPES.FREELANCER
                       ? "Create a client first so invoices and payment follow-up have a real customer record behind them."
                       : isSmallBusinessOrg
-                        ? "Create a service first so quotes, invoices, and work pricing stay consistent."
+                        ? "Create a service first so khata, invoices, and work pricing stay consistent."
                         : isRetailOrg
                           ? "Create an inventory item first so shop sales and stock tracking start from real products."
                           : `Create a ${orgConfig.customerEntryLabel.toLowerCase()} first so records stay organized from day one.`}
