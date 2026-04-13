@@ -167,6 +167,51 @@ function normalizeOrgCollection(source = {}, fallback = {}) {
   };
 }
 
+function mergeMissingCollectionRecords(collectionKey, primaryRecords = [], secondaryRecords = []) {
+  const primary = sortOrgCollectionRecords(collectionKey, primaryRecords || []);
+  const secondary = sortOrgCollectionRecords(collectionKey, secondaryRecords || []);
+  const primaryIds = new Set(primary.map(item => item?.id).filter(Boolean));
+  const missing = secondary.filter(item => item?.id && !primaryIds.has(item.id));
+  if (!missing.length) {
+    return { records: primary, mergedCount: 0 };
+  }
+  return {
+    records: sortOrgCollectionRecords(collectionKey, [...primary, ...missing]),
+    mergedCount: missing.length
+  };
+}
+
+function mergeOrgCollectionsFromLocal(primaryOrgs = {}, localOrgs = {}, collectionKeys = ORG_COLLECTION_KEYS) {
+  const mergedOrgs = { ...(primaryOrgs || {}) };
+  const backfillTargets = [];
+
+  Object.entries(localOrgs || {}).forEach(([orgId, localOrg]) => {
+    const primaryOrg = mergedOrgs[orgId] || {};
+    const nextOrg = { ...primaryOrg };
+    let orgTouched = false;
+
+    collectionKeys.forEach(collectionKey => {
+      const { records, mergedCount } = mergeMissingCollectionRecords(
+        collectionKey,
+        primaryOrg?.[collectionKey] || [],
+        localOrg?.[collectionKey] || []
+      );
+      nextOrg[collectionKey] = records;
+      if (mergedCount > 0) {
+        orgTouched = true;
+      }
+    });
+
+    if (orgTouched) {
+      backfillTargets.push(...collectionKeys.map(collectionKey => ({ orgId, collectionKey, records: nextOrg[collectionKey] || [] })));
+    }
+
+    mergedOrgs[orgId] = nextOrg;
+  });
+
+  return { orgs: mergedOrgs, backfillTargets };
+}
+
 function buildStateFromOrganizations({ orgs = {}, activeOrgId = "", sharedLedger = null }) {
   const nextOrgs = Object.keys(orgs || {}).length > 0 ? orgs : { [DEFAULT_ORG_ID]: normalizeOrgData() };
   const resolvedActiveOrgId = nextOrgs[activeOrgId] ? activeOrgId : Object.keys(nextOrgs)[0];
@@ -760,6 +805,8 @@ export function DataProvider({ children }) {
           }
         };
         const normalizedOrgs = normalizeOrgCollection(userDoc, fallback);
+        const localData = getUserData(user.id, "appData") || EMPTY_DATA;
+        const localOrgs = normalizeOrgCollection(localData, fallback);
         const { orgs, backfillTargets } = await hydrateUserOrgCollections({
           db,
           userId: user.id,
@@ -767,9 +814,12 @@ export function DataProvider({ children }) {
           collectionKeys: ORG_COLLECTION_KEYS,
           signatureStore: collectionSyncRef.current
         });
+        const mergedFromLocal = mergeOrgCollectionsFromLocal(orgs, localOrgs, ORG_COLLECTION_KEYS);
+        const mergedOrgs = mergedFromLocal.orgs;
+        const mergedBackfillTargets = [...backfillTargets, ...mergedFromLocal.backfillTargets];
         const nextState = buildStateFromOrganizations({
-          orgs,
-          activeOrgId: userDoc.activeOrgId || Object.keys(orgs)[0] || DEFAULT_ORG_ID,
+          orgs: mergedOrgs,
+          activeOrgId: userDoc.activeOrgId || Object.keys(mergedOrgs)[0] || DEFAULT_ORG_ID,
           sharedLedger: null
         });
 
@@ -796,9 +846,9 @@ export function DataProvider({ children }) {
           );
         }
 
-        if (backfillTargets.length) {
+        if (mergedBackfillTargets.length) {
           Promise.allSettled(
-            backfillTargets.map(target =>
+            mergedBackfillTargets.map(target =>
               syncOrgCollection({
                 db,
                 userId: user.id,

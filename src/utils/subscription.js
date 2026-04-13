@@ -56,7 +56,7 @@ export function isReviewAccessEnabled() {
 export function getMaxOrganizations(user) {
   if (isAdminUser(user) || isReviewAccessEnabled()) return 2;
   const plan = getUserPlan(user);
-  return plan === PLANS.PRO || plan === PLANS.BUSINESS ? 2 : 1;
+  return plan === PLANS.BUSINESS ? 2 : 1;
 }
 
 export function getUserPlan(user) {
@@ -129,6 +129,8 @@ export function canUseFeature(user, feature, usage = {}) {
     case "budgets":
     case "advancedInvoice":
       return plan === PLANS.PRO || plan === PLANS.BUSINESS;
+    case "posSystem":
+      return plan === PLANS.BUSINESS;
     case "sharedLedger":
       return false;
     default:

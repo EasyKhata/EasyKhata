@@ -433,7 +433,11 @@ function getSmallBusinessTeam(data) {
 }
 
 function getSmallBusinessSales(data) {
-  return (data?.income || []).filter(item => Array.isArray(item?.saleItems) && item.saleItems.length > 0);
+  // Include both POS sales (have saleItems) and simple sales (have saleStatus set)
+  return (data?.income || []).filter(item =>
+    item?.saleStatus != null ||
+    (Array.isArray(item?.saleItems) && item.saleItems.length > 0)
+  );
 }
 
 function isSaleExcludedFromRevenue(status) {
@@ -1583,6 +1587,15 @@ export function calculateSmallBusinessDashboard(data, year, month) {
   const teamInsights = buildSmallBusinessTeamInsights(getSmallBusinessTeam(data));
   const monthSales = getSmallBusinessSales(data).filter(item => getRecordMonth(item) === monthKey(year, month));
   const salesSummary = summarizeSmallBusinessSales(monthSales);
+  const pendingCustomerMap = {};
+  monthSales.forEach(sale => {
+    if (String(sale.saleStatus || "pending").trim().toLowerCase() !== "pending") return;
+    const customerName = String(sale.customerName || "").trim() || "Customer";
+    pendingCustomerMap[customerName] = (pendingCustomerMap[customerName] || 0) + toNumber(sale.amount);
+  });
+  const pendingCustomers = Object.entries(pendingCustomerMap)
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, amount]) => ({ name, amount }));
   const mk = monthKey(year, month);
   const activeExpenses = getActiveExpensesForMonth(data, mk);
   const teamPayoutTotal = activeExpenses
@@ -1679,6 +1692,7 @@ export function calculateSmallBusinessDashboard(data, year, month) {
     ...partnerInsights,
     ...teamInsights,
     ...salesSummary,
+    pendingCustomers,
     topSaleCustomers,
     teamPayoutTotal,
     alertItems
