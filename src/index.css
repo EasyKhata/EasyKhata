@@ -59,19 +59,25 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
 
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
+  overscroll-behavior-y: auto;
+  overflow-x: hidden;
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow-x: hidden;
 }
@@ -79,6 +85,7 @@ body {
 .app-shell {
   width: min(100%, 1100px);
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   position: relative;
   background: var(--bg);
@@ -87,6 +94,7 @@ body {
 .auth-shell {
   width: min(100%, 560px);
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   position: relative;
   background: var(--bg);
@@ -147,13 +155,19 @@ input, select, textarea, button {
   position: fixed; inset: 0; z-index: 1000;
   background: rgba(0,0,0,0.75); backdrop-filter: blur(8px);
   display: flex; align-items: stretch; justify-content: center;
-  width: 100%; height: 100dvh; min-height: 100dvh;
+  width: 100%;
+  height: 100vh;
+  min-height: 100vh;
+  height: 100dvh;
+  min-height: 100dvh;
   overflow: hidden;
   padding: 0;
 }
 
 .modal-surface {
   width: min(100%, 760px);
+  height: 100vh;
+  min-height: 100vh;
   height: 100dvh;
   min-height: 100dvh;
   background: var(--bg);
@@ -288,6 +302,7 @@ input, select, textarea, button {
 .content-scroll {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  height: calc(100vh - 140px);
   height: calc(100dvh - 140px);
   padding-bottom: 20px;
 }
@@ -313,6 +328,14 @@ input, select, textarea, button {
   border-radius: 9px; color: var(--danger); font-size: 12px; font-weight: 600;
   padding: 5px 10px; cursor: pointer; font-family: var(--font); flex-shrink: 0;
   transition: opacity 0.2s;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Theme toggle */
@@ -351,6 +374,7 @@ input, select, textarea, button {
 
 @media (min-width: 900px) {
   .content-scroll {
+    height: calc(100vh - 144px);
     height: calc(100dvh - 144px);
   }
 
