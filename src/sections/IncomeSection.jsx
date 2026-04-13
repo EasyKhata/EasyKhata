@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
+import { useAuth } from "../context/AuthContext";
+import { canUseFeature } from "../utils/subscription";
 import {
   DateSelectInput,
   Modal,
@@ -177,11 +179,13 @@ function renderDynamicField(field, value, onChange) {
 
 export default function IncomeSection({ year, month, orgType }) {
   const d = useData();
+  const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
   const isRetailOrg = getOrgType(orgType) === ORG_TYPES.RETAIL;
+  const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
@@ -398,7 +402,9 @@ export default function IncomeSection({ year, month, orgType }) {
     const blankForm = buildBlankForm(year, month, config);
     if (isSmallBusinessOrg) {
       blankForm.date = TODAY;
-      blankForm.saleStatus = "pending";
+      // POS defaults to pending (billed, payment may come later)
+      // Simple sales default to paid (cash/UPI collected on the spot)
+      blankForm.saleStatus = hasPosSystem ? "pending" : "paid";
     }
     setForm(blankForm);
     setSaleItems([newSaleItem()]);
@@ -417,7 +423,7 @@ export default function IncomeSection({ year, month, orgType }) {
     (config.incomeFields || []).forEach(field => {
       next[field.key] = income[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
-    if (isSmallBusinessOrg) {
+    if (isSmallBusinessOrg && hasPosSystem) {
       next.saleStatus = income.saleStatus || "pending";
       const existingItems = Array.isArray(income.saleItems) && income.saleItems.length
         ? income.saleItems
@@ -439,6 +445,8 @@ export default function IncomeSection({ year, month, orgType }) {
         String(c.name || "").trim().toLowerCase() === String(income.customerName || "").trim().toLowerCase()
       );
       setSalePhone(existingCustomer?.phone || income.phone || "");
+    } else if (isSmallBusinessOrg) {
+      next.saleStatus = income.saleStatus || "paid";
     }
     setEditId(income.id);
     setForm(next);
@@ -569,7 +577,8 @@ export default function IncomeSection({ year, month, orgType }) {
     const nextForm = { ...form, ...overrides };
     const currentSale = editId ? allSalesIncome.find(item => item.id === editId) : null;
 
-    if (isSmallBusinessOrg && currentSale && Array.isArray(currentSale.saleItems) && currentSale.saleItems.length) {
+    // POS sales are locked once saved (stock has been deducted)
+    if (isSmallBusinessOrg && hasPosSystem && currentSale && Array.isArray(currentSale.saleItems) && currentSale.saleItems.length) {
       setFormError("Saved sales are locked and cannot be edited.");
       return;
     }
@@ -582,17 +591,21 @@ export default function IncomeSection({ year, month, orgType }) {
       setFormError(`Add a clear ${config.incomeEntryLabel.toLowerCase()} description so you can recognize it later.`);
       return;
     }
-    const normalizedItems = isSmallBusinessOrg ? normalizeSaleItems(saleItems) : [];
-    const computedSaleTotals = isSmallBusinessOrg ? getSaleTotals(normalizedItems, saleDiscount) : null;
-    if (isSmallBusinessOrg && !String(nextForm.customerName || "").trim()) {
+    if (isSmallBusinessOrg && !hasPosSystem && !hasMinLength(nextForm.label, 2)) {
+      setFormError("Describe what was sold so you can find this record later.");
+      return;
+    }
+    const normalizedItems = (isSmallBusinessOrg && hasPosSystem) ? normalizeSaleItems(saleItems) : [];
+    const computedSaleTotals = (isSmallBusinessOrg && hasPosSystem) ? getSaleTotals(normalizedItems, saleDiscount) : null;
+    if (isSmallBusinessOrg && hasPosSystem && !String(nextForm.customerName || "").trim()) {
       setFormError("Select or type a customer name.");
       return;
     }
-    if (isSmallBusinessOrg && !normalizedItems.length) {
+    if (isSmallBusinessOrg && hasPosSystem && !normalizedItems.length) {
       setFormError("Add at least one valid product line with quantity, rate, and GST.");
       return;
     }
-    if (isSmallBusinessOrg) {
+    if (isSmallBusinessOrg && hasPosSystem) {
       const aggregatedDemand = new Map();
       normalizedItems.forEach(line => {
         const key = String(line.productId || "").trim() || String(line.productName || "").trim().toLowerCase();
@@ -645,7 +658,7 @@ export default function IncomeSection({ year, month, orgType }) {
       label: isSmallBusinessOrg
         ? (nextForm.label.trim() || `${nextForm.customerName.trim()} Sale`)
         : nextForm.label.trim(),
-      amount: isSmallBusinessOrg ? Number(computedSaleTotals.total || 0) : Number(nextForm.amount),
+      amount: (isSmallBusinessOrg && hasPosSystem) ? Number(computedSaleTotals.total || 0) : Number(nextForm.amount),
       date: nextForm.date,
       month: isApartmentOrg ? (nextForm.collectionMonth || nextForm.date.slice(0, 7)) : nextForm.date.slice(0, 7),
       note: nextForm.note.trim()
@@ -661,7 +674,7 @@ export default function IncomeSection({ year, month, orgType }) {
       return;
     }
 
-    if (isSmallBusinessOrg) {
+    if (isSmallBusinessOrg && hasPosSystem) {
       if (saleIsNewCustomer && String(nextForm.customerName || "").trim()) {
         const cleanPhone = salePhone.replace(/\D/g, "");
         d.addCustomer({ name: String(nextForm.customerName).trim(), phone: cleanPhone });
@@ -683,6 +696,10 @@ export default function IncomeSection({ year, month, orgType }) {
         const updatedServices = adjustServiceProductStock(d.orgRecords?.services || [], normalizedItems, -1);
         d.saveOrgRecords("services", updatedServices);
       }
+    } else if (isSmallBusinessOrg) {
+      // Simple sale: just track status (paid = cash received, pending = credit / will collect later)
+      const simpleSaleStatus = String(nextForm.saleStatus || "paid").toLowerCase();
+      payload.saleStatus = simpleSaleStatus === "pending" ? "pending" : "paid";
     }
 
     if (editId) d.updateIncome({ ...payload, id: editId });
@@ -947,6 +964,24 @@ export default function IncomeSection({ year, month, orgType }) {
                   <span style={{ fontSize: 15, fontWeight: 700, color: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "var(--text-dim)" : "var(--accent)", textDecoration: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "line-through" : "none" }}>
                     {fmtMoney(item.amount, sym)}
                   </span>
+                  {/* Simple sale (non-POS): status pill + toggle */}
+                  {isSmallBusinessOrg && item.saleStatus != null && !(Array.isArray(item.saleItems) && item.saleItems.length > 0) && (
+                    <>
+                      <span className="pill" style={{
+                        background: String(item.saleStatus) === "paid" ? "var(--accent-deep)" : "var(--gold-deep)",
+                        color: String(item.saleStatus) === "paid" ? "var(--accent)" : "var(--gold)"
+                      }}>
+                        {String(item.saleStatus) === "paid" ? "Paid" : "Pending"}
+                      </span>
+                      <button
+                        className="btn-secondary"
+                        style={{ padding: "7px 10px", fontSize: 12 }}
+                        onClick={() => toggleSaleStatus(item)}
+                      >
+                        {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
+                      </button>
+                    </>
+                  )}
                   {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && (
                     <>
                       <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
@@ -966,7 +1001,7 @@ export default function IncomeSection({ year, month, orgType }) {
           onClose={closeForm}
           onSave={save}
           saveLabel={editId ? "Update" : "Save"}
-          canSave={isSmallBusinessOrg ? (String(form.customerName || "").trim().length > 1 && normalizeSaleItems(saleItems).length > 0) : (!!form.label.trim() && Number(form.amount) > 0)}
+          canSave={isSmallBusinessOrg && hasPosSystem ? (String(form.customerName || "").trim().length > 1 && normalizeSaleItems(saleItems).length > 0) : (!!form.label.trim() && Number(form.amount) > 0)}
         >
           {formError && (
             <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
@@ -1002,7 +1037,7 @@ export default function IncomeSection({ year, month, orgType }) {
               </div>
             </div>
           )}
-          {isSmallBusinessOrg ? (
+          {isSmallBusinessOrg && hasPosSystem ? (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
               <div className="card" style={{ padding: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>POS Checkout</div>
@@ -1136,8 +1171,8 @@ export default function IncomeSection({ year, month, orgType }) {
             </div>
           ) : (
             <>
-              <Field label="Description" required>
-                <Input placeholder={`e.g. ${config.incomeEntryLabel}`} value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} />
+              <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required>
+                <Input placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`} value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} />
               </Field>
               <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`}>
                 <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
@@ -1191,9 +1226,29 @@ export default function IncomeSection({ year, month, orgType }) {
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </Select>
+                  ) : isSmallBusinessOrg && field.key === "customerName" ? (
+                    <>
+                      <Input
+                        list="simple-customer-datalist"
+                        placeholder="Customer name or walk-in"
+                        value={form.customerName || ""}
+                        onChange={e => setForm(current => ({ ...current, customerName: e.target.value }))}
+                      />
+                      <datalist id="simple-customer-datalist">
+                        {clientOptions.map(opt => <option key={opt.value} value={opt.value} />)}
+                      </datalist>
+                    </>
                   ) : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
                 </Field>
               ))}
+              {isSmallBusinessOrg && (
+                <Field label="Payment Status">
+                  <Select value={form.saleStatus || "paid"} onChange={e => setForm(current => ({ ...current, saleStatus: e.target.value }))}>
+                    <option value="paid">Paid — Cash / UPI received</option>
+                    <option value="pending">Pending — Credit / Will collect later</option>
+                  </Select>
+                </Field>
+              )}
               <Field label="Note">
                 <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
               </Field>

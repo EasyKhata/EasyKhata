@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
-import { db } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
@@ -17,7 +18,6 @@ import {
   isValidGstin,
   isValidName,
   isValidPhone,
-  isValidTransactionId,
   normalizeEmail,
   sanitizePhone
 } from "../utils/validator";
@@ -235,7 +235,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [planRequestForm, setPlanRequestForm] = useState({
     targetPlan: PLANS.PRO,
     billingCycle: BILLING_CYCLES.MONTHLY,
-    transactionId: "",
     note: ""
   });
   const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
@@ -1054,51 +1053,96 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   async function submitPlanRequest() {
     const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
-    const cleanTransactionId = planRequestForm.transactionId.trim();
     const cleanNote = planRequestForm.note.trim();
-
-    if (!isValidTransactionId(cleanTransactionId)) {
-      showNotice("Please enter a valid UPI transaction ID or reference number.");
-      return;
-    }
 
     setSubmittingPayment(true);
     try {
-      await setDoc(doc(db, "payment_requests", user.id), {
-        userId: user.id,
-        userName: user?.name || "",
-        userEmail: user?.email || "",
-        currentPlan: user?.plan || PLANS.FREE,
-        requestedPlan: targetPlan,
+      if (typeof window === "undefined" || !window.Razorpay) {
+        showNotice("Secure checkout is not available right now. Please refresh and try again.");
+        return;
+      }
+
+      const createOrder = httpsCallable(functions, "createUpiSubscriptionOrder");
+      const verifyPayment = httpsCallable(functions, "verifyUpiSubscriptionPayment");
+      const orderResponse = await createOrder({
+        targetPlan,
         billingCycle,
-        amount: getBillingAmount(billingCycle),
-        paymentMethod: "upi",
-        upiId: UPI_CONFIG.upiId,
-        upiPayeeName: UPI_CONFIG.payeeName,
-        transactionId: cleanTransactionId,
-        screenshotStatus: "emailed-separately",
-        supportEmail: APP_SUPPORT_EMAIL,
-        status: PAYMENT_REQUEST_STATUS.PENDING,
-        note: cleanNote,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        note: cleanNote
       });
 
-      showNotice(`Your payment proof for ${PLAN_LABELS[targetPlan] || "plan"} has been sent to admin for verification.`, "success");
+      const orderData = orderResponse?.data || {};
+      if (!orderData?.orderId || !orderData?.keyId) {
+        showNotice("Unable to start payment right now. Please try again.");
+        return;
+      }
+
+      const checkout = new window.Razorpay({
+        key: orderData.keyId,
+        amount: orderData.amount,
+        currency: orderData.currency || "INR",
+        name: "EasyKhata",
+        description: `${PLAN_LABELS[targetPlan] || "Pro"} Subscription`,
+        order_id: orderData.orderId,
+        method: {
+          upi: true,
+          card: true,
+          netbanking: true,
+          wallet: true,
+          emi: false,
+          paylater: true
+        },
+        prefill: {
+          name: user?.name || "",
+          email: user?.email || "",
+          contact: user?.phone || ""
+        },
+        notes: {
+          userId: user?.id || "",
+          targetPlan,
+          billingCycle
+        },
+        handler: async response => {
+          try {
+            await verifyPayment({
+              orderId: response.razorpay_order_id,
+              paymentId: response.razorpay_payment_id,
+              signature: response.razorpay_signature
+            });
+
+            showNotice(`Payment successful. ${PLAN_LABELS[targetPlan] || "plan"} is now active.`, "success");
+            setPlanRequestForm({
+              targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
+              billingCycle: BILLING_CYCLES.MONTHLY,
+              note: ""
+            });
+            setScreen("main");
+          } catch (verifyErr) {
+            console.error("Payment verification error:", verifyErr);
+            showNotice(verifyErr?.message || "Payment was received but verification is pending. Please wait a moment and refresh.");
+          }
+        }
+      });
+
+      checkout.on("payment.failed", failure => {
+        const message = failure?.error?.description || "Payment failed. Please try again.";
+        showNotice(message);
+      });
+
+      checkout.open();
+
+      showNotice("Secure checkout opened. Complete payment to activate your subscription.", "success");
       setPlanRequestForm({
         targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
         billingCycle: BILLING_CYCLES.MONTHLY,
-        transactionId: "",
         note: ""
       });
-      setScreen("main");
     } catch (err) {
       console.error("Payment request error:", err);
       if (err?.code === "permission-denied") {
-        showNotice("Payment requests are blocked by Firestore rules right now. Please allow payment_requests before using this feature.");
+        showNotice("Payment checkout is blocked by server permissions. Please contact support.");
         return;
       }
-      showNotice(err?.message || "We couldn't send your payment request right now. Please try again.");
+      showNotice(err?.message || "We couldn't start your payment right now. Please try again.");
     } finally {
       setSubmittingPayment(false);
     }
@@ -1402,11 +1446,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             <button
               className="btn-secondary"
-              style={{ width: "100%", opacity: 0.55, cursor: "not-allowed" }}
-              onClick={() => {}}
-              disabled
+              style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
+              onClick={() => {
+                if (!reviewAccessEnabled) setScreen("plan-request");
+              }}
+              disabled={reviewAccessEnabled}
             >
-              Manage Subscription Disabled During Testing
+              {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
             </button>
           </div>
         )}
@@ -2204,14 +2250,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const amount = getBillingAmount(planRequestForm.billingCycle);
     return withNotice(
       <Modal
-        title="Upgrade via UPI"
+        title="Upgrade Subscription"
         onClose={() => setScreen("main")}
         onSave={submitPlanRequest}
-        saveLabel={submittingPayment ? "Sending..." : "Send Payment Proof"}
+        saveLabel={submittingPayment ? "Starting..." : "Pay Securely"}
         canSave={!submittingPayment}
       >
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <Field label="Plan" required hint="Choose the plan you want admin to activate after verifying your payment.">
+          <Field label="Plan" required hint="Choose the subscription plan to activate immediately after successful payment.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
                 [PLANS.PRO, "Pro", false],
@@ -2260,37 +2306,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               ))}
             </div>
           </Field>
-          <Field label="UPI Payment Details" required hint="Pay the exact amount below and then submit your proof.">
+          <Field label="Payment Details" required hint="You will be redirected to secure Razorpay checkout for this amount.">
             <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Payee: {UPI_CONFIG.payeeName}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6 }}>UPI ID: {UPI_CONFIG.upiId}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6 }}>Gateway: Razorpay (UPI, Cards, Netbanking, Wallets, Pay Later)</div>
               <div style={{ fontSize: 13, color: "var(--text-sec)" }}>Amount to pay: Rs {amount}</div>
             </div>
           </Field>
-          <Field label="UPI Transaction ID" required hint="Enter the reference number shown after your payment succeeds.">
-            <Input
-              placeholder="Example: 123456789012"
-              value={planRequestForm.transactionId}
-              onChange={event => setPlanRequestForm(current => ({ ...current, transactionId: event.target.value }))}
-            />
-          </Field>
-          <Field label="Send Screenshot to Admin" required hint="Email the screenshot to admin after payment. The request below stores your transaction details in the app.">
-            <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 8 }}>Admin email</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 12 }}>{APP_SUPPORT_EMAIL}</div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
-                  Copy Email
-                </button>
-                <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={emailPaymentProof}>
-                  Email Screenshot
-                </button>
-              </div>
-            </div>
-          </Field>
-          <Field label="Message to Admin" hint="Optional note like the UPI app used or anything you want admin to know.">
+          <Field label="Notes" hint="Optional note for your own payment record.">
             <Textarea
-              placeholder="Example: Paid using PhonePe from my business account."
+              placeholder="Example: Payment from company card or personal UPI."
               value={planRequestForm.note}
               onChange={event => setPlanRequestForm(current => ({ ...current, note: event.target.value }))}
             />
@@ -2298,9 +2323,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         </div>
 
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How verification works</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How activation works</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            After payment, email the screenshot to {APP_SUPPORT_EMAIL} and submit your transaction ID here. Admin will match the email proof with your in-app request and then activate your subscription.
+            After a successful payment, your subscription is updated automatically. If activation does not reflect immediately, wait a moment and refresh the app.
           </div>
         </div>
       </Modal>

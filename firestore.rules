@@ -20,10 +20,69 @@ service cloud.firestore {
       );
     }
 
+    function isTrialActivationForSelf(userId) {
+      return isOwner(userId) &&
+        resource.data.role == request.resource.data.role &&
+        resource.data.blocked == request.resource.data.blocked &&
+        resource.data.sharedLedgerId == request.resource.data.sharedLedgerId &&
+        resource.data.sharedLedgerRole == request.resource.data.sharedLedgerRole &&
+        resource.data.plan == "free" &&
+        resource.data.subscriptionStatus == "active" &&
+        resource.data.subscriptionEndsAt == "" &&
+        resource.data.trialEligible == true &&
+        resource.data.trialStartedAt == "" &&
+        request.resource.data.plan == "pro" &&
+        request.resource.data.subscriptionStatus == "trial" &&
+        request.resource.data.trialEligible == false;
+    }
+
+    function isSafeOwnerUserUpdate(userId) {
+      return isOwner(userId) && (
+        (
+          resource.data.role == request.resource.data.role &&
+          resource.data.plan == request.resource.data.plan &&
+          resource.data.subscriptionStatus == request.resource.data.subscriptionStatus &&
+          resource.data.subscriptionEndsAt == request.resource.data.subscriptionEndsAt &&
+          resource.data.trialEligible == request.resource.data.trialEligible &&
+          resource.data.trialStartedAt == request.resource.data.trialStartedAt &&
+          resource.data.blocked == request.resource.data.blocked &&
+          resource.data.sharedLedgerId == request.resource.data.sharedLedgerId &&
+          resource.data.sharedLedgerRole == request.resource.data.sharedLedgerRole &&
+          resource.data.email == request.resource.data.email
+        ) ||
+        isTrialActivationForSelf(userId)
+      );
+    }
+
+    function isValidOwnerUserCreate(userId) {
+      return isOwner(userId) &&
+        request.resource.data.role == "user" &&
+        request.resource.data.plan == "free" &&
+        request.resource.data.subscriptionStatus == "active" &&
+        request.resource.data.subscriptionEndsAt == "" &&
+        request.resource.data.trialEligible == true &&
+        request.resource.data.trialStartedAt == "" &&
+        request.resource.data.blocked == false &&
+        request.resource.data.sharedLedgerId == "" &&
+        request.resource.data.sharedLedgerRole == "" &&
+        request.resource.data.email == request.auth.token.email;
+    }
+
+    function isSharedLedgerOwnerByDoc() {
+      return isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isSharedLedgerMetadataUnchanged() {
+      return resource.data.ownerId == request.resource.data.ownerId &&
+        resource.data.inviteCode == request.resource.data.inviteCode &&
+        resource.data.members == request.resource.data.members &&
+        resource.data.name == request.resource.data.name;
+    }
+
     match /users/{userId} {
-      allow create: if isOwner(userId);
+      allow create: if isAdmin() || isValidOwnerUserCreate(userId);
       allow read: if isOwner(userId) || isAdmin();
-      allow update: if isOwner(userId) || isAdmin();
+      allow update: if isAdmin() || isSafeOwnerUserUpdate(userId);
       allow delete: if isAdmin() && request.auth.uid != userId;
 
       match /orgs/{orgId}/invoices/{invoiceId} {
@@ -41,11 +100,18 @@ service cloud.firestore {
 
     match /shared_ledgers/{ledgerId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read, update: if isAdmin() ||
+      allow read: if isAdmin() ||
         (isSignedIn() && (
           resource.data.ownerId == request.auth.uid ||
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId
         ));
+      allow update: if isAdmin() ||
+        (isSharedLedgerOwnerByDoc()) ||
+        (
+          isSignedIn() &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.sharedLedgerId == ledgerId &&
+          isSharedLedgerMetadataUnchanged()
+        );
       allow delete: if isAdmin();
 
       match /invoices/{invoiceId} {
@@ -74,7 +140,7 @@ service cloud.firestore {
 
     match /payment_requests/{requestId} {
       allow create: if isSignedIn() && request.auth.uid == requestId;
-      allow read: if isSignedIn() && (request.auth.uid == requestId || isAdmin());
+      allow read: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid || request.auth.uid == requestId);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

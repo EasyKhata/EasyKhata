@@ -241,6 +241,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
       ? (viewMode === "month" ? calculatePersonalDashboard(data, year, month) : calculatePersonalYearlyDashboard(data, year))
     : (viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year));
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
+  const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
   const reviewAccessEnabled = isReviewAccessEnabled();
@@ -263,8 +264,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
       ? (stats.pendingSalesTotal > 0
         ? `${fmtMoney(stats.pendingSalesTotal, sym)} is still awaiting collection from customers this month.`
         : stats.profit >= 0
-          ? "Customer work and collections are staying ahead of business costs this month."
-          : "Expenses are ahead of sales this month.")
+          ? hasPosSystem
+            ? "Customer work and collections are staying ahead of business costs this month."
+            : "Cash coming in is ahead of what you are spending this month."
+          : hasPosSystem ? "Expenses are ahead of sales this month." : "You are spending more than you are collecting this month.")
       : (stats.partnerBalanceTotal > 0
         ? `${fmtMoney(stats.partnerBalanceTotal, sym)} is still due across partner balances this year.`
         : stats.profit >= 0
@@ -786,31 +789,42 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
           {viewMode === "month" ? (
             <>
-          <Tile label="Sales" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
-              <Tile label="Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub="Recurring and one-time costs" onClick={() => onNav("expenses")} />
-              {isSmallBusinessOrg ? (
-                <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending sale(s)`} onClick={() => onNav("income")} />
+          <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash In" : "Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg && !hasPosSystem ? "Payments and collections received" : isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
+              <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash Out" : "Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={isSmallBusinessOrg && !hasPosSystem ? "Supplies, rent, and bills" : "Recurring and one-time costs"} onClick={() => onNav("expenses")} />
+              {isSmallBusinessOrg && !hasPosSystem ? (
+                <>
+                  <Tile label="Paisa Baaki — Owed to Me" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending collection(s)`} onClick={() => onNav("income")} />
+                  <Tile label="I Owe" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--blue)" sub={`${(stats.partnersWithBalance || []).length} supplier / vendor due`} onClick={() => onNav("settings")} />
+                </>
+              ) : isSmallBusinessOrg ? (
+                <>
+                  <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending sale(s)`} onClick={() => onNav("income")} />
+                  <Tile label="Refunds Issued" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
+                  <Tile label="Low Stock (<threshold)" value={String((stats.lowStockProducts || []).length)} color={(stats.lowStockProducts || []).length ? "var(--gold)" : "var(--accent)"} sub={`${stats.totalProductsCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
+                </>
               ) : (
-                <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-              )}
-              {isSmallBusinessOrg ? (
-                <Tile label="Refunds Issued" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
-              ) : showAdvanced ? (
-                <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
-              ) : (
-                <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
-              )}
-              {isSmallBusinessOrg && (
-                <Tile label="Low Stock (<10)" value={String((stats.lowStockProducts || []).length)} color={(stats.lowStockProducts || []).length ? "var(--gold)" : "var(--accent)"} sub={`${stats.totalProductsCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
+                <>
+                  <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
+                  {showAdvanced ? (
+                    <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
+                  ) : (
+                    <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
+                  )}
+                </>
               )}
             </>
           ) : (
             <>
               <Tile label="Total Sales" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
               <Tile label="Total Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={`Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} />
-              {isSmallBusinessOrg ? (
+              {isSmallBusinessOrg && !hasPosSystem ? (
                 <>
-                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--gold)" sub={`${stats.partnersWithBalance.length || 0} partner account(s) still open`} onClick={() => onNav("settings")} />
+                  <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} awaiting payment this year`} onClick={() => onNav("income")} />
+                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--blue)" sub={`${(stats.partnersWithBalance || []).length} supplier(s) outstanding`} onClick={() => onNav("settings")} />
+                </>
+              ) : isSmallBusinessOrg ? (
+                <>
+                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--gold)" sub={`${(stats.partnersWithBalance || []).length} partner account(s) still open`} onClick={() => onNav("settings")} />
                   <Tile label="Refunded Sales" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
                 </>
               ) : (
@@ -823,11 +837,56 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
           )}
         </div>
 
-        {isSmallBusinessOrg && (
+        {isSmallBusinessOrg && !hasPosSystem && (
+          <Collapsible
+            title="Paisa Baaki"
+            icon="🪙"
+            color="var(--gold)"
+            count={(stats.pendingCustomers || []).length + (stats.partnersWithBalance || []).length}
+            defaultOpen={(stats.pendingCustomers || []).length > 0 || (stats.partnersWithBalance || []).length > 0}
+          >
+            <div className="card">
+              {(stats.pendingCustomers || []).length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
+                    Owed to Me
+                  </div>
+                  {stats.pendingCustomers.slice(0, 5).map(customer => (
+                    <div key={customer.name} className="card-row">
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(customer.amount, sym)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {(stats.partnersWithBalance || []).length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
+                    I Owe
+                  </div>
+                  {stats.partnersWithBalance.slice(0, 5).map(partner => (
+                    <div key={partner.partnerName} className="card-row">
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{partner.partnerName}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{partner.contact || "No contact added"}</div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(partner.balanceDue, sym)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {(stats.pendingCustomers || []).length === 0 && (stats.partnersWithBalance || []).length === 0 && (
+                <EmptyState title="All clear" message="No pending collections and no outstanding dues to suppliers or vendors this month." accentColor="var(--accent)" />
+              )}
+            </div>
+          </Collapsible>
+        )}
+
+        {isSmallBusinessOrg && hasPosSystem && (
           <>
-            <Collapsible 
-              title="Partner Balances" 
-              icon="🏷" 
+            <Collapsible
+              title="Partner Balances"
+              icon="🏷"
               color="var(--gold)"
               count={stats.partnersWithBalance.length || 0}
               defaultOpen={stats.partnersWithBalance.length > 0}

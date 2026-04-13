@@ -391,12 +391,15 @@ export function AuthProvider({ children }) {
             phone: "",
             organizationType: ORG_TYPES.SMALL_BUSINESS
           };
-      const userCred = await createUserWithEmailAndPassword(auth, profile.email, password);
-      await sendEmailVerification(userCred.user);
-      savePendingProfile(profile.email, {
+      const normalizedProfile = {
         ...profile,
+        email: String(profile.email || "").trim().toLowerCase(),
         ageGroup: getAgeGroupFromDateOfBirth(profile.dateOfBirth)
-      });
+      };
+      const userCred = await createUserWithEmailAndPassword(auth, normalizedProfile.email, password);
+      await ensureUserProfile(userCred.user, normalizedProfile);
+      await sendEmailVerification(userCred.user);
+      savePendingProfile(normalizedProfile.email, normalizedProfile);
       await signOut(auth);
       clearCurrentUser();
 
@@ -407,9 +410,21 @@ export function AuthProvider({ children }) {
     } catch (err) {
       if (err.code === "auth/email-already-in-use") {
         try {
-          const existingCred = await signInWithEmailAndPassword(auth, email, password);
+          const fallbackProfile = profileInput && typeof profileInput === "object"
+            ? {
+                ...profileInput,
+                email: String(profileInput.email || "").trim().toLowerCase(),
+                ageGroup: getAgeGroupFromDateOfBirth(profileInput.dateOfBirth)
+              }
+            : null;
+          const existingEmail = fallbackProfile?.email || "";
+          const existingCred = await signInWithEmailAndPassword(auth, existingEmail, password);
           if (!existingCred.user.emailVerified) {
+            await ensureUserProfile(existingCred.user, fallbackProfile || readPendingProfile(existingCred.user.email));
             await sendEmailVerification(existingCred.user);
+            if (fallbackProfile) {
+              savePendingProfile(existingEmail, fallbackProfile);
+            }
             await signOut(auth);
             clearCurrentUser();
             return {
