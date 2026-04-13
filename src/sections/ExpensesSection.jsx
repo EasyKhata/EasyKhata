@@ -84,6 +84,7 @@ export default function ExpensesSection({ year, month, orgType }) {
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
+  const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const categoryOptions = useMemo(() => {
@@ -130,8 +131,12 @@ export default function ExpensesSection({ year, month, orgType }) {
   const supplierOptions = useMemo(() => (
     (d.orgRecords?.suppliers || []).map(supplier => ({ value: supplier.supplierName || "", label: [supplier.supplierName || "", supplier.contact || "", supplier.creditBalance ? `${sym} ${supplier.creditBalance}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.orgRecords, sym]);
+  const clientOptions = useMemo(() => (
+    (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
+  ), [d.customers]);
   const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
   const hasApartmentFlats = !isApartmentOrg || (d.customers || []).some(flat => String(flat?.name || "").trim());
+  const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
 
   const active = d.expenses.filter(expense => {
     if (!expense.recurring) return expense.month === mk;
@@ -164,7 +169,8 @@ export default function ExpensesSection({ year, month, orgType }) {
         expense.purchaseType,
         expense.teamMemberName,
         expense.partnerName,
-        expense.supplierName
+        expense.supplierName,
+        expense.clientName
       ];
       return fields.some(value => String(value || "").toLowerCase().includes(needle));
     });
@@ -190,6 +196,10 @@ export default function ExpensesSection({ year, month, orgType }) {
     }
     if (!hasHouseholdPeople) {
       openPeopleManager();
+      return;
+    }
+    if (isFreelancerOrg && !hasFreelancerClients) {
+      window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
       return;
     }
     setEditId(null);
@@ -506,13 +516,37 @@ export default function ExpensesSection({ year, month, orgType }) {
                   </div>
                 </Collapsible>
               </>
+            ) : isFreelancerOrg ? (
+              <div className="card">
+                {!hasFreelancerClients ? (
+                  <EmptyState
+                    title="Add a client before tracking expenses"
+                    message="Freelancer expenses must be linked to at least one client. Add your first client in Org to continue."
+                    actionLabel="Open Clients"
+                    onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
+                    accentColor="var(--danger)"
+                  />
+                ) : active.length === 0 ? (
+                  <EmptyState
+                    title={`No ${config.expensesLabel.toLowerCase()} yet`}
+                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    actionLabel={config.expensesActionLabel}
+                    onAction={openNew}
+                    accentColor="var(--danger)"
+                  />
+                ) : filteredExpenses.length === 0 ? (
+                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                ) : (
+                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                )}
+              </div>
             ) : recurring.length > 0 && (
               <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
                 <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
               </Collapsible>
             )}
 
-            {!isApartmentOrg && !isSmallBusinessOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
+            {!isApartmentOrg && !isSmallBusinessOrg && !isFreelancerOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
               <div className="card">
                 {oneTime.length === 0 ? (
                   <EmptyState
@@ -610,6 +644,13 @@ export default function ExpensesSection({ year, month, orgType }) {
                     ? (
                       <Select value={form.expenseType || ""} onChange={e => setForm(current => ({ ...current, expenseType: e.target.value, teamMemberName: e.target.value === "Team Payout" ? current.teamMemberName : "", partnerName: e.target.value === "Partner Payment" ? current.partnerName : "", label: current.label || e.target.value }))}>
                         {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
+                      </Select>
+                    )
+                  : isFreelancerOrg && field.key === "clientName"
+                    ? (
+                      <Select value={form.clientName || ""} onChange={e => setForm(current => ({ ...current, clientName: e.target.value }))}>
+                        <option value="">{clientOptions.length ? "Select client (optional)" : "Add clients in Settings first"}</option>
+                        {clientOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Select>
                     )
                   : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
