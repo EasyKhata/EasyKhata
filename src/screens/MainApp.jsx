@@ -1,6 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import BrandLogo from "../components/BrandLogo";
@@ -265,7 +264,6 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 
 export default function MainApp() {
   const { user } = useAuth();
-  const { theme, toggle } = useTheme();
   const data = useData();
   const { account, isReadOnlyFreeMode } = data;
   // Banner visibility state (must be before usage)
@@ -416,17 +414,17 @@ export default function MainApp() {
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const currentOrgLabel = account?.name?.trim() || "Organization";
   const TABS = [
-    { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Dashboard" },
-    ...(isAdmin ? [{ id: "users", icon: "◎", label: "Users" }] : []),
+    { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
+    ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }] : []),
     ...(user?.role !== "admin" ? [
-      { id: "income", icon: "↑", label: orgConfig.incomeLabel },
-      { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
-      ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
+      { id: "income", icon: "IN", label: orgConfig.incomeLabel },
+      { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
+      ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : []),
     ] : []),
-    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "◇", label: "Khata" }] : []),
-    ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
-    ...(!isAdmin ? [{ id: "org", icon: "▣", label: currentOrgLabel }] : []),
-    ...(isAdmin ? [{ id: "settings", icon: "⚙", label: "Settings" }] : [])
+    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
+    ...(!hideInvoices ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
+    ...(!isAdmin ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
+    ...(isAdmin ? [{ id: "settings", icon: "ST", label: "Settings" }] : [])
   ];
 
   const tabColor = {
@@ -502,34 +500,183 @@ export default function MainApp() {
     );
   }
 
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const sidebarWidth = sidebarOpen ? 180 : 60;
+
   return (
-    <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
-      <div style={{ padding: "10px 14px 0" }}>
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "visible", boxShadow: "var(--card-shadow)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", fontSize: 12, fontWeight: 700, borderBottom: "1px solid var(--border)" }}>
+    <div className="app-shell" style={{ minHeight: "100vh", position: "relative", display: "flex" }}>
+
+      {/* Fixed banners at the top, above sidebar/content */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, pointerEvents: 'none' }}>
+        {isReadOnlyFreeMode && !isAdmin && showFreeBanner && (
+          <div style={{
+            margin: '0 auto',
+            marginTop: 12,
+            maxWidth: 700,
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid var(--gold)',
+            background: 'var(--gold-deep)',
+            color: 'var(--gold)',
+            fontSize: 12,
+            fontWeight: 700,
+            lineHeight: 1.5,
+            position: 'relative',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+            pointerEvents: 'auto'
+          }}>
+            Free Plan (Read-only): You can view existing records and download reports. Create, edit, and delete actions require Pro.
+            <div style={{ fontSize: 11, color: 'var(--gold)', marginTop: 6, fontWeight: 500 }}>
+              <span role="img" aria-label="info">⚠️</span> Password reset and registration emails may go to your spam folder. Please check spam if not found in inbox.
+            </div>
             <button
-              onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
-              title="Open settings"
+              style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--gold)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
+              aria-label="Dismiss"
+              onClick={() => setShowFreeBanner(false)}
+            >×</button>
+          </div>
+        )}
+        {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && showTrialBanner && (
+          <div style={{
+            margin: '0 auto',
+            marginTop: 12,
+            maxWidth: 700,
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: '1px solid var(--accent)',
+            background: 'var(--accent-deep)',
+            color: 'var(--accent)',
+            fontSize: 12,
+            fontWeight: 700,
+            lineHeight: 1.5,
+            position: 'relative',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+            pointerEvents: 'auto'
+          }}>
+            <span style={{ fontWeight: 800 }}>
+              Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
+            </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+            <button
+              style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
+              aria-label="Dismiss"
+              onClick={() => setShowTrialBanner(false)}
+            >×</button>
+          </div>
+        )}
+      </div>
+      {/* Sidebar */}
+      <div style={{
+        width: sidebarWidth,
+        position: "fixed",
+        top: 0,
+        left: 0,
+        height: "100vh",
+        background: "var(--surface)",
+        borderRight: "1px solid var(--border)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: sidebarOpen ? "flex-start" : "center",
+        padding: "12px 0",
+        transition: "width 0.2s",
+        zIndex: 130
+      }}>
+        <button
+          onClick={() => setSidebarOpen(open => !open)}
+          style={{
+            background: "none",
+            border: "none",
+            fontSize: 22,
+            margin: sidebarOpen ? "0 0 18px 16px" : "0 0 18px 0",
+            cursor: "pointer",
+            color: "var(--text-dim)"
+          }}
+          title={sidebarOpen ? "Collapse menu" : "Expand menu"}
+        >
+          &#9776;
+        </button>
+        <div style={{ width: "100%", overflowY: "auto", overflowX: "hidden" }}>
+          {TABS.map(tabItem => (
+          <button
+            key={tabItem.id}
+            onClick={() => setTab(tabItem.id)}
+            title={tabItem.label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: sidebarOpen ? "flex-start" : "center",
+              gap: sidebarOpen ? 14 : 0,
+              width: sidebarOpen ? 160 : 44,
+              margin: sidebarOpen ? "6px 0 6px 10px" : "6px auto",
+              padding: sidebarOpen ? "10px 14px" : "10px 0",
+              border: "none",
+              borderRadius: 10,
+              background: tab === tabItem.id ? "var(--surface-pop)" : "transparent",
+              color: tabColor[tabItem.id] || "var(--text)",
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: "pointer",
+              transition: "background 0.2s, color 0.2s"
+            }}
+          >
+            <span
               style={{
-                display: "flex",
-                flexDirection: "column",
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                display: "inline-flex",
                 alignItems: "center",
-                gap: 2,
-                minWidth: 56,
-                padding: 0,
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                color: "var(--text-sec)"
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 800,
+                letterSpacing: 0.4,
+                lineHeight: 1,
+                background: tab === tabItem.id ? "var(--surface-high)" : "transparent",
+                border: "1px solid var(--border)"
               }}
             >
-              <span style={{ width: 30, height: 30, borderRadius: 15, border: "1px solid var(--border)", background: "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700 }}>
-                {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>Settings</span>
-            </button>
-            <div style={{ transform: "scale(0.82)", transformOrigin: "center", opacity: 0.98 }}>
-              <BrandLogo compact showTagline={false} />
+              {tabItem.icon}
+            </span>
+            {sidebarOpen && <span style={{ fontSize: 15, fontWeight: 600 }}>{tabItem.label}</span>}
+          </button>
+          ))}
+        </div>
+
+        <div style={{ marginTop: "auto", width: "100%", paddingTop: 10 }}>
+          <button
+            onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
+            title="Profile"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: sidebarOpen ? 10 : 0,
+              width: sidebarOpen ? 160 : 44,
+              marginLeft: sidebarOpen ? 10 : 8,
+              marginBottom: 10,
+              padding: sidebarOpen ? "10px 12px" : "10px 8px",
+              border: "none",
+              borderRadius: 10,
+              background: tab === "settings" ? "var(--surface-pop)" : "transparent",
+              color: "var(--text-sec)",
+              cursor: "pointer"
+            }}
+          >
+            <span style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+              {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
+            </span>
+            {sidebarOpen && <span style={{ fontSize: 14, fontWeight: 700 }}>Profile</span>}
+          </button>
+        </div>
+      </div>
+
+      {/* Main content area */}
+      <div style={{ flex: 1, minWidth: 0, marginLeft: sidebarWidth, height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 24px 12px 24px" }}>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
+              {TABS.find(item => item.id === tab)?.label}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button
@@ -544,17 +691,11 @@ export default function MainApp() {
                   </span>
                 )}
               </button>
-              <button className="theme-toggle" onClick={toggle} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} />
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
-                {TABS.find(item => item.id === tab)?.label}
-              </div>
-            </div>
-            {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
+          {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
+            <div style={{ padding: "0 24px 12px 24px" }}>
               <HeaderDatePicker
                 year={year}
                 month={month}
@@ -565,44 +706,15 @@ export default function MainApp() {
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
               />
-            )}
-            {(tab === "settings" || tab === "org") && (
-              <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {user?.name}
-              </span>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "12px 16px 24px" }}>
+          {renderTabContent()}
         </div>
       </div>
 
-      {/* Dismissible Free Plan (Read-only) Banner - all org types */}
-      {isReadOnlyFreeMode && !isAdmin && showFreeBanner && (
-        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 700, lineHeight: 1.5, position: 'relative' }}>
-          Free Plan (Read-only): You can view existing records and download reports. Create, edit, and delete actions require Pro.
-          <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 6, fontWeight: 500 }}>
-            <span role="img" aria-label="info">⚠️</span> Password reset and registration emails may go to your spam folder. Please check spam if not found in inbox.
-          </div>
-          <button
-            style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--gold)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
-            aria-label="Dismiss"
-            onClick={() => setShowFreeBanner(false)}
-          >×</button>
-        </div>
-      )}
-
-      {/* Dismissible Pro Trial Banner - all org types */}
-      {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && showTrialBanner && (
-        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, lineHeight: 1.5, position: 'relative' }}>
-          <span style={{ fontWeight: 800 }}>
-            Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
-          </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
-          <button
-            style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
-            aria-label="Dismiss"
-            onClick={() => setShowTrialBanner(false)}
-          >×</button>
-        </div>
-      )}
 
       {readOnlyNotice && (
         <div style={{ position: "fixed", left: 16, right: 16, bottom: 86, zIndex: 140, display: "flex", justifyContent: "center" }}>
@@ -641,23 +753,7 @@ export default function MainApp() {
         </div>
       )}
 
-      <div className="content-scroll">
-        {renderTabContent()}
-      </div>
 
-      <div className="tab-bar">
-        {TABS.map(item => {
-          const active = tab === item.id;
-          const color = tabColor[item.id];
-          return (
-            <button key={item.id} className="tab-btn" onClick={() => setTab(item.id)}>
-              <span style={{ fontSize: 18, color: active ? color : "var(--text-dim)", transition: "color 0.2s" }}>{item.icon}</span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: active ? color : "var(--text-dim)", letterSpacing: 0.4, textTransform: "uppercase" }}>{item.label}</span>
-              {active && <div style={{ width: 16, height: 2, borderRadius: 1, background: color }} />}
-            </button>
-          );
-        })}
-      </div>
 
       {showReminders && (
         <Modal title="Reminders" onClose={() => setShowReminders(false)} onSave={clearAllReminders} saveLabel="Clear All" canSave={liveReminders.length > 0} accentColor="var(--gold)">

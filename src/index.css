@@ -83,12 +83,16 @@ body {
 }
 
 .app-shell {
-  width: min(100%, 1100px);
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
   min-height: 100dvh;
-  margin: 0 auto;
+  margin: 0;
   position: relative;
   background: var(--bg);
+  overflow: hidden;
 }
 
 .auth-shell {
