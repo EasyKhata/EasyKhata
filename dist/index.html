@@ -4,9 +4,24 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="EasyKhata — manage income, expenses, invoices, and clients for your business or household." />
+    <meta name="theme-color" content="#0C0C10" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#F4F4F8" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon.ico" />
     <title>EasyKhata</title>
-    <script type="module" crossorigin src="/assets/index-CiSf9rmB.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-D562A6ZJ.css">
+    <!-- Prevent FOUC: apply saved theme before React hydrates -->
+    <script>
+      try {
+        var t = localStorage.getItem("ledger_theme") || "dark";
+        document.documentElement.setAttribute("data-theme", t);
+        document.documentElement.style.background = t === "light" ? "#F4F4F8" : "#0C0C10";
+      } catch(e) {
+        document.documentElement.setAttribute("data-theme", "dark");
+        document.documentElement.style.background = "#0C0C10";
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-DTYI3m3j.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-01f3ibFL.css">
   </head>
   <body>
     <div id="root"></div>
