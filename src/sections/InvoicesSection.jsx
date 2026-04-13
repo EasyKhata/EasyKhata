@@ -145,7 +145,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled }) {
+export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -694,11 +694,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          {!isAdmin && (
-            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-              + New {documentLabel}
-            </button>
-          )}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
+            {headerDatePicker}
+            {!isAdmin && (
+              <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+                + New {documentLabel}
+              </button>
+            )}
+          </div>
         </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -852,39 +855,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             ))
           )}
         </div>
-      </div>
-
-      {/* Quick & Full Invoice Actions */}
-      <div style={{ position: "fixed", bottom: 100, right: 20, display: "flex", flexDirection: "column", gap: 10, zIndex: 40 }}>
-        <button
-          onClick={openNew}
-          style={{
-            width: 56,
-            height: 56,
-            borderRadius: "50%",
-            border: "none",
-            background: "var(--accent)",
-            color: "#0C0C10",
-            fontSize: 24,
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "none",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(255, 183, 77, 0.3)",
-            fontFamily: "var(--font)",
-            transition: "all 0.2s"
-          }}
-          title={`Create ${documentLabel}`}
-          onMouseEnter={e => {
-            e.target.style.transform = "scale(1.1)";
-          }}
-          onMouseLeave={e => {
-            e.target.style.transform = "scale(1)";
-          }}
-        >
-          ⚡
-        </button>
       </div>
 
       {detail && (() => {

@@ -87,19 +87,20 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
   const nextDisabled = viewMode === "month" ? isCurrentMonth : isCurrentYear;
 
   return (
-    <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
+    <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, width: "fit-content", maxWidth: "100%", marginLeft: "auto" }}>
       <button
         onClick={prev}
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
+          width: 32,
+          height: 32,
+          borderRadius: 9,
           border: "1px solid var(--border)",
           background: "var(--surface)",
           color: "var(--text-sec)",
-          fontSize: 18,
+          fontSize: 16,
           fontWeight: 700,
-          cursor: "pointer"
+          cursor: "pointer",
+          flexShrink: 0
         }}
       >
         {"‹"}
@@ -108,9 +109,10 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
       <button
         onClick={() => setOpen(current => !current)}
         style={{
-          minWidth: 122,
-          padding: "7px 11px",
-          borderRadius: 12,
+          minWidth: 96,
+          maxWidth: 118,
+          padding: "6px 9px",
+          borderRadius: 10,
           border: "1px solid var(--border)",
           background: "var(--surface)",
           color: "var(--text)",
@@ -118,14 +120,15 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-start",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)"
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+          flexShrink: 1
         }}
       >
-        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>
-          {viewMode === "month" ? "View month" : "View year"}
+        <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+          {viewMode === "month" ? "Month" : "Year"}
         </span>
-        <span style={{ fontFamily: "var(--serif)", fontSize: 16, color: "var(--blue)", lineHeight: 1.1, marginTop: 2 }}>
-          {viewMode === "month" ? `${MONTHS[month]} ${year}` : year}
+        <span style={{ fontFamily: "var(--serif)", fontSize: 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
+          {viewMode === "month" ? `${MONTHS[month].slice(0, 3)} ${year}` : year}
         </span>
       </button>
 
@@ -133,16 +136,17 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         onClick={next}
         disabled={nextDisabled}
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
+          width: 32,
+          height: 32,
+          borderRadius: 9,
           border: "1px solid var(--border)",
           background: "var(--surface)",
           color: nextDisabled ? "var(--text-dim)" : "var(--text)",
-          fontSize: 18,
+          fontSize: 16,
           fontWeight: 700,
           cursor: nextDisabled ? "not-allowed" : "pointer",
-          opacity: nextDisabled ? 0.5 : 1
+          opacity: nextDisabled ? 0.5 : 1,
+          flexShrink: 0
         }}
       >
         {"›"}
@@ -487,9 +491,22 @@ export default function MainApp() {
       ? <SectionSkeleton rows={5} showHero={false} />
       : <SectionSkeleton rows={4} />;
 
+    const datePickerNode = (
+      <HeaderDatePicker
+        year={year}
+        month={month}
+        onChange={(nextYear, nextMonth) => {
+          setYear(nextYear);
+          setMonth(nextMonth);
+        }}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+      />
+    );
+
     return (
       <Suspense fallback={fallback}>
-        {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
+        {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} headerDatePicker={datePickerNode} />)}
         {tab === "users" && isAdmin && <AdminUsersSection />}
         {tab === "org" && !isAdmin && <OrgSection navigationTarget={settingsNavigation} sectionMode="org" />}
         {tab === "income" && (
@@ -499,10 +516,11 @@ export default function MainApp() {
             orgType={currentOrgType}
             quickstartIntent={quickstartIntent}
             onQuickstartHandled={() => setQuickstartIntent(null)}
+            headerDatePicker={datePickerNode}
           />
         )}
-        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
-        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
+        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
         {tab === "khata" && !isAdmin && isSmallBusinessOrg && <KhataSection orgType={currentOrgType} />}
         {tab === "invoices" && !hideInvoices && (
           <InvoicesSection
@@ -511,6 +529,7 @@ export default function MainApp() {
             orgType={currentOrgType}
             quickstartIntent={quickstartIntent}
             onQuickstartHandled={() => setQuickstartIntent(null)}
+            headerDatePicker={datePickerNode}
           />
         )}
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
@@ -706,8 +725,8 @@ export default function MainApp() {
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0, marginLeft: sidebarWidth, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? "10px 14px 12px 14px" : "10px 24px 12px 24px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: isMobile ? "10px 14px 12px 14px" : "10px 24px 12px 24px" }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
               {isMobile && (
                 <button
                   onClick={() => setSidebarOpen(true)}
@@ -724,14 +743,20 @@ export default function MainApp() {
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    flexShrink: 0
+                    flexShrink: 0,
+                    marginTop: 2
                   }}
                 >
                   &#9776;
                 </button>
               )}
-              <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 18 : 24, color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {TABS.find(item => item.id === tab)?.label}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {isAdmin ? "Admin Workspace" : (account?.name || currentOrgLabel || "Organization")}
+                </div>
+                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 18 : 24, color: "var(--text)", lineHeight: 1.15, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {TABS.find(item => item.id === tab)?.label}
+                </div>
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -750,20 +775,6 @@ export default function MainApp() {
             </div>
           </div>
 
-          {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
-            <div style={{ padding: isMobile ? "0 14px 12px 14px" : "0 24px 12px 24px" }}>
-              <HeaderDatePicker
-                year={year}
-                month={month}
-                onChange={(nextYear, nextMonth) => {
-                  setYear(nextYear);
-                  setMonth(nextMonth);
-                }}
-                viewMode={viewMode}
-                onViewModeChange={setViewMode}
-              />
-            </div>
-          )}
         </div>
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : "12px 16px 24px" }}>

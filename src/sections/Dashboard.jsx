@@ -231,7 +231,7 @@ function QuickstartChecklistCard({ progressLabel, items }) {
   );
 }
 
-export default function Dashboard({ year, month, viewMode: propViewMode, onNav }) {
+export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
   const { user, updateProfile } = useAuth();
   const sym = data.currency?.symbol || "Rs";
@@ -358,14 +358,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
 
     return (
       <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Society Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Society Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+            </div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+              {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{apartmentHeroSub}</div>
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
-            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{apartmentHeroSub}</div>
+          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -437,14 +440,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
       : (stats.netAfterEmi >= 0 ? "Your household stayed ahead of spending and EMI commitments this year." : "Household cash flow is under pressure this year.");
     return (
       <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+            </div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)", letterSpacing: -1, lineHeight: 1 }}>
+              {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{personalHeroSub}</div>
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)", letterSpacing: -1, lineHeight: 1 }}>
-            {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{personalHeroSub}</div>
+          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -533,14 +539,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
         </div>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+            </div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+              {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{freelancerHeroSub}</div>
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
-            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{freelancerHeroSub}</div>
+          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -668,14 +677,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
 
   return (
     <div style={{ paddingBottom: 20 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-          {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+            {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{heroSub}</div>
         </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
-          {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-        </div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{heroSub}</div>
+        {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
       </div>
 
       <div style={{ padding: "20px 18px 0" }}>

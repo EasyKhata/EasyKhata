@@ -177,7 +177,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : field.type === "month" ? CURRENT_MONTH : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled }) {
+export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
@@ -875,9 +875,12 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
           </div>
         </div>
-        <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-          + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
+          {headerDatePicker}
+          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+            + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -1368,16 +1371,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           )}
         </Modal>
       )}
-
-      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
-        <button
-          className="btn-primary"
-          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
-          onClick={openNew}
-        >
-          {config.incomeActionLabel}
-        </button>
-      </div>
     </div>
   );
 }
