@@ -1467,10 +1467,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             ) : (
               <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
             )}
-            <MenuRow icon="D" label="Privacy Policy" sub="How EasyKhata collects and uses data" onClick={() => window.open(LEGAL_PATHS.privacy, "_blank", "noopener,noreferrer")} />
-            <MenuRow icon="T" label="Terms and Conditions" sub="Service usage terms and responsibilities" onClick={() => window.open(LEGAL_PATHS.terms, "_blank", "noopener,noreferrer")} />
-            <MenuRow icon="R" label="Refund and Cancellation" sub="Billing, cancellation, and refund rules" onClick={() => window.open(LEGAL_PATHS.refunds, "_blank", "noopener,noreferrer")} />
-            <MenuRow icon="X" label="Data Deletion Policy" sub="How to request account data deletion" onClick={() => window.open(LEGAL_PATHS.dataDeletion, "_blank", "noopener,noreferrer")} />
+
+
+
           </div>
         </div>
 

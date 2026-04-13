@@ -197,7 +197,7 @@ export default function AuthScreen() {
       return;
     }
 
-    setInfo(res?.message || "Account created successfully.");
+    setInfo((res?.message || "Account created successfully.") + " If you don't see the email, please check your spam folder.");
     setPassword("");
     setConfirmPassword("");
     setPhoneNumber("");
@@ -225,7 +225,7 @@ export default function AuthScreen() {
       return;
     }
 
-    setInfo(res?.message || "Please check your inbox for the reset email.");
+    setInfo((res?.message || "Please check your inbox for the reset email.") + " If you don't see the email, please check your spam folder.");
   }
 
   async function handleResendVerification() {

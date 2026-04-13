@@ -268,6 +268,9 @@ export default function MainApp() {
   const { theme, toggle } = useTheme();
   const data = useData();
   const { account, isReadOnlyFreeMode } = data;
+  // Banner visibility state (must be before usage)
+  const [showFreeBanner, setShowFreeBanner] = useState(true);
+  const [showTrialBanner, setShowTrialBanner] = useState(true);
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [quickstartIntent, setQuickstartIntent] = useState(null);
@@ -572,15 +575,32 @@ export default function MainApp() {
         </div>
       </div>
 
-      {isReadOnlyFreeMode && !isAdmin && (
-        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+      {/* Dismissible Free Plan (Read-only) Banner - all org types */}
+      {isReadOnlyFreeMode && !isAdmin && showFreeBanner && (
+        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 700, lineHeight: 1.5, position: 'relative' }}>
           Free Plan (Read-only): You can view existing records and download reports. Create, edit, and delete actions require Pro.
+          <div style={{ fontSize: 11, color: "var(--gold)", marginTop: 6, fontWeight: 500 }}>
+            <span role="img" aria-label="info">⚠️</span> Password reset and registration emails may go to your spam folder. Please check spam if not found in inbox.
+          </div>
+          <button
+            style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--gold)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
+            aria-label="Dismiss"
+            onClick={() => setShowFreeBanner(false)}
+          >×</button>
         </div>
       )}
 
-      {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && (
-        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
-          Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}. You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+      {/* Dismissible Pro Trial Banner - all org types */}
+      {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && showTrialBanner && (
+        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, lineHeight: 1.5, position: 'relative' }}>
+          <span style={{ fontWeight: 800 }}>
+            Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
+          </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+          <button
+            style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
+            aria-label="Dismiss"
+            onClick={() => setShowTrialBanner(false)}
+          >×</button>
         </div>
       )}
 

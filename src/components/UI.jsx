@@ -781,3 +781,18 @@ export function CurrencyPicker({ value, onSelect, onClose }) {
     </Modal>
   );
 }
+
+export function SubscriptionBanner({ title, message, onClose }) {
+  const [showBanner, setShowBanner] = useState(true);
+  if (!showBanner) return null;
+  return (
+    <div className="subscription-banner">
+      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 14, color: "var(--text-sec)", lineHeight: 1.6, maxWidth: 260 }}>{message}</div>
+      <button className="close-banner" onClick={() => setShowBanner(false)}>×</button>
+    </div>
+  );
+}
+
+// On relogin or page refresh, reset showBanner to true
+// ...existing code...
