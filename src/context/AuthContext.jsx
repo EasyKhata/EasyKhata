@@ -127,6 +127,11 @@ export function AuthProvider({ children }) {
     const baseAgeGroup = getAgeGroupFromDateOfBirth(baseDateOfBirth) || normalizedOverrides.ageGroup || existing?.ageGroup || "";
     const baseGender = normalizedOverrides.gender || existing?.gender || "";
     const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
+    const baseTermsVersion = normalizedOverrides.termsVersion || existing?.termsVersion || "";
+    const baseTermsAcceptedAt = normalizedOverrides.termsAcceptedAt || existing?.termsAcceptedAt || "";
+    const basePrivacyAcceptedAt = normalizedOverrides.privacyAcceptedAt || existing?.privacyAcceptedAt || "";
+    const baseRefundsPolicyAcceptedAt = normalizedOverrides.refundsPolicyAcceptedAt || existing?.refundsPolicyAcceptedAt || "";
+    const baseLegalAccepted = Boolean(normalizedOverrides.legalAccepted || existing?.legalAccepted);
 
     if (!snap.exists()) {
       const nowIso = new Date().toISOString();
@@ -159,6 +164,11 @@ export function AuthProvider({ children }) {
         blocked: false,
         sharedLedgerId: "",
         sharedLedgerRole: "",
+        legalAccepted: baseLegalAccepted,
+        termsVersion: baseTermsVersion,
+        termsAcceptedAt: baseTermsAcceptedAt,
+        privacyAcceptedAt: basePrivacyAcceptedAt,
+        refundsPolicyAcceptedAt: baseRefundsPolicyAcceptedAt,
         createdAt: nowIso,
         updatedAt: nowIso,
         lastActivityAt: nowIso
@@ -182,6 +192,11 @@ export function AuthProvider({ children }) {
     if (!existing?.country && baseCountry) updates.country = baseCountry;
     if (!existing?.location && baseLocation) updates.location = baseLocation;
     if (!existing?.address && baseAddress) updates.address = baseAddress;
+    if (!existing?.legalAccepted && baseLegalAccepted) updates.legalAccepted = true;
+    if (!existing?.termsVersion && baseTermsVersion) updates.termsVersion = baseTermsVersion;
+    if (!existing?.termsAcceptedAt && baseTermsAcceptedAt) updates.termsAcceptedAt = baseTermsAcceptedAt;
+    if (!existing?.privacyAcceptedAt && basePrivacyAcceptedAt) updates.privacyAcceptedAt = basePrivacyAcceptedAt;
+    if (!existing?.refundsPolicyAcceptedAt && baseRefundsPolicyAcceptedAt) updates.refundsPolicyAcceptedAt = baseRefundsPolicyAcceptedAt;
     if (!existing?.updatedAt && existing?.createdAt) updates.updatedAt = existing.createdAt;
     if (!existing?.lastActivityAt && (existing?.updatedAt || existing?.createdAt)) {
       updates.lastActivityAt = existing?.updatedAt || existing?.createdAt;

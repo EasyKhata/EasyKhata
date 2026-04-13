@@ -82,6 +82,11 @@ service cloud.firestore {
         request.resource.data.blocked == false &&
         request.resource.data.sharedLedgerId == "" &&
         request.resource.data.sharedLedgerRole == "" &&
+        request.resource.data.legalAccepted == true &&
+        request.resource.data.termsVersion is string && request.resource.data.termsVersion != "" &&
+        request.resource.data.termsAcceptedAt is string && request.resource.data.termsAcceptedAt != "" &&
+        request.resource.data.privacyAcceptedAt is string && request.resource.data.privacyAcceptedAt != "" &&
+        request.resource.data.refundsPolicyAcceptedAt is string && request.resource.data.refundsPolicyAcceptedAt != "" &&
         request.resource.data.email == request.auth.token.email;
     }
 

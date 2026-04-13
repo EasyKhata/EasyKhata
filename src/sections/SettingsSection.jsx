@@ -77,6 +77,7 @@ import {
   PLANS
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL } from "../utils/brand";
+import { LEGAL_PATHS } from "../utils/legal";
 import { ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
 function getCurrentFinancialYearStart(date = new Date()) {
@@ -193,6 +194,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     currency,
     setCurrency,
     saveAccount,
+    resetForOrgTypeChange,
     customers,
     addCustomer,
     updateCustomer,
@@ -283,6 +285,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
@@ -411,6 +414,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   const noticeNode = <ToastNotice notice={notice} onClose={() => setNotice(null)} />;
   const withNotice = node => <>{node}{noticeNode}</>;
+
+  async function confirmOrgTypeChange() {
+    if (!pendingOrgTypeChange?.nextAccount) return;
+    resetForOrgTypeChange(pendingOrgTypeChange.nextAccount);
+    setPendingOrgTypeChange(null);
+    showNotice("Organization type changed. Existing records were cleared for this workspace.", "success");
+    setScreen("main");
+  }
 
   function hasExistingOrgTypeData() {
     return Boolean(
@@ -683,25 +694,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     };
 
     if (isOrgTypeChanging && hasExistingOrgTypeData()) {
-      const existingOrg = (organizations || []).find(org => org.id !== activeOrgId && org.organizationType === cleanOrganizationType);
-      if (existingOrg) {
-        const res = await switchOrganization(existingOrg.id);
-        if (res?.error) {
-          showNotice(res.error);
-          return;
-        }
-        showNotice("Switched to your existing organization workspace for that usage type.", "success");
-        setScreen("main");
-        return;
-      }
-
-      const res = await createOrganization(nextAccount);
-      if (res?.error) {
-        showNotice(res.error);
-        return;
-      }
-      showNotice("Created a new organization workspace and switched to it.", "success");
-      setScreen("main");
+      setPendingOrgTypeChange({
+        previousOrganizationType,
+        nextOrganizationType: cleanOrganizationType,
+        nextAccount
+      });
       return;
     }
 
@@ -1525,6 +1522,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             ) : (
               <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
             )}
+            <MenuRow icon="D" label="Privacy Policy" sub="How EasyKhata collects and uses data" onClick={() => window.open(LEGAL_PATHS.privacy, "_blank", "noopener,noreferrer")} />
+            <MenuRow icon="T" label="Terms and Conditions" sub="Service usage terms and responsibilities" onClick={() => window.open(LEGAL_PATHS.terms, "_blank", "noopener,noreferrer")} />
+            <MenuRow icon="R" label="Refund and Cancellation" sub="Billing, cancellation, and refund rules" onClick={() => window.open(LEGAL_PATHS.refunds, "_blank", "noopener,noreferrer")} />
+            <MenuRow icon="X" label="Data Deletion Policy" sub="How to request account data deletion" onClick={() => window.open(LEGAL_PATHS.dataDeletion, "_blank", "noopener,noreferrer")} />
           </div>
         </div>
 
@@ -1661,6 +1662,29 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </Field>}
         </Modal>
+
+        {pendingOrgTypeChange && (
+          <Modal
+            title="Confirm Usage Type Change"
+            onClose={() => setPendingOrgTypeChange(null)}
+            onSave={confirmOrgTypeChange}
+            saveLabel="Yes, Delete Existing Data"
+            canSave={true}
+          >
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)", marginBottom: 8 }}>
+                Warning: This action will permanently delete existing workspace data.
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+                You are changing usage type from <b>{pendingOrgTypeChange.previousOrganizationType}</b> to <b>{pendingOrgTypeChange.nextOrganizationType}</b>.
+                All current records in this workspace (customers, income, expenses, invoices, goals, budgets, and organization-specific entries) will be removed.
+              </div>
+              <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+                If you want to keep this data, click Cancel and create/switch to a separate organization workspace instead.
+              </div>
+            </div>
+          </Modal>
+        )}
       </>
     );
   }

@@ -5,6 +5,7 @@ import { isStrongPassword, isValidEmail, isValidName, normalizeEmail } from "../
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
+import { LEGAL_PATHS, LEGAL_VERSION } from "../utils/legal";
 import {
   buildDateOfBirthFromParts,
   buildPhoneNumber,
@@ -41,6 +42,7 @@ export default function AuthScreen() {
   const [country, setCountry] = useState("India");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
@@ -159,6 +161,13 @@ export default function AuthScreen() {
       return;
     }
 
+    if (!legalAccepted) {
+      setError("Please accept the Terms and Privacy Policy to continue.");
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+
     setLoading(true);
     const res = await register(
       {
@@ -172,7 +181,12 @@ export default function AuthScreen() {
         addressLine: cleanAddressLine,
         city: cleanCity,
         state: cleanState,
-        country: cleanCountry
+        country: cleanCountry,
+        legalAccepted: true,
+        termsVersion: LEGAL_VERSION,
+        termsAcceptedAt: nowIso,
+        privacyAcceptedAt: nowIso,
+        refundsPolicyAcceptedAt: nowIso
       },
       password
     );
@@ -285,6 +299,9 @@ export default function AuthScreen() {
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <button onClick={() => switchScreen("register")} style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font)" }}>Create account</button>
               <button onClick={() => switchScreen("forgot")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)" }}>Forgot password?</button>
+            </div>
+            <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              By using EasyKhata, you accept our <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> and <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy Policy</a>.
             </div>
           </div>
         )}
@@ -425,6 +442,19 @@ export default function AuthScreen() {
               )}
             </Field>
 
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
+              <input
+                id="legal-consent"
+                type="checkbox"
+                checked={legalAccepted}
+                onChange={e => setLegalAccepted(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <label htmlFor="legal-consent" style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                I agree to the <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms and Conditions</a>, <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy Policy</a>, and <a href={LEGAL_PATHS.refunds} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Refund Policy</a>.
+              </label>
+            </div>
+
             <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
               {loading ? "Creating your account..." : "Create Account"}
             </button>
@@ -441,6 +471,9 @@ export default function AuthScreen() {
               {loading ? "Sending reset email..." : "Send Reset Link"}
             </button>
             <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Back to Sign In</button>
+            <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, textAlign: "center" }}>
+              Legal: <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> · <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy</a>
+            </div>
           </div>
         )}
       </div>
