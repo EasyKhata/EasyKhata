@@ -1,33 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
-import { getIdToken } from "firebase/auth";
 import { db } from "../firebase";
 import { auth } from "../firebase";
-
-const FUNCTIONS_BASE = "https://asia-south1-ledger-app-599cc.cloudfunctions.net";
-
-async function callFunction(name, data) {
-  const user = auth.currentUser;
-  if (!user) throw new Error("Not signed in.");
-  const token = await getIdToken(user);
-  const res = await fetch(`${FUNCTIONS_BASE}/${name}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ data })
-  });
-  const json = await res.json();
-  if (!res.ok) {
-    const msg = json?.error?.message || `Request failed (${res.status})`;
-    const err = new Error(msg);
-    err.code = json?.error?.status || "internal";
-    throw err;
-  }
-  return json;
-}
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
-import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
+import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, StructuredLocationFields, UpgradeModal, EmptyState, ToastNotice, PhoneNumberInput } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
@@ -386,30 +364,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   async function handleCreateOrganizationWorkspace() {
-    const cleanName = String(createOrgForm.name || "").trim();
-    if (!cleanName) {
-      showNotice("Please enter an organization name.");
-      return;
-    }
-
-    const res = await createOrganization({
-      name: cleanName,
-      organizationType: getOrgType(createOrgForm.organizationType),
-      email: user?.email || "",
-      phone: user?.phone || ""
-    });
-
-    if (res?.error) {
-      showNotice(res.error);
-      return;
-    }
-
-    setCreateOrgForm({
-      name: "",
-      organizationType: getOrgType(account?.organizationType || user?.organizationType)
-    });
-    setScreen("main");
-    showNotice("New organization workspace created.", "success");
+    showNotice("Single-workspace mode is enabled. Creating additional organizations is disabled.");
   }
 
   const noticeNode = <ToastNotice notice={notice} onClose={() => setNotice(null)} />;
@@ -1333,8 +1288,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="section-label">Organization</div>
             <div className="card">
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              <MenuRow icon="S" label="Switch Organization" sub={account?.name || "Choose your active workspace"} onClick={() => setShowOrgSwitcher(true)} />
-              <MenuRow label="Create Organization" sub={`${organizations.length}/${maxOrganizations} workspaces in use`} onClick={() => setScreen("create-org")} disabled={!canCreateOrganization} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
               <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
@@ -1350,14 +1303,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
 
-          <OrganizationSwitcherModal
-            open={showOrgSwitcher}
-            onClose={() => setShowOrgSwitcher(false)}
-            organizations={organizations}
-            activeOrgId={activeOrgId}
-            onSwitch={handleSwitchOrganization}
-            onDelete={handleDeleteOrganization}
-          />
           {showReportPicker && (
             <Modal
               title="Download Report"
@@ -1680,7 +1625,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 All current records in this workspace (customers, income, expenses, invoices, goals, budgets, and organization-specific entries) will be removed.
               </div>
               <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                If you want to keep this data, click Cancel and create/switch to a separate organization workspace instead.
+                If you want to keep this data, click Cancel and continue with the current workspace setup.
               </div>
             </div>
           </Modal>
@@ -1694,29 +1639,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return null;
     }
     return withNotice(
-      <Modal title="Create Organization" onClose={() => setScreen("main")} onSave={handleCreateOrganizationWorkspace} saveLabel="Create" canSave={canCreateOrganization && !!String(createOrgForm.name || "").trim()} accentColor="var(--blue)">
-        <Field label="Organization Name" required>
-          <Input placeholder="Example: Reddy Retail" value={createOrgForm.name} onChange={event => setCreateOrgForm(current => ({ ...current, name: event.target.value }))} />
-        </Field>
-        <Field label="Usage Type" required>
-          <Select value={createOrgForm.organizationType} onChange={event => setCreateOrgForm(current => ({ ...current, organizationType: event.target.value }))}>
-            {selectableCreateOrgTypeOptions.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+      <Modal title="Single Workspace" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
         <div className="card" style={{ padding: 14 }}>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            This creates a separate organization workspace with its own customers, invoices, expenses, and reports. Your personal sign-in details stay the same.
+            Multi-organization workspaces are disabled for this app. Update your current organization profile instead.
           </div>
         </div>
-        {!canCreateOrganization && (
-          <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            This account has reached the current organization workspace limit.
-          </div>
-        )}
       </Modal>
     );
   }

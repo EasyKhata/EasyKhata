@@ -369,10 +369,6 @@ export function isFreelancerOrgData(data) {
   return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.FREELANCER;
 }
 
-export function isRetailOrgData(data) {
-  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.RETAIL;
-}
-
 function isYesValue(value) {
   return String(value || "").trim().toLowerCase() === "yes";
 }
@@ -487,11 +483,11 @@ function summarizeSmallBusinessSales(sales = []) {
 }
 
 function getRetailInventory(data) {
-  return data?.orgRecords?.inventory || [];
+  return [];
 }
 
 function getRetailSuppliers(data) {
-  return data?.orgRecords?.suppliers || [];
+  return [];
 }
 
 function buildSmallBusinessServiceInsights(services) {
@@ -581,81 +577,6 @@ function buildSmallBusinessTeamInsights(teamMembers) {
   };
 }
 
-function buildRetailInventoryInsights(items, today = new Date()) {
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const normalizedInventory = (items || []).map(item => {
-    const stock = Math.max(0, toNumber(item.stock ?? item.quantity ?? item.onHand));
-    const price = Math.max(0, toNumber(item.price ?? item.sellingPrice ?? item.defaultAmount));
-    const expiryDate = String(item.expiryDate || "").trim();
-    const inventoryValue = stock * price;
-    let expiryInDays = null;
-
-    if (expiryDate) {
-      const parsed = new Date(`${expiryDate}T23:59:59`);
-      if (!Number.isNaN(parsed.getTime())) {
-        expiryInDays = Math.round((parsed - start) / (24 * 60 * 60 * 1000));
-      }
-    }
-
-    return {
-      ...item,
-      productName: String(item.productName || item.name || "").trim(),
-      stock,
-      price,
-      expiryDate,
-      expiryInDays,
-      inventoryValue
-    };
-  }).filter(item => item.productName);
-
-  const lowStockItems = normalizedInventory
-    .filter(item => item.stock <= 5)
-    .sort((a, b) => a.stock - b.stock || a.productName.localeCompare(b.productName));
-
-  const expiringItems = normalizedInventory
-    .filter(item => item.expiryInDays !== null && item.expiryInDays >= 0 && item.expiryInDays <= 30)
-    .sort((a, b) => a.expiryInDays - b.expiryInDays || a.productName.localeCompare(b.productName));
-
-  const topProducts = normalizedInventory
-    .slice()
-    .sort((a, b) => b.inventoryValue - a.inventoryValue || b.stock - a.stock || a.productName.localeCompare(b.productName))
-    .slice(0, 6);
-
-  return {
-    inventoryItems: normalizedInventory,
-    inventoryCount: normalizedInventory.length,
-    stockUnits: normalizedInventory.reduce((sum, item) => sum + item.stock, 0),
-    inventoryValue: normalizedInventory.reduce((sum, item) => sum + item.inventoryValue, 0),
-    lowStockItems,
-    expiringItems,
-    topProducts
-  };
-}
-
-function buildRetailSupplierInsights(suppliers) {
-  const normalizedSuppliers = (suppliers || []).map(supplier => ({
-    ...supplier,
-    supplierName: String(supplier.supplierName || supplier.partnerName || supplier.name || "").trim(),
-    contact: String(supplier.contact || "").trim(),
-    creditBalance: Math.max(0, toNumber(supplier.creditBalance ?? supplier.balanceDue))
-  })).filter(supplier => supplier.supplierName);
-
-  const suppliersWithBalance = normalizedSuppliers
-    .filter(supplier => supplier.creditBalance > 0)
-    .sort((a, b) => b.creditBalance - a.creditBalance || a.supplierName.localeCompare(b.supplierName));
-
-  return {
-    suppliers: normalizedSuppliers,
-    suppliersCount: normalizedSuppliers.length,
-    supplierBalanceTotal: suppliersWithBalance.reduce((sum, supplier) => sum + supplier.creditBalance, 0),
-    suppliersWithBalance
-  };
-}
-
-function isRetailPurchaseType(expense, expected) {
-  const purchaseType = String(expense?.purchaseType || expense?.category || "").trim().toLowerCase();
-  return purchaseType === expected;
-}
 
 function startOfMonthValue(year, month) {
   return `${year}-${String(month + 1).padStart(2, "0")}-01`;
@@ -1788,101 +1709,6 @@ export function calculateSmallBusinessYearlyDashboard(data, year) {
     ...salesSummary,
     topSaleCustomers,
     teamPayoutTotal,
-    alertItems
-  };
-}
-
-export function calculateRetailDashboard(data, year, month) {
-  const base = calculateDashboard(data, year, month);
-  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
-  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
-  const mk = monthKey(year, month);
-  const activeExpenses = getActiveExpensesForMonth(data, mk);
-  const stockPurchaseTotal = activeExpenses
-    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
-    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const supplierPaymentTotal = activeExpenses
-    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
-    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
-
-  const alertItems = [...base.alertItems];
-  if (inventoryInsights.inventoryCount === 0) {
-    alertItems.push({
-      tone: "gold",
-      title: "Inventory list is empty",
-      message: "Add your main shop products in Settings so sales and stock checks become reusable."
-    });
-  }
-  if (inventoryInsights.lowStockItems.length) {
-    alertItems.push({
-      tone: inventoryInsights.lowStockItems.length >= 5 ? "danger" : "gold",
-      title: `${inventoryInsights.lowStockItems.length} product(s) are low on stock`,
-      message: "Review low-stock items before they start affecting daily sales."
-    });
-  }
-  if (inventoryInsights.expiringItems.length) {
-    alertItems.push({
-      tone: "gold",
-      title: `${inventoryInsights.expiringItems.length} product(s) nearing expiry`,
-      message: "Check expiring stock and plan discounting or faster movement."
-    });
-  }
-  if (supplierInsights.supplierBalanceTotal > 0) {
-    alertItems.push({
-      tone: supplierInsights.supplierBalanceTotal > Math.max(base.totalIncome, 1) ? "danger" : "gold",
-      title: "Supplier dues need planning",
-      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still payable across supplier balances.`
-    });
-  }
-
-  return {
-    ...base,
-    ...inventoryInsights,
-    ...supplierInsights,
-    stockPurchaseTotal,
-    supplierPaymentTotal,
-    shopExpenseTotal,
-    alertItems
-  };
-}
-
-export function calculateRetailYearlyDashboard(data, year) {
-  const base = calculateYearlyDashboard(data, year);
-  const inventoryInsights = buildRetailInventoryInsights(getRetailInventory(data));
-  const supplierInsights = buildRetailSupplierInsights(getRetailSuppliers(data));
-  const yearExpenses = getExpensesForYear(data, year);
-  const stockPurchaseTotal = yearExpenses
-    .filter(expense => isRetailPurchaseType(expense, "stock purchase") || isRetailPurchaseType(expense, "stock"))
-    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const supplierPaymentTotal = yearExpenses
-    .filter(expense => isRetailPurchaseType(expense, "supplier payment"))
-    .reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const shopExpenseTotal = Math.max(0, base.totalExpense - stockPurchaseTotal - supplierPaymentTotal);
-
-  const alertItems = [...base.alertItems];
-  if (inventoryInsights.inventoryCount === 0) {
-    alertItems.push({
-      tone: "gold",
-      title: "Inventory list is still empty",
-      message: "Add your main shop products in Settings to keep stock and sales organized across the year."
-    });
-  }
-  if (supplierInsights.supplierBalanceTotal > 0) {
-    alertItems.push({
-      tone: "gold",
-      title: "Supplier dues remain open",
-      message: `${fmtMoneyValue(supplierInsights.supplierBalanceTotal)} is still outstanding across supplier accounts this year.`
-    });
-  }
-
-  return {
-    ...base,
-    ...inventoryInsights,
-    ...supplierInsights,
-    stockPurchaseTotal,
-    supplierPaymentTotal,
-    shopExpenseTotal,
     alertItems
   };
 }

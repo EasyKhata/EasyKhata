@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateRetailDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isRetailOrgData, isSmallBusinessOrgData } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isSmallBusinessOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 
 const PAGE = {
@@ -169,7 +169,6 @@ function getReportStatsForMonth(data, year, month) {
   if (isPersonalOrgData(data)) return calculatePersonalDashboard(data, year, month);
   if (isFreelancerOrgData(data)) return calculateFreelancerDashboard(data, year, month);
   if (isSmallBusinessOrgData(data)) return calculateSmallBusinessDashboard(data, year, month);
-  if (isRetailOrgData(data)) return calculateRetailDashboard(data, year, month);
   return calculateDashboard(data, year, month);
 }
 
@@ -195,7 +194,6 @@ function getFinancialYearTitle(data, startYear) {
   if (isPersonalOrgData(data)) return `Household Report - ${fyLabel}`;
   if (isFreelancerOrgData(data)) return `Freelancer Report - ${fyLabel}`;
   if (isSmallBusinessOrgData(data)) return `Small Business Report - ${fyLabel}`;
-  if (isRetailOrgData(data)) return `Retail Report - ${fyLabel}`;
   return `Ledger Report - ${fyLabel}`;
 }
 
@@ -205,7 +203,6 @@ function getFinancialYearFilename(data, startYear) {
   if (isPersonalOrgData(data)) return `household-report-${suffix}.pdf`;
   if (isFreelancerOrgData(data)) return `freelancer-report-${suffix}.pdf`;
   if (isSmallBusinessOrgData(data)) return `small-business-report-${suffix}.pdf`;
-  if (isRetailOrgData(data)) return `retail-report-${suffix}.pdf`;
   return `ledger-report-${suffix}.pdf`;
 }
 
@@ -308,17 +305,6 @@ function getFinancialYearMetricItems(data, overview, sym) {
     ];
   }
 
-  if (isRetailOrgData(data)) {
-    return [
-      { label: "Sales", value: money(overview.totalIncome, sym) },
-      { label: "Purchases & Expenses", value: money(overview.totalExpense, sym) },
-      { label: "Net", value: money(overview.totalNet, sym) },
-      { label: "Stock Value", value: money(stats.inventoryValue || 0, sym) },
-      { label: "Supplier Dues", value: money(stats.supplierBalanceTotal || 0, sym) },
-      { label: "Inventory Items", value: String(stats.inventoryCount || 0) }
-    ];
-  }
-
   return [
     { label: "Receipts", value: money(overview.totalIncome, sym) },
     { label: "Expenses", value: money(overview.totalExpense, sym) },
@@ -372,17 +358,6 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
         { label: "Service catalog", value: String(stats.servicesCount || 0) },
         { label: "Team members", value: String(stats.teamCount || 0) },
         { label: "Partner dues", value: money(stats.partnerBalanceTotal || 0, sym) }
-      ]
-    };
-  }
-
-  if (isRetailOrgData(data)) {
-    return {
-      title: "Retail Snapshot",
-      rows: [
-        { label: "Stock units", value: String(stats.stockUnits || 0) },
-        { label: "Low-stock products", value: String(stats.lowStockItems?.length || 0) },
-        { label: "Expiring products", value: String(stats.expiringItems?.length || 0) }
       ]
     };
   }
@@ -1146,98 +1121,6 @@ export function downloadMonthlyReport(data, year, month, sym) {
     );
 
     doc.save(`small-business-report-${stats.monthKey}.pdf`);
-    return;
-  }
-
-  if (isRetailOrgData(data)) {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const stats = calculateRetailDashboard(data, year, month);
-    const title = `Retail Report - ${MONTHS[month]} ${year}`;
-
-    let y = PAGE.top;
-    doc.setFillColor(22, 22, 28);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text(title, PAGE.left + 4, y + 10);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-    y += 32;
-
-    y = sectionTitle(doc, y, "Shop Summary");
-    y = drawMetricGrid(doc, y, [
-      { label: "Sales", value: money(stats.totalIncome, sym) },
-      { label: "Purchases & Expenses", value: money(stats.totalExpense, sym) },
-      { label: "Stock Purchases", value: money(stats.stockPurchaseTotal || 0, sym) },
-      { label: "Supplier Dues", value: money(stats.supplierBalanceTotal || 0, sym) },
-      { label: "Inventory Items", value: String(stats.inventoryCount || 0) },
-      { label: "Stock Value", value: money(stats.inventoryValue || 0, sym) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Inventory Snapshot");
-    y = drawRows(
-      doc,
-      y,
-      stats.topProducts.length
-        ? stats.topProducts.map(item => ({
-            label: safeText(item.productName),
-            value: `${item.stock} in stock | ${money(item.inventoryValue, sym)}`
-          }))
-        : [{ label: "No inventory records added", value: "Add your shop products in Settings to build stock tracking" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Low Stock Watch");
-    y = drawRows(
-      doc,
-      y,
-      stats.lowStockItems.length
-        ? stats.lowStockItems.slice(0, 6).map(item => ({
-            label: safeText(item.productName),
-            value: `${item.stock} left${item.expiryDate ? ` | Exp ${safeText(item.expiryDate)}` : ""}`
-          }))
-        : [{ label: "No low-stock products right now", value: "Current tracked stock levels look healthy" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Supplier Balances");
-    y = drawRows(
-      doc,
-      y,
-      stats.suppliersCount
-        ? (stats.suppliersWithBalance.length
-          ? stats.suppliersWithBalance.slice(0, 6).map(supplier => ({
-              label: safeText(supplier.supplierName),
-              value: `${money(supplier.creditBalance, sym)}${supplier.contact ? ` | ${safeText(supplier.contact)}` : ""}`
-            }))
-          : [{ label: "Supplier balances are clear", value: "No open supplier credit is recorded" }])
-        : [{ label: "No suppliers added yet", value: "Add suppliers in Settings to track balances here" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Expense Breakdown");
-    y = drawRows(
-      doc,
-      y,
-      stats.topExpenseCategories.length
-        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
-        : [{ label: "No purchases or expenses recorded", value: "--" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Alerts Snapshot");
-    y = drawRows(
-      doc,
-      y,
-      stats.alertItems.length
-        ? stats.alertItems.slice(0, 6).map(item => ({ label: item.title, value: safeText(item.message) }))
-        : [{ label: "No active alerts", value: "Sales, stock, and supplier balances look steady right now" }]
-    );
-
-    doc.save(`retail-report-${stats.monthKey}.pdf`);
     return;
   }
 

@@ -1,4 +1,4 @@
-import { calculateApartmentDashboard, calculateDashboard, calculatePersonalDashboard, calculateRetailDashboard, isApartmentOrgData, isPersonalOrgData, isRetailOrgData } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculatePersonalDashboard, isApartmentOrgData, isPersonalOrgData } from "./analytics";
 
 const PREFIX = "ledger_app_notifications";
 
@@ -100,46 +100,6 @@ export function buildReminders(data, year, month) {
         tone: "gold",
         title: `${stats.upcomingEmis.length} EMI commitment(s) to watch`,
         message: "Review your upcoming EMI due dates and balances from the EMI section."
-      });
-    }
-
-    return reminders;
-  }
-
-  if (isRetailOrgData(data)) {
-    const stats = calculateRetailDashboard(data, year, month);
-    const reminders = [];
-
-    if (stats.lowStockItems.length) {
-      reminders.push({
-        id: `retail-stock-${stats.monthKey}`,
-        type: "spendingSpike",
-        tab: "settings",
-        tone: stats.lowStockItems.length >= 5 ? "danger" : "gold",
-        title: `${stats.lowStockItems.length} low-stock product(s)`,
-        message: "Review inventory in Settings before daily sales get blocked."
-      });
-    }
-
-    if ((stats.supplierBalanceTotal || 0) > 0) {
-      reminders.push({
-        id: `retail-suppliers-${stats.monthKey}`,
-        type: "invoiceDue",
-        tab: "settings",
-        tone: "gold",
-        title: "Supplier dues need review",
-        message: `${formatPlainMoney(stats.supplierBalanceTotal || 0)} is still pending across supplier balances.`
-      });
-    }
-
-    if (stats.profit < 0) {
-      reminders.push({
-        id: `retail-profit-${stats.monthKey}`,
-        type: "lowBalance",
-        tab: "dashboard",
-        tone: "danger",
-        title: "Shop spending is ahead of sales",
-        message: "This month is running at a loss. Review stock buying and shop expenses."
       });
     }
 

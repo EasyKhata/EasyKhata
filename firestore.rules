@@ -172,5 +172,10 @@ service cloud.firestore {
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow update, delete: if isAdmin();
     }
+
+    match /admin_metrics/{metricId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
   }
 }

@@ -1,7 +1,9 @@
 const crypto = require("node:crypto");
 const Razorpay = require("razorpay");
 const admin = require("firebase-admin");
+const functionsV1 = require("firebase-functions/v1");
 const { onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
@@ -48,6 +50,21 @@ function sendError(res, code, message) {
   res.status(statusMap[code] || 500).json({ error: { status: code, message } });
 }
 
+async function verifyAdminAuth(req) {
+  const authUser = await verifyFirebaseAuth(req);
+  if (!authUser?.uid) {
+    throw new HttpsError("unauthenticated", "Please sign in to continue.");
+  }
+
+  const userSnap = await db.collection("users").doc(authUser.uid).get();
+  const userData = userSnap.exists ? userSnap.data() || {} : {};
+  if (String(userData.role || "") !== "admin") {
+    throw new HttpsError("permission-denied", "Admin access is required.");
+  }
+
+  return { authUser, userData };
+}
+
 admin.initializeApp();
 
 const db = admin.firestore();
@@ -64,6 +81,209 @@ const PLAN_DURATION_DAYS = {
   monthly: 30,
   yearly: 365
 };
+
+const ADMIN_DERIVATIVE_SYNC_LIMIT = 10000;
+
+function getAdminOrgDocId(userId, orgId) {
+  return `${userId}__${orgId}`;
+}
+
+function normalizeLocationLabel(value = "") {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
+  const parts = clean
+    .split(",")
+    .map(part => part.trim())
+    .filter(Boolean);
+  const label = parts.length >= 2 ? parts.slice(-2).join(", ") : clean;
+  return label.length > 28 ? `${label.slice(0, 28)}...` : label;
+}
+
+function buildLocationLabel({ addressLine = "", city = "", state = "", country = "" } = {}) {
+  return [addressLine, city, state, country].map(part => String(part || "").trim()).filter(Boolean).join(", ");
+}
+
+function pushBucket(bucket, label, amount = 1) {
+  if (!label) return;
+  bucket[label] = (bucket[label] || 0) + amount;
+}
+
+function toDistribution(bucket, total, limitCount = null) {
+  const items = Object.entries(bucket)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => ({
+      label,
+      count,
+      pct: total ? Math.round((count / total) * 100) : 0
+    }));
+  return Number.isFinite(limitCount) ? items.slice(0, limitCount) : items;
+}
+
+function getNormalizedUserOrgs(userData = {}) {
+  const orgEntries = userData?.orgs && typeof userData.orgs === "object"
+    ? Object.entries(userData.orgs).filter(([, orgValue]) => orgValue && typeof orgValue === "object")
+    : [];
+
+  if (orgEntries.length) {
+    return orgEntries;
+  }
+
+  const fallbackOrgId = String(userData.activeOrgId || "org_primary");
+  return [[fallbackOrgId, { account: { organizationType: userData.organizationType || "small_business" } }]];
+}
+
+function buildAdminUserOrgStatsDoc(userId, userData = {}) {
+  const orgEntries = getNormalizedUserOrgs(userData);
+  const nowIso = new Date().toISOString();
+  return {
+    userId,
+    orgCount: orgEntries.length,
+    hasMultipleOrgs: orgEntries.length > 1,
+    sharedLedgerLinked: Boolean(userData.sharedLedgerId),
+    updatedAt: nowIso
+  };
+}
+
+function buildAdminUserProfileStatsDoc(userId, userData = {}) {
+  const orgEntries = getNormalizedUserOrgs(userData);
+  const profileLocation = normalizeLocationLabel(
+    buildLocationLabel({
+      city: userData.city || "",
+      state: userData.state || "",
+      country: userData.country || ""
+    }) || userData.location || ""
+  );
+  const orgLocationSignals = orgEntries
+    .map(([, orgValue]) => normalizeLocationLabel(buildLocationLabel({
+      city: orgValue?.account?.city || "",
+      state: orgValue?.account?.state || "",
+      country: orgValue?.account?.country || ""
+    }) || orgValue?.account?.location || orgValue?.account?.address || ""))
+    .filter(Boolean);
+  const totalSessionMs = Number(userData?.analytics?.totalSessionMs || 0);
+
+  return {
+    userId,
+    planLabel: userData.plan === "business" ? "Business" : userData.plan === "pro" ? "Pro" : "Free",
+    subscriptionLabel: userData.subscriptionStatus === "trial" ? "Trial" : userData.subscriptionStatus === "active" ? "Active" : "Inactive",
+    gender: String(userData.gender || "").trim(),
+    ageGroup: String(userData.ageGroup || "").trim(),
+    profileLocation,
+    hasLocationSignal: Boolean(profileLocation || orgLocationSignals.length),
+    hasGenderSignal: Boolean(String(userData.gender || "").trim()),
+    hasAgeSignal: Boolean(String(userData.ageGroup || "").trim()),
+    hasSessionSignal: totalSessionMs > 0,
+    totalSessionMs,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function buildAdminOrganizationDocs(userId, userData = {}) {
+  const orgEntries = getNormalizedUserOrgs(userData);
+  const nowIso = new Date().toISOString();
+  const profileLocation = normalizeLocationLabel(
+    buildLocationLabel({
+      city: userData.city || "",
+      state: userData.state || "",
+      country: userData.country || ""
+    }) || userData.location || ""
+  );
+
+  return orgEntries.map(([orgId, orgValue]) => ({
+    id: getAdminOrgDocId(userId, orgId),
+    data: {
+      ownerUserId: userId,
+      orgId,
+      orgName: String(orgValue?.account?.name || "").trim(),
+      orgType: String(orgValue?.account?.organizationType || userData.organizationType || "small_business"),
+      marketLabel: normalizeLocationLabel(
+        buildLocationLabel({
+          city: orgValue?.account?.city || "",
+          state: orgValue?.account?.state || "",
+          country: orgValue?.account?.country || ""
+        }) || orgValue?.account?.location || orgValue?.account?.address || profileLocation
+      ),
+      sharedLedgerLinked: Boolean(userData.sharedLedgerId),
+      updatedAt: nowIso
+    }
+  }));
+}
+
+async function syncAdminOrgDerivedDocsForUser(userId, beforeData, afterData) {
+  const batch = db.batch();
+  const userStatsRef = db.collection("admin_user_org_stats").doc(userId);
+  const userProfileStatsRef = db.collection("admin_user_profile_stats").doc(userId);
+  const beforeOrgIds = new Set(getNormalizedUserOrgs(beforeData).map(([orgId]) => orgId));
+  const afterOrgIds = new Set(afterData ? getNormalizedUserOrgs(afterData).map(([orgId]) => orgId) : []);
+
+  if (afterData) {
+    batch.set(userStatsRef, buildAdminUserOrgStatsDoc(userId, afterData), { merge: true });
+    batch.set(userProfileStatsRef, buildAdminUserProfileStatsDoc(userId, afterData), { merge: true });
+    buildAdminOrganizationDocs(userId, afterData).forEach(orgDoc => {
+      batch.set(db.collection("admin_organizations").doc(orgDoc.id), orgDoc.data, { merge: true });
+    });
+  } else {
+    batch.delete(userStatsRef);
+    batch.delete(userProfileStatsRef);
+  }
+
+  beforeOrgIds.forEach(orgId => {
+    if (!afterOrgIds.has(orgId)) {
+      batch.delete(db.collection("admin_organizations").doc(getAdminOrgDocId(userId, orgId)));
+    }
+  });
+
+  await batch.commit();
+}
+
+async function bootstrapAdminOrgDerivedDocs(totalUsers) {
+  if (totalUsers > ADMIN_DERIVATIVE_SYNC_LIMIT) {
+    return false;
+  }
+
+  const usersRef = db.collection("users");
+  let cursor = null;
+  let hasMore = true;
+
+  while (hasMore) {
+    const pageQuery = cursor
+      ? usersRef.orderBy(admin.firestore.FieldPath.documentId()).startAfter(cursor).limit(250)
+      : usersRef.orderBy(admin.firestore.FieldPath.documentId()).limit(250);
+    const snap = await pageQuery.get();
+    if (!snap.docs.length) break;
+
+    let batch = db.batch();
+    let writeCount = 0;
+    for (const userDoc of snap.docs) {
+      const userId = userDoc.id;
+      const userData = userDoc.data() || {};
+      batch.set(db.collection("admin_user_org_stats").doc(userId), buildAdminUserOrgStatsDoc(userId, userData), { merge: true });
+      writeCount += 1;
+      batch.set(db.collection("admin_user_profile_stats").doc(userId), buildAdminUserProfileStatsDoc(userId, userData), { merge: true });
+      writeCount += 1;
+
+      buildAdminOrganizationDocs(userId, userData).forEach(orgDoc => {
+        batch.set(db.collection("admin_organizations").doc(orgDoc.id), orgDoc.data, { merge: true });
+        writeCount += 1;
+      });
+
+      if (writeCount >= 400) {
+        await batch.commit();
+        batch = db.batch();
+        writeCount = 0;
+      }
+    }
+
+    if (writeCount > 0) {
+      await batch.commit();
+    }
+
+    cursor = snap.docs[snap.docs.length - 1].id;
+    hasMore = snap.docs.length === 250;
+  }
+
+  return true;
+}
 
 function getRazorpayConfig() {
   const keyId = RAZORPAY_KEY_ID.value() || "";
@@ -106,6 +326,18 @@ function computeSubscriptionEndDate(currentEndsAt, durationDays) {
   const next = new Date(baseDate);
   next.setDate(next.getDate() + durationDays);
   return next.toISOString();
+}
+
+function getMonthWindow(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0));
+  return {
+    key: `${year}-${String(month + 1).padStart(2, "0")}`,
+    startIso: start.toISOString(),
+    endIso: end.toISOString()
+  };
 }
 
 async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, paymentRequestId, paymentId, source }) {
@@ -157,6 +389,204 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     );
   });
 }
+
+async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-scheduled") {
+  const usersRef = db.collection("users");
+  const paymentsRef = db.collection("payment_requests");
+  const ticketsRef = db.collection("support_tickets");
+  const userOrgStatsRef = db.collection("admin_user_org_stats");
+  const userProfileStatsRef = db.collection("admin_user_profile_stats");
+  const organizationsRef = db.collection("admin_organizations");
+  const currentMonth = getMonthWindow();
+
+  const [
+    totalUsersAgg,
+    blockedUsersAgg,
+    trialUsersAgg,
+    proUsersAgg,
+    businessUsersAgg,
+    pendingRequestsAgg,
+    approvedRequestsAgg,
+    rejectedRequestsAgg,
+    supportOpenAgg,
+    supportInProgressAgg,
+    supportResolvedAgg,
+    userOrgStatsAgg,
+    userProfileStatsAgg,
+    currentMonthUsersSnap,
+    currentMonthPaymentsSnap
+  ] = await Promise.all([
+    usersRef.count().get(),
+    usersRef.where("blocked", "==", true).count().get(),
+    usersRef.where("subscriptionStatus", "==", "trial").count().get(),
+    usersRef.where("plan", "==", "pro").count().get(),
+    usersRef.where("plan", "==", "business").count().get(),
+    paymentsRef.where("status", "==", "pending").count().get(),
+    paymentsRef.where("status", "==", "approved").count().get(),
+    paymentsRef.where("status", "==", "rejected").count().get(),
+    ticketsRef.where("status", "==", "open").count().get(),
+    ticketsRef.where("status", "==", "in_progress").count().get(),
+    ticketsRef.where("status", "==", "resolved").count().get(),
+    userOrgStatsRef.count().get(),
+    userProfileStatsRef.count().get(),
+    usersRef.where("createdAt", ">=", currentMonth.startIso).where("createdAt", "<", currentMonth.endIso).get(),
+    paymentsRef.where("updatedAt", ">=", currentMonth.startIso).where("updatedAt", "<", currentMonth.endIso).get()
+  ]);
+
+  const totalUsers = Number(totalUsersAgg.data().count || 0);
+  const blockedUsers = Number(blockedUsersAgg.data().count || 0);
+  const premiumUsers = Number(proUsersAgg.data().count || 0) + Number(businessUsersAgg.data().count || 0);
+  let derivedReady = Number(userOrgStatsAgg.data().count || 0) === totalUsers && Number(userProfileStatsAgg.data().count || 0) === totalUsers;
+
+  if (!derivedReady && totalUsers > 0) {
+    const bootstrapped = await bootstrapAdminOrgDerivedDocs(totalUsers);
+    if (bootstrapped) {
+      const [refreshedUserOrgStatsAgg, refreshedUserProfileStatsAgg] = await Promise.all([
+        userOrgStatsRef.count().get(),
+        userProfileStatsRef.count().get()
+      ]);
+      derivedReady = Number(refreshedUserOrgStatsAgg.data().count || 0) === totalUsers && Number(refreshedUserProfileStatsAgg.data().count || 0) === totalUsers;
+    }
+  }
+
+  let totalOrganizations = null;
+  let multiOrgUsers = null;
+  let sharedLedgerUsers = null;
+  let distributions = null;
+  let readiness = null;
+  if (derivedReady) {
+    const [organizationsAgg, multiOrgUsersAgg, sharedLedgerUsersAgg] = await Promise.all([
+      organizationsRef.count().get(),
+      userOrgStatsRef.where("hasMultipleOrgs", "==", true).count().get(),
+      userOrgStatsRef.where("sharedLedgerLinked", "==", true).count().get()
+    ]);
+    totalOrganizations = Number(organizationsAgg.data().count || 0);
+    multiOrgUsers = Number(multiOrgUsersAgg.data().count || 0);
+    sharedLedgerUsers = Number(sharedLedgerUsersAgg.data().count || 0);
+
+    const profileBucketCounts = {
+      planMix: {},
+      statusMix: {},
+      genderMix: {},
+      ageMix: {}
+    };
+    const orgBucketCounts = {
+      orgTypeMix: {},
+      locationMix: {}
+    };
+    let locationCoverageUsers = 0;
+    let genderCoverageUsers = 0;
+    let ageCoverageUsers = 0;
+    let sessionCoverageUsers = 0;
+
+    let profileCursor = null;
+    let profileHasMore = true;
+    while (profileHasMore) {
+      const profileQuery = profileCursor
+        ? userProfileStatsRef.orderBy(admin.firestore.FieldPath.documentId()).startAfter(profileCursor).limit(500)
+        : userProfileStatsRef.orderBy(admin.firestore.FieldPath.documentId()).limit(500);
+      const snap = await profileQuery.get();
+      if (!snap.docs.length) break;
+
+      snap.docs.forEach(item => {
+        const data = item.data() || {};
+        pushBucket(profileBucketCounts.planMix, data.planLabel);
+        pushBucket(profileBucketCounts.statusMix, data.subscriptionLabel);
+        pushBucket(profileBucketCounts.genderMix, data.gender);
+        pushBucket(profileBucketCounts.ageMix, data.ageGroup);
+        if (data.hasLocationSignal) locationCoverageUsers += 1;
+        if (data.hasGenderSignal) genderCoverageUsers += 1;
+        if (data.hasAgeSignal) ageCoverageUsers += 1;
+        if (data.hasSessionSignal) sessionCoverageUsers += 1;
+      });
+
+      profileCursor = snap.docs[snap.docs.length - 1].id;
+      profileHasMore = snap.docs.length === 500;
+    }
+
+    let orgCursor = null;
+    let orgHasMore = true;
+    while (orgHasMore) {
+      const orgQuery = orgCursor
+        ? organizationsRef.orderBy(admin.firestore.FieldPath.documentId()).startAfter(orgCursor).limit(500)
+        : organizationsRef.orderBy(admin.firestore.FieldPath.documentId()).limit(500);
+      const snap = await orgQuery.get();
+      if (!snap.docs.length) break;
+
+      snap.docs.forEach(item => {
+        const data = item.data() || {};
+        pushBucket(orgBucketCounts.orgTypeMix, data.orgType);
+        pushBucket(orgBucketCounts.locationMix, data.marketLabel);
+      });
+
+      orgCursor = snap.docs[snap.docs.length - 1].id;
+      orgHasMore = snap.docs.length === 500;
+    }
+
+    distributions = {
+      planMix: toDistribution(profileBucketCounts.planMix, totalUsers),
+      statusMix: toDistribution(profileBucketCounts.statusMix, totalUsers),
+      orgTypeMix: toDistribution(orgBucketCounts.orgTypeMix, Math.max(1, totalOrganizations), 5),
+      locationMix: toDistribution(orgBucketCounts.locationMix, Math.max(1, totalOrganizations), 6),
+      genderMix: toDistribution(profileBucketCounts.genderMix, totalUsers),
+      ageMix: toDistribution(profileBucketCounts.ageMix, totalUsers)
+    };
+    readiness = {
+      locationCoverage: totalUsers ? Math.round((locationCoverageUsers / totalUsers) * 100) : 0,
+      genderCoverage: totalUsers ? Math.round((genderCoverageUsers / totalUsers) * 100) : 0,
+      ageCoverage: totalUsers ? Math.round((ageCoverageUsers / totalUsers) * 100) : 0,
+      sessionCoverage: totalUsers ? Math.round((sessionCoverageUsers / totalUsers) * 100) : 0
+    };
+  }
+
+  const currentMonthUsers = currentMonthUsersSnap.docs.map(item => item.data() || {});
+  const currentMonthPayments = currentMonthPaymentsSnap.docs.map(item => item.data() || {});
+  const currentMonthApprovedPayments = currentMonthPayments.filter(item => String(item.status || "").toLowerCase() === "approved");
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    source: triggeredBy,
+    stats: {
+      totalUsers,
+      activeUsers: Math.max(0, totalUsers - blockedUsers),
+      blockedUsers,
+      premiumUsers,
+      totalOrganizations,
+      multiOrgUsers,
+      sharedLedgerUsers,
+      trialUsers: Number(trialUsersAgg.data().count || 0),
+      pendingRequests: Number(pendingRequestsAgg.data().count || 0),
+      approvedRequests: Number(approvedRequestsAgg.data().count || 0),
+      rejectedRequests: Number(rejectedRequestsAgg.data().count || 0),
+      supportOpen: Number(supportOpenAgg.data().count || 0),
+      supportInProgress: Number(supportInProgressAgg.data().count || 0),
+      supportResolved: Number(supportResolvedAgg.data().count || 0)
+    },
+    derivations: {
+      orgCollectionsReady: derivedReady
+    },
+    distributions,
+    periods: {
+      currentMonth: {
+        key: currentMonth.key,
+        newUsers: currentMonthUsers.length,
+        newPremiumUsers: currentMonthUsers.filter(item => ["pro", "business"].includes(String(item.plan || "").toLowerCase())).length,
+        approvedAmount: currentMonthApprovedPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0),
+        approvedRequests: currentMonthApprovedPayments.length
+      }
+    },
+    readiness
+  };
+
+  await db.collection("admin_metrics").doc("global").set(payload, { merge: true });
+  return payload;
+}
+
+exports.syncAdminOrgDerivedDocs = functionsV1.region("asia-south1").firestore.document("users/{userId}").onWrite(async (change, context) => {
+  const userId = context.params.userId;
+  const beforeData = change.before.exists ? change.before.data() || {} : null;
+  const afterData = change.after.exists ? change.after.data() || {} : null;
+  await syncAdminOrgDerivedDocsForUser(userId, beforeData, afterData);
+});
 
 exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
   setCors(req, res);
@@ -292,6 +722,26 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
   res.status(200).json({ data: { success: true } });
 });
 
+exports.refreshAdminMetricsNow = onRequest({ region: "asia-south1", invoker: "public" }, async (req, res) => {
+  setCors(req, res);
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
+
+  try {
+    const { authUser } = await verifyAdminAuth(req);
+    const snapshot = await refreshAdminMetricsSnapshotInternal(`manual:${authUser.uid}`);
+    res.status(200).json({ data: { success: true, generatedAt: snapshot.generatedAt, stats: snapshot.stats } });
+  } catch (err) {
+    if (err instanceof HttpsError) {
+      sendError(res, err.code, err.message);
+      return;
+    }
+
+    logger.error("Manual admin metrics refresh failed", err);
+    sendError(res, "internal", "Unable to refresh admin metrics right now.");
+  }
+});
+
 exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method not allowed");
@@ -362,3 +812,19 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
     res.status(500).send("Webhook error");
   }
 });
+
+exports.refreshAdminMetricsSnapshot = onSchedule(
+  {
+    region: "asia-south1",
+    schedule: "every 6 hours",
+    timeZone: "Asia/Kolkata"
+  },
+  async () => {
+    try {
+      await refreshAdminMetricsSnapshotInternal("scheduled-aggregate");
+    } catch (err) {
+      logger.error("Failed to refresh admin metrics snapshot", err);
+      throw err;
+    }
+  }
+);

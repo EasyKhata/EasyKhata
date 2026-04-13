@@ -15,10 +15,15 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
   const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
   const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(orgType), [orgType]);
-  const totalSteps = 4;
+  const totalSteps = 3;
   const isLastStep = step === totalSteps;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
-  const isRetailOrg = orgType === ORG_TYPES.RETAIL;
+  const primaryQuickstartAction = orgType === ORG_TYPES.APARTMENT ? "first-dues" : orgConfig.hideInvoices ? "first-income" : "first-invoice";
+  const quickstartTarget = orgType === ORG_TYPES.APARTMENT
+    ? { tab: "income", quickstart: "first-dues" }
+    : orgConfig.hideInvoices
+      ? { tab: "income", quickstart: "first-income" }
+      : { tab: "invoices", quickstart: "first-invoice" };
 
   useEffect(() => {
     setAccountForm(buildAccountFormState(account, user));
@@ -31,13 +36,13 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
   const stepTitles = [
     `Set Your ${orgConfig.profileNameLabel}`,
     `Review Your ${orgConfig.orgLabel || "Org"} Setup`,
-    orgConfig.hideInvoices ? `Understand ${orgConfig.incomeLabel}` : `Understand ${orgConfig.invoicesLabel}`,
-    `Understand ${orgConfig.expensesLabel}`
+    orgType === ORG_TYPES.APARTMENT ? "Create First Dues Entry" : orgConfig.hideInvoices ? `Create First ${orgConfig.incomeEntryLabel}` : `Create First ${orgConfig.invoiceEntryLabel}`
   ];
 
-  function handleNext() {
+  async function handleNext() {
     if (isLastStep) {
-      completeOnboarding();
+      await completeOnboarding();
+      onNavigate?.(quickstartTarget);
       return;
     }
     setStep(step + 1);
@@ -103,9 +108,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
                 {isSmallBusinessOrg
                   ? "Add a service or package"
-                  : isRetailOrg
-                    ? "Add a product to inventory"
-                    : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}`}
+                  : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}`}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
                 {orgType === ORG_TYPES.APARTMENT
@@ -116,9 +119,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
                       ? "Create a client first so invoices and payment follow-up have a real customer record behind them."
                       : isSmallBusinessOrg
                         ? "Create a service first so khata, invoices, and work pricing stay consistent."
-                        : isRetailOrg
-                          ? "Create an inventory item first so shop sales and stock tracking start from real products."
-                          : `Create a ${orgConfig.customerEntryLabel.toLowerCase()} first so records stay organized from day one.`}
+                        : `Create a ${orgConfig.customerEntryLabel.toLowerCase()} first so records stay organized from day one.`}
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
@@ -130,64 +131,42 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              {orgConfig.hideInvoices
-                ? `Ready to track your first ${orgConfig.incomeEntryLabel.toLowerCase()}?`
-                : `Ready to create your first ${orgConfig.invoiceEntryLabel.toLowerCase()}?`}
+              {orgType === ORG_TYPES.APARTMENT
+                ? "Finish setup and we'll open a ready dues form so you can record the first monthly collection in one step."
+                : orgConfig.hideInvoices
+                  ? `Finish setup and we'll open a ready ${orgConfig.incomeEntryLabel.toLowerCase()} form so you can add your first live record immediately.`
+                  : `Finish setup and we'll open a ready ${orgConfig.invoiceEntryLabel.toLowerCase()} form so your first bill is created right away.`}
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Guided quickstart</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
-                {orgConfig.hideInvoices ? (
+                {primaryQuickstartAction === "first-dues" ? (
                   <>
-                    {isRetailOrg ? (
-                      <>
-                        <div>• Pick a product or basket from inventory</div>
-                        <div>• Enter the sale amount, quantity, and date</div>
-                        <div>• Keep daily shop sales ready for dashboard tracking</div>
-                      </>
-                    ) : (
-                      <>
-                        <div>• Add the amount you received</div>
-                        <div>• Set the date and earning type</div>
-                        <div>• Keep the entry ready for dashboard tracking</div>
-                      </>
-                    )}
+                    <div>• Open Income with a dues draft form</div>
+                    <div>• Pick a flat and amount</div>
+                    <div>• Save your first monthly maintenance entry</div>
+                  </>
+                ) : primaryQuickstartAction === "first-invoice" ? (
+                  <>
+                    <div>• Open Invoices with a new invoice draft</div>
+                    <div>• Choose customer and add line items</div>
+                    <div>• Save your first invoice in minutes</div>
                   </>
                 ) : (
                   <>
-                    <div>• Select a {orgConfig.customerEntryLabel.toLowerCase()}</div>
-                    <div>• Add items with description, quantity, and rate</div>
-                    <div>• Set due dates and taxes if needed</div>
-                    <div>{isSmallBusinessOrg ? "Save an invoice your customer can pay against" : "Save a professional invoice"}</div>
+                    <div>• Open Income with a new earning draft</div>
+                    <div>• Fill amount and date</div>
+                    <div>• Save your first entry</div>
                   </>
                 )}
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              You will be able to open {orgConfig.hideInvoices ? orgConfig.incomeLabel : orgConfig.invoicesLabel} from the main tabs after setup.
-            </div>
-          </div>
-        );
-      case 4:
-        return (
-          <div>
-            <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              {isSmallBusinessOrg
-                ? `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so the dashboard can compare sales against real operating costs like rent, payroll, or supplies.`
-                : isRetailOrg
-                  ? `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so the dashboard can compare shop sales against stock buying and running costs.`
-                : `Finally, record your first ${orgConfig.expensesEntryLabel.toLowerCase()} so your dashboard can start comparing inflow and outflow.`}
-            </div>
-            <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What you'll do</div>
-              <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
-                <div>• Add the amount and date</div>
-                <div>• Choose the best category</div>
-                <div>• Add any extra notes you need later</div>
-              </div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              Finish this guide and then use the main tabs to start adding live records.
+              {primaryQuickstartAction === "first-dues"
+                ? "Tap finish and you will be taken straight to the first dues form."
+                : primaryQuickstartAction === "first-invoice"
+                  ? "Tap finish and you will be taken straight to the first invoice form."
+                  : "Tap finish and you will be taken straight to the first income form."}
             </div>
           </div>
         );
@@ -276,7 +255,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
             </button>
           ) : isLastStep ? (
             <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={handleNext}>
-              Get Started
+              {primaryQuickstartAction === "first-dues" ? "Finish & Add First Dues" : primaryQuickstartAction === "first-invoice" ? "Finish & Create First Invoice" : "Finish & Add First Entry"}
             </button>
           ) : (
             <button className="btn-secondary" style={{ flex: 1 }} onClick={handleNext}>
