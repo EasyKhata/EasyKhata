@@ -3,8 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
-import BrandLogo, { BrandMark } from "../components/BrandLogo";
-import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
+import BrandLogo from "../components/BrandLogo";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -89,43 +88,44 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
   const nextDisabled = viewMode === "month" ? isCurrentMonth : isCurrentYear;
 
   return (
-    <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", gap: 10 }}>
+    <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
       <button
         onClick={prev}
         style={{
-          width: 34,
-          height: 34,
-          borderRadius: 12,
+          width: 36,
+          height: 36,
+          borderRadius: 10,
           border: "1px solid var(--border)",
-          background: "var(--surface-high)",
-          color: "var(--text)",
+          background: "var(--surface)",
+          color: "var(--text-sec)",
           fontSize: 18,
+          fontWeight: 700,
           cursor: "pointer"
         }}
       >
-        {"<"}
+        {"‹"}
       </button>
 
       <button
         onClick={() => setOpen(current => !current)}
         style={{
-          minWidth: 138,
-          padding: "10px 14px",
-          borderRadius: 16,
+          minWidth: 122,
+          padding: "7px 11px",
+          borderRadius: 12,
           border: "1px solid var(--border)",
-          background: "linear-gradient(180deg, var(--surface) 0%, var(--surface-high) 100%)",
+          background: "var(--surface)",
           color: "var(--text)",
           cursor: "pointer",
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-start",
-          boxShadow: "var(--card-shadow)"
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)"
         }}
       >
-        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8 }}>
-          {viewMode === "month" ? "Current month" : "Current year"}
+        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>
+          {viewMode === "month" ? "View month" : "View year"}
         </span>
-        <span style={{ fontFamily: "var(--serif)", fontSize: 20, color: "var(--text)", lineHeight: 1.1, marginTop: 4 }}>
+        <span style={{ fontFamily: "var(--serif)", fontSize: 16, color: "var(--blue)", lineHeight: 1.1, marginTop: 2 }}>
           {viewMode === "month" ? `${MONTHS[month]} ${year}` : year}
         </span>
       </button>
@@ -134,18 +134,19 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         onClick={next}
         disabled={nextDisabled}
         style={{
-          width: 34,
-          height: 34,
-          borderRadius: 12,
+          width: 36,
+          height: 36,
+          borderRadius: 10,
           border: "1px solid var(--border)",
-          background: nextDisabled ? "var(--surface-high)" : "var(--surface-high)",
+          background: "var(--surface)",
           color: nextDisabled ? "var(--text-dim)" : "var(--text)",
           fontSize: 18,
+          fontWeight: 700,
           cursor: nextDisabled ? "not-allowed" : "pointer",
           opacity: nextDisabled ? 0.5 : 1
         }}
       >
-        {">"}
+        {"›"}
       </button>
 
       {open && (
@@ -266,7 +267,7 @@ export default function MainApp() {
   const { user } = useAuth();
   const { theme, toggle } = useTheme();
   const data = useData();
-  const { account, organizations = [], activeOrgId, switchOrganization, deleteOrganization, isReadOnlyFreeMode } = data;
+  const { account, isReadOnlyFreeMode } = data;
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [quickstartIntent, setQuickstartIntent] = useState(null);
@@ -274,7 +275,6 @@ export default function MainApp() {
   const [month, setMonth] = useState(now.getMonth());
   const [viewMode, setViewMode] = useState("month"); // "month" or "year"
   const [showReminders, setShowReminders] = useState(false);
-  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
@@ -416,14 +416,14 @@ export default function MainApp() {
     { id: "dashboard", icon: isAdmin ? "★" : "⌂", label: isAdmin ? "Admin" : "Dashboard" },
     ...(isAdmin ? [{ id: "users", icon: "◎", label: "Users" }] : []),
     ...(user?.role !== "admin" ? [
-      { id: "org", icon: "▣", label: currentOrgLabel },
       { id: "income", icon: "↑", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "↓", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "◎", label: "EMIs" }] : []),
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "◇", label: "Khata" }] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "■", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
-    { id: "settings", icon: "⚙", label: "Settings" }
+    ...(!isAdmin ? [{ id: "org", icon: "▣", label: currentOrgLabel }] : []),
+    ...(isAdmin ? [{ id: "settings", icon: "⚙", label: "Settings" }] : [])
   ];
 
   const tabColor = {
@@ -437,8 +437,6 @@ export default function MainApp() {
     invoices: "var(--blue)",
     settings: "var(--purple)"
   };
-
-  const activeColor = tabColor[tab];
 
   function dismissReminder(id) {
     const nextIds = Array.from(new Set([...dismissedIds, id]));
@@ -464,26 +462,6 @@ export default function MainApp() {
       setTab("income");
     }
   }, [hideInvoices, tab]);
-
-  async function handleSwitchOrganization(orgId) {
-    const res = await switchOrganization(orgId);
-    if (res?.error) {
-      alert(res.error);
-      return;
-    }
-    setTab("dashboard");
-    setShowOrgSwitcher(false);
-  }
-
-  async function handleDeleteOrganization(orgId) {
-    const res = await deleteOrganization(orgId);
-    if (res?.error) {
-      alert(res.error);
-      return;
-    }
-    setTab("dashboard");
-    setShowOrgSwitcher(false);
-  }
 
   function renderTabContent() {
     const fallback = tab === "settings" || (isAdmin && tab === "users")
@@ -523,80 +501,75 @@ export default function MainApp() {
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px 0", fontSize: 13, fontWeight: 700 }}>
-        <span style={{ color: "var(--text)" }}>
-          {new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
-        </span>
-        <div style={{ transform: "scale(0.86)", transformOrigin: "center", opacity: 0.98 }}>
-          <BrandLogo compact showTagline={false} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button
-            onClick={() => setShowReminders(true)}
-            title="Open reminders"
-            style={{ width: 34, height: 34, borderRadius: 17, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", fontSize: 16 }}
-          >
-            !
-            {inboxReminders.length > 0 && (
-              <span style={{ position: "absolute", top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
-                {inboxReminders.length}
+      <div style={{ padding: "10px 14px 0" }}>
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, overflow: "visible", boxShadow: "var(--card-shadow)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", fontSize: 12, fontWeight: 700, borderBottom: "1px solid var(--border)" }}>
+            <button
+              onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
+              title="Open settings"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+                minWidth: 56,
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                color: "var(--text-sec)"
+              }}
+            >
+              <span style={{ width: 30, height: 30, borderRadius: 15, border: "1px solid var(--border)", background: "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700 }}>
+                {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
               </span>
-            )}
-          </button>
-          <button className="theme-toggle" onClick={toggle} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} />
-        </div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 18px 12px", borderBottom: "1px solid var(--border)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <BrandMark size={32} />
-          <div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
-              {TABS.find(item => item.id === tab)?.label}
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>Settings</span>
+            </button>
+            <div style={{ transform: "scale(0.82)", transformOrigin: "center", opacity: 0.98 }}>
+              <BrandLogo compact showTagline={false} />
             </div>
-            {!isAdmin && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button
-                onClick={() => setShowOrgSwitcher(true)}
-                style={{
-                  marginTop: 6,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface-high)",
-                  color: activeColor,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: 0.4,
-                  cursor: "pointer",
-                  fontFamily: "var(--font)"
-                }}
+                onClick={() => setShowReminders(true)}
+                title="Open reminders"
+                style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}
               >
-                <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentOrgLabel}</span>
-                <span style={{ color: "var(--text-dim)" }}>v</span>
+                🔔
+                {inboxReminders.length > 0 && (
+                  <span style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                    {inboxReminders.length}
+                  </span>
+                )}
               </button>
+              <button className="theme-toggle" onClick={toggle} title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
+                {TABS.find(item => item.id === tab)?.label}
+              </div>
+            </div>
+            {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
+              <HeaderDatePicker
+                year={year}
+                month={month}
+                onChange={(nextYear, nextMonth) => {
+                  setYear(nextYear);
+                  setMonth(nextMonth);
+                }}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+            )}
+            {(tab === "settings" || tab === "org") && (
+              <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {user?.name}
+              </span>
             )}
           </div>
         </div>
-        {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
-          <HeaderDatePicker
-            year={year}
-            month={month}
-            onChange={(nextYear, nextMonth) => {
-              setYear(nextYear);
-              setMonth(nextMonth);
-            }}
-            viewMode={viewMode}
-            onViewModeChange={setViewMode}
-          />
-        )}
-        {(tab === "settings" || tab === "org") && (
-          <span style={{ fontSize: 13, color: "var(--text-sec)", maxWidth: 140, textAlign: "right", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {user?.name}
-          </span>
-        )}
       </div>
 
       {isReadOnlyFreeMode && !isAdmin && (
@@ -690,16 +663,6 @@ export default function MainApp() {
         </Modal>
       )}
 
-      {!isAdmin && (
-        <OrganizationSwitcherModal
-          open={showOrgSwitcher}
-          onClose={() => setShowOrgSwitcher(false)}
-          organizations={organizations}
-          activeOrgId={activeOrgId}
-          onSwitch={handleSwitchOrganization}
-          onDelete={handleDeleteOrganization}
-        />
-      )}
     </div>
   );
 }

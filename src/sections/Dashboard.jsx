@@ -20,7 +20,7 @@ import { useAuth } from "../context/AuthContext";
 import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan, isReviewAccessEnabled } from "../utils/subscription";
 import OnboardingGuide from "../components/OnboardingGuide";
 import Collapsible from "../components/Collapsible";
-import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 
 function polarToCartesian(cx, cy, radius, angleInDegrees) {
   const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
@@ -257,6 +257,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
+  const orgConfig = getOrgConfig(orgType);
   const stats = isApartmentOrg
     ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
     : isFreelancerOrg

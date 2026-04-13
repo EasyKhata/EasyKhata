@@ -288,7 +288,7 @@ input, select, textarea, button {
 .content-scroll {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  height: calc(100dvh - 112px);
+  height: calc(100dvh - 140px);
   padding-bottom: 20px;
 }
 
@@ -351,7 +351,7 @@ input, select, textarea, button {
 
 @media (min-width: 900px) {
   .content-scroll {
-    height: calc(100dvh - 116px);
+    height: calc(100dvh - 144px);
   }
 
   .desktop-grid-2 {
