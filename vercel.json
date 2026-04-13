@@ -1,12 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/createUpiSubscriptionOrder",
-      "destination": "https://asia-south1-ledger-app-599cc.cloudfunctions.net/createUpiSubscriptionOrder"
-    },
-    {
-      "source": "/verifyUpiSubscriptionPayment",
-      "destination": "https://asia-south1-ledger-app-599cc.cloudfunctions.net/verifyUpiSubscriptionPayment"
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
     }
   ]
 }

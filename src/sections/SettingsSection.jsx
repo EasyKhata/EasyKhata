@@ -1,7 +1,29 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../firebase";
+import { getIdToken } from "firebase/auth";
+import { db } from "../firebase";
+import { auth } from "../firebase";
+
+const FUNCTIONS_BASE = "https://asia-south1-ledger-app-599cc.cloudfunctions.net";
+
+async function callFunction(name, data) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not signed in.");
+  const token = await getIdToken(user);
+  const res = await fetch(`${FUNCTIONS_BASE}/${name}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ data })
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    const msg = json?.error?.message || `Request failed (${res.status})`;
+    const err = new Error(msg);
+    err.code = json?.error?.status || "internal";
+    throw err;
+  }
+  return json;
+}
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
@@ -1062,9 +1084,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         return;
       }
 
-      const createOrder = httpsCallable(functions, "createUpiSubscriptionOrder");
-      const verifyPayment = httpsCallable(functions, "verifyUpiSubscriptionPayment");
-      const orderResponse = await createOrder({
+      const orderResponse = await callFunction("createUpiSubscriptionOrder", {
         targetPlan,
         billingCycle,
         note: cleanNote
@@ -1103,7 +1123,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         },
         handler: async response => {
           try {
-            await verifyPayment({
+            await callFunction("verifyUpiSubscriptionPayment", {
               orderId: response.razorpay_order_id,
               paymentId: response.razorpay_payment_id,
               signature: response.razorpay_signature
