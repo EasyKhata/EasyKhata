@@ -13,6 +13,7 @@ import {
   saveDismissedReminderIds,
   saveSentBrowserReminderIds
 } from "../utils/reminders";
+import { formatSubscriptionDate, isTrialActive } from "../utils/subscription";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 
 const Dashboard = lazy(() => import("../sections/Dashboard"));
@@ -265,7 +266,7 @@ export default function MainApp() {
   const { user } = useAuth();
   const { theme, toggle } = useTheme();
   const data = useData();
-  const { account, organizations = [], activeOrgId, switchOrganization, deleteOrganization } = data;
+  const { account, organizations = [], activeOrgId, switchOrganization, deleteOrganization, isReadOnlyFreeMode } = data;
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [year, setYear] = useState(now.getFullYear());
@@ -274,6 +275,7 @@ export default function MainApp() {
   const [showReminders, setShowReminders] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
+  const [readOnlyNotice, setReadOnlyNotice] = useState(null);
 
   function handleNavigate(target) {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
@@ -305,6 +307,21 @@ export default function MainApp() {
     window.addEventListener("ledger:navigate", handleAppNavigate);
     return () => window.removeEventListener("ledger:navigate", handleAppNavigate);
   }, []);
+
+  useEffect(() => {
+    const handleReadOnlyBlocked = event => {
+      const msg = event?.detail?.message || "Free plan is read-only. Upgrade to Pro to continue.";
+      setReadOnlyNotice({ message: msg, key: Date.now() });
+    };
+    window.addEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);
+    return () => window.removeEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);
+  }, []);
+
+  useEffect(() => {
+    if (!readOnlyNotice) return undefined;
+    const timeout = window.setTimeout(() => setReadOnlyNotice(null), 2800);
+    return () => window.clearTimeout(timeout);
+  }, [readOnlyNotice]);
 
   useEffect(() => {
     setDismissedIds(getDismissedReminderIds(user?.id));
@@ -341,6 +358,8 @@ export default function MainApp() {
   }, [dismissedIds, liveReminders, data.notificationPrefs?.browserEnabled, user?.id]);
 
   const isAdmin = user?.role === "admin";
+  const trialActive = isTrialActive(user);
+  const trialEndLabel = formatSubscriptionDate(user?.subscriptionEndsAt);
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
   const orgConfig = getOrgConfig(currentOrgType);
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
@@ -517,6 +536,26 @@ export default function MainApp() {
           </span>
         )}
       </div>
+
+      {isReadOnlyFreeMode && !isAdmin && (
+        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+          Free Plan (Read-only): You can view existing records and download reports. Create, edit, and delete actions require Pro.
+        </div>
+      )}
+
+      {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && (
+        <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, lineHeight: 1.5 }}>
+          Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}. You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+        </div>
+      )}
+
+      {readOnlyNotice && (
+        <div style={{ position: "fixed", left: 16, right: 16, bottom: 86, zIndex: 140, display: "flex", justifyContent: "center" }}>
+          <div style={{ maxWidth: 520, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13, fontWeight: 700, boxShadow: "0 10px 24px rgba(0,0,0,0.25)" }}>
+            {readOnlyNotice.message}
+          </div>
+        </div>
+      )}
 
       <div className="content-scroll">
         {renderTabContent()}

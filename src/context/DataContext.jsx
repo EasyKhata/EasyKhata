@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { collection, deleteDoc, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations } from "../utils/subscription";
+import { getMaxOrganizations, isFreeReadOnlyMode } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, deleteOrgCollectionDocs, sortOrgCollectionRecords, syncOrgCollection, hydrateUserOrgCollections } from "../utils/firestoreOrgCollections";
@@ -329,8 +329,10 @@ export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
+  const readOnlyFreeMode = isFreeReadOnlyMode(user);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
+  const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
   const invoiceSyncRef = useRef({});
 
@@ -986,6 +988,23 @@ export function DataProvider({ children }) {
   const update = useCallback(
     updater => {
       if (!user?.id) return;
+      if (readOnlyFreeMode) {
+        if (typeof window !== "undefined") {
+          const nowMs = Date.now();
+          if (nowMs - readOnlyNoticeAtRef.current > 1200) {
+            readOnlyNoticeAtRef.current = nowMs;
+            window.dispatchEvent(
+              new CustomEvent("ledger:readonly-blocked", {
+                detail: {
+                  tone: "warning",
+                  message: "Free plan is read-only. Upgrade to Pro to create, edit, or delete records."
+                }
+              })
+            );
+          }
+        }
+        return;
+      }
 
       let nextState;
 
@@ -1007,7 +1026,7 @@ export function DataProvider({ children }) {
         persistState(nextState);
       }
     },
-    [persistState, user?.id]
+    [persistState, readOnlyFreeMode, user?.id]
   );
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
@@ -1066,6 +1085,7 @@ export function DataProvider({ children }) {
 
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
+    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
     if (data.sharedLedger?.id) return { error: "Org creation is not available inside a shared ledger." };
 
     const orgCount = Object.keys(data.orgs || {}).length;
@@ -1112,6 +1132,7 @@ export function DataProvider({ children }) {
 
   async function deleteOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
+    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
     if (data.sharedLedger?.id) return { error: "Org deletion is not available inside a shared ledger." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
@@ -1373,6 +1394,7 @@ export function DataProvider({ children }) {
       value={{
         ...data,
         loaded,
+        isReadOnlyFreeMode: readOnlyFreeMode,
         organizations,
         activeOrgId: data.activeOrgId,
         maxOrganizations,

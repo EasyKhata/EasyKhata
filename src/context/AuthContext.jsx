@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import {
   EmailAuthProvider,
   createUserWithEmailAndPassword,
-  fetchSignInMethodsForEmail,
   onAuthStateChanged,
   reauthenticateWithCredential,
   sendEmailVerification,
@@ -267,6 +266,28 @@ export function AuthProvider({ children }) {
     return { ...nextProfile, ...updates };
   }
 
+  async function downgradeExpiredTrialIfNeeded(firebaseUser, profile = null) {
+    const nextProfile = profile || (await getDoc(doc(db, "users", firebaseUser.uid))).data() || {};
+    if ((nextProfile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE) !== SUBSCRIPTION_STATUS.TRIAL) {
+      return nextProfile;
+    }
+
+    const trialEndsAt = new Date(nextProfile?.subscriptionEndsAt || "");
+    if (!nextProfile?.subscriptionEndsAt || Number.isNaN(trialEndsAt.getTime()) || trialEndsAt.getTime() >= Date.now()) {
+      return nextProfile;
+    }
+
+    const updates = {
+      plan: PLANS.FREE,
+      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
+      subscriptionEndsAt: "",
+      updatedAt: new Date().toISOString()
+    };
+
+    await updateDoc(doc(db, "users", firebaseUser.uid), updates);
+    return { ...nextProfile, ...updates };
+  }
+
   function buildSessionUser(firebaseUser, profile = {}) {
     const { activeOrgId, activeOrg } = getActiveOrgProfile(profile);
     return {
@@ -321,7 +342,8 @@ export function AuthProvider({ children }) {
 
         await ensureUserProfile(firebaseUser, readPendingProfile(firebaseUser.email));
         const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-        const profile = await activateTrialIfEligible(firebaseUser, snap.exists() ? snap.data() : {});
+        const trialProfile = await activateTrialIfEligible(firebaseUser, snap.exists() ? snap.data() : {});
+        const profile = await downgradeExpiredTrialIfNeeded(firebaseUser, trialProfile);
 
         setUser(buildSessionUser(firebaseUser, profile));
         setCurrentUser(firebaseUser.uid);
@@ -338,7 +360,8 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     try {
-      const userCred = await signInWithEmailAndPassword(auth, email, password);
+      const normalizedEmail = String(email || "").trim().toLowerCase();
+      const userCred = await signInWithEmailAndPassword(auth, normalizedEmail, password);
 
       if (!userCred.user.emailVerified) {
         await signOut(auth);
@@ -348,7 +371,8 @@ export function AuthProvider({ children }) {
 
       await ensureUserProfile(userCred.user, readPendingProfile(userCred.user.email));
       const snap = await getDoc(doc(db, "users", userCred.user.uid));
-      const profile = await activateTrialIfEligible(userCred.user, snap.exists() ? snap.data() : {});
+      const trialProfile = await activateTrialIfEligible(userCred.user, snap.exists() ? snap.data() : {});
+      const profile = await downgradeExpiredTrialIfNeeded(userCred.user, trialProfile);
 
       if (profile?.blocked) {
         await signOut(auth);
@@ -364,17 +388,7 @@ export function AuthProvider({ children }) {
     } catch (err) {
       if (err.code === "auth/user-not-found") return { error: "No account exists with this email address." };
       if (err.code === "auth/wrong-password") return { error: "Incorrect password." };
-      if (err.code === "auth/invalid-credential") {
-        try {
-          const signInMethods = await fetchSignInMethodsForEmail(auth, email);
-          if (!signInMethods.length) {
-            return { error: "No account exists with this email address." };
-          }
-        } catch {
-          return { error: "We couldn't verify this account right now. Please try again." };
-        }
-        return { error: "Incorrect password." };
-      }
+      if (err.code === "auth/invalid-credential") return { error: "Incorrect password." };
       if (err.code === "auth/invalid-email") return { error: "Invalid email format." };
       return { error: err.message };
     }

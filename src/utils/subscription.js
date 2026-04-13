@@ -109,6 +109,13 @@ export function isSubscriptionActive(user) {
   return false;
 }
 
+export function isFreeReadOnlyMode(user) {
+  if (isAdminUser(user)) return false;
+  if (isReviewAccessEnabled()) return false;
+  const plan = getUserPlan(user);
+  return plan === PLANS.FREE;
+}
+
 export function canUseFeature(user, feature, usage = {}) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
@@ -124,6 +131,7 @@ export function canUseFeature(user, feature, usage = {}) {
       return plan !== PLANS.FREE || (usage.customerCount || 0) < FREE_LIMITS.customers;
     case "invoicePdf":
     case "reports":
+      return true;
     case "notifications":
     case "advancedAnalytics":
     case "budgets":
@@ -157,8 +165,8 @@ export function getUpgradeCopy(feature) {
       };
     case "reports":
       return {
-        title: "Reports are available on Pro",
-        message: "Upgrade to Pro to download monthly reports, GST summaries, and business insights."
+        title: "Reports are available",
+        message: "You can download existing reports on the Free plan. Upgrade to Pro for editing, alerts, and advanced insights."
       };
     case "notifications":
       return {
@@ -232,7 +240,7 @@ export function getPlanSummary(user) {
     title: `${PLAN_LABELS[plan] || "Free"} plan`,
     message:
       plan === PLANS.FREE
-        ? "Basic bookkeeping is active. Upgrade to unlock premium invoicing, reports, alerts, and analytics."
+        ? "Free plan is read-only. You can view existing data and download reports, but create/edit/delete requires an active paid plan."
         : `${PLAN_LABELS[plan] || "Plan"} access is active.`
   };
 }
