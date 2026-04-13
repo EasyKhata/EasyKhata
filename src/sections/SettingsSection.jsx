@@ -187,7 +187,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
 }
 
 export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
-  const { user, logout, updateProfile, changePassword } = useAuth();
+  const { user, logout, updateProfile, changePassword, setUser } = useAuth();
   const {
     account,
     currency,
@@ -1121,6 +1121,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           targetPlan,
           billingCycle
         },
+        modal: {
+          ondismiss: () => {
+            setSubmittingPayment(false);
+            showNotice("Payment cancelled. Your subscription has not changed. You can try again anytime.");
+          }
+        },
         handler: async response => {
           try {
             await callFunction("verifyUpiSubscriptionPayment", {
@@ -1129,33 +1135,36 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               signature: response.razorpay_signature
             });
 
-            showNotice(`Payment successful. ${PLAN_LABELS[targetPlan] || "plan"} is now active.`, "success");
-            setPlanRequestForm({
-              targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
-              billingCycle: BILLING_CYCLES.MONTHLY,
-              note: ""
-            });
+            // Immediately update user plan in context — no manual refresh needed
+            const nowIso = new Date().toISOString();
+            const durationDays = billingCycle === BILLING_CYCLES.YEARLY ? 365 : 30;
+            const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
+            setUser(prev => prev ? {
+              ...prev,
+              plan: targetPlan,
+              subscriptionStatus: "active",
+              subscriptionEndsAt: endsAt,
+              trialEligible: false,
+              updatedAt: nowIso
+            } : prev);
+
+            setPlanRequestForm({ targetPlan: PLANS.PRO, billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
             setScreen("main");
+            showNotice(`Payment successful! ${PLAN_LABELS[targetPlan] || "Pro"} is now active.`, "success");
           } catch (verifyErr) {
             console.error("Payment verification error:", verifyErr);
-            showNotice(verifyErr?.message || "Payment was received but verification is pending. Please wait a moment and refresh.");
+            showNotice(verifyErr?.message || "Payment received but activation is pending. Please wait a moment — your plan will update automatically.");
           }
         }
       });
 
       checkout.on("payment.failed", failure => {
-        const message = failure?.error?.description || "Payment failed. Please try again.";
-        showNotice(message);
+        setSubmittingPayment(false);
+        const reason = failure?.error?.description || failure?.error?.reason || "Payment failed.";
+        showNotice(`Payment failed: ${reason} Please try again.`);
       });
 
       checkout.open();
-
-      showNotice("Secure checkout opened. Complete payment to activate your subscription.", "success");
-      setPlanRequestForm({
-        targetPlan: targetPlan === PLANS.BUSINESS ? PLANS.BUSINESS : PLANS.PRO,
-        billingCycle: BILLING_CYCLES.MONTHLY,
-        note: ""
-      });
     } catch (err) {
       console.error("Payment request error:", err);
       if (err?.code === "permission-denied") {
