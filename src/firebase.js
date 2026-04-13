@@ -18,4 +18,19 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
-export const functions = getFunctions(app, "asia-south1");
+
+function resolveFunctionsRegionOrDomain() {
+  if (typeof window === "undefined") return "asia-south1";
+  const host = window.location.hostname;
+  if (
+    host === "www.easykhata.net" ||
+    host === "easykhata.net" ||
+    host === "ledger-app-599cc.web.app" ||
+    host === "ledger-app-599cc.firebaseapp.com"
+  ) {
+    return window.location.origin;
+  }
+  return "asia-south1";
+}
+
+export const functions = getFunctions(app, resolveFunctionsRegionOrDomain());
