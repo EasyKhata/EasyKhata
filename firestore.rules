@@ -36,6 +36,22 @@ service cloud.firestore {
         request.resource.data.trialEligible == false;
     }
 
+    function isTrialExpiryDowngradeForSelf(userId) {
+      return isOwner(userId) &&
+        resource.data.role == request.resource.data.role &&
+        resource.data.blocked == request.resource.data.blocked &&
+        resource.data.sharedLedgerId == request.resource.data.sharedLedgerId &&
+        resource.data.sharedLedgerRole == request.resource.data.sharedLedgerRole &&
+        resource.data.email == request.resource.data.email &&
+        resource.data.plan == "pro" &&
+        resource.data.subscriptionStatus == "trial" &&
+        resource.data.trialEligible == false &&
+        request.resource.data.plan == "free" &&
+        request.resource.data.subscriptionStatus == "active" &&
+        request.resource.data.subscriptionEndsAt == "" &&
+        request.resource.data.trialEligible == false;
+    }
+
     function isSafeOwnerUserUpdate(userId) {
       return isOwner(userId) && (
         (
@@ -50,7 +66,8 @@ service cloud.firestore {
           resource.data.sharedLedgerRole == request.resource.data.sharedLedgerRole &&
           resource.data.email == request.resource.data.email
         ) ||
-        isTrialActivationForSelf(userId)
+        isTrialActivationForSelf(userId) ||
+        isTrialExpiryDowngradeForSelf(userId)
       );
     }
 
