@@ -11,6 +11,12 @@ const db = admin.firestore();
 const RAZORPAY_KEY_ID = defineSecret("RAZORPAY_KEY_ID");
 const RAZORPAY_KEY_SECRET = defineSecret("RAZORPAY_KEY_SECRET");
 const RAZORPAY_WEBHOOK_SECRET = defineSecret("RAZORPAY_WEBHOOK_SECRET");
+const CALLABLE_CORS_ORIGINS = [
+  "https://www.easykhata.net",
+  "https://easykhata.net",
+  "https://ledger-app-599cc.web.app",
+  "https://ledger-app-599cc.firebaseapp.com"
+];
 
 const PLAN_PRICES = {
   pro: { monthly: 49, yearly: 499 },
@@ -115,7 +121,7 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
   });
 }
 
-exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
+exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", cors: CALLABLE_CORS_ORIGINS, secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Please sign in to continue.");
   }
@@ -177,7 +183,7 @@ exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", secrets: [R
   };
 });
 
-exports.verifyUpiSubscriptionPayment = onCall({ region: "asia-south1", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
+exports.verifyUpiSubscriptionPayment = onCall({ region: "asia-south1", cors: CALLABLE_CORS_ORIGINS, secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Please sign in to continue.");
   }
