@@ -9,8 +9,6 @@ import {
   calculateFreelancerYearlyDashboard,
   calculatePersonalDashboard,
   calculatePersonalYearlyDashboard,
-  calculateRetailDashboard,
-  calculateRetailYearlyDashboard,
   calculateSmallBusinessDashboard,
   calculateSmallBusinessYearlyDashboard,
   calculateYearlyDashboard,
@@ -202,6 +200,37 @@ function ApartmentUsagePie({ stats, sym, viewMode }) {
   );
 }
 
+function QuickstartChecklistCard({ progressLabel, items }) {
+  return (
+    <div className="card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Quickstart Checklist</div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 700 }}>{progressLabel}</div>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
+        Finish these two actions to unlock your fastest path to first value.
+      </div>
+      <div className="card" style={{ marginBottom: 0, padding: 12 }}>
+        {items.map((item, index) => (
+          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: index === items.length - 1 ? 0 : 10, marginBottom: index === items.length - 1 ? 0 : 10, borderBottom: index === items.length - 1 ? "none" : "1px solid var(--border)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <span style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${item.completed ? "var(--accent)" : "var(--border)"}`, background: item.completed ? "var(--accent-deep)" : "transparent", color: item.completed ? "var(--accent)" : "var(--text-dim)", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                {item.completed ? "v" : String(index + 1)}
+              </span>
+              <div style={{ fontSize: 13, color: "var(--text)", opacity: item.completed ? 0.72 : 1 }}>{item.label}</div>
+            </div>
+            {!item.completed && (
+              <button className="btn-secondary" type="button" style={{ padding: "8px 10px", fontSize: 11, color: "var(--blue)", flexShrink: 0 }} onClick={item.onAction}>
+                Open
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav }) {
   const data = useData();
   const { user, updateProfile } = useAuth();
@@ -228,13 +257,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
-  const isRetailOrg = orgType === ORG_TYPES.RETAIL;
   const stats = isApartmentOrg
     ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
     : isFreelancerOrg
       ? (viewMode === "month" ? calculateFreelancerDashboard(data, year, month) : calculateFreelancerYearlyDashboard(data, year))
-      : isRetailOrg
-        ? (viewMode === "month" ? calculateRetailDashboard(data, year, month) : calculateRetailYearlyDashboard(data, year))
     : isSmallBusinessOrg
       ? (viewMode === "month" ? calculateSmallBusinessDashboard(data, year, month) : calculateSmallBusinessYearlyDashboard(data, year))
     : isPersonalOrg
@@ -245,21 +271,30 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
   const reviewAccessEnabled = isReviewAccessEnabled();
+  const hasCustomerRecord = (data.customers || []).length > 0;
+  const hasInvoiceRecord = (data.invoices || []).some(item => String(item?.documentType || "invoice") === "invoice");
+  const hasIncomeRecord = (data.income || []).length > 0;
+  const hasDuesRecord = (data.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
+  const firstValueCompleted = isApartmentOrg ? hasDuesRecord : (orgConfig.hideInvoices ? hasIncomeRecord : hasInvoiceRecord);
+  const quickstartItems = [
+    {
+      id: "people",
+      label: isApartmentOrg ? "Add first resident/flat" : isPersonalOrg ? "Add first family member" : "Add first customer",
+      completed: hasCustomerRecord,
+      onAction: () => onNav({ tab: "org", screen: "customers" })
+    },
+    {
+      id: "value",
+      label: isApartmentOrg ? "Record first dues collection" : orgConfig.hideInvoices ? "Record first income" : "Create first invoice",
+      completed: firstValueCompleted,
+      onAction: () => onNav({ tab: orgConfig.hideInvoices || isApartmentOrg ? "income" : "invoices", quickstart: isApartmentOrg ? "first-dues" : orgConfig.hideInvoices ? "first-income" : "first-invoice" })
+    }
+  ];
+  const quickstartDone = quickstartItems.filter(item => item.completed).length;
+  const showQuickstartChecklist = !showSetupGuide && quickstartDone < quickstartItems.length;
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
-  const heroSub = isRetailOrg
-    ? (viewMode === "month"
-      ? ((stats.supplierBalanceTotal || 0) > 0
-        ? `${fmtMoney(stats.supplierBalanceTotal || 0, sym)} is still pending across supplier balances this month.`
-        : stats.profit >= 0
-          ? "Daily sales are covering shop purchases and running costs this month."
-          : "Purchases and shop costs are ahead of sales this month.")
-      : ((stats.supplierBalanceTotal || 0) > 0
-        ? `${fmtMoney(stats.supplierBalanceTotal || 0, sym)} is still open across supplier balances this year.`
-        : stats.profit >= 0
-          ? "The shop stayed ahead of purchases and costs across the year."
-          : "Purchases and shop costs are ahead of sales across the year."))
-    : isSmallBusinessOrg
+  const heroSub = isSmallBusinessOrg
     ? (viewMode === "month"
       ? (stats.pendingSalesTotal > 0
         ? `${fmtMoney(stats.pendingSalesTotal, sym)} is still awaiting collection from customers this month.`
@@ -333,6 +368,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
+          {showQuickstartChecklist && (
+            <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
             <Tile label={viewMode === "month" ? "Collections" : "Total Collections"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Recorded maintenance collections" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Society Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, utilities, repairs, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
@@ -489,6 +527,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
 
     return (
       <div style={{ paddingBottom: 20 }}>
+        <div style={{ padding: "18px 18px 0" }}>
+          {showQuickstartChecklist && (
+            <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
+          )}
+        </div>
         <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
             Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
@@ -608,141 +651,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav }
                         <div style={{ width: 8, height: `${Math.max(8, (item.expenses / freelancerMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
                       </div>
                       <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
-                      <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </Collapsible>
-        </div>
-
-        {onboardingGuide}
-      </div>
-    );
-  }
-
-  if (isRetailOrg) {
-    const retailHeroSub = viewMode === "month"
-      ? (stats.profit >= 0 ? "Sales are covering purchases and shop running costs this month." : "Purchases and shop costs are ahead of sales this month.")
-      : (stats.profit >= 0 ? "Sales stayed ahead of purchases and shop costs this year." : "Purchases and shop costs are ahead of sales this year.");
-    const retailCashFlow = viewMode === "month" ? stats.cashFlow : stats.monthlyBreakdown;
-    const retailMaxCashFlow = Math.max(1, ...retailCashFlow.map(item => Math.max(item.income, item.expenses)));
-
-    return (
-      <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-            Retail Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-          </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
-            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{retailHeroSub}</div>
-        </div>
-
-        <div style={{ padding: "20px 18px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
-            <Tile label={viewMode === "month" ? "Sales" : "Total Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Recorded daily sales" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
-            <Tile label={viewMode === "month" ? "Purchases & Expenses" : "Total Purchases & Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Stock buying plus shop costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
-            <Tile label="Stock Value" value={fmtMoney(stats.inventoryValue || 0, sym)} color="var(--blue)" sub={`${stats.inventoryCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
-            <Tile label="Supplier Dues" value={fmtMoney(stats.supplierBalanceTotal || 0, sym)} color="var(--gold)" sub={`${stats.suppliersWithBalance.length || 0} supplier account(s) open`} onClick={() => onNav("settings")} />
-            <Tile label="Stock Purchases" value={fmtMoney(stats.stockPurchaseTotal || 0, sym)} color="var(--purple)" sub={viewMode === "month" ? "Inventory bought this period" : "Stock buying across the year"} onClick={() => onNav("expenses")} />
-            <Tile label="Low Stock" value={String(stats.lowStockItems.length || 0)} color={(stats.lowStockItems.length || 0) > 0 ? "var(--danger)" : "var(--accent)"} sub="Products needing refill soon" onClick={() => onNav("settings")} />
-          </div>
-
-          <Collapsible title="Inventory Snapshot" icon="📦" color="var(--blue)" count={stats.inventoryCount || 0} defaultOpen>
-            <div className="card">
-              {stats.inventoryCount === 0 ? (
-                <EmptyState title="No inventory added yet" message="Add your shop products in Settings so stock and sales become easier to track." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--blue)" />
-              ) : (
-                (stats.topProducts || []).slice(0, 6).map(item => (
-                  <div key={item.productName} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.productName}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[`${item.stock} in stock`, item.expiryDate ? `Exp ${item.expiryDate}` : "No expiry date"].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(item.inventoryValue || 0, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Low Stock Watch" icon="⚠" color="var(--danger)" count={stats.lowStockItems.length || 0} defaultOpen={stats.lowStockItems.length > 0}>
-            <div className="card">
-              {stats.lowStockItems.length === 0 ? (
-                <EmptyState title="No low-stock alerts" message="Tracked inventory levels look healthy right now." accentColor="var(--accent)" />
-              ) : (
-                stats.lowStockItems.slice(0, 6).map(item => (
-                  <div key={item.productName} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.productName}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{item.expiryDate ? `Expiry ${item.expiryDate}` : "No expiry date added"}</div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{item.stock}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Supplier Balances" icon="🏷" color="var(--gold)" count={stats.suppliersWithBalance.length || 0} defaultOpen={stats.suppliersWithBalance.length > 0}>
-            <div className="card">
-              {stats.suppliersCount === 0 ? (
-                <EmptyState title="No suppliers added yet" message="Add suppliers in Settings to track balances and contacts." actionLabel="Open Settings" onAction={() => onNav("settings")} accentColor="var(--gold)" />
-              ) : stats.suppliersWithBalance.length === 0 ? (
-                <EmptyState title="Supplier balances are clear" message="No outstanding supplier credit is recorded right now." accentColor="var(--accent)" />
-              ) : (
-                stats.suppliersWithBalance.slice(0, 6).map(supplier => (
-                  <div key={supplier.supplierName} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{supplier.supplierName}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{supplier.contact || "No contact added"}</div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(supplier.creditBalance || 0, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Shop Alerts" icon="🚨" color="var(--gold)" count={stats.alertItems.length} defaultOpen={stats.alertItems.length > 0}>
-            <div className="card">
-              {stats.alertItems.length === 0 ? (
-                <EmptyState title="No shop alerts right now" message="Sales, stock, and supplier balances look stable for the selected period." accentColor="var(--accent)" />
-              ) : (
-                stats.alertItems.map((alert, index) => {
-                  const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
-                  return (
-                    <div key={`${alert.title}-${index}`} className="card-row">
-                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Sales Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
-            <div className="card" style={{ padding: "18px" }}>
-              {!showAdvanced ? (
-                <EmptyState title="Trend view is on Pro" message="Upgrade to Pro to compare shop sales and expenses over time." accentColor="var(--blue)" />
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: `repeat(${viewMode === "month" ? 6 : 12}, 1fr)`, gap: viewMode === "month" ? 8 : 6, alignItems: "end", height: 180 }}>
-                  {retailCashFlow.map(item => (
-                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <div style={{ display: "flex", alignItems: "end", gap: viewMode === "month" ? 4 : 2, height: 132 }}>
-                        <div style={{ width: viewMode === "month" ? 12 : 8, height: `${Math.max(viewMode === "month" ? 10 : 8, (item.income / retailMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                        <div style={{ width: viewMode === "month" ? 12 : 8, height: `${Math.max(viewMode === "month" ? 10 : 8, (item.expenses / retailMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                      </div>
-                      <div style={{ fontSize: viewMode === "month" ? 11 : 10, fontWeight: 600, color: "var(--text-dim)" }}>{viewMode === "month" ? item.shortLabel : item.label.slice(0, 1)}</div>
                       <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
                     </div>
                   ))}

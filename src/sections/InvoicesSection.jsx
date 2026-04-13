@@ -145,7 +145,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function InvoicesSection({ year, month, documentType = "invoice", orgType }) {
+export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled }) {
   const d = useData();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -179,6 +179,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
   const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
   const [adminRequestError, setAdminRequestError] = useState("");
+  const [guidedField, setGuidedField] = useState("");
   const serviceOptions = (d.orgRecords?.services || []).map(service => ({
     id: service.id,
     name: service.serviceName || "",
@@ -328,6 +329,23 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
     return fields.includes(needle);
   });
+
+  useEffect(() => {
+    if (!d.loaded) return;
+    if (!quickstartIntent?.action) return;
+    if (quickstartIntent.action !== "first-invoice") return;
+    if (isQuote || isApartmentOrg) return;
+
+    setGuidedField("customerId");
+    openNew();
+    onQuickstartHandled?.();
+  }, [d.loaded, isApartmentOrg, isQuote, onQuickstartHandled, quickstartIntent?.action, quickstartIntent?.token]);
+
+  useEffect(() => {
+    if (!guidedField) return undefined;
+    const timeout = window.setTimeout(() => setGuidedField(""), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [guidedField]);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -573,9 +591,20 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       d.updateInvoice(invoice);
       syncApartmentLinkedEntries(invoice);
     } else {
+      const hadAnyInvoice = (d.invoices || []).some(item => String(item?.documentType || "invoice") === "invoice");
       const createdInvoice = { ...invoice, id: uid() };
       d.addInvoice(createdInvoice);
       syncApartmentLinkedEntries(createdInvoice);
+      if (!hadAnyInvoice && !isQuote && !isApartmentOrg) {
+        window.dispatchEvent(new CustomEvent("ledger:first-success", {
+          detail: {
+            title: "First invoice created",
+            message: "Great start. Next, record one expense to unlock a useful profit snapshot.",
+            actionLabel: "Open Expenses",
+            target: { tab: "expenses" }
+          }
+        }));
+      }
     }
 
     closeForm();
@@ -650,15 +679,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
   return (
     <div style={{ paddingBottom: 100 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+              {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
+            </div>
+            <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--blue)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+              {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
+            </div>
           </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--blue)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
+          {!isAdmin && (
+            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+              + New {documentLabel}
+            </button>
+          )}
         </div>
-      </div>
 
       <div style={{ padding: "22px 18px 0" }}>
         {monthInv.length > 0 && (
@@ -994,7 +1030,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             </Field>
 
             <Field label={isAdmin ? "User" : config.customerEntryLabel} hint={isAdmin ? "Select a user who made the payment." : isApartmentOrg ? "Optional. Pick a flat record to auto-fill the name, or leave it empty and type the recipient manually." : `Select an existing ${config.customerEntryLabel.toLowerCase()} to auto-fill billing and shipping details.`}>
-              <Select value={form.customerId} onChange={event => selectCustomer(event.target.value)}>
+              <Select
+                value={form.customerId}
+                onChange={event => selectCustomer(event.target.value)}
+                autoFocus={guidedField === "customerId"}
+                style={guidedField === "customerId" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
+              >
                 <option value="">{isAdmin ? "-- Select user --" : `-- Select ${config.customerEntryLabel.toLowerCase()} --`}</option>
                 {(isAdmin ? users : (isApartmentOrg ? apartmentDocumentOptions : d.customers)).map(entity => (
                   <option key={entity.id} value={entity.id}>{isApartmentOrg ? [entity.flatNumber, entity.ownerName || entity.tenantName || "", !entity.isBuilding ? societyName : ""].filter(Boolean).join(" - ") : entity.name || entity.email}</option>

@@ -177,14 +177,13 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : field.type === "month" ? CURRENT_MONTH : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function IncomeSection({ year, month, orgType }) {
+export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled }) {
   const d = useData();
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
-  const isRetailOrg = getOrgType(orgType) === ORG_TYPES.RETAIL;
   const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
@@ -201,6 +200,7 @@ export default function IncomeSection({ year, month, orgType }) {
   const [saleItems, setSaleItems] = useState([newSaleItem()]);
   const [saleDiscount, setSaleDiscount] = useState("");
   const [salePhone, setSalePhone] = useState("");
+  const [guidedField, setGuidedField] = useState("");
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
   const openFlatManager = openPeopleManager;
 
@@ -388,6 +388,62 @@ export default function IncomeSection({ year, month, orgType }) {
     if (!flatNumber || collectionType !== "Monthly Maintenance" || collectionMonth !== mk) return null;
     return apartmentCollectionStatus.find(flat => String(flat.value || "").trim() === flatNumber) || null;
   }, [apartmentCollectionStatus, form.collectionMonth, form.collectionType, form.date, form.flatNumber, isApartmentOrg, mk]);
+
+  useEffect(() => {
+    if (!d.loaded) return;
+    if (!quickstartIntent?.action) return;
+
+    if (quickstartIntent.action === "first-dues" && isApartmentOrg) {
+      const targetFlat = apartmentCollectionStatus.find(flat => !flat.paidEntry) || apartmentFlats[0] || null;
+      if (!targetFlat) {
+        openFlatManager();
+        onQuickstartHandled?.();
+        return;
+      }
+
+      setEditId(null);
+      setForm({
+        ...buildBlankForm(year, month, config),
+        label: `Monthly Maintenance - ${targetFlat.value}`,
+        amount: targetFlat.monthlyAmount > 0 ? String(targetFlat.monthlyAmount) : "",
+        date: defaultCollectionDate,
+        flatNumber: targetFlat.value,
+        residentName: targetFlat.ownerName || "",
+        collectionType: "Monthly Maintenance",
+        collectionMonth: mk
+      });
+      setGuidedField("flatNumber");
+      setFormError("");
+      setShowForm(true);
+      onQuickstartHandled?.();
+      return;
+    }
+
+    if (quickstartIntent.action === "first-income" && !isApartmentOrg) {
+      setGuidedField("label");
+      openNew();
+      onQuickstartHandled?.();
+    }
+  }, [
+    apartmentCollectionStatus,
+    apartmentFlats,
+    config,
+    d.loaded,
+    defaultCollectionDate,
+    isApartmentOrg,
+    mk,
+    month,
+    onQuickstartHandled,
+    quickstartIntent?.action,
+    quickstartIntent?.token,
+    year
+  ]);
+
+  useEffect(() => {
+    if (!guidedField) return undefined;
+    const timeout = window.setTimeout(() => setGuidedField(""), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [guidedField]);
 
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {
@@ -702,8 +758,33 @@ export default function IncomeSection({ year, month, orgType }) {
       payload.saleStatus = simpleSaleStatus === "pending" ? "pending" : "paid";
     }
 
-    if (editId) d.updateIncome({ ...payload, id: editId });
-    else d.addIncome(payload);
+    if (editId) {
+      d.updateIncome({ ...payload, id: editId });
+    } else {
+      const hadIncome = (d.income || []).length > 0;
+      const hadDues = (d.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
+      d.addIncome(payload);
+
+      if (isApartmentOrg && !hadDues && String(payload.collectionType || "").trim() === "Monthly Maintenance") {
+        window.dispatchEvent(new CustomEvent("ledger:first-success", {
+          detail: {
+            title: "First dues entry saved",
+            message: "Nice. Next, add one society expense to start reserve tracking.",
+            actionLabel: "Open Expenses",
+            target: { tab: "expenses" }
+          }
+        }));
+      } else if (!isApartmentOrg && !hadIncome) {
+        window.dispatchEvent(new CustomEvent("ledger:first-success", {
+          detail: {
+            title: "First income entry saved",
+            message: "Great momentum. Next, create one matching expense for a complete cashflow view.",
+            actionLabel: "Open Expenses",
+            target: { tab: "expenses" }
+          }
+        }));
+      }
+    }
 
     closeForm();
   }
@@ -721,6 +802,7 @@ export default function IncomeSection({ year, month, orgType }) {
     setPendingFlatPayments(current => [...current, flat.id]);
 
     try {
+      const hadDues = (d.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
       d.addIncome({
         label: `Monthly Maintenance - ${flat.value}`,
         amount: flat.monthlyAmount,
@@ -732,6 +814,16 @@ export default function IncomeSection({ year, month, orgType }) {
         residentName: flat.ownerName || "",
         collectionMonth: mk
       });
+      if (!hadDues) {
+        window.dispatchEvent(new CustomEvent("ledger:first-success", {
+          detail: {
+            title: "First dues entry saved",
+            message: "Great start. Next, record one society expense to track net reserve clearly.",
+            actionLabel: "Open Expenses",
+            target: { tab: "expenses" }
+          }
+        }));
+      }
     } finally {
       setPendingFlatPayments(current => current.filter(item => item !== flat.id));
     }
@@ -767,14 +859,19 @@ export default function IncomeSection({ year, month, orgType }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Total {config.incomeLabel} - {MONTHS[month]} {year}
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            Total {config.incomeLabel} - {MONTHS[month]} {year}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--accent)", letterSpacing: -0.5 }}>{fmtMoney(totalIncome, sym)}</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+            {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
+          </div>
         </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--accent)", letterSpacing: -0.5 }}>{fmtMoney(totalIncome, sym)}</div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
-        </div>
+        <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+          + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
+        </button>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -1172,7 +1269,13 @@ export default function IncomeSection({ year, month, orgType }) {
           ) : (
             <>
               <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required>
-                <Input placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`} value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} />
+                <Input
+                  placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`}
+                  value={form.label}
+                  onChange={e => setForm(current => ({ ...current, label: e.target.value }))}
+                  autoFocus={guidedField === "label"}
+                  style={guidedField === "label" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
+                />
               </Field>
               <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`}>
                 <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
@@ -1192,6 +1295,8 @@ export default function IncomeSection({ year, month, orgType }) {
                   ) : isApartmentOrg && field.key === "flatNumber" ? (
                     <Select
                       value={form.flatNumber || ""}
+                      autoFocus={guidedField === "flatNumber"}
+                      style={guidedField === "flatNumber" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
                       onChange={event => {
                         const nextFlatNumber = event.target.value;
                         const matchedFlat = flatOptions.find(option => option.value === nextFlatNumber);
@@ -1216,13 +1321,6 @@ export default function IncomeSection({ year, month, orgType }) {
                     <Select value={form.clientName || ""} onChange={event => setForm(current => ({ ...current, clientName: event.target.value, label: current.label || `${event.target.value} Payment` }))}>
                       <option value="">{clientOptions.length ? "Select client" : "Add clients in Settings first"}</option>
                       {clientOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </Select>
-                  ) : isRetailOrg && field.key === "productName" ? (
-                    <Select value={form.productName || ""} onChange={event => setForm(current => ({ ...current, productName: event.target.value, label: current.label || `${event.target.value} Sale` }))}>
-                      <option value="">{inventoryOptions.length ? "Select product" : "Add inventory in Settings first"}</option>
-                      {inventoryOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </Select>

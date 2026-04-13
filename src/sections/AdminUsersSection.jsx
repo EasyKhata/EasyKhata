@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
@@ -18,27 +18,54 @@ export default function AdminUsersSection() {
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [lastUserDoc, setLastUserDoc] = useState(null);
+  const [hasMoreUsers, setHasMoreUsers] = useState(true);
   const [adminError, setAdminError] = useState("");
+  const USERS_PAGE_SIZE = 60;
 
-  async function fetchAdminData() {
-    setLoading(true);
+  function sortUsersByCreatedAt(list = []) {
+    return [...list].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
+
+  async function fetchAdminData({ append = false } = {}) {
+    if (append) {
+      if (!hasMoreUsers || loadingMore) return;
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
     setAdminError("");
     try {
-      const usersSnapshot = await getDocs(collection(db, "users"));
-      setUsers(
-        usersSnapshot.docs
-          .map(item => ({
-            id: item.id,
-            ...item.data()
-          }))
-          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
-      );
+      const usersRef = collection(db, "users");
+      const usersQuery = append && lastUserDoc
+        ? query(usersRef, orderBy("createdAt", "desc"), startAfter(lastUserDoc), limit(USERS_PAGE_SIZE))
+        : query(usersRef, orderBy("createdAt", "desc"), limit(USERS_PAGE_SIZE));
+
+      const usersSnapshot = await getDocs(usersQuery);
+      const fetchedUsers = usersSnapshot.docs.map(item => ({
+        id: item.id,
+        ...item.data()
+      }));
+
+      setUsers(prev => (append ? sortUsersByCreatedAt([...prev, ...fetchedUsers]) : sortUsersByCreatedAt(fetchedUsers)));
+      setLastUserDoc(usersSnapshot.docs.length ? usersSnapshot.docs[usersSnapshot.docs.length - 1] : (append ? lastUserDoc : null));
+      setHasMoreUsers(usersSnapshot.docs.length === USERS_PAGE_SIZE);
     } catch (err) {
       console.error("Admin users load error:", err);
       setAdminError("Failed to load admin user activity. Please check your Firestore permissions and try again.");
-      setUsers([]);
+      if (!append) {
+        setUsers([]);
+        setLastUserDoc(null);
+        setHasMoreUsers(false);
+      }
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -372,6 +399,18 @@ export default function AdminUsersSection() {
             </div>
           ))
         )}
+      </div>
+
+      <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+        <button
+          className="btn-secondary"
+          type="button"
+          onClick={() => fetchAdminData({ append: true })}
+          disabled={!hasMoreUsers || loadingMore}
+          style={{ minWidth: 180 }}
+        >
+          {loadingMore ? "Loading more users..." : hasMoreUsers ? "Load More Users" : "No More Users"}
+        </button>
       </div>
 
       <div className="card" style={{ marginTop: 18, padding: 16 }}>

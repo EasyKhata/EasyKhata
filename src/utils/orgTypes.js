@@ -2,8 +2,7 @@ export const ORG_TYPES = {
   PERSONAL: "personal",
   FREELANCER: "freelancer",
   SMALL_BUSINESS: "small_business",
-  APARTMENT: "apartment",
-  RETAIL: "retail"
+  APARTMENT: "apartment"
 };
 
 const BASE_CONFIG = {
@@ -40,13 +39,11 @@ export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
   { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage clients, payments received, invoices, and business expenses." },
   { value: ORG_TYPES.SMALL_BUSINESS, label: "Small Business", description: "Run a service business with clients, invoices, team, and operating expenses." },
-  { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." },
-  { value: ORG_TYPES.RETAIL, label: "Kirana Shop / Retail", description: "Track sales, purchases, inventory, and supplier balances." }
+  { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." }
 ];
 
 export function getSelectableOrgTypeOptions(currentType = "") {
-  const cleanCurrentType = getOrgType(currentType);
-  return ORG_TYPE_OPTIONS.filter(option => option.value !== ORG_TYPES.RETAIL || cleanCurrentType === ORG_TYPES.RETAIL);
+  return ORG_TYPE_OPTIONS;
 }
 
 export const ORG_TYPE_CONFIGS = {
@@ -230,60 +227,6 @@ export const ORG_TYPE_CONFIGS = {
     ],
     expenseCategories: ["Repairs", "Cleaning", "Security", "Water", "Electricity", "Housekeeping", "Lift", "Amenities", "Admin", "Legal", "Other"],
     extraSections: []
-  },
-  [ORG_TYPES.RETAIL]: {
-    ...BASE_CONFIG,
-    hideInvoices: true,
-    showCustomerFinancials: false,
-    incomeLabel: "Sales",
-    incomeEntryLabel: "Sale",
-    incomeActionLabel: "Add Sale",
-    expensesLabel: "Purchases & Expenses",
-    expensesEntryLabel: "Purchase / Expense",
-    expensesActionLabel: "Add Purchase",
-    invoicesLabel: "Bills",
-    customerLabel: "Customers / Udhar",
-    customerEntryLabel: "Customer",
-    customerNameLabel: "Customer Name",
-    customerNamePlaceholder: "Regular or credit customer name",
-    profileNameLabel: "Shop Name",
-    profileNamePlaceholder: "E.g. Reddy Kirana Store",
-    accountIntro: "Use this profile for daily sales, stock purchases, inventory tracking, and supplier balances.",
-    incomeFields: [
-      { key: "saleType", label: "Sale Type", type: "select", options: ["Counter Sale", "Home Delivery", "Credit Sale", "Online Order", "Other"] },
-      { key: "productName", label: "Product / Basket", type: "text", placeholder: "Select a product or describe the basket" },
-      { key: "quantity", label: "Quantity", type: "number", placeholder: "0" },
-    ],
-    expenseFields: [
-      { key: "purchaseType", label: "Entry Type", type: "select", options: ["Stock Purchase", "Supplier Payment", "Rent", "Utilities", "Staff", "Other"] },
-      { key: "supplierName", label: "Supplier", type: "text", placeholder: "Select supplier if relevant" }
-    ],
-    expenseCategories: ["Stock Purchase", "Supplier Payment", "Rent", "Utilities", "Staff", "Other"],
-    extraSections: [
-      {
-        key: "inventory",
-        label: "Inventory",
-        entryLabel: "Product",
-        empty: () => ({ productName: "", stock: "", expiryDate: "", price: "" }),
-        fields: [
-          { key: "productName", label: "Product Name", type: "text", required: true, placeholder: "Product name" },
-          { key: "stock", label: "Stock", type: "number", placeholder: "0" },
-          { key: "expiryDate", label: "Expiry Date", type: "date" },
-          { key: "price", label: "Price", type: "number", placeholder: "0.00" }
-        ]
-      },
-      {
-        key: "suppliers",
-        label: "Suppliers",
-        entryLabel: "Supplier",
-        empty: () => ({ supplierName: "", contact: "", creditBalance: "" }),
-        fields: [
-          { key: "supplierName", label: "Supplier Name", type: "text", required: true, placeholder: "Supplier name" },
-          { key: "contact", label: "Contact", type: "text", placeholder: "Phone or email" },
-          { key: "creditBalance", label: "Credit Balance", type: "number", placeholder: "0.00" }
-        ]
-      }
-    ]
   }
 };
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
+import { callAuthedFunction } from "../utils/functionsClient";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import { PAYMENT_REQUEST_STATUS, PLANS, SUBSCRIPTION_STATUS, formatSubscriptionDate } from "../utils/subscription";
 import { downloadAdminMonthlyReport, downloadAdminUsersCsv, downloadAdminRequestsCsv } from "../utils/reportGen";
@@ -199,13 +200,19 @@ function TopWorkspacesCard({ items }) {
 }
 
 export default function AdminPanel({ year, month }) {
+  const ADMIN_USERS_SAMPLE_LIMIT = 1200;
+  const ADMIN_REQUESTS_SAMPLE_LIMIT = 1000;
+  const ADMIN_TICKETS_SAMPLE_LIMIT = 1000;
+  const MIGRATION_BATCH_SIZE = 300;
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
   const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
   const [supportTicketsEnabled, setSupportTicketsEnabled] = useState(true);
+  const [globalSnapshot, setGlobalSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshingAggregates, setRefreshingAggregates] = useState(false);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
   const [migrationInfo, setMigrationInfo] = useState({ running: false, message: "", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
@@ -218,7 +225,7 @@ export default function AdminPanel({ year, month }) {
     setLoading(true);
     setAdminError("");
     try {
-      const usersSnapshot = await getDocs(collection(db, "users"));
+      const usersSnapshot = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"), limit(ADMIN_USERS_SAMPLE_LIMIT)));
       const rawUsers = usersSnapshot.docs.map(item => ({
         id: item.id,
         ...item.data()
@@ -248,7 +255,16 @@ export default function AdminPanel({ year, month }) {
       setUsers(hydratedUsers);
 
       try {
-        const requestsSnapshot = await getDocs(collection(db, "payment_requests"));
+        const snapshotRef = doc(db, "admin_metrics", "global");
+        const snapshotDoc = await getDoc(snapshotRef);
+        setGlobalSnapshot(snapshotDoc.exists() ? snapshotDoc.data() : null);
+      } catch (err) {
+        console.error("Admin metrics snapshot load error:", err);
+        setGlobalSnapshot(null);
+      }
+
+      try {
+        const requestsSnapshot = await getDocs(query(collection(db, "payment_requests"), orderBy("createdAt", "desc"), limit(ADMIN_REQUESTS_SAMPLE_LIMIT)));
         const nextRequests = requestsSnapshot.docs
           .map(item => ({
             id: item.id,
@@ -264,7 +280,7 @@ export default function AdminPanel({ year, month }) {
       }
 
       try {
-        const ticketsSnapshot = await getDocs(collection(db, "support_tickets"));
+        const ticketsSnapshot = await getDocs(query(collection(db, "support_tickets"), orderBy("createdAt", "desc"), limit(ADMIN_TICKETS_SAMPLE_LIMIT)));
         setSupportTickets(
           ticketsSnapshot.docs
             .map(item => ({ id: item.id, ...item.data() }))
@@ -289,6 +305,26 @@ export default function AdminPanel({ year, month }) {
     fetchAdminData();
   }, []);
 
+  async function fetchAllUsersForMigration() {
+    const usersRef = collection(db, "users");
+    let cursor = null;
+    let hasMore = true;
+    const allUsers = [];
+
+    while (hasMore) {
+      const pageQuery = cursor
+        ? query(usersRef, orderBy(documentId()), startAfter(cursor), limit(MIGRATION_BATCH_SIZE))
+        : query(usersRef, orderBy(documentId()), limit(MIGRATION_BATCH_SIZE));
+      const snap = await getDocs(pageQuery);
+      if (!snap.docs.length) break;
+      allUsers.push(...snap.docs.map(item => ({ id: item.id, ...item.data() })));
+      cursor = snap.docs[snap.docs.length - 1].id;
+      hasMore = snap.docs.length === MIGRATION_BATCH_SIZE;
+    }
+
+    return allUsers;
+  }
+
   async function runHistoricalOrgMigration() {
     setMigrationInfo({ running: true, message: "Backfilling invoices, income, and expenses into org subcollections...", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
     setAdminError("");
@@ -299,7 +335,8 @@ export default function AdminPanel({ year, month }) {
       let migratedRecords = 0;
       let migratedLedgers = 0;
 
-      for (const member of users) {
+      const usersForMigration = await fetchAllUsersForMigration();
+      for (const member of usersForMigration) {
         if (!member?.id || !member?.orgs || typeof member.orgs !== "object" || !Object.keys(member.orgs).length) {
           continue;
         }
@@ -391,6 +428,21 @@ export default function AdminPanel({ year, month }) {
     } catch (err) {
       console.error("Support ticket status update error:", err);
       setAdminError("Unable to update the support ticket. Please try again.");
+    }
+  }
+
+  async function refreshAggregatesNow() {
+    setRefreshingAggregates(true);
+    setAdminError("");
+
+    try {
+      await callAuthedFunction("refreshAdminMetricsNow", {});
+      await fetchAdminData();
+    } catch (err) {
+      console.error("Admin aggregate refresh error:", err);
+      setAdminError(err?.message || "Unable to refresh executive aggregates right now.");
+    } finally {
+      setRefreshingAggregates(false);
     }
   }
 
@@ -730,6 +782,58 @@ export default function AdminPanel({ year, month }) {
     };
   }, [monthKey, paymentRequests, supportTickets, users]);
 
+  const snapshotStats = globalSnapshot?.stats || null;
+  const snapshotCurrentMonth = globalSnapshot?.periods?.currentMonth || null;
+  const snapshotDerivations = globalSnapshot?.derivations || null;
+  const snapshotDistributions = globalSnapshot?.distributions || null;
+  const snapshotReadiness = globalSnapshot?.readiness || null;
+  const snapshotGeneratedAt = globalSnapshot?.generatedAt ? new Date(globalSnapshot.generatedAt) : null;
+  const isCurrentMonthSelected = monthKey === new Date().toISOString().slice(0, 7);
+  const areOrgDerivationsReady = Boolean(snapshotDerivations?.orgCollectionsReady);
+  const executiveStats = {
+    totalUsers: Number(snapshotStats?.totalUsers ?? analytics.stats.totalUsers),
+    activeUsers: Number(snapshotStats?.activeUsers ?? analytics.stats.activeUsers),
+    premiumUsers: Number(snapshotStats?.premiumUsers ?? analytics.stats.premiumUsers),
+    totalOrganizations: areOrgDerivationsReady ? Number(snapshotStats?.totalOrganizations ?? analytics.stats.totalOrganizations) : analytics.stats.totalOrganizations,
+    multiOrgUsers: areOrgDerivationsReady ? Number(snapshotStats?.multiOrgUsers ?? analytics.stats.multiOrgUsers) : analytics.stats.multiOrgUsers,
+    pendingRequests: Number(snapshotStats?.pendingRequests ?? analytics.stats.pendingRequests),
+    premiumShare:
+      Number(snapshotStats?.totalUsers || 0) > 0
+        ? Math.round((Number(snapshotStats?.premiumUsers || 0) / Number(snapshotStats?.totalUsers || 1)) * 100)
+        : analytics.stats.premiumShare
+  };
+  const collaborationStats = {
+    sharedLedgerUsers: areOrgDerivationsReady ? Number(snapshotStats?.sharedLedgerUsers ?? analytics.stats.sharedLedgerUsers) : analytics.stats.sharedLedgerUsers
+  };
+  const distributionStats = {
+    planMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.planMix) ? snapshotDistributions.planMix : analytics.distributions.planMix,
+    statusMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.statusMix) ? snapshotDistributions.statusMix : analytics.distributions.statusMix,
+    orgTypeMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.orgTypeMix) ? snapshotDistributions.orgTypeMix : analytics.distributions.orgTypeMix,
+    locationMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.locationMix) ? snapshotDistributions.locationMix : analytics.distributions.locationMix,
+    genderMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.genderMix) ? snapshotDistributions.genderMix : analytics.distributions.genderMix,
+    ageMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.ageMix) ? snapshotDistributions.ageMix : analytics.distributions.ageMix
+  };
+  const readinessStats = {
+    locationCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.locationCoverage ?? analytics.readiness.locationCoverage) : analytics.readiness.locationCoverage,
+    genderCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.genderCoverage ?? analytics.readiness.genderCoverage) : analytics.readiness.genderCoverage,
+    ageCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.ageCoverage ?? analytics.readiness.ageCoverage) : analytics.readiness.ageCoverage,
+    sessionCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.sessionCoverage ?? analytics.readiness.sessionCoverage) : analytics.readiness.sessionCoverage
+  };
+  const currentPeriodStats = {
+    approvedAmount:
+      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
+        ? Number(snapshotCurrentMonth?.approvedAmount ?? analytics.stats.monthlyApprovedAmount)
+        : analytics.stats.monthlyApprovedAmount,
+    newUsers:
+      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
+        ? Number(snapshotCurrentMonth?.newUsers ?? analytics.stats.newUsersThisMonth)
+        : analytics.stats.newUsersThisMonth,
+    newPremiumUsers:
+      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
+        ? Number(snapshotCurrentMonth?.newPremiumUsers ?? analytics.stats.newPremiumUsersThisMonth)
+        : analytics.stats.newPremiumUsersThisMonth
+  };
+
   if (loading) {
     return <SectionSkeleton rows={6} showHero={false} />;
   }
@@ -761,6 +865,15 @@ export default function AdminPanel({ year, month }) {
               disabled={loading}
             >
               {loading ? "Refreshing…" : "Refresh data"}
+            </button>
+            <button
+              className="btn-secondary"
+              type="button"
+              style={{ padding: "10px 14px", fontSize: 12, minWidth: 180 }}
+              onClick={refreshAggregatesNow}
+              disabled={loading || refreshingAggregates}
+            >
+              {refreshingAggregates ? "Refreshing aggregates..." : "Refresh aggregates now"}
             </button>
           </div>
 
@@ -827,7 +940,12 @@ export default function AdminPanel({ year, month }) {
           <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
             {exporting
               ? "Preparing your export, please wait..."
-              : `Selected period: ${selectedPeriodLabel}. Refresh anytime to recalculate subscription, audience, and workspace analytics.`}
+              : `Selected period: ${selectedPeriodLabel}. Analytics are calculated from the latest ${ADMIN_USERS_SAMPLE_LIMIT} users, ${ADMIN_REQUESTS_SAMPLE_LIMIT} payment requests, and ${ADMIN_TICKETS_SAMPLE_LIMIT} support tickets for faster admin performance.`}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+            {snapshotGeneratedAt
+              ? `Executive totals${areOrgDerivationsReady ? ", workspace counts, and audience distributions," : ""}${isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey ? " plus current-month billing cards" : ""} are sourced from precomputed aggregates (updated ${snapshotGeneratedAt.toLocaleString("en-IN")}).`
+              : "Executive totals currently use sampled live data until the admin aggregate snapshot is generated."}
           </div>
           {!!migrationInfo.message && (
             <div style={{ fontSize: 12, color: migrationInfo.running ? "var(--gold)" : "var(--text-sec)", marginTop: 10, lineHeight: 1.6 }}>
@@ -839,12 +957,12 @@ export default function AdminPanel({ year, month }) {
         <div className="card" style={{ padding: 18 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, color: "var(--text)" }}>Executive Snapshot</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Total Users" value={analytics.stats.totalUsers} sub={`${analytics.stats.activeUsers} currently active accounts`} color="var(--blue)" />
-            <MetricTile label="Paid Accounts" value={analytics.stats.premiumUsers} sub={`${analytics.stats.premiumShare}% of the user base`} color="var(--accent)" />
-            <MetricTile label="Workspaces" value={analytics.stats.totalOrganizations} sub={`${analytics.stats.multiOrgUsers} multi-org users`} color="var(--purple)" />
+            <MetricTile label="Total Users" value={executiveStats.totalUsers} sub={`${executiveStats.activeUsers} currently active accounts`} color="var(--blue)" />
+            <MetricTile label="Paid Accounts" value={executiveStats.premiumUsers} sub={`${executiveStats.premiumShare}% of the user base`} color="var(--accent)" />
+            <MetricTile label="Workspaces" value={executiveStats.totalOrganizations} sub={`${executiveStats.multiOrgUsers} multi-org users`} color="var(--purple)" />
             <MetricTile label="Tracked Time" value={analytics.totalSessionLabel} sub="True foreground session time" color="var(--gold)" />
-            <MetricTile label="Pending Payments" value={analytics.stats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
-            <MetricTile label="Approved This Period" value={fmtMoney(analytics.stats.monthlyApprovedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
+            <MetricTile label="Pending Payments" value={executiveStats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
+            <MetricTile label="Approved This Period" value={fmtMoney(currentPeriodStats.approvedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
           </div>
         </div>
       </div>
@@ -910,8 +1028,8 @@ export default function AdminPanel({ year, month }) {
         <div className="card" style={{ padding: 18, marginBottom: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Subscription Funnel</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="New Users" value={analytics.stats.newUsersThisMonth} sub={selectedPeriodLabel} color="var(--blue)" />
-            <MetricTile label="New Premium" value={analytics.stats.newPremiumUsersThisMonth} sub="New paid signups or assignments" color="var(--accent)" />
+            <MetricTile label="New Users" value={currentPeriodStats.newUsers} sub={selectedPeriodLabel} color="var(--blue)" />
+            <MetricTile label="New Premium" value={currentPeriodStats.newPremiumUsers} sub="New paid signups or assignments" color="var(--accent)" />
             <MetricTile label="Trial Users" value={analytics.stats.trialUsers} sub={`${analytics.stats.expiringSoonCount} ending within 14 days`} color="var(--gold)" />
             <MetricTile label="Approval Rate" value={`${analytics.stats.paymentApprovalRate}%`} sub={`${analytics.stats.approvedRequests} approved requests`} color="var(--purple)" />
           </div>
@@ -929,7 +1047,7 @@ export default function AdminPanel({ year, month }) {
         <DistributionCard
           title="Plan Mix"
           subtitle="How the current customer base is distributed across subscription tiers."
-          items={analytics.distributions.planMix}
+          items={distributionStats.planMix}
           emptyMessage="No user plans have been recorded yet."
           accentColor="var(--blue)"
         />
@@ -939,7 +1057,7 @@ export default function AdminPanel({ year, month }) {
         <DistributionCard
           title="Subscription Status"
           subtitle="Useful for separating healthy accounts from trials and paused subscriptions."
-          items={analytics.distributions.statusMix}
+          items={distributionStats.statusMix}
           emptyMessage="No subscription statuses are available yet."
           accentColor="var(--accent)"
         />
@@ -953,7 +1071,7 @@ export default function AdminPanel({ year, month }) {
               <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} submissions awaiting review`} color="var(--gold)" />
               <MetricTile label="Rejected Requests" value={analytics.stats.rejectedRequests} sub="Needs manual follow-up" color="var(--danger)" />
               <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk in paid users" color="var(--danger)" />
-              <MetricTile label="Shared Ledgers" value={analytics.stats.sharedLedgerUsers} sub="Collaboration usage signal" color="var(--purple)" />
+              <MetricTile label="Shared Ledgers" value={collaborationStats.sharedLedgerUsers} sub="Collaboration usage signal" color="var(--purple)" />
             </div>
           )}
         </div>
@@ -968,7 +1086,7 @@ export default function AdminPanel({ year, month }) {
             <MetricTile label="Total Time" value={analytics.totalSessionLabel} sub="Across all users and orgs" color="var(--accent)" />
             <MetricTile label="Avg/User" value={analytics.averageSessionPerUserLabel} sub="Average tracked time per user" color="var(--blue)" />
             <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Recent saved activity" color="var(--purple)" />
-            <MetricTile label="Session Coverage" value={`${analytics.readiness.sessionCoverage}%`} sub="Users with tracked session time" color="var(--gold)" />
+            <MetricTile label="Session Coverage" value={`${readinessStats.sessionCoverage}%`} sub="Users with tracked session time" color="var(--gold)" />
           </div>
           <div className="card" style={{ padding: 14, marginTop: 12, marginBottom: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How session time works</div>
@@ -1010,7 +1128,7 @@ export default function AdminPanel({ year, month }) {
         <DistributionCard
           title="Organization Mix"
           subtitle="Shows which business categories are driving the product footprint today."
-          items={analytics.distributions.orgTypeMix}
+          items={distributionStats.orgTypeMix}
           emptyMessage="No organizations have been created yet."
           accentColor="var(--purple)"
         />
@@ -1020,24 +1138,24 @@ export default function AdminPanel({ year, month }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18, marginBottom: 18 }}>
         <DistributionCard
           title="Top Markets"
-          subtitle={`${analytics.readiness.locationCoverage}% of users have structured city/state/country data or a workspace address signal.`}
-          items={analytics.distributions.locationMix}
+          subtitle={`${readinessStats.locationCoverage}% of users have structured city/state/country data or a workspace address signal.`}
+          items={distributionStats.locationMix}
           emptyMessage="No location signals are captured yet. Ask users to fill city, state, and country in Personal Profile or keep workspace addresses updated."
           accentColor="var(--blue)"
         />
 
         <DistributionCard
           title="Gender Mix"
-          subtitle={`${analytics.readiness.genderCoverage}% of users have shared gender data.`}
-          items={analytics.distributions.genderMix}
+          subtitle={`${readinessStats.genderCoverage}% of users have shared gender data.`}
+          items={distributionStats.genderMix}
           emptyMessage="Gender data is optional and has not been captured yet."
           accentColor="var(--accent)"
         />
 
         <DistributionCard
           title="Age Groups"
-          subtitle={`${analytics.readiness.ageCoverage}% of users have shared age-group data.`}
-          items={analytics.distributions.ageMix}
+          subtitle={`${readinessStats.ageCoverage}% of users have shared age-group data.`}
+          items={distributionStats.ageMix}
           emptyMessage="Age-group data is optional and has not been captured yet."
           accentColor="var(--purple)"
         />

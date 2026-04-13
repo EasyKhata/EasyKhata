@@ -269,6 +269,7 @@ export default function MainApp() {
   const { account, organizations = [], activeOrgId, switchOrganization, deleteOrganization, isReadOnlyFreeMode } = data;
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
+  const [quickstartIntent, setQuickstartIntent] = useState(null);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [viewMode, setViewMode] = useState("month"); // "month" or "year"
@@ -276,6 +277,7 @@ export default function MainApp() {
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
+  const [successNotice, setSuccessNotice] = useState(null);
 
   function handleNavigate(target) {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
@@ -283,6 +285,10 @@ export default function MainApp() {
     const nextTab = routedTab === "settings" && ["account", "customers", "create-org", "org-records"].includes(nextTarget?.screen)
       ? "org"
       : routedTab;
+
+    if (nextTarget?.quickstart) {
+      setQuickstartIntent({ action: nextTarget.quickstart, token: Date.now() });
+    }
 
     setTab(nextTab);
 
@@ -318,10 +324,50 @@ export default function MainApp() {
   }, []);
 
   useEffect(() => {
+    const handleFirstSuccess = event => {
+      const detail = event?.detail || {};
+      if (!detail?.title || !detail?.message) return;
+      setSuccessNotice({
+        title: detail.title,
+        message: detail.message,
+        actionLabel: detail.actionLabel || "Open",
+        target: detail.target || null,
+        key: Date.now()
+      });
+    };
+
+    window.addEventListener("ledger:first-success", handleFirstSuccess);
+    return () => window.removeEventListener("ledger:first-success", handleFirstSuccess);
+  }, []);
+
+  useEffect(() => {
+    const handleSecondSuccess = event => {
+      const detail = event?.detail || {};
+      if (!detail?.title || !detail?.message) return;
+      setSuccessNotice({
+        title: detail.title,
+        message: detail.message,
+        actionLabel: detail.actionLabel || "Open",
+        target: detail.target || null,
+        key: Date.now()
+      });
+    };
+
+    window.addEventListener("ledger:second-success", handleSecondSuccess);
+    return () => window.removeEventListener("ledger:second-success", handleSecondSuccess);
+  }, []);
+
+  useEffect(() => {
     if (!readOnlyNotice) return undefined;
     const timeout = window.setTimeout(() => setReadOnlyNotice(null), 2800);
     return () => window.clearTimeout(timeout);
   }, [readOnlyNotice]);
+
+  useEffect(() => {
+    if (!successNotice) return undefined;
+    const timeout = window.setTimeout(() => setSuccessNotice(null), 6200);
+    return () => window.clearTimeout(timeout);
+  }, [successNotice]);
 
   useEffect(() => {
     setDismissedIds(getDismissedReminderIds(user?.id));
@@ -449,11 +495,27 @@ export default function MainApp() {
         {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} />)}
         {tab === "users" && isAdmin && <AdminUsersSection />}
         {tab === "org" && !isAdmin && <OrgSection navigationTarget={settingsNavigation} sectionMode="org" />}
-        {tab === "income" && <IncomeSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "income" && (
+          <IncomeSection
+            year={year}
+            month={month}
+            orgType={currentOrgType}
+            quickstartIntent={quickstartIntent}
+            onQuickstartHandled={() => setQuickstartIntent(null)}
+          />
+        )}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} />}
         {tab === "khata" && !isAdmin && isSmallBusinessOrg && <KhataSection orgType={currentOrgType} />}
-        {tab === "invoices" && !hideInvoices && <InvoicesSection year={year} month={month} orgType={currentOrgType} />}
+        {tab === "invoices" && !hideInvoices && (
+          <InvoicesSection
+            year={year}
+            month={month}
+            orgType={currentOrgType}
+            quickstartIntent={quickstartIntent}
+            onQuickstartHandled={() => setQuickstartIntent(null)}
+          />
+        )}
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
@@ -553,6 +615,35 @@ export default function MainApp() {
         <div style={{ position: "fixed", left: 16, right: 16, bottom: 86, zIndex: 140, display: "flex", justifyContent: "center" }}>
           <div style={{ maxWidth: 520, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13, fontWeight: 700, boxShadow: "0 10px 24px rgba(0,0,0,0.25)" }}>
             {readOnlyNotice.message}
+          </div>
+        </div>
+      )}
+
+      {successNotice && (
+        <div style={{ position: "fixed", left: 16, right: 16, bottom: readOnlyNotice ? 150 : 86, zIndex: 142, display: "flex", justifyContent: "center" }}>
+          <div style={{ maxWidth: 560, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", boxShadow: "0 10px 24px rgba(0,0,0,0.25)", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{successNotice.title}</div>
+              <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-sec)", lineHeight: 1.45 }}>{successNotice.message}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              {successNotice.target && (
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)" }}
+                  onClick={() => {
+                    handleNavigate(successNotice.target);
+                    setSuccessNotice(null);
+                  }}
+                >
+                  {successNotice.actionLabel}
+                </button>
+              )}
+              <button className="btn-secondary" type="button" style={{ padding: "8px 10px", fontSize: 12 }} onClick={() => setSuccessNotice(null)}>
+                Dismiss
+              </button>
+            </div>
           </div>
         </div>
       )}

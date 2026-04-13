@@ -84,7 +84,6 @@ export default function ExpensesSection({ year, month, orgType }) {
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
-  const isRetailOrg = getOrgType(orgType) === ORG_TYPES.RETAIL;
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const categoryOptions = useMemo(() => {
@@ -318,8 +317,24 @@ export default function ExpensesSection({ year, month, orgType }) {
       payload.endMonth = "";
     }
 
-    if (editId) d.updateExpense({ ...payload, id: editId });
-    else d.addExpense(payload);
+    if (editId) {
+      d.updateExpense({ ...payload, id: editId });
+    } else {
+      const hadAnyExpense = (d.expenses || []).length > 0;
+      d.addExpense(payload);
+      
+      // Fire second-success event on first expense creation
+      if (!hadAnyExpense) {
+        window.dispatchEvent(new CustomEvent("ledger:second-success", {
+          detail: {
+            title: "First expense recorded",
+            message: "Excellent. You can now see profit/loss. Next, explore the dashboard for insights and reports.",
+            actionLabel: "View Dashboard",
+            target: { tab: "dashboard" }
+          }
+        }));
+      }
+    }
 
     closeForm();
   }
@@ -360,14 +375,19 @@ export default function ExpensesSection({ year, month, orgType }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Total {config.expensesLabel} - {MONTHS[month]} {year}
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            Total {config.expensesLabel} - {MONTHS[month]} {year}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--danger)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+            {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
+          </div>
         </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--danger)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
-        </div>
+        <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+          + {config.expensesActionLabel}
+        </button>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -486,45 +506,13 @@ export default function ExpensesSection({ year, month, orgType }) {
                   </div>
                 </Collapsible>
               </>
-            ) : isRetailOrg ? (
-              <>
-                <Collapsible title="Stock Purchases" icon="📦" color="var(--blue)" count={stockExpenses.length} defaultOpen>
-                  <div className="card">
-                    {stockExpenses.length === 0 ? (
-                      <EmptyState title="No stock purchases yet" message="Track stock buying here so the month reflects how much inventory you brought into the shop." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--blue)" />
-                    ) : (
-                      stockExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-
-                <Collapsible title="Supplier Payments" icon="🏷" color="var(--gold)" count={supplierPaymentExpenses.length} defaultOpen={supplierPaymentExpenses.length > 0}>
-                  <div className="card">
-                    {supplierPaymentExpenses.length === 0 ? (
-                      <EmptyState title="No supplier payments yet" message="Log direct supplier settlements here to keep payables clear." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--gold)" />
-                    ) : (
-                      supplierPaymentExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-
-                <Collapsible title="Shop Running Costs" icon="•" color="var(--danger)" count={retailOtherExpenses.length} defaultOpen>
-                  <div className="card">
-                    {retailOtherExpenses.length === 0 ? (
-                      <EmptyState title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--danger)" />
-                    ) : (
-                      retailOtherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-              </>
             ) : recurring.length > 0 && (
               <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
                 <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
               </Collapsible>
             )}
 
-            {!isApartmentOrg && !isSmallBusinessOrg && !isRetailOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
+            {!isApartmentOrg && !isSmallBusinessOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
               <div className="card">
                 {oneTime.length === 0 ? (
                   <EmptyState
@@ -646,14 +634,6 @@ export default function ExpensesSection({ year, month, orgType }) {
                 <Select value={form.partnerName || ""} onChange={e => setForm(current => ({ ...current, partnerName: e.target.value, label: current.label || `${e.target.value} Payment` }))}>
                   <option value="">{partnerOptions.length ? "Select partner" : "Add partners in Settings first"}</option>
                   {partnerOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </Select>
-              </Field>
-            )}
-            {isRetailOrg && ["Stock Purchase", "Supplier Payment"].includes(form.purchaseType || "") && (
-              <Field label="Supplier">
-                <Select value={form.supplierName || ""} onChange={e => setForm(current => ({ ...current, supplierName: e.target.value, label: current.label || `${e.target.value} ${form.purchaseType === "Supplier Payment" ? "Payment" : "Purchase"}` }))}>
-                  <option value="">{supplierOptions.length ? "Select supplier" : "Add suppliers in Settings first"}</option>
-                  {supplierOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </Select>
               </Field>
             )}
