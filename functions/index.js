@@ -1,9 +1,52 @@
 const crypto = require("node:crypto");
 const Razorpay = require("razorpay");
 const admin = require("firebase-admin");
-const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
+
+const ALLOWED_ORIGINS = [
+  "https://www.easykhata.net",
+  "https://easykhata.net",
+  "https://ledger-app-599cc.web.app",
+  "https://ledger-app-599cc.firebaseapp.com",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
+
+function setCors(req, res) {
+  const origin = req.headers.origin || "";
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.set("Access-Control-Allow-Origin", origin);
+  }
+  res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Firebase-AppCheck");
+  res.set("Access-Control-Max-Age", "3600");
+}
+
+async function verifyFirebaseAuth(req) {
+  const authHeader = req.headers.authorization || "";
+  if (!authHeader.startsWith("Bearer ")) return null;
+  const idToken = authHeader.slice(7);
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+function sendError(res, code, message) {
+  const statusMap = {
+    unauthenticated: 401,
+    "permission-denied": 403,
+    "not-found": 404,
+    "invalid-argument": 400,
+    "failed-precondition": 400,
+    internal: 500
+  };
+  res.status(statusMap[code] || 500).json({ error: { status: code, message } });
+}
 
 admin.initializeApp();
 
@@ -115,20 +158,33 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
   });
 }
 
-exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", invoker: "public", cors: true, secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Please sign in to continue.");
-  }
+exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
+  setCors(req, res);
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
 
-  const { keyId, keySecret } = getRazorpayConfig();
+  const authUser = await verifyFirebaseAuth(req);
+  if (!authUser?.uid) { sendError(res, "unauthenticated", "Please sign in to continue."); return; }
+
+  let keyId, keySecret;
+  try {
+    ({ keyId, keySecret } = getRazorpayConfig());
+  } catch (e) {
+    sendError(res, "failed-precondition", e.message); return;
+  }
   const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
 
-  const targetPlan = getValidatedPlan(request.data?.targetPlan);
-  const billingCycle = getValidatedBillingCycle(request.data?.billingCycle);
-  const note = String(request.data?.note || "").trim().slice(0, 300);
+  let targetPlan, billingCycle;
+  try {
+    targetPlan = getValidatedPlan(req.body?.data?.targetPlan);
+    billingCycle = getValidatedBillingCycle(req.body?.data?.billingCycle);
+  } catch (e) {
+    sendError(res, "invalid-argument", e.message); return;
+  }
+  const note = String(req.body?.data?.note || "").trim().slice(0, 300);
   const amount = getAmountInPaise(targetPlan, billingCycle);
+  const userId = authUser.uid;
 
-  const userId = request.auth.uid;
   const userSnap = await db.collection("users").doc(userId).get();
   const userData = userSnap.exists ? userSnap.data() || {} : {};
 
@@ -136,11 +192,7 @@ exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", invoker: "p
     amount,
     currency: "INR",
     receipt: `sub_${userId.slice(0, 8)}_${Date.now()}`,
-    notes: {
-      userId,
-      requestedPlan: targetPlan,
-      billingCycle
-    }
+    notes: { userId, requestedPlan: targetPlan, billingCycle }
   });
 
   const nowIso = new Date().toISOString();
@@ -155,7 +207,7 @@ exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", invoker: "p
       amount: Math.round(amount / 100),
       amountPaise: amount,
       currency: "INR",
-      paymentMethod: "upi",
+      paymentMethod: "razorpay",
       gateway: "razorpay",
       gatewayOrderId: order.id,
       transactionId: "",
@@ -169,48 +221,57 @@ exports.createUpiSubscriptionOrder = onCall({ region: "asia-south1", invoker: "p
     { merge: true }
   );
 
-  return {
-    keyId,
-    orderId: order.id,
-    amount,
-    currency: order.currency || "INR"
-  };
+  res.status(200).json({ data: { keyId, orderId: order.id, amount, currency: order.currency || "INR" } });
 });
 
-exports.verifyUpiSubscriptionPayment = onCall({ region: "asia-south1", invoker: "public", cors: true, secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async request => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Please sign in to continue.");
+exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
+  setCors(req, res);
+  if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+  if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
+
+  const authUser = await verifyFirebaseAuth(req);
+  if (!authUser?.uid) { sendError(res, "unauthenticated", "Please sign in to continue."); return; }
+
+  let keySecret;
+  try {
+    ({ keySecret } = getRazorpayConfig());
+  } catch (e) {
+    sendError(res, "failed-precondition", e.message); return;
   }
 
-  const { keySecret } = getRazorpayConfig();
-  const orderId = String(request.data?.orderId || "").trim();
-  const paymentId = String(request.data?.paymentId || "").trim();
-  const signature = String(request.data?.signature || "").trim();
+  const orderId = String(req.body?.data?.orderId || "").trim();
+  const paymentId = String(req.body?.data?.paymentId || "").trim();
+  const signature = String(req.body?.data?.signature || "").trim();
 
   if (!orderId || !paymentId || !signature) {
-    throw new HttpsError("invalid-argument", "Incomplete payment confirmation received.");
+    sendError(res, "invalid-argument", "Incomplete payment confirmation received."); return;
   }
 
   const expected = crypto.createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest("hex");
   if (expected !== signature) {
-    throw new HttpsError("permission-denied", "Payment signature verification failed.");
+    sendError(res, "permission-denied", "Payment signature verification failed."); return;
   }
 
   const requestSnap = await db.collection("payment_requests").doc(orderId).get();
   if (!requestSnap.exists) {
-    throw new HttpsError("not-found", "Payment request was not found.");
+    sendError(res, "not-found", "Payment request was not found."); return;
   }
 
   const requestData = requestSnap.data() || {};
-  if (String(requestData.userId || "") !== request.auth.uid) {
-    throw new HttpsError("permission-denied", "Payment request does not belong to this user.");
+  if (String(requestData.userId || "") !== authUser.uid) {
+    sendError(res, "permission-denied", "Payment request does not belong to this user."); return;
   }
 
-  const requestedPlan = getValidatedPlan(requestData.requestedPlan);
-  const billingCycle = getValidatedBillingCycle(requestData.billingCycle);
+  let requestedPlan, billingCycle;
+  try {
+    requestedPlan = getValidatedPlan(requestData.requestedPlan);
+    billingCycle = getValidatedBillingCycle(requestData.billingCycle);
+  } catch (e) {
+    sendError(res, "invalid-argument", e.message); return;
+  }
 
   await applySubscriptionUpgrade({
-    userId: request.auth.uid,
+    userId: authUser.uid,
     requestedPlan,
     billingCycle,
     paymentRequestId: orderId,
@@ -228,7 +289,7 @@ exports.verifyUpiSubscriptionPayment = onCall({ region: "asia-south1", invoker: 
     { merge: true }
   );
 
-  return { success: true };
+  res.status(200).json({ data: { success: true } });
 });
 
 exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
