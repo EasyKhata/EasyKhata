@@ -162,6 +162,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const isApartmentOrg = !isAdmin && effectiveOrgType === ORG_TYPES.APARTMENT;
   const showTaxFields = !isApartmentOrg;
   const isSmallBusinessOrg = !isAdmin && effectiveOrgType === ORG_TYPES.SMALL_BUSINESS;
+  const isFreelancerOrg = !isAdmin && effectiveOrgType === ORG_TYPES.FREELANCER;
   const isQuote = documentType === "quote";
   const documentLabel = isQuote ? "Quote" : config.invoiceEntryLabel;
   const documentCollectionLabel = isQuote ? "Quotes" : config.invoicesLabel;
@@ -354,6 +355,10 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   function openNew() {
     if (!canUseFeature(user, "invoiceCreate", { invoiceCount: getFinancialInvoices(d.invoices).length })) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+      return;
+    }
+    if (isFreelancerOrg && !(d.customers || []).some(c => String(c?.name || "").trim())) {
+      window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
       return;
     }
     setForm(blankForm());

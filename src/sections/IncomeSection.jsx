@@ -184,6 +184,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
+  const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
   const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
@@ -283,6 +284,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const clientOptions = useMemo(() => (
     (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.email || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
+  const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
   const inventoryOptions = useMemo(() => (
     (d.orgRecords?.inventory || []).map(item => ({
       value: item.productName || "",
@@ -452,6 +454,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     }
     if (!hasHouseholdPeople) {
       openPeopleManager();
+      return;
+    }
+    if (isFreelancerOrg && !hasFreelancerClients) {
+      window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
       return;
     }
     setEditId(null);
@@ -1001,6 +1007,14 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               message="Household earnings must be tagged to at least one person. Add your first person in Org to continue."
               actionLabel="Open People"
               onAction={openPeopleManager}
+              accentColor="var(--accent)"
+            />
+          ) : isFreelancerOrg && !hasFreelancerClients ? (
+            <EmptyState
+              title="Add a client before tracking payments"
+              message="Freelancer payments must be linked to at least one client. Add your first client in Org to continue."
+              actionLabel="Open Clients"
+              onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
               accentColor="var(--accent)"
             />
           ) : manualIncome.length === 0 ? (
