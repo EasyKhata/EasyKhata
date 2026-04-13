@@ -388,7 +388,9 @@ export function AuthProvider({ children }) {
     } catch (err) {
       if (err.code === "auth/user-not-found") return { error: "No account exists with this email address." };
       if (err.code === "auth/wrong-password") return { error: "Incorrect password." };
-      if (err.code === "auth/invalid-credential") return { error: "Incorrect password." };
+      if (err.code === "auth/invalid-credential") {
+        return { error: "Invalid email or password." };
+      }
       if (err.code === "auth/invalid-email") return { error: "Invalid email format." };
       return { error: err.message };
     }
