@@ -612,12 +612,6 @@ export default function ExpensesSection({ year, month, orgType }) {
                         {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
                       </Select>
                     )
-                  : isRetailOrg && field.key === "purchaseType"
-                    ? (
-                      <Select value={form.purchaseType || ""} onChange={e => setForm(current => ({ ...current, purchaseType: e.target.value, supplierName: ["Stock Purchase", "Supplier Payment"].includes(e.target.value) ? current.supplierName : "", label: current.label || e.target.value }))}>
-                        {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
-                      </Select>
-                    )
                   : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
               </Field>
             ))}
