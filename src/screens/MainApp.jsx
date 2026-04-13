@@ -279,6 +279,8 @@ export default function MainApp() {
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
 
   function handleNavigate(target) {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
@@ -464,6 +466,22 @@ export default function MainApp() {
     }
   }, [hideInvoices, tab]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   function renderTabContent() {
     const fallback = tab === "settings" || (isAdmin && tab === "users")
       ? <SectionSkeleton rows={5} showHero={false} />
@@ -501,10 +519,10 @@ export default function MainApp() {
   }
 
 
-  // Sidebar state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const sidebarWidth = sidebarOpen ? 180 : 60;
+  const showSidebarLabels = isMobile || sidebarOpen;
+  const desktopSidebarWidth = sidebarOpen ? 180 : 60;
+  const drawerWidth = showSidebarLabels ? 180 : 60;
+  const sidebarWidth = isMobile ? 0 : desktopSidebarWidth;
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative", display: "flex" }}>
@@ -567,20 +585,29 @@ export default function MainApp() {
           </div>
         )}
       </div>
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(12, 12, 16, 0.34)", zIndex: 120 }}
+        />
+      )}
+
       {/* Sidebar */}
       <div style={{
-        width: sidebarWidth,
+        width: drawerWidth,
         position: "fixed",
         top: 0,
         left: 0,
-        height: "100vh",
+        height: "100dvh",
         background: "var(--surface)",
         borderRight: "1px solid var(--border)",
         display: "flex",
         flexDirection: "column",
-        alignItems: sidebarOpen ? "flex-start" : "center",
+        alignItems: showSidebarLabels ? "flex-start" : "center",
         padding: "12px 0",
-        transition: "width 0.2s",
+        transition: "transform 0.22s ease, width 0.2s ease",
+        transform: isMobile ? (sidebarOpen ? "translateX(0)" : "translateX(-100%)") : "translateX(0)",
+        boxShadow: isMobile && sidebarOpen ? "0 14px 40px rgba(0,0,0,0.24)" : "none",
         zIndex: 130
       }}>
         <button
@@ -589,7 +616,7 @@ export default function MainApp() {
             background: "none",
             border: "none",
             fontSize: 22,
-            margin: sidebarOpen ? "0 0 18px 16px" : "0 0 18px 0",
+            margin: showSidebarLabels ? "0 0 18px 16px" : "0 0 18px 0",
             cursor: "pointer",
             color: "var(--text-dim)"
           }}
@@ -599,63 +626,68 @@ export default function MainApp() {
         </button>
         <div style={{ width: "100%", overflowY: "auto", overflowX: "hidden" }}>
           {TABS.map(tabItem => (
-          <button
-            key={tabItem.id}
-            onClick={() => setTab(tabItem.id)}
-            title={tabItem.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: sidebarOpen ? "flex-start" : "center",
-              gap: sidebarOpen ? 14 : 0,
-              width: sidebarOpen ? 160 : 44,
-              margin: sidebarOpen ? "6px 0 6px 10px" : "6px auto",
-              padding: sidebarOpen ? "10px 14px" : "10px 0",
-              border: "none",
-              borderRadius: 10,
-              background: tab === tabItem.id ? "var(--surface-pop)" : "transparent",
-              color: tabColor[tabItem.id] || "var(--text)",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-              transition: "background 0.2s, color 0.2s"
-            }}
-          >
-            <span
+            <button
+              key={tabItem.id}
+              onClick={() => {
+                setTab(tabItem.id);
+                if (isMobile) setSidebarOpen(false);
+              }}
+              title={tabItem.label}
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                display: "inline-flex",
+                display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing: 0.4,
-                lineHeight: 1,
-                background: tab === tabItem.id ? "var(--surface-high)" : "transparent",
-                border: "1px solid var(--border)"
+                justifyContent: showSidebarLabels ? "flex-start" : "center",
+                gap: showSidebarLabels ? 14 : 0,
+                width: showSidebarLabels ? 160 : 44,
+                margin: showSidebarLabels ? "6px 0 6px 10px" : "6px auto",
+                padding: showSidebarLabels ? "10px 14px" : "10px 0",
+                border: "none",
+                borderRadius: 10,
+                background: tab === tabItem.id ? "var(--surface-pop)" : "transparent",
+                color: tabColor[tabItem.id] || "var(--text)",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+                transition: "background 0.2s, color 0.2s"
               }}
             >
-              {tabItem.icon}
-            </span>
-            {sidebarOpen && <span style={{ fontSize: 15, fontWeight: 600 }}>{tabItem.label}</span>}
-          </button>
+              <span
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  letterSpacing: 0.4,
+                  lineHeight: 1,
+                  background: tab === tabItem.id ? "var(--surface-high)" : "transparent",
+                  border: "1px solid var(--border)"
+                }}
+              >
+                {tabItem.icon}
+              </span>
+              {showSidebarLabels && <span style={{ fontSize: 15, fontWeight: 600 }}>{tabItem.label}</span>}
+            </button>
           ))}
         </div>
 
         <div style={{ marginTop: "auto", width: "100%", paddingTop: 10 }}>
           <button
-            onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
+            onClick={() => {
+              handleNavigate({ tab: "settings", screen: "main" });
+              if (isMobile) setSidebarOpen(false);
+            }}
             title="Profile"
             style={{
               display: "flex",
               alignItems: "center",
-              gap: sidebarOpen ? 10 : 0,
-              width: sidebarOpen ? 160 : 44,
-              marginLeft: sidebarOpen ? 10 : 8,
-              marginBottom: 10,
-              padding: sidebarOpen ? "10px 12px" : "10px 8px",
+              gap: showSidebarLabels ? 10 : 0,
+              width: showSidebarLabels ? 160 : 44,
+              margin: showSidebarLabels ? "0 0 10px 10px" : "0 auto 10px",
+              padding: showSidebarLabels ? "10px 12px" : "10px 0",
               border: "none",
               borderRadius: 10,
               background: tab === "settings" ? "var(--surface-pop)" : "transparent",
@@ -666,17 +698,41 @@ export default function MainApp() {
             <span style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
               {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
             </span>
-            {sidebarOpen && <span style={{ fontSize: 14, fontWeight: 700 }}>Profile</span>}
+            {showSidebarLabels && <span style={{ fontSize: 14, fontWeight: 700 }}>Profile</span>}
           </button>
         </div>
       </div>
 
       {/* Main content area */}
-      <div style={{ flex: 1, minWidth: 0, marginLeft: sidebarWidth, height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, minWidth: 0, marginLeft: sidebarWidth, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 24px 12px 24px" }}>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 24, color: "var(--text)", lineHeight: 1 }}>
-              {TABS.find(item => item.id === tab)?.label}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? "10px 14px 12px 14px" : "10px 24px 12px 24px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+              {isMobile && (
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  title="Open menu"
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: "var(--surface-high)",
+                    color: "var(--text-sec)",
+                    cursor: "pointer",
+                    fontSize: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                >
+                  &#9776;
+                </button>
+              )}
+              <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 18 : 24, color: "var(--text)", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {TABS.find(item => item.id === tab)?.label}
+              </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button
@@ -695,7 +751,7 @@ export default function MainApp() {
           </div>
 
           {tab !== "settings" && tab !== "org" && !(isAdmin && tab === "users") && (
-            <div style={{ padding: "0 24px 12px 24px" }}>
+            <div style={{ padding: isMobile ? "0 14px 12px 14px" : "0 24px 12px 24px" }}>
               <HeaderDatePicker
                 year={year}
                 month={month}
@@ -710,7 +766,7 @@ export default function MainApp() {
           )}
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "12px 16px 24px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : "12px 16px 24px" }}>
           {renderTabContent()}
         </div>
       </div>
