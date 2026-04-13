@@ -64,7 +64,7 @@ function renderField(field, value, onChange, options = {}) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
 }
 
-export default function EmiSection({ year, month, orgType }) {
+export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
   const resolvedOrgType = getOrgType(orgType);
   const config = useMemo(() => getOrgConfig(resolvedOrgType), [resolvedOrgType]);
@@ -198,13 +198,21 @@ export default function EmiSection({ year, month, orgType }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          EMI Commitments · {MONTHS[month]} {year}
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+            EMI Commitments · {MONTHS[month]} {year}
+          </div>
+          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--gold)", letterSpacing: -0.5 }}>{fmtMoney(monthlyEmi, sym)}</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+            {activeLoans.length} active EMI record(s)
+          </div>
         </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--gold)", letterSpacing: -0.5 }}>{fmtMoney(monthlyEmi, sym)}</div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          {activeLoans.length} active EMI record(s)
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
+          {headerDatePicker}
+          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+            + Add EMI
+          </button>
         </div>
       </div>
 
@@ -278,16 +286,6 @@ export default function EmiSection({ year, month, orgType }) {
           ))}
         </Modal>
       )}
-
-      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
-        <button
-          className="btn-primary"
-          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
-          onClick={openNew}
-        >
-          Add EMI
-        </button>
-      </div>
     </div>
   );
 }

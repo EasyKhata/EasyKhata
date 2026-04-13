@@ -77,7 +77,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function ExpensesSection({ year, month, orgType }) {
+export default function ExpensesSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
@@ -395,9 +395,12 @@ export default function ExpensesSection({ year, month, orgType }) {
             {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
           </div>
         </div>
-        <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-          + {config.expensesActionLabel}
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
+          {headerDatePicker}
+          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+            + {config.expensesActionLabel}
+          </button>
+        </div>
       </div>
 
       <div style={{ padding: "22px 18px 0" }}>
@@ -714,16 +717,6 @@ export default function ExpensesSection({ year, month, orgType }) {
       )}
 
       {!isPersonalOrg && <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />}
-
-      <div style={{ position: "fixed", right: 20, bottom: 100, zIndex: 40 }}>
-        <button
-          className="btn-primary"
-          style={{ minWidth: 132, boxShadow: "var(--card-shadow)" }}
-          onClick={openNew}
-        >
-          {config.expensesActionLabel}
-        </button>
-      </div>
     </div>
   );
 }
