@@ -277,6 +277,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [submittingSupport, setSubmittingSupport] = useState(false);
   const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
   const [replyingTicketId, setReplyingTicketId] = useState("");
+  const [supportView, setSupportView] = useState("inbox");
+  const [selectedSupportTicketId, setSelectedSupportTicketId] = useState("");
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -383,9 +385,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     () => selectedCustomer?.payments || [],
     [selectedCustomer]
   );
-  const recentSupportTickets = useMemo(
-    () => supportTickets.slice(0, 5),
-    [supportTickets]
+  const selectedSupportTicket = useMemo(
+    () => supportTickets.find(ticket => ticket.id === selectedSupportTicketId) || supportTickets[0] || null,
+    [selectedSupportTicketId, supportTickets]
   );
   const stateProvinceOptions = useMemo(() => getStateProvinceOptions(userForm.country), [userForm.country]);
   const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions(accForm.country), [accForm.country]);
@@ -1578,6 +1580,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     loadSupportTickets();
   }, [screen, user?.id]);
 
+  useEffect(() => {
+    if (!supportTickets.length) {
+      setSelectedSupportTicketId("");
+      return;
+    }
+    if (!supportTickets.some(ticket => ticket.id === selectedSupportTicketId)) {
+      setSelectedSupportTicketId(supportTickets[0].id);
+    }
+  }, [selectedSupportTicketId, supportTickets]);
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1798,8 +1810,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow
                 icon="?"
                 label="Support Queue"
-                sub="Review and resolve customer support tickets from the admin dashboard"
-                onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "dashboard" } }))}
+                sub="Review and resolve customer support tickets from Support Ops"
+                onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "adminSupport" } }))}
               />
             ) : (
               <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
@@ -2336,39 +2348,130 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   if (screen === "support") {
     return withNotice(
-      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={submitSupportTicket} saveLabel={submittingSupport ? "Submitting..." : "Submit Ticket"} canSave={!submittingSupport && !!supportForm.message.trim()} accentColor="var(--blue)">
+      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={supportView === "new" ? submitSupportTicket : () => setScreen("main")} saveLabel={supportView === "new" ? (submittingSupport ? "Submitting..." : "Submit Ticket") : "Done"} canSave={supportView === "new" ? (!submittingSupport && !!supportForm.message.trim()) : true} accentColor="var(--blue)">
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Use this space to submit support tickets for account issues, billing questions, bugs, or feature requests. Your account context is attached automatically so support can respond faster.
+            Track ongoing conversations and create new tickets separately for a cleaner support workflow.
+          </div>
+        </div>
+        <div className="card" style={{ padding: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "inbox" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("inbox")}>
+              Conversations
+            </button>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "new" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("new")}>
+              New Ticket
+            </button>
           </div>
         </div>
 
-        <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
-          <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
-            {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {supportView === "new" ? (
+          <>
+            <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
+              <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
+                {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-        <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
-          <Input
-            placeholder="Example: Invoice PDF is not downloading"
-            value={supportForm.subject}
-            onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
-          />
-        </Field>
+            <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
+              <Input
+                placeholder="Example: Invoice PDF is not downloading"
+                value={supportForm.subject}
+                onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
+              />
+            </Field>
 
-        <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
-          <Textarea
-            placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
-            value={supportForm.message}
-            onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
-          />
-        </Field>
+            <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
+              <Textarea
+                placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
+                value={supportForm.message}
+                onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
+              />
+            </Field>
+
+            <div className="card" style={{ padding: 16, marginTop: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
+                <div>• What you were trying to do</div>
+                <div>• What happened instead</div>
+                <div>• The screen or section where it happened</div>
+                <div>• Any invoice, customer, or report details that help reproduce it</div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+            {supportLoading ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
+            ) : supportTickets.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Use New Ticket to raise your first request.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+                <div className="card" style={{ marginBottom: 0, maxHeight: 320, overflowY: "auto" }}>
+                  {supportTickets.map(ticket => {
+                    const active = selectedSupportTicket?.id === ticket.id;
+                    return (
+                      <button
+                        key={ticket.id}
+                        type="button"
+                        onClick={() => setSelectedSupportTicketId(ticket.id)}
+                        style={{ width: "100%", textAlign: "left", border: active ? "1px solid var(--accent)" : "1px solid transparent", borderRadius: 10, background: active ? "var(--surface-pop)" : "transparent", padding: "9px 10px", marginBottom: 8, cursor: "pointer" }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                          {SUPPORT_STATUS_LABELS[ticket.status] || "Open"} · {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="card" style={{ marginBottom: 0 }}>
+                  {!selectedSupportTicket ? (
+                    <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Select a ticket from conversations.</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{selectedSupportTicket.subject || "Support ticket"}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8, maxHeight: 220, overflowY: "auto" }}>
+                        {(selectedSupportTicket.messages || []).map(msg => (
+                          <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
+                              {msg.senderRole === "admin" ? "Support" : "You"}
+                            </div>
+                            <div>{msg.message}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedSupportTicket.status !== "resolved" && (
+                        <div style={{ marginTop: 8 }}>
+                          <Textarea
+                            placeholder="Reply to support..."
+                            value={supportReplyDrafts?.[selectedSupportTicket.id] || ""}
+                            onChange={event => setSupportReplyDrafts(current => ({ ...current, [selectedSupportTicket.id]: event.target.value }))}
+                            style={{ minHeight: 70 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => sendSupportReply(selectedSupportTicket)}
+                            disabled={replyingTicketId === selectedSupportTicket.id}
+                          >
+                            {replyingTicketId === selectedSupportTicket.id ? "Sending..." : "Send Reply"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <Field label="Support Email">
           <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
@@ -2386,70 +2489,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
         </Field>
-
-        <div className="card" style={{ padding: 16, marginTop: 6 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-            <div>• What you were trying to do</div>
-            <div>• What happened instead</div>
-            <div>• The screen or section where it happened</div>
-            <div>• Any invoice, customer, or report details that help reproduce it</div>
-          </div>
-        </div>
-
-        {user?.role !== "admin" && (
-          <div className="card" style={{ padding: 16, marginTop: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Your Recent Tickets</div>
-            {supportLoading ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
-            ) : supportTickets.length === 0 ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Submit one above and it will appear here.</div>
-            ) : (
-              <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-                {recentSupportTickets.map((ticket, index) => (
-                  <div key={ticket.id} style={{ padding: index === recentSupportTickets.length - 1 ? "0" : "0 0 12px", marginBottom: index === recentSupportTickets.length - 1 ? 0 : 12, borderBottom: index === recentSupportTickets.length - 1 ? "none" : "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
-                      <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
-                        {SUPPORT_STATUS_LABELS[ticket.status] || "Open"}
-                      </span>
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(ticket.messages || []).slice(-3).map(msg => (
-                        <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
-                            {msg.senderRole === "admin" ? "Support" : "You"}
-                          </div>
-                          <div>{msg.message}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
-                    {ticket.status !== "resolved" && (
-                      <div style={{ marginTop: 8 }}>
-                        <Textarea
-                          placeholder="Reply to support..."
-                          value={supportReplyDrafts?.[ticket.id] || ""}
-                          onChange={event => setSupportReplyDrafts(current => ({ ...current, [ticket.id]: event.target.value }))}
-                          style={{ minHeight: 60 }}
-                        />
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => sendSupportReply(ticket)}
-                          disabled={replyingTicketId === ticket.id}
-                        >
-                          {replyingTicketId === ticket.id ? "Sending..." : "Send Reply"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </Modal>
     );
   }

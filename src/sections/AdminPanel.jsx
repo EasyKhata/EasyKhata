@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { arrayUnion, collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
@@ -127,12 +127,6 @@ function InsightCard({ eyebrow, title, body, tone = "var(--blue)" }) {
   );
 }
 
-function formatTicketStatus(status) {
-  if (status === "resolved") return "Resolved";
-  if (status === "in_progress") return "In Progress";
-  return "Open";
-}
-
 function TopUsersCard({ users }) {
   return (
     <div className="card" style={{ padding: 18, marginBottom: 0 }}>
@@ -216,8 +210,6 @@ export default function AdminPanel({ year, month }) {
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
   const [migrationInfo, setMigrationInfo] = useState({ running: false, message: "", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
-  const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
-  const [replyingTicketId, setReplyingTicketId] = useState("");
 
   async function fetchAdminData() {
     setLoading(true);
@@ -425,79 +417,6 @@ export default function AdminPanel({ year, month }) {
       console.error("Historical org migration error:", err);
       setMigrationInfo(current => ({ ...current, running: false, message: "Migration failed before completion." }));
       setAdminError(err?.message || "Unable to backfill org subcollections right now.");
-    }
-  }
-
-  async function updateSupportTicketStatus(ticket, status) {
-    setAdminError("");
-    try {
-      const nowIso = new Date().toISOString();
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        status,
-        updatedAt: nowIso,
-        resolvedAt: status === "resolved" ? nowIso : "",
-        adminNote: status === "resolved" ? "Resolved by admin" : ticket.adminNote || "",
-        reviewedBy: user.id
-      });
-      setSupportTickets(current => current.map(item => item.id === ticket.id ? { ...item, status, updatedAt: nowIso, resolvedAt: status === "resolved" ? nowIso : item.resolvedAt, reviewedBy: user.id } : item));
-    } catch (err) {
-      console.error("Support ticket status update error:", err);
-      setAdminError("Unable to update the support ticket. Please try again.");
-    }
-  }
-
-  async function sendSupportReply(ticket) {
-    const draft = String(supportReplyDrafts?.[ticket.id] || "").trim();
-    if (!draft) {
-      setAdminError("Write a reply before sending.");
-      return;
-    }
-    setReplyingTicketId(ticket.id);
-    setAdminError("");
-    try {
-      const nowIso = new Date().toISOString();
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        messages: arrayUnion({
-          id: `msg-${Date.now()}`,
-          senderRole: "admin",
-          senderId: user.id,
-          senderName: user?.name || "Support",
-          message: draft,
-          createdAt: nowIso
-        }),
-        status: "in_progress",
-        updatedAt: nowIso,
-        reviewedBy: user.id,
-        lastAdminReplyAt: nowIso
-      });
-      setSupportReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
-      setSupportTickets(current => current.map(item => (
-        item.id === ticket.id
-          ? {
-              ...item,
-              status: "in_progress",
-              updatedAt: nowIso,
-              reviewedBy: user.id,
-              lastAdminReplyAt: nowIso,
-              messages: [
-                ...(Array.isArray(item.messages) ? item.messages : []),
-                {
-                  id: `msg-${Date.now()}-${ticket.id}`,
-                  senderRole: "admin",
-                  senderId: user.id,
-                  senderName: user?.name || "Support",
-                  message: draft,
-                  createdAt: nowIso
-                }
-              ]
-            }
-          : item
-      )));
-    } catch (err) {
-      console.error("Support reply update error:", err);
-      setAdminError("Unable to send support reply. Please try again.");
-    } finally {
-      setReplyingTicketId("");
     }
   }
 
@@ -1029,92 +948,6 @@ export default function AdminPanel({ year, month }) {
             <MetricTile label="Pending Payments" value={executiveStats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
             <MetricTile label="Approved This Period" value={fmtMoney(currentPeriodStats.approvedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
           </div>
-        </div>
-      </div>
-
-      <div className="section-label">Support Operations</div>
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Support Queue Snapshot</div>
-          {!supportTicketsEnabled ? (
-            <EmptyState title="Support tickets are locked by rules" message="Add rules for support_tickets to manage customer issues here." accentColor="var(--gold)" />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <MetricTile label="Open Tickets" value={analytics.stats.supportOpen} sub="Needs triage" color="var(--gold)" />
-              <MetricTile label="In Progress" value={analytics.stats.supportInProgress} sub="Currently being handled" color="var(--blue)" />
-              <MetricTile label="Resolved" value={analytics.stats.supportResolved} sub="Closed by admin" color="var(--accent)" />
-              <MetricTile label="Aging Tickets" value={analytics.stats.supportAging} sub="Open for more than 3 days" color="var(--danger)" />
-            </div>
-          )}
-        </div>
-
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Latest Support Tickets</div>
-          {!supportTicketsEnabled ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>Support tickets are not readable yet.</div>
-          ) : !supportTickets.length ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets have been submitted yet.</div>
-          ) : (
-            <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-              {supportTickets.slice(0, 8).map((ticket, index) => (
-                <div key={ticket.id} style={{ padding: index === supportTickets.slice(0, 8).length - 1 ? "0" : "0 0 12px", marginBottom: index === supportTickets.slice(0, 8).length - 1 ? 0 : 12, borderBottom: index === supportTickets.slice(0, 8).length - 1 ? "none" : "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 6 }}>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{ticket.userName || ticket.userEmail || "Unknown user"} · {ticket.topic || "other"}</div>
-                    </div>
-                    <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
-                      {formatTicketStatus(ticket.status)}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 8 }}>{ticket.message}</div>
-                  {Array.isArray(ticket.messages) && ticket.messages.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
-                      {ticket.messages.slice(-4).map(msg => (
-                        <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ maxWidth: "92%", alignSelf: msg.senderRole === "admin" ? "flex-end" : "flex-start", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--accent-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--accent)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
-                            {msg.senderRole === "admin" ? "Support" : (msg.senderName || "User")}
-                          </div>
-                          <div>{msg.message}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 10 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
-                  <div style={{ marginBottom: 10 }}>
-                    <textarea
-                      className="input-field"
-                      placeholder="Reply to this user..."
-                      value={supportReplyDrafts?.[ticket.id] || ""}
-                      onChange={event => setSupportReplyDrafts(current => ({ ...current, [ticket.id]: event.target.value }))}
-                      style={{ minHeight: 62, resize: "vertical" }}
-                    />
-                    <button
-                      className="btn-secondary"
-                      type="button"
-                      style={{ marginTop: 8, padding: "8px 12px", fontSize: 12, color: "var(--blue)" }}
-                      onClick={() => sendSupportReply(ticket)}
-                      disabled={replyingTicketId === ticket.id}
-                    >
-                      {replyingTicketId === ticket.id ? "Sending..." : "Send Reply"}
-                    </button>
-                  </div>
-                  {(ticket.status || "open") !== "resolved" && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {(ticket.status || "open") !== "in_progress" && (
-                        <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12, color: "var(--blue)" }} onClick={() => updateSupportTicketStatus(ticket, "in_progress")}>
-                          Mark In Progress
-                        </button>
-                      )}
-                      <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12, color: "var(--accent)" }} onClick={() => updateSupportTicketStatus(ticket, "resolved")}>
-                        Mark Resolved
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
