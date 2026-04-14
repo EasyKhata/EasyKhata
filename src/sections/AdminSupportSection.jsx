@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { arrayUnion, collection, doc, getDocs, limit, orderBy, query, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { EmptyState, SectionSkeleton } from "../components/UI";
+import { EmptyState, SectionSkeleton, PaginatedListControls } from "../components/UI";
 
 function formatTicketStatus(status) {
   if (status === "resolved") return "Resolved";
@@ -51,6 +51,8 @@ export default function AdminSupportSection() {
   const [replyingTicketId, setReplyingTicketId] = useState("");
   const [ticketsEnabled, setTicketsEnabled] = useState(true);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 900 : false));
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState(25);
 
   async function fetchTickets() {
     setLoading(true);
@@ -115,6 +117,10 @@ export default function AdminSupportSection() {
   const selectedTicket = useMemo(() => (
     visibleTickets.find(ticket => ticket.id === selectedTicketId) || visibleTickets[0] || null
   ), [selectedTicketId, visibleTickets]);
+  const paginatedQueueTickets = useMemo(() => {
+    const startIndex = (queuePage - 1) * queuePageSize;
+    return visibleTickets.slice(startIndex, startIndex + queuePageSize);
+  }, [queuePage, queuePageSize, visibleTickets]);
 
   useEffect(() => {
     if (!visibleTickets.length) {
@@ -125,6 +131,11 @@ export default function AdminSupportSection() {
       setSelectedTicketId(visibleTickets[0].id);
     }
   }, [selectedTicketId, visibleTickets]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(visibleTickets.length / queuePageSize));
+    if (queuePage > totalPages) setQueuePage(totalPages);
+  }, [queuePage, queuePageSize, visibleTickets.length]);
 
   async function updateSupportTicketStatus(ticket, status) {
     try {
@@ -203,6 +214,19 @@ export default function AdminSupportSection() {
             </button>
           ))}
         </div>
+        <div style={{ marginTop: 10 }}>
+          <PaginatedListControls
+            totalItems={visibleTickets.length}
+            page={queuePage}
+            pageSize={queuePageSize}
+            onPageChange={setQueuePage}
+            onPageSizeChange={nextSize => {
+              setQueuePageSize(nextSize);
+              setQueuePage(1);
+            }}
+            itemLabel="tickets"
+          />
+        </div>
       </div>
       {error && (
         <div className="card" style={{ marginBottom: 14, color: "var(--danger)", fontSize: 13 }}>
@@ -220,7 +244,7 @@ export default function AdminSupportSection() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 340px) minmax(0, 1fr)", gap: 14 }}>
           <div className="card" style={{ marginBottom: 0, maxHeight: "calc(100vh - 230px)", overflowY: "auto" }}>
-            {visibleTickets.map(ticket => {
+            {paginatedQueueTickets.map(ticket => {
               const active = selectedTicket?.id === ticket.id;
               return (
                 <button

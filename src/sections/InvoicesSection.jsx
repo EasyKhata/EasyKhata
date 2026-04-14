@@ -699,7 +699,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
   return (
     <div style={{ paddingBottom: 100 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
               {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
@@ -709,10 +709,10 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
-            {headerDatePicker}
+          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
+            <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
             {!isAdmin && (
-              <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+              <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
                 + New {documentLabel}
               </button>
             )}

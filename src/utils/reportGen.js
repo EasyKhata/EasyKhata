@@ -24,6 +24,31 @@ function safeText(value) {
     .trim();
 }
 
+function drawPdfBrandBadge(doc, x, y, variant = "dark") {
+  const darkMode = variant === "dark";
+  const iconBg = darkMode ? [16, 42, 67] : [238, 243, 248];
+  const iconStroke = darkMode ? [255, 255, 255] : [16, 42, 67];
+  const textColor = darkMode ? [20, 20, 28] : [255, 255, 255];
+  const linkColor = darkMode ? [96, 104, 116] : [214, 224, 238];
+
+  doc.setFillColor(iconBg[0], iconBg[1], iconBg[2]);
+  doc.roundedRect(x, y, 9, 9, 2, 2, "F");
+  doc.setDrawColor(iconStroke[0], iconStroke[1], iconStroke[2]);
+  doc.setLineWidth(0.7);
+  doc.line(x + 2.2, y + 2.2, x + 2.2, y + 6.8);
+  doc.line(x + 2.2, y + 4.5, x + 6.8, y + 4.5);
+  doc.line(x + 4.3, y + 2.2, x + 4.3, y + 6.8);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8.8);
+  doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+  doc.text("EasyKhata", x + 11.5, y + 5.7);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.6);
+  doc.setTextColor(linkColor[0], linkColor[1], linkColor[2]);
+  doc.text("www.easykhata.net", x + 11.5, y + 8.9);
+}
+
 function ensureSpace(doc, y, needed) {
   if (y + needed <= PAGE.bottom) return y;
   doc.addPage();
@@ -398,6 +423,7 @@ function setRgbText(doc, rgb) {
 function drawStatementHero(doc, y, title, subtitle, metaLine) {
   setRgbFill(doc, STATEMENT_THEME.header);
   doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 34, 7, 7, "F");
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 4.5, "light");
   setRgbText(doc, [255, 255, 255]);
   const safeTitle = safeText(title);
   const titleFontSize = safeTitle.length > 34 ? 16 : 20;
@@ -908,6 +934,7 @@ export function downloadAdminMonthlyReport(data, year, month, sym) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
   doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
   y += 32;
 
   y = sectionTitle(doc, y, "Admin Summary");
@@ -981,6 +1008,7 @@ export function downloadFinancialYearReport(data, startYear, sym) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
   doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
   y += 32;
 
   if (isApartmentOrgData(data)) {
@@ -1077,6 +1105,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
     y += 32;
 
     y = sectionTitle(doc, y, "Household Summary");
@@ -1162,6 +1191,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
     y += 32;
 
     y = sectionTitle(doc, y, "Freelancer Summary");
@@ -1239,6 +1269,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10.5);
     doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
     y += 32;
 
     y = sectionTitle(doc, y, "Business Summary");
@@ -1353,6 +1384,7 @@ export function downloadMonthlyReport(data, year, month, sym) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10.5);
   doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
   y += 32;
 
   y = sectionTitle(doc, y, "Financial Summary");

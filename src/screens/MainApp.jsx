@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
-import BrandLogo from "../components/BrandLogo";
+import { BrandMark } from "../components/BrandLogo";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -702,26 +702,24 @@ export default function MainApp() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? "10px 12px" : "12px 20px 12px", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
               <button
-                onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
-                title="Open profile settings"
+                onClick={() => setTab("dashboard")}
+                title="Go to dashboard"
                 style={{
                   width: 36,
                   height: 36,
                   borderRadius: 18,
                   border: "1px solid var(--border)",
                   background: "var(--surface-high)",
-                  color: "var(--text-sec)",
                   cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   flexShrink: 0,
+                  padding: 0,
                   marginTop: 2
                 }}
               >
-                {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
+                <BrandMark size={22} />
               </button>
               <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
                 <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -733,6 +731,27 @@ export default function MainApp() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
+                title="Open profile settings"
+                style={{
+                  width: isMobile ? 34 : 36,
+                  height: isMobile ? 34 : 36,
+                  borderRadius: 10,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-high)",
+                  color: "var(--text-sec)",
+                  cursor: "pointer",
+                  fontSize: isMobile ? 14 : 16,
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0
+                }}
+              >
+                ⚙
+              </button>
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"

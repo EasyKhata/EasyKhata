@@ -18,7 +18,8 @@ import {
   Avatar,
   EmptyState,
   SectionSkeleton,
-  uid
+  uid,
+  PaginatedListControls
 } from "../components/UI";
 import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -200,6 +201,8 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const [pendingFlatPayments, setPendingFlatPayments] = useState([]);
   const [flatSearchTerm, setFlatSearchTerm] = useState("");
   const [flatStatusFilter, setFlatStatusFilter] = useState("all");
+  const [flatPage, setFlatPage] = useState(1);
+  const [flatPageSize, setFlatPageSize] = useState(25);
   const [saleItems, setSaleItems] = useState([newSaleItem()]);
   const [saleDiscount, setSaleDiscount] = useState("");
   const [salePhone, setSalePhone] = useState("");
@@ -273,6 +276,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       value: flat.name || "",
       label: [flat.name, flat.ownerName || "", societyName].filter(Boolean).join(" - "),
       ownerName: flat.ownerName || "",
+      phone: String(flat.phone || "").trim(),
+      phoneNumber: String(flat.phoneNumber || "").trim(),
+      phoneCountryCode: String(flat.phoneCountryCode || "").trim(),
       monthlyMaintenance: Number(flat.monthlyMaintenance || 0),
       id: flat.id
     })).filter(option => option.value)
@@ -423,6 +429,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     const haystack = [flat.value, flat.ownerName, flat.label].filter(Boolean).join(" ").toLowerCase();
     return haystack.includes(normalizedFlatSearch);
   }), [apartmentCollectionStatus, flatStatusFilter, normalizedFlatSearch]);
+  const paginatedApartmentCollectionStatus = useMemo(() => {
+    const startIndex = (flatPage - 1) * flatPageSize;
+    return visibleApartmentCollectionStatus.slice(startIndex, startIndex + flatPageSize);
+  }, [flatPage, flatPageSize, visibleApartmentCollectionStatus]);
   const bulkPayableFlats = useMemo(() => apartmentCollectionStatus.filter(flat => !flat.paidEntry && Number(flat.monthlyAmount || 0) > 0), [apartmentCollectionStatus]);
   const activeMaintenanceFlat = useMemo(() => {
     if (!isApartmentOrg) return null;
@@ -432,6 +442,11 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     if (!flatNumber || collectionType !== "Monthly Maintenance" || collectionMonth !== mk) return null;
     return apartmentCollectionStatus.find(flat => String(flat.value || "").trim() === flatNumber) || null;
   }, [apartmentCollectionStatus, form.collectionMonth, form.collectionType, form.date, form.flatNumber, isApartmentOrg, mk]);
+
+  useEffect(() => {
+    const maxPages = Math.max(1, Math.ceil(visibleApartmentCollectionStatus.length / flatPageSize));
+    if (flatPage > maxPages) setFlatPage(maxPages);
+  }, [flatPage, flatPageSize, visibleApartmentCollectionStatus.length]);
 
   useEffect(() => {
     if (!d.loaded) return;
@@ -951,9 +966,34 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     setShowForm(true);
   }
 
+  function openFlatWhatsapp(flat) {
+    const rawPhone = String(flat?.phone || `${flat?.phoneCountryCode || ""}${flat?.phoneNumber || ""}`).trim();
+    const whatsappNumber = rawPhone.replace(/\D/g, "");
+    if (!whatsappNumber) return;
+
+    const baseIntro = `${societyName || "Apartment Society"} - ${MONTHS[month]} ${year}`;
+    const message = flat?.paidEntry
+      ? [
+          baseIntro,
+          `Flat ${flat.value} collection received.`,
+          `Amount: ${fmtMoney(flat.paidEntry.amount || 0, sym)}`,
+          `Date: ${fmtDate(flat.paidEntry.date || TODAY)}`,
+          "Thank you."
+        ].join("\n")
+      : [
+          baseIntro,
+          `Reminder for Flat ${flat.value}`,
+          `Due amount: ${fmtMoney(flat.monthlyAmount || 0, sym)}`,
+          "Please clear dues at the earliest. Thank you."
+        ].join("\n");
+
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
             Total {config.incomeLabel} - {MONTHS[month]} {year}
@@ -963,9 +1003,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
-          {headerDatePicker}
-          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
+          <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
+          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
             + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
           </button>
         </div>
@@ -1007,7 +1047,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Amt</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div></div>
                   </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 12 }}>
+                <div style={{ position: "sticky", top: 6, zIndex: 2, background: "var(--card)", borderRadius: 10, paddingBottom: 8, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 12 }}>
                   <Input placeholder="Search flat / owner" value={flatSearchTerm} onChange={event => setFlatSearchTerm(event.target.value)} />
                   <Select value={flatStatusFilter} onChange={event => setFlatStatusFilter(event.target.value)}>
                     <option value="all">All</option>
@@ -1022,13 +1062,30 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     Copy Pending Reminder
                   </button>
                 </div>
+                <div className="card" style={{ marginBottom: 10, padding: 10 }}>
+                  <PaginatedListControls
+                    totalItems={visibleApartmentCollectionStatus.length}
+                    page={flatPage}
+                    pageSize={flatPageSize}
+                    onPageChange={setFlatPage}
+                    onPageSizeChange={nextSize => {
+                      setFlatPageSize(nextSize);
+                      setFlatPage(1);
+                    }}
+                    itemLabel="flats"
+                  />
+                </div>
                 <div className="card" style={{ marginBottom: 0 }}>
-                  {visibleApartmentCollectionStatus.map(flat => (
+                  {paginatedApartmentCollectionStatus.map(flat => (
                     <div key={flat.id} className="card-row" style={{ alignItems: "center" }}>
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{flat.value}</div>
                         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                          {[flat.ownerName || "No owner", flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"]
+                          {[
+                            flat.ownerName || "No owner",
+                            flat.phone ? `WhatsApp ${flat.phone}` : "WhatsApp missing",
+                            flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"
+                          ]
                             .filter(Boolean)
                             .join(" · ")}
                         </div>
@@ -1039,6 +1096,14 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         )}
                         <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
                           Review
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: "7px 12px", fontSize: 12 }}
+                          onClick={() => openFlatWhatsapp(flat)}
+                          disabled={!String(flat.phone || `${flat.phoneCountryCode || ""}${flat.phoneNumber || ""}`).replace(/\D/g, "")}
+                        >
+                          {flat.paidEntry ? "WhatsApp Receipt" : "WhatsApp Reminder"}
                         </button>
                         {isCurrentViewedMonth && !flat.paidEntry && (
                           <button
