@@ -198,6 +198,8 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const [bulkMaintenanceAmount, setBulkMaintenanceAmount] = useState("");
   const [maintenanceAmountHydrated, setMaintenanceAmountHydrated] = useState(false);
   const [pendingFlatPayments, setPendingFlatPayments] = useState([]);
+  const [flatSearchTerm, setFlatSearchTerm] = useState("");
+  const [flatStatusFilter, setFlatStatusFilter] = useState("all");
   const [saleItems, setSaleItems] = useState([newSaleItem()]);
   const [saleDiscount, setSaleDiscount] = useState("");
   const [salePhone, setSalePhone] = useState("");
@@ -400,7 +402,26 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       monthlyAmount,
       paidEntry
     };
-  }), [apartmentFlats, bulkMaintenanceAmount, manualIncome, mk]);
+  }).sort((left, right) => String(left.value || "").localeCompare(String(right.value || ""), undefined, { numeric: true, sensitivity: "base" })), [apartmentFlats, bulkMaintenanceAmount, manualIncome, mk]);
+  const apartmentCollectionMetrics = useMemo(() => {
+    const totalFlats = apartmentCollectionStatus.length;
+    const paidFlats = apartmentCollectionStatus.filter(flat => Boolean(flat.paidEntry)).length;
+    const pendingFlats = totalFlats - paidFlats;
+    const expectedAmount = apartmentCollectionStatus.reduce((sum, flat) => sum + Number(flat.monthlyAmount || 0), 0);
+    const collectedAmount = apartmentCollectionStatus.reduce((sum, flat) => sum + Number(flat.paidEntry?.amount || 0), 0);
+    const pendingAmount = Math.max(0, expectedAmount - collectedAmount);
+    return { totalFlats, paidFlats, pendingFlats, expectedAmount, collectedAmount, pendingAmount };
+  }, [apartmentCollectionStatus]);
+  const normalizedFlatSearch = flatSearchTerm.trim().toLowerCase();
+  const visibleApartmentCollectionStatus = useMemo(() => apartmentCollectionStatus.filter(flat => {
+    if (flatStatusFilter === "paid" && !flat.paidEntry) return false;
+    if (flatStatusFilter === "pending" && flat.paidEntry) return false;
+    if (flatStatusFilter === "unpriced" && Number(flat.monthlyAmount || 0) > 0) return false;
+    if (!normalizedFlatSearch) return true;
+    const haystack = [flat.value, flat.ownerName, flat.label].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(normalizedFlatSearch);
+  }), [apartmentCollectionStatus, flatStatusFilter, normalizedFlatSearch]);
+  const bulkPayableFlats = useMemo(() => apartmentCollectionStatus.filter(flat => !flat.paidEntry && Number(flat.monthlyAmount || 0) > 0), [apartmentCollectionStatus]);
   const activeMaintenanceFlat = useMemo(() => {
     if (!isApartmentOrg) return null;
     const flatNumber = String(form.flatNumber || "").trim();
@@ -821,36 +842,75 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     setBulkMaintenanceAmount(String(amount));
   }
 
+  function createMaintenanceEntryForFlat(flat, triggerSuccessNotice = false) {
+    if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0)) return;
+    const hadDues = (d.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
+    d.addIncome({
+      label: `Monthly Maintenance - ${flat.value}`,
+      amount: flat.monthlyAmount,
+      date: TODAY,
+      month: mk,
+      note: "",
+      flatNumber: flat.value,
+      collectionType: "Monthly Maintenance",
+      residentName: flat.ownerName || "",
+      collectionMonth: mk
+    });
+    if (triggerSuccessNotice && !hadDues) {
+      window.dispatchEvent(new CustomEvent("ledger:first-success", {
+        detail: {
+          title: "First dues entry saved",
+          message: "Great start. Next, record one society expense to track net reserve clearly.",
+          actionLabel: "Open Expenses",
+          target: { tab: "expenses" }
+        }
+      }));
+    }
+  }
+
   function markFlatAsPaid(flat) {
     if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0) || pendingFlatPayments.includes(flat.id)) return;
 
     setPendingFlatPayments(current => [...current, flat.id]);
-
     try {
-      const hadDues = (d.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
-      d.addIncome({
-        label: `Monthly Maintenance - ${flat.value}`,
-        amount: flat.monthlyAmount,
-        date: TODAY,
-        month: mk,
-        note: "",
-        flatNumber: flat.value,
-        collectionType: "Monthly Maintenance",
-        residentName: flat.ownerName || "",
-        collectionMonth: mk
-      });
-      if (!hadDues) {
-        window.dispatchEvent(new CustomEvent("ledger:first-success", {
-          detail: {
-            title: "First dues entry saved",
-            message: "Great start. Next, record one society expense to track net reserve clearly.",
-            actionLabel: "Open Expenses",
-            target: { tab: "expenses" }
-          }
-        }));
-      }
+      createMaintenanceEntryForFlat(flat, true);
     } finally {
       setPendingFlatPayments(current => current.filter(item => item !== flat.id));
+    }
+  }
+
+  function markAllPendingFlatsAsPaid() {
+    if (!bulkPayableFlats.length) return;
+    const targetIds = bulkPayableFlats.map(flat => flat.id);
+    setPendingFlatPayments(current => Array.from(new Set([...current, ...targetIds])));
+    try {
+      bulkPayableFlats.forEach((flat, index) => createMaintenanceEntryForFlat(flat, index === 0));
+    } finally {
+      setPendingFlatPayments(current => current.filter(item => !targetIds.includes(item)));
+    }
+  }
+
+  async function copyPendingReminders() {
+    const pendingFlats = apartmentCollectionStatus.filter(flat => !flat.paidEntry && Number(flat.monthlyAmount || 0) > 0);
+    if (!pendingFlats.length) return;
+    const reminderText = [
+      `Maintenance reminder - ${societyName || "Society"}`,
+      `Month: ${MONTHS[month]} ${year}`,
+      "",
+      ...pendingFlats.map(flat => `${flat.value}: ${fmtMoney(flat.monthlyAmount, sym)} pending`),
+      "",
+      "Please clear dues at the earliest. Thank you."
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(reminderText);
+      window.dispatchEvent(new CustomEvent("ledger:second-success", {
+        detail: {
+          title: "Pending reminder copied",
+          message: "Share this message in your resident WhatsApp group."
+        }
+      }));
+    } catch (err) {
+      window.alert("Could not copy reminder text on this browser.");
     }
   }
 
@@ -928,8 +988,33 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     Apply to All Flats
                   </button>
                 </div>
+                <div className="card" style={{ marginBottom: 12, padding: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Flats</div><div style={{ fontSize: 14, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Paid</div><div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{apartmentCollectionMetrics.paidFlats}</div></div>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending</div><div style={{ fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{apartmentCollectionMetrics.pendingFlats}</div></div>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Expected</div><div style={{ fontSize: 13, fontWeight: 700 }}>{fmtMoney(apartmentCollectionMetrics.expectedAmount, sym)}</div></div>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collected</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(apartmentCollectionMetrics.collectedAmount, sym)}</div></div>
+                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Amt</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div></div>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 12 }}>
+                  <Input placeholder="Search flat / owner" value={flatSearchTerm} onChange={event => setFlatSearchTerm(event.target.value)} />
+                  <Select value={flatStatusFilter} onChange={event => setFlatStatusFilter(event.target.value)}>
+                    <option value="all">All</option>
+                    <option value="pending">Pending</option>
+                    <option value="paid">Paid</option>
+                    <option value="unpriced">No amount set</option>
+                  </Select>
+                  <button className="btn-secondary" onClick={markAllPendingFlatsAsPaid} disabled={!isCurrentViewedMonth || bulkPayableFlats.length === 0}>
+                    Mark All Pending Paid
+                  </button>
+                  <button className="btn-secondary" onClick={copyPendingReminders} disabled={apartmentCollectionMetrics.pendingFlats === 0}>
+                    Copy Pending Reminder
+                  </button>
+                </div>
                 <div className="card" style={{ marginBottom: 0 }}>
-                  {apartmentCollectionStatus.map(flat => (
+                  {visibleApartmentCollectionStatus.map(flat => (
                     <div key={flat.id} className="card-row" style={{ alignItems: "center" }}>
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{flat.value}</div>
