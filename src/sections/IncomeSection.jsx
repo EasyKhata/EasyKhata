@@ -273,6 +273,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       value: flat.name || "",
       label: [flat.name, flat.ownerName || "", societyName].filter(Boolean).join(" - "),
       ownerName: flat.ownerName || "",
+      monthlyMaintenance: Number(flat.monthlyMaintenance || 0),
       id: flat.id
     })).filter(option => option.value)
   ), [d.customers, societyName, sym]);
@@ -350,10 +351,11 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   useEffect(() => {
     if (!isApartmentOrg) return;
     if (typeof window === "undefined") return;
-    const savedValue = window.localStorage.getItem(getApartmentMaintenanceKey(d.activeOrgId, mk)) || "";
-    setBulkMaintenanceAmount(savedValue);
+    const storageValue = window.localStorage.getItem(getApartmentMaintenanceKey(d.activeOrgId, mk)) || "";
+    const fallbackValue = String(apartmentFlats.find(flat => Number(flat.monthlyMaintenance || 0) > 0)?.monthlyMaintenance || "");
+    setBulkMaintenanceAmount(storageValue || fallbackValue);
     setMaintenanceAmountHydrated(true);
-  }, [d.activeOrgId, isApartmentOrg, mk]);
+  }, [apartmentFlats, d.activeOrgId, isApartmentOrg, mk]);
 
   useEffect(() => {
     if (!isApartmentOrg || typeof window === "undefined") return;
@@ -390,7 +392,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const selectedMonthDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const defaultCollectionDate = selectedMonthDate > TODAY ? TODAY : selectedMonthDate;
   const apartmentCollectionStatus = useMemo(() => apartmentFlats.map(flat => {
-    const monthlyAmount = Number(bulkMaintenanceAmount || 0);
+    const monthlyAmount = Number(flat.monthlyMaintenance || bulkMaintenanceAmount || 0);
     const paidEntry = manualIncome.find(item => (
       String(item.flatNumber || "").trim() === String(flat.value || "").trim() &&
       (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk &&
@@ -838,8 +840,15 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   function applyMaintenanceAmountToAllFlats() {
     const amount = Number(bulkMaintenanceAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
-
-    setBulkMaintenanceAmount(String(amount));
+    const normalized = String(amount);
+    setBulkMaintenanceAmount(normalized);
+    (d.customers || []).forEach(customer => {
+      if (!String(customer?.name || "").trim()) return;
+      d.updateCustomer?.({
+        ...customer,
+        monthlyMaintenance: normalized
+      });
+    });
   }
 
   function createMaintenanceEntryForFlat(flat, triggerSuccessNotice = false) {

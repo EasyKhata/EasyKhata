@@ -1904,7 +1904,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="card">
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
-              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
+              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
                   icon="I"
