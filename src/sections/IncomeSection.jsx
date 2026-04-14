@@ -202,59 +202,70 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const [saleDiscount, setSaleDiscount] = useState("");
   const [salePhone, setSalePhone] = useState("");
   const [guidedField, setGuidedField] = useState("");
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
   const openFlatManager = openPeopleManager;
 
-  const invIncome = config.hideInvoices || isApartmentOrg
-    ? []
-    : getFinancialInvoices(d.invoices).filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk);
-  const manualIncome = d.income.filter(item => {
-    if (isApartmentOrg) {
-      return (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk;
-    }
-    return item.month === mk;
-  });
-  const countableManualIncome = manualIncome.filter(item => {
-    if (!isSmallBusinessOrg) return true;
-    const status = String(item.saleStatus || "pending").toLowerCase();
-    return status !== "canceled" && status !== "refunded";
-  });
-  const totalInv = invIncome.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0);
-  const totalManual = countableManualIncome.reduce((sum, item) => sum + Number(item.amount), 0);
+  const invIncome = useMemo(() => (
+    config.hideInvoices || isApartmentOrg
+      ? []
+      : getFinancialInvoices(d.invoices).filter(invoice => getInvoiceStatus(invoice) === "paid" && invoice.paidDate?.slice(0, 7) === mk)
+  ), [config.hideInvoices, d.invoices, isApartmentOrg, mk]);
+  const manualIncome = useMemo(() => (
+    d.income.filter(item => {
+      if (isApartmentOrg) {
+        return (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk;
+      }
+      return item.month === mk;
+    })
+  ), [d.income, isApartmentOrg, mk]);
+  const countableManualIncome = useMemo(() => (
+    manualIncome.filter(item => {
+      if (!isSmallBusinessOrg) return true;
+      const status = String(item.saleStatus || "pending").toLowerCase();
+      return status !== "canceled" && status !== "refunded";
+    })
+  ), [isSmallBusinessOrg, manualIncome]);
+  const totalInv = useMemo(() => invIncome.reduce((sum, invoice) => sum + invoiceGrandTotal(invoice), 0), [invIncome]);
+  const totalManual = useMemo(() => countableManualIncome.reduce((sum, item) => sum + Number(item.amount), 0), [countableManualIncome]);
   const totalIncome = totalInv + totalManual;
   const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredInvIncome = invIncome.filter(invoice => {
-    if (!normalizedSearch) return true;
-    const invoiceSearch = [
-      invoice.customer?.name,
-      invoice.billTo?.name,
-      invoice.number,
-      invoice.paidDate,
-      String(invoiceGrandTotal(invoice) || "")
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return invoiceSearch.includes(normalizedSearch);
-  });
-  const filteredManualIncome = manualIncome.filter(item => {
-    if (!normalizedSearch) return true;
-    const manualSearch = [
-      item.label,
-      item.note,
-      item.date,
-      item.invoiceNumber,
-      item.receiptNumber,
-      item.customerName,
-      item.phone,
-      String(item.amount || ""),
-      ...(config.incomeFields || []).map(field => item[field.key])
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return manualSearch.includes(normalizedSearch);
-  });
+  const filteredInvIncome = useMemo(() => (
+    invIncome.filter(invoice => {
+      if (!normalizedSearch) return true;
+      const invoiceSearch = [
+        invoice.customer?.name,
+        invoice.billTo?.name,
+        invoice.number,
+        invoice.paidDate,
+        String(invoiceGrandTotal(invoice) || "")
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return invoiceSearch.includes(normalizedSearch);
+    })
+  ), [invIncome, normalizedSearch]);
+  const filteredManualIncome = useMemo(() => (
+    manualIncome.filter(item => {
+      if (!normalizedSearch) return true;
+      const manualSearch = [
+        item.label,
+        item.note,
+        item.date,
+        item.invoiceNumber,
+        item.receiptNumber,
+        item.customerName,
+        item.phone,
+        String(item.amount || ""),
+        ...(config.incomeFields || []).map(field => item[field.key])
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return manualSearch.includes(normalizedSearch);
+    })
+  ), [config.incomeFields, manualIncome, normalizedSearch]);
   const apartmentFlats = useMemo(() => (
     (d.customers || []).map(flat => ({
       value: flat.name || "",
@@ -362,13 +373,21 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     }));
   }, [salePhoneLookup]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
   }
 
   const selectedMonthDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const defaultCollectionDate = selectedMonthDate > TODAY ? TODAY : selectedMonthDate;
-  const apartmentCollectionStatus = apartmentFlats.map(flat => {
+  const apartmentCollectionStatus = useMemo(() => apartmentFlats.map(flat => {
     const monthlyAmount = Number(bulkMaintenanceAmount || 0);
     const paidEntry = manualIncome.find(item => (
       String(item.flatNumber || "").trim() === String(flat.value || "").trim() &&
@@ -381,7 +400,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       monthlyAmount,
       paidEntry
     };
-  });
+  }), [apartmentFlats, bulkMaintenanceAmount, manualIncome, mk]);
   const activeMaintenanceFlat = useMemo(() => {
     if (!isApartmentOrg) return null;
     const flatNumber = String(form.flatNumber || "").trim();
@@ -903,7 +922,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               />
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 10, marginBottom: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: 14 }}>
                   <Input type="number" min="0" step="0.01" placeholder="Monthly amount for all flats" value={bulkMaintenanceAmount} onChange={event => setBulkMaintenanceAmount(event.target.value)} />
                   <button className="btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0)}>
                     Apply to All Flats
@@ -1155,7 +1174,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14 }}>
               <div className="card" style={{ padding: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>POS Checkout</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 10, marginBottom: 10 }}>
                   <Field label="Phone Number">
                     <Input
                       type="tel"
@@ -1186,7 +1205,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     )}
                   </Field>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                   <Field label="Invoice Number">
                     <Input value={saleInvoicePreview} readOnly />
                   </Field>
@@ -1201,19 +1220,21 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Items</div>
                   <button type="button" className="btn-secondary" style={{ padding: "6px 10px", fontSize: 12 }} onClick={addSaleItem}>+ Add Item</button>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) 0.7fr 0.9fr 0.8fr 0.9fr auto", gap: 8, marginBottom: 8, fontSize: 11, color: "var(--text-dim)", fontWeight: 700, textTransform: "uppercase" }}>
-                  <div>Product</div>
-                  <div>Qty</div>
-                  <div>Rate</div>
-                  <div>GST</div>
-                  <div>Total</div>
-                  <div></div>
-                </div>
-                {saleItems.map((line, index) => {
-                  const lineTotal = (Number(line.qty || 0) * Number(line.rate || 0)) * (1 + (Number(line.gstRate || 0) / 100));
-                  const selectedStock = saleProductByName.get(String(line.productName || "").trim().toLowerCase());
-                  return (
-                    <div key={line.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) 0.7fr 0.9fr 0.8fr 0.9fr auto", gap: 8, alignItems: "center", marginBottom: index === saleItems.length - 1 ? 0 : 8 }}>
+                <div style={{ overflowX: isMobile ? "auto" : "visible" }}>
+                  <div style={{ minWidth: isMobile ? 680 : "auto" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) 0.7fr 0.9fr 0.8fr 0.9fr auto", gap: 8, marginBottom: 8, fontSize: 11, color: "var(--text-dim)", fontWeight: 700, textTransform: "uppercase" }}>
+                      <div>Product</div>
+                      <div>Qty</div>
+                      <div>Rate</div>
+                      <div>GST</div>
+                      <div>Total</div>
+                      <div></div>
+                    </div>
+                    {saleItems.map((line, index) => {
+                      const lineTotal = (Number(line.qty || 0) * Number(line.rate || 0)) * (1 + (Number(line.gstRate || 0) / 100));
+                      const selectedStock = saleProductByName.get(String(line.productName || "").trim().toLowerCase());
+                      return (
+                        <div key={line.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) 0.7fr 0.9fr 0.8fr 0.9fr auto", gap: 8, alignItems: "center", marginBottom: index === saleItems.length - 1 ? 0 : 8 }}>
                       <Select value={line.productName || ""} onChange={event => updateSaleItem(line.id, "productName", event.target.value)}>
                         <option value="">{saleProductOptions.length ? "Select product" : "Add products via Services in Settings"}</option>
                         {saleProductOptions.map(product => (
@@ -1239,9 +1260,11 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         {selectedStock && <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 2 }}>{selectedStock.quantity} {selectedStock.unit} left</div>}
                       </div>
                       <button type="button" className="btn-secondary" style={{ padding: "6px 9px", fontSize: 12, color: "var(--danger)" }} onClick={() => removeSaleItem(line.id)} disabled={saleItems.length <= 1}>x</button>
-                    </div>
-                  );
-                })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
               <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>

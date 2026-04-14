@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
+import { arrayUnion, collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
@@ -216,10 +216,8 @@ export default function AdminPanel({ year, month }) {
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
   const [migrationInfo, setMigrationInfo] = useState({ running: false, message: "", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
-
-  if (user?.role !== "admin") {
-    return <div style={{ padding: 20 }}>Access denied.</div>;
-  }
+  const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
+  const [replyingTicketId, setReplyingTicketId] = useState("");
 
   async function fetchAdminData() {
     setLoading(true);
@@ -283,7 +281,20 @@ export default function AdminPanel({ year, month }) {
         const ticketsSnapshot = await getDocs(query(collection(db, "support_tickets"), orderBy("createdAt", "desc"), limit(ADMIN_TICKETS_SAMPLE_LIMIT)));
         setSupportTickets(
           ticketsSnapshot.docs
-            .map(item => ({ id: item.id, ...item.data() }))
+            .map(item => {
+              const payload = { id: item.id, ...item.data() };
+              const messages = Array.isArray(payload.messages)
+                ? payload.messages
+                : (payload.message ? [{
+                    id: `${payload.id}-initial`,
+                    senderRole: "user",
+                    senderId: payload.userId || "",
+                    senderName: payload.userName || "User",
+                    message: payload.message,
+                    createdAt: payload.createdAt || ""
+                  }] : []);
+              return { ...payload, messages };
+            })
             .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
         );
         setSupportTicketsEnabled(true);
@@ -302,8 +313,12 @@ export default function AdminPanel({ year, month }) {
   }
 
   useEffect(() => {
+    if (user?.role !== "admin") {
+      setLoading(false);
+      return;
+    }
     fetchAdminData();
-  }, []);
+  }, [user?.role]);
 
   async function fetchAllUsersForMigration() {
     const usersRef = collection(db, "users");
@@ -428,6 +443,61 @@ export default function AdminPanel({ year, month }) {
     } catch (err) {
       console.error("Support ticket status update error:", err);
       setAdminError("Unable to update the support ticket. Please try again.");
+    }
+  }
+
+  async function sendSupportReply(ticket) {
+    const draft = String(supportReplyDrafts?.[ticket.id] || "").trim();
+    if (!draft) {
+      setAdminError("Write a reply before sending.");
+      return;
+    }
+    setReplyingTicketId(ticket.id);
+    setAdminError("");
+    try {
+      const nowIso = new Date().toISOString();
+      await updateDoc(doc(db, "support_tickets", ticket.id), {
+        messages: arrayUnion({
+          id: `msg-${Date.now()}`,
+          senderRole: "admin",
+          senderId: user.id,
+          senderName: user?.name || "Support",
+          message: draft,
+          createdAt: nowIso
+        }),
+        status: "in_progress",
+        updatedAt: nowIso,
+        reviewedBy: user.id,
+        lastAdminReplyAt: nowIso
+      });
+      setSupportReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
+      setSupportTickets(current => current.map(item => (
+        item.id === ticket.id
+          ? {
+              ...item,
+              status: "in_progress",
+              updatedAt: nowIso,
+              reviewedBy: user.id,
+              lastAdminReplyAt: nowIso,
+              messages: [
+                ...(Array.isArray(item.messages) ? item.messages : []),
+                {
+                  id: `msg-${Date.now()}-${ticket.id}`,
+                  senderRole: "admin",
+                  senderId: user.id,
+                  senderName: user?.name || "Support",
+                  message: draft,
+                  createdAt: nowIso
+                }
+              ]
+            }
+          : item
+      )));
+    } catch (err) {
+      console.error("Support reply update error:", err);
+      setAdminError("Unable to send support reply. Please try again.");
+    } finally {
+      setReplyingTicketId("");
     }
   }
 
@@ -838,6 +908,10 @@ export default function AdminPanel({ year, month }) {
     return <SectionSkeleton rows={6} showHero={false} />;
   }
 
+  if (user?.role !== "admin") {
+    return <div style={{ padding: 20 }}>Access denied.</div>;
+  }
+
   return (
     <div style={{ padding: "20px 18px 110px" }}>
       <div className="section-label">Admin Overview</div>
@@ -878,15 +952,6 @@ export default function AdminPanel({ year, month }) {
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12 }}
-              onClick={runHistoricalOrgMigration}
-              disabled={Boolean(exporting) || loading || migrationInfo.running || !users.length}
-            >
-              {migrationInfo.running ? "Migrating collections..." : "Backfill Org Collections"}
-            </button>
             <button
               className="btn-secondary"
               type="button"
@@ -940,7 +1005,7 @@ export default function AdminPanel({ year, month }) {
           <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
             {exporting
               ? "Preparing your export, please wait..."
-              : `Selected period: ${selectedPeriodLabel}. Analytics are calculated from the latest ${ADMIN_USERS_SAMPLE_LIMIT} users, ${ADMIN_REQUESTS_SAMPLE_LIMIT} payment requests, and ${ADMIN_TICKETS_SAMPLE_LIMIT} support tickets for faster admin performance.`}
+              : `Selected period: ${selectedPeriodLabel}. Analytics are based on the latest sampled users, payment requests, and support tickets for fast admin response.`}
           </div>
           <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
             {snapshotGeneratedAt
@@ -1003,7 +1068,37 @@ export default function AdminPanel({ year, month }) {
                     </span>
                   </div>
                   <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 8 }}>{ticket.message}</div>
+                  {Array.isArray(ticket.messages) && ticket.messages.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+                      {ticket.messages.slice(-4).map(msg => (
+                        <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ maxWidth: "92%", alignSelf: msg.senderRole === "admin" ? "flex-end" : "flex-start", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--accent-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--accent)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
+                            {msg.senderRole === "admin" ? "Support" : (msg.senderName || "User")}
+                          </div>
+                          <div>{msg.message}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 10 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
+                  <div style={{ marginBottom: 10 }}>
+                    <textarea
+                      className="input-field"
+                      placeholder="Reply to this user..."
+                      value={supportReplyDrafts?.[ticket.id] || ""}
+                      onChange={event => setSupportReplyDrafts(current => ({ ...current, [ticket.id]: event.target.value }))}
+                      style={{ minHeight: 62, resize: "vertical" }}
+                    />
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      style={{ marginTop: 8, padding: "8px 12px", fontSize: 12, color: "var(--blue)" }}
+                      onClick={() => sendSupportReply(ticket)}
+                      disabled={replyingTicketId === ticket.id}
+                    >
+                      {replyingTicketId === ticket.id ? "Sending..." : "Send Reply"}
+                    </button>
+                  </div>
                   {(ticket.status || "open") !== "resolved" && (
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {(ticket.status || "open") !== "in_progress" && (
@@ -1077,88 +1172,39 @@ export default function AdminPanel({ year, month }) {
         </div>
       </div>
 
-      <div className="section-label">Session Analytics</div>
+      <div className="section-label">Strategy Playbook</div>
       <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <TopUsersCard users={analytics.topUsers} />
         <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Time Spent Summary</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Total Time" value={analytics.totalSessionLabel} sub="Across all users and orgs" color="var(--accent)" />
-            <MetricTile label="Avg/User" value={analytics.averageSessionPerUserLabel} sub="Average tracked time per user" color="var(--blue)" />
-            <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Recent saved activity" color="var(--purple)" />
-            <MetricTile label="Session Coverage" value={`${readinessStats.sessionCoverage}%`} sub="Users with tracked session time" color="var(--gold)" />
-          </div>
-          <div className="card" style={{ padding: 14, marginTop: 12, marginBottom: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How session time works</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Growth & Product Priorities</div>
+          <div className="card" style={{ padding: 14, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Acquire better users</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              Session time is now captured from real foreground usage, batched locally, and flushed to Firestore during org switches, visibility changes, and timed syncs. This is much closer to true time spent than the previous inferred activity model.
+              Focus campaigns on top markets and org types where conversion is strongest. Combine plan-mix + subscription-funnel signals to choose where ad spend should go first.
+            </div>
+          </div>
+          <div className="card" style={{ padding: 14, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Improve retention</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              Watch inactive paid users and trial users near expiry. Run proactive support + reminder nudges before churn happens.
+            </div>
+          </div>
+          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Improve user experience</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
+              Use support queue aging tickets as UX pain signals. Repeated ticket topics should directly drive feature simplification and onboarding updates.
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <TopWorkspacesCard items={analytics.topWorkspaces} />
 
         <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Engagement Signals</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Quick Market Signals</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Active 7 Days" value={analytics.stats.activeSevenDays} sub="Strong weekly usage" color="var(--accent)" />
-            <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Monthly returning users" color="var(--blue)" />
-            <MetricTile label="Dormant Users" value={analytics.stats.dormantUsers} sub="No recent product signal" color="var(--danger)" />
-            <MetricTile label="Power Users" value={analytics.stats.powerUsers} sub="20+ workspace records" color="var(--gold)" />
+            <MetricTile label="Top Market Coverage" value={`${readinessStats.locationCoverage}%`} sub="Users with structured location" color="var(--blue)" />
+            <MetricTile label="Activation Rate" value={`${analytics.stats.activationRate}%`} sub="Users with meaningful activity" color="var(--accent)" />
+            <MetricTile label="Dormant Paid Users" value={analytics.stats.paidAtRisk} sub="Highest retention priority" color="var(--danger)" />
+            <MetricTile label="Support Aging" value={analytics.stats.supportAging} sub="Open > 3 days" color="var(--gold)" />
           </div>
         </div>
-      </div>
-
-      <div className="section-label">Usage And Organizations</div>
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Workspace Depth</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Activation Rate" value={`${analytics.stats.activationRate}%`} sub="Users with saved org activity" color="var(--accent)" />
-            <MetricTile label="Avg Orgs Per User" value={analytics.averageOrganizationsPerUser} sub="Workspace expansion depth" color="var(--blue)" />
-            <MetricTile label="Avg Entries Per User" value={analytics.averageEntriesPerUser} sub="Overall usage intensity" color="var(--purple)" />
-            <MetricTile label="Avg Entries Per Org" value={analytics.averageEntriesPerOrg} sub="Tenant-level activity density" color="var(--gold)" />
-            <MetricTile label="Invoices Logged" value={analytics.stats.totalInvoices} sub="Cross-workspace invoice usage" color="var(--blue)" />
-            <MetricTile label="Customers Managed" value={analytics.stats.totalCustomers} sub="Customer-directory adoption" color="var(--accent)" />
-          </div>
-        </div>
-
-        <DistributionCard
-          title="Organization Mix"
-          subtitle="Shows which business categories are driving the product footprint today."
-          items={distributionStats.orgTypeMix}
-          emptyMessage="No organizations have been created yet."
-          accentColor="var(--purple)"
-        />
-      </div>
-
-      <div className="section-label">Audience Intelligence</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 18, marginBottom: 18 }}>
-        <DistributionCard
-          title="Top Markets"
-          subtitle={`${readinessStats.locationCoverage}% of users have structured city/state/country data or a workspace address signal.`}
-          items={distributionStats.locationMix}
-          emptyMessage="No location signals are captured yet. Ask users to fill city, state, and country in Personal Profile or keep workspace addresses updated."
-          accentColor="var(--blue)"
-        />
-
-        <DistributionCard
-          title="Gender Mix"
-          subtitle={`${readinessStats.genderCoverage}% of users have shared gender data.`}
-          items={distributionStats.genderMix}
-          emptyMessage="Gender data is optional and has not been captured yet."
-          accentColor="var(--accent)"
-        />
-
-        <DistributionCard
-          title="Age Groups"
-          subtitle={`${readinessStats.ageCoverage}% of users have shared age-group data.`}
-          items={distributionStats.ageMix}
-          emptyMessage="Age-group data is optional and has not been captured yet."
-          accentColor="var(--purple)"
-        />
       </div>
 
       <div className="section-label">Strategic Signals</div>
@@ -1168,53 +1214,6 @@ export default function AdminPanel({ year, month }) {
         ))}
       </div>
 
-      <div className="section-label">Data Readiness</div>
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Insight Coverage</div>
-          {[
-            ["Location coverage", analytics.readiness.locationCoverage, "Profile location or workspace address"],
-            ["Gender coverage", analytics.readiness.genderCoverage, "Optional personal-profile field"],
-            ["Age-group coverage", analytics.readiness.ageCoverage, "Derived from date of birth"],
-            ["Session-duration coverage", analytics.readiness.sessionCoverage, "Tracked foreground session time"]
-          ].map(([label, value, hint]) => (
-            <div key={label} style={{ marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                <div>
-                  <div style={{ fontSize: 13, color: "var(--text)" }}>{label}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{hint}</div>
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{value}%</div>
-              </div>
-              <ProgressBar pct={value} color="var(--accent)" />
-            </div>
-          ))}
-        </div>
-
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to improve next</div>
-          <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>1. Complete audience fields</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              The app now supports structured city, state, country, date of birth, gender, and phone country code in Personal Profile. Driving adoption there will make campaign targeting and regional planning much stronger.
-            </div>
-          </div>
-          <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>2. Increase session coverage</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              Session time is now tracked, but coverage still depends on users running the latest app version and remaining online long enough to flush local batches. As this version rolls out, the time-spent metrics will become more complete.
-            </div>
-          </div>
-          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>3. Watch paid quiet users</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              {analytics.stats.paidAtRisk > 0
-                ? `${analytics.stats.paidAtRisk} paid users have cooled off recently. A retention sequence or check-in campaign would likely outperform a broad message.`
-                : "No paid inactivity risk is obvious right now, which is a good sign for retention."}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

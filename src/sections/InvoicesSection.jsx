@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
   DateSelectInput,
@@ -148,6 +148,7 @@ function renderDynamicField(field, value, onChange) {
 export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
   const { user } = useAuth();
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
   const effectiveOrgType = getOrgType(orgType || user?.organizationType);
   const config = isAdmin
@@ -181,15 +182,15 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const [requestFilter, setRequestFilter] = useState(PAYMENT_REQUEST_STATUS.PENDING);
   const [adminRequestError, setAdminRequestError] = useState("");
   const [guidedField, setGuidedField] = useState("");
-  const serviceOptions = (d.orgRecords?.services || []).map(service => ({
+  const serviceOptions = useMemo(() => (d.orgRecords?.services || []).map(service => ({
     id: service.id,
     name: service.serviceName || "",
     label: [service.serviceName || "", service.packageName || "", service.defaultAmount ? `${sym} ${service.defaultAmount}` : ""].filter(Boolean).join(" - "),
     packageName: service.packageName || "",
     defaultAmount: Number(service.defaultAmount) || 0,
     notes: service.notes || ""
-  })).filter(service => service.name);
-  const apartmentFlatOptions = [
+  })).filter(service => service.name), [d.orgRecords?.services, sym]);
+  const apartmentFlatOptions = useMemo(() => ([
     ...(societyName ? [{ id: "__building__", flatNumber: societyName, ownerName: "Common Building", tenantName: "", phone: "", isBuilding: true }] : []),
     ...(d.customers || []).map(flat => ({
       id: flat.id,
@@ -199,7 +200,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       phone: flat.phone || "",
       isBuilding: false
     })).filter(item => item.flatNumber)
-  ];
+  ]), [d.customers, societyName]);
   const apartmentDocumentOptions = apartmentFlatOptions;
 
   useEffect(() => {
@@ -237,7 +238,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     fetchUsers();
   }, [isAdmin]);
 
-  const filteredRequests = paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter);
+  const filteredRequests = useMemo(() => (
+    paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter)
+  ), [paymentRequests, requestFilter]);
 
   async function updatePaymentRequestStatus(request, status) {
     setAdminRequestError("");
@@ -298,18 +301,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
   const [form, setForm] = useState(null);
 
-  const monthInv = d.invoices
-    .filter(invoice => String(invoice.documentType || "invoice") === documentType)
-    .filter(invoice => invoice.date?.slice(0, 7) === mk)
-    .map(invoice => ({
-      ...invoice,
-      computedStatus: getDocumentStatus(invoice, isQuote),
-      dueMessage: isApartmentOrg ? "" : getDocumentDueMessage(invoice, isQuote),
-      total: invoiceGrandTotal(invoice),
-    }));
-  const total = monthInv.reduce((sum, invoice) => sum + invoice.total, 0);
-  const pendingCount = isApartmentOrg ? 0 : monthInv.filter(invoice => invoice.computedStatus !== (isQuote ? "approved" : "paid")).length;
-  const filteredMonthInv = monthInv.filter(invoice => {
+  const monthInv = useMemo(() => (
+    d.invoices
+      .filter(invoice => String(invoice.documentType || "invoice") === documentType)
+      .filter(invoice => invoice.date?.slice(0, 7) === mk)
+      .map(invoice => ({
+        ...invoice,
+        computedStatus: getDocumentStatus(invoice, isQuote),
+        dueMessage: isApartmentOrg ? "" : getDocumentDueMessage(invoice, isQuote),
+        total: invoiceGrandTotal(invoice),
+      }))
+  ), [d.invoices, documentType, isApartmentOrg, isQuote, mk]);
+  const total = useMemo(() => monthInv.reduce((sum, invoice) => sum + invoice.total, 0), [monthInv]);
+  const pendingCount = useMemo(() => (
+    isApartmentOrg ? 0 : monthInv.filter(invoice => invoice.computedStatus !== (isQuote ? "approved" : "paid")).length
+  ), [isApartmentOrg, isQuote, monthInv]);
+  const filteredMonthInv = useMemo(() => monthInv.filter(invoice => {
     const needle = searchQuery.trim().toLowerCase();
     if (!needle) return true;
 
@@ -329,7 +336,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       .toLowerCase();
 
     return fields.includes(needle);
-  });
+  }), [monthInv, searchQuery]);
 
   useEffect(() => {
     if (!d.loaded) return;
@@ -347,6 +354,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     const timeout = window.setTimeout(() => setGuidedField(""), 3200);
     return () => window.clearTimeout(timeout);
   }, [guidedField]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -894,7 +909,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                 {invoice.billTo?.phone && <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 2 }}>Phone: {invoice.billTo.phone}</div>}
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10, marginBottom: 18 }}>
                 {[["Bill To", invoice.billTo], ["Ship To", invoice.shipTo]].map(([label, block]) => (
                   <div key={label} style={{ background: "var(--surface-high)", borderRadius: 12, padding: "12px 14px" }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>{label}</div>
@@ -967,7 +982,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             {invoice.notes && <div className="card" style={{ padding: "14px 18px", fontSize: 14, color: "var(--text-sec)", marginBottom: 14, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Notes:</strong> {invoice.notes}</div>}
             {invoice.terms && <div className="card" style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-sec)", marginBottom: 18, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Terms:</strong> {invoice.terms}</div>}
 
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${isApartmentOrg ? 2 : 3}, 1fr)`, gap: 10, marginBottom: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${isApartmentOrg ? 2 : 3}, 1fr)`, gap: 10, marginBottom: 12 }}>
               {!isApartmentOrg && (
                 <button onClick={() => updateInvoiceStatus(invoice, isQuote ? (computedStatus === "draft" ? "sent" : computedStatus === "sent" ? "approved" : "draft") : computedStatus === "paid" ? "pending" : "paid")} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: isQuote ? "var(--gold-deep)" : computedStatus === "paid" ? "var(--gold-deep)" : "var(--accent)", color: isQuote ? "var(--gold)" : computedStatus === "paid" ? "var(--gold)" : "#0C0C10" }}>
                   {isQuote ? (computedStatus === "draft" ? "Mark Sent" : computedStatus === "sent" ? "Mark Approved" : "Mark Draft") : computedStatus === "paid" ? "Mark Pending" : "Mark Paid"}
@@ -1091,7 +1106,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </Field>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: isApartmentOrg ? "1fr" : "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : (isApartmentOrg ? "1fr" : "1fr 1fr"), gap: 10 }}>
               <Field label="Invoice Date" required>
                 <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
               </Field>
@@ -1103,7 +1118,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             </div>
 
             {!isApartmentOrg && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 10 }}>
                 <Field label="Status">
                   <Select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value, paidDate: !isQuote && event.target.value === "paid" ? current.paidDate || current.date : "" }))}>
                     {isQuote ? (
@@ -1172,7 +1187,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                 <Input placeholder="Description" value={item.desc} onChange={event => setItem(item.id, "desc", event.target.value)} style={{ marginBottom: 8 }} />
                 <Input placeholder="Sub-description (optional)" value={item.subDesc || ""} onChange={event => setItem(item.id, "subDesc", event.target.value)} style={{ marginBottom: 8, fontSize: 14 }} />
                 {showTaxFields && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8, marginBottom: 8 }}>
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>HSN / SAC</label>
                       <Input placeholder="998314" value={item.hsn || ""} onChange={event => setItem(item.id, "hsn", event.target.value)} />
@@ -1183,7 +1198,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     </div>
                   </div>
                 )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 8 }}>
                   <div>
                     <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Qty</label>
                     <Input type="number" min="1" value={item.qty} onChange={event => setItem(item.id, "qty", event.target.value)} />

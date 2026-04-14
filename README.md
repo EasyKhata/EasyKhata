@@ -1,70 +1,62 @@
-# Getting Started with Create React App
+# EasyKhata
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+EasyKhata is a mobile-first ledger app that helps users manage money operations across different workflows in one place:
 
-## Available Scripts
+- Small business bookkeeping
+- Freelancer billing and collections
+- Personal/household tracking
+- Apartment/society accounting
 
-In the project directory, you can run:
+The core value proposition is adaptive workflows by organization type while keeping a single app shell and a consistent experience.
 
-### `npm start`
+## Tech Stack
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- React + Vite
+- Firebase Auth + Firestore + Cloud Functions
+- Razorpay (UPI/subscription payment flow)
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Core Features
 
-### `npm test`
+- Organization-aware dashboards and labels
+- Income, expenses, invoices, khata-style records, and reminders
+- Multi-organization support with active workspace switching
+- Subscription and review-access gating
+- Admin panel for user and payment request operations
+- PDF invoice/report generation
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## Project Structure
 
-### `npm run build`
+- `src/` - frontend app (screens, sections, context, utilities)
+- `functions/` - Firebase Cloud Functions (payments, admin metrics, background jobs)
+- `public/legal/` - legal policy pages (terms, privacy, refunds, data deletion)
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Local Development
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Install dependencies:
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+`npm install`
 
-### `npm run eject`
+Run dev server:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+`npm run dev`
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Build for production:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+`npm run build`
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+Preview production build:
 
-## Learn More
+`npm run preview`
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Environment and Deployment Notes
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- Frontend Firebase config is in `src/firebase.js`.
+- Functions use Firebase secrets for Razorpay credentials:
+  - `RAZORPAY_KEY_ID`
+  - `RAZORPAY_KEY_SECRET`
+  - `RAZORPAY_WEBHOOK_SECRET`
+- Firestore access is enforced through `firestore.rules`.
 
-### Code Splitting
+## Product Positioning
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+EasyKhata is designed for users who do not fit a single accounting template. Instead of separate apps for home, freelancing, and business, EasyKhata adapts sections and terminology based on workspace type while preserving one familiar UI.
