@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
 import {
@@ -78,9 +78,9 @@ function PersonalUsagePie({ stats, sym, viewMode }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <svg width="190" height="190" viewBox="0 0 190 190" role="img" aria-label="Earnings usage pie chart">
+          <svg width={isMobile ? "156" : "190"} height={isMobile ? "156" : "190"} viewBox="0 0 190 190" role="img" aria-label="Earnings usage pie chart">
             <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
             {segments.map(segment => {
               const angle = (segment.value / total) * 360;
@@ -159,9 +159,9 @@ function ApartmentUsagePie({ stats, sym, viewMode }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <svg width="190" height="190" viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
+          <svg width={isMobile ? "156" : "190"} height={isMobile ? "156" : "190"} viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
             <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
             {segments.map(segment => {
               const angle = (segment.value / total) * 360;
@@ -237,6 +237,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const sym = data.currency?.symbol || "Rs";
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [viewMode, setViewMode] = useState(propViewMode || "month"); // "month" or "year"
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
 
   // Show setup guide for normal users on first visit
   useEffect(() => {
@@ -248,9 +249,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     setShowSetupGuide(true);
   }, [data.loaded, user?.id, user?.onboardingSeenAt]);
 
-  if (!data.loaded) {
-    return <DashboardSkeleton />;
-  }
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const orgType = getOrgType(data.account?.organizationType || user?.organizationType);
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
@@ -258,15 +263,25 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const orgConfig = getOrgConfig(orgType);
-  const stats = isApartmentOrg
-    ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
-    : isFreelancerOrg
-      ? (viewMode === "month" ? calculateFreelancerDashboard(data, year, month) : calculateFreelancerYearlyDashboard(data, year))
-    : isSmallBusinessOrg
-      ? (viewMode === "month" ? calculateSmallBusinessDashboard(data, year, month) : calculateSmallBusinessYearlyDashboard(data, year))
-    : isPersonalOrg
-      ? (viewMode === "month" ? calculatePersonalDashboard(data, year, month) : calculatePersonalYearlyDashboard(data, year))
-    : (viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year));
+  const stats = useMemo(() => {
+    if (!data.loaded) {
+      return {
+        profit: 0,
+        netAfterEmi: 0,
+        cashFlow: [],
+        monthlyBreakdown: []
+      };
+    }
+    return isApartmentOrg
+      ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
+      : isFreelancerOrg
+        ? (viewMode === "month" ? calculateFreelancerDashboard(data, year, month) : calculateFreelancerYearlyDashboard(data, year))
+        : isSmallBusinessOrg
+          ? (viewMode === "month" ? calculateSmallBusinessDashboard(data, year, month) : calculateSmallBusinessYearlyDashboard(data, year))
+          : isPersonalOrg
+            ? (viewMode === "month" ? calculatePersonalDashboard(data, year, month) : calculatePersonalYearlyDashboard(data, year))
+            : (viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year));
+  }, [data, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg, month, viewMode, year]);
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
   const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const currentPlan = getUserPlan(user);
@@ -277,7 +292,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const hasIncomeRecord = (data.income || []).length > 0;
   const hasDuesRecord = (data.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
   const firstValueCompleted = isApartmentOrg ? hasDuesRecord : (orgConfig.hideInvoices ? hasIncomeRecord : hasInvoiceRecord);
-  const quickstartItems = [
+  const quickstartItems = useMemo(() => ([
     {
       id: "people",
       label: isApartmentOrg ? "Add first resident/flat" : isPersonalOrg ? "Add first family member" : "Add first customer",
@@ -290,8 +305,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       completed: firstValueCompleted,
       onAction: () => onNav({ tab: orgConfig.hideInvoices || isApartmentOrg ? "income" : "invoices", quickstart: isApartmentOrg ? "first-dues" : orgConfig.hideInvoices ? "first-income" : "first-invoice" })
     }
-  ];
-  const quickstartDone = quickstartItems.filter(item => item.completed).length;
+  ]), [firstValueCompleted, hasCustomerRecord, isApartmentOrg, isPersonalOrg, onNav, orgConfig.hideInvoices]);
+  const quickstartDone = useMemo(() => quickstartItems.filter(item => item.completed).length, [quickstartItems]);
   const showQuickstartChecklist = !showSetupGuide && quickstartDone < quickstartItems.length;
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
@@ -313,9 +328,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
     : (stats.profit >= 0 ? "You're profitable for the year." : "Expenses exceed receipts for the year.");
   
-  const maxCashFlow = viewMode === "month" 
-    ? Math.max(1, ...stats.cashFlow.map(item => Math.max(item.income, item.expenses)))
-    : Math.max(1, ...stats.monthlyBreakdown.map(item => Math.max(item.income, item.expenses)));
+  const maxCashFlow = useMemo(() => (
+    viewMode === "month"
+      ? Math.max(1, ...stats.cashFlow.map(item => Math.max(item.income, item.expenses)))
+      : Math.max(1, ...stats.monthlyBreakdown.map(item => Math.max(item.income, item.expenses)))
+  ), [stats.cashFlow, stats.monthlyBreakdown, viewMode]);
+
+  if (!data.loaded) {
+    return <DashboardSkeleton />;
+  }
 
   const Tile = ({ label, value, color, sub, onClick }) => (
     <div onClick={onClick} style={{ background: "var(--surface)", border: `1px solid ${color}33`, borderRadius: 18, padding: "18px 16px", cursor: onClick ? "pointer" : "default", boxShadow: "var(--card-shadow)" }}>
@@ -375,7 +396,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           {showQuickstartChecklist && (
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
             <Tile label={viewMode === "month" ? "Collections" : "Total Collections"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Recorded maintenance collections" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Society Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, utilities, repairs, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "Monthly Reserve" : "Latest Month Reserve"} value={fmtMoney(stats.monthlyReserve || 0, sym)} color={(stats.monthlyReserve || 0) >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collections minus expenses for this month" : "Net result of the latest month in this year"} />
@@ -454,7 +475,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
             <Tile label={viewMode === "month" ? "Earnings" : "Total Earnings"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "All household earnings" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--gold)" sub={viewMode === "month" ? `${stats.activeLoansCount || 0} active loan(s)` : `Avg ${fmtMoney(stats.avgMonthlyEmi, sym)}/month`} onClick={() => onNav("emi")} />
@@ -553,7 +574,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
             <Tile label={viewMode === "month" ? "Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Payments logged plus paid client invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Tools, travel, subscriptions, and delivery costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label="Awaiting Payments" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} client invoice(s) still open`} onClick={() => onNav("invoices")} />
@@ -640,7 +661,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               {!showAdvanced ? (
                 <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month freelancer cash flow trend." : "Upgrade to Pro to see your yearly freelancer cash flow trend."} accentColor="var(--blue)" />
               ) : viewMode === "month" ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
                   {stats.cashFlow.map(item => (
                     <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                       <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
@@ -653,7 +674,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   ))}
                 </div>
               ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(12, minmax(28px, 1fr))" : "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
                   {stats.monthlyBreakdown.map(item => (
                     <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                       <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
@@ -707,7 +728,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 22 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
           {viewMode === "month" ? (
             <>
           <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash In" : "Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg && !hasPosSystem ? "Payments and collections received" : isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
@@ -876,7 +897,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             {!showAdvanced ? (
               <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month cash flow trend and business runway insights." : "Upgrade to Pro to see your yearly cash flow trend and business runway insights."} accentColor="var(--blue)" />
             ) : viewMode === "month" ? (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
               {stats.cashFlow.map(item => (
                 <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
                   <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
@@ -889,7 +910,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               ))}
             </div>
             ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(12, minmax(28px, 1fr))" : "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
               {stats.monthlyBreakdown.map(item => (
                 <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                   <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>

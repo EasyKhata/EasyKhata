@@ -138,22 +138,24 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const hasApartmentFlats = !isApartmentOrg || (d.customers || []).some(flat => String(flat?.name || "").trim());
   const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
 
-  const active = d.expenses.filter(expense => {
+  const active = useMemo(() => d.expenses.filter(expense => {
     if (!expense.recurring) return expense.month === mk;
     const started = expense.startMonth <= mk;
     const notEnded = !expense.endMonth || expense.endMonth >= mk;
     return started && notEnded;
-  });
-  const total = active.reduce((sum, expense) => sum + Number(expense.amount), 0);
-  const recurring = active.filter(expense => expense.recurring);
-  const oneTime = active.filter(expense => !expense.recurring);
-  const salaryExpenses = active.filter(expense => String(expense.expenseType || "").trim() === "Team Payout");
-  const partnerExpenses = active.filter(expense => String(expense.expenseType || "").trim() === "Partner Payment");
-  const stockExpenses = active.filter(expense => String(expense.purchaseType || "").trim() === "Stock Purchase");
-  const supplierPaymentExpenses = active.filter(expense => String(expense.purchaseType || "").trim() === "Supplier Payment");
-  const otherExpenses = active.filter(expense => !["Team Payout", "Partner Payment"].includes(String(expense.expenseType || "").trim()));
-  const retailOtherExpenses = active.filter(expense => !["Stock Purchase", "Supplier Payment"].includes(String(expense.purchaseType || "").trim()));
-  const stats = calculateDashboard(d, year, month);
+  }), [d.expenses, mk]);
+  const total = useMemo(() => active.reduce((sum, expense) => sum + Number(expense.amount), 0), [active]);
+  const recurring = useMemo(() => active.filter(expense => expense.recurring), [active]);
+  const oneTime = useMemo(() => active.filter(expense => !expense.recurring), [active]);
+  const salaryExpenses = useMemo(() => active.filter(expense => String(expense.expenseType || "").trim() === "Team Payout"), [active]);
+  const partnerExpenses = useMemo(() => active.filter(expense => String(expense.expenseType || "").trim() === "Partner Payment"), [active]);
+  const stockExpenses = useMemo(() => active.filter(expense => String(expense.purchaseType || "").trim() === "Stock Purchase"), [active]);
+  const supplierPaymentExpenses = useMemo(() => active.filter(expense => String(expense.purchaseType || "").trim() === "Supplier Payment"), [active]);
+  const otherExpenses = useMemo(() => active.filter(expense => !["Team Payout", "Partner Payment"].includes(String(expense.expenseType || "").trim())), [active]);
+  const retailOtherExpenses = useMemo(() => active.filter(expense => !["Stock Purchase", "Supplier Payment"].includes(String(expense.purchaseType || "").trim())), [active]);
+  const stats = useMemo(() => (
+    d.loaded ? calculateDashboard(d, year, month) : { budgetStatus: [] }
+  ), [d, month, year]);
   const filteredExpenses = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     const sorted = active.slice().sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
@@ -176,10 +178,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     });
   }, [active, searchQuery]);
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   const budgetCards = useMemo(
     () =>
       stats.budgetStatus.map(item => ({
@@ -188,6 +186,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       })),
     [stats.budgetStatus]
   );
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {

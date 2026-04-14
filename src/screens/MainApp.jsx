@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
@@ -11,7 +11,7 @@ import {
   saveDismissedReminderIds,
   saveSentBrowserReminderIds
 } from "../utils/reminders";
-import { formatSubscriptionDate, isTrialActive } from "../utils/subscription";
+import { formatSubscriptionDate, isReviewAccessEnabled, isTrialActive } from "../utils/subscription";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 
 const Dashboard = lazy(() => import("../sections/Dashboard"));
@@ -26,9 +26,33 @@ const AdminPanel = lazy(() => import("../sections/AdminPanel"));
 const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
 
 const now = new Date();
+const TAB_COLOR = {
+  dashboard: "var(--accent)",
+  users: "var(--blue)",
+  org: "var(--blue)",
+  income: "var(--accent)",
+  expenses: "var(--danger)",
+  emi: "var(--gold)",
+  khata: "var(--gold)",
+  invoices: "var(--blue)",
+  settings: "var(--purple)",
+  adminDashboard: "var(--gold)"
+};
+const TAB_ICON_GLYPHS = {
+  dashboard: "◉",
+  users: "◎",
+  income: "↑",
+  expenses: "↓",
+  emi: "◌",
+  khata: "¤",
+  invoices: "▣",
+  org: "◍",
+  settings: "◈"
+};
 
 function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
   const [open, setOpen] = useState(false);
+  const [useNativeMonthPicker, setUseNativeMonthPicker] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
@@ -52,6 +76,23 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
       document.removeEventListener("touchstart", handleClick);
     };
   }, [open]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const update = () => setUseNativeMonthPicker(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!useNativeMonthPicker) return;
+    if (viewMode !== "month") {
+      onViewModeChange("month");
+    }
+    setOpen(false);
+  }, [onViewModeChange, useNativeMonthPicker, viewMode]);
 
   function prev() {
     if (viewMode === "month") {
@@ -85,6 +126,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
   }
 
   const nextDisabled = viewMode === "month" ? isCurrentMonth : isCurrentYear;
+  const monthInputValue = `${year}-${String(month + 1).padStart(2, "0")}`;
 
   return (
     <div className="header-date-picker" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6, width: "fit-content", maxWidth: "100%", marginLeft: "auto" }}>
@@ -106,31 +148,54 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         {"‹"}
       </button>
 
-      <button
-        onClick={() => setOpen(current => !current)}
-        style={{
-          minWidth: 96,
-          maxWidth: 118,
-          padding: "6px 9px",
-          borderRadius: 10,
-          border: "1px solid var(--border)",
-          background: "var(--surface)",
-          color: "var(--text)",
-          cursor: "pointer",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "flex-start",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
-          flexShrink: 1
-        }}
-      >
-        <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>
-          {viewMode === "month" ? "Month" : "Year"}
-        </span>
-        <span style={{ fontFamily: "var(--serif)", fontSize: 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
-          {viewMode === "month" ? `${MONTHS[month].slice(0, 3)} ${year}` : year}
-        </span>
-      </button>
+      {useNativeMonthPicker ? (
+        <div style={{ minWidth: 112, maxWidth: 128, padding: "5px 8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)", flexShrink: 1 }}>
+          <div style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
+            Month
+          </div>
+          <input
+            type="month"
+            value={monthInputValue}
+            max={`${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`}
+            onChange={event => {
+              const nextValue = String(event.target.value || "");
+              if (!nextValue) return;
+              const [nextYearRaw, nextMonthRaw] = nextValue.split("-");
+              const nextYear = Number(nextYearRaw);
+              const nextMonth = Number(nextMonthRaw) - 1;
+              if (Number.isNaN(nextYear) || Number.isNaN(nextMonth) || nextMonth < 0 || nextMonth > 11) return;
+              onChange(nextYear, nextMonth);
+            }}
+            style={{ width: "100%", border: "none", background: "transparent", color: "var(--blue)", fontFamily: "var(--serif)", fontSize: 13, lineHeight: 1.2, padding: 0 }}
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setOpen(current => !current)}
+          style={{
+            minWidth: 96,
+            maxWidth: 118,
+            padding: "6px 9px",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            color: "var(--text)",
+            cursor: "pointer",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+            flexShrink: 1
+          }}
+        >
+          <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+            {viewMode === "month" ? "Month" : "Year"}
+          </span>
+          <span style={{ fontFamily: "var(--serif)", fontSize: 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
+            {viewMode === "month" ? `${MONTHS[month].slice(0, 3)} ${year}` : year}
+          </span>
+        </button>
+      )}
 
       <button
         onClick={next}
@@ -152,7 +217,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         {"›"}
       </button>
 
-      {open && (
+      {open && !useNativeMonthPicker && (
         <div
           style={{
             position: "absolute",
@@ -283,10 +348,9 @@ export default function MainApp() {
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
 
-  function handleNavigate(target) {
+  const handleNavigate = useCallback((target) => {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
     const routedTab = nextTarget?.tab || "dashboard";
     const nextTab = routedTab === "settings" && ["account", "customers", "create-org", "org-records"].includes(nextTarget?.screen)
@@ -309,7 +373,7 @@ export default function MainApp() {
     }
 
     setSettingsNavigation(null);
-  }
+  }, []);
 
   useEffect(() => {
     const handleAppNavigate = event => {
@@ -386,7 +450,10 @@ export default function MainApp() {
     return filterRemindersByPrefs(reminders, data.notificationPrefs || {});
   }, [data]);
 
-  const inboxReminders = liveReminders.filter(item => !dismissedIds.includes(item.id));
+  const inboxReminders = useMemo(
+    () => liveReminders.filter(item => !dismissedIds.includes(item.id)),
+    [dismissedIds, liveReminders]
+  );
 
   useEffect(() => {
     if (!user?.id || typeof window === "undefined" || !("Notification" in window)) return;
@@ -411,6 +478,7 @@ export default function MainApp() {
   }, [dismissedIds, liveReminders, data.notificationPrefs?.browserEnabled, user?.id]);
 
   const isAdmin = user?.role === "admin";
+  const reviewAccessEnabled = isReviewAccessEnabled();
   const trialActive = isTrialActive(user);
   const trialEndLabel = formatSubscriptionDate(user?.subscriptionEndsAt);
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
@@ -419,31 +487,40 @@ export default function MainApp() {
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const currentOrgLabel = account?.name?.trim() || "Organization";
-  const TABS = [
+  const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
     ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "IN", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
-      ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : []),
+      ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : [])
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     ...(!isAdmin ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
-    ...(isAdmin ? [{ id: "settings", icon: "ST", label: "Settings" }] : [])
-  ];
+    ...(isAdmin ? [] : [])
+  ]), [currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
-  const tabColor = {
-    dashboard: isAdmin ? "var(--gold)" : "var(--accent)",
-    users: "var(--blue)",
-    org: "var(--blue)",
-    income: "var(--accent)",
-    expenses: "var(--danger)",
-    emi: "var(--gold)",
-    khata: "var(--gold)",
-    invoices: "var(--blue)",
-    settings: "var(--purple)"
-  };
+  const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
+  const handleDateChange = useCallback((nextYear, nextMonth) => {
+    setYear(nextYear);
+    setMonth(nextMonth);
+  }, []);
+  const handleQuickstartHandled = useCallback(() => {
+    setQuickstartIntent(null);
+  }, []);
+  const openUpgradeFlow = useCallback(() => {
+    handleNavigate({ tab: "settings", screen: reviewAccessEnabled ? "main" : "plan-request" });
+  }, [handleNavigate, reviewAccessEnabled]);
+  const datePickerNode = useMemo(() => (
+    <HeaderDatePicker
+      year={year}
+      month={month}
+      onChange={handleDateChange}
+      viewMode={viewMode}
+      onViewModeChange={setViewMode}
+    />
+  ), [handleDateChange, month, viewMode, year]);
 
   function dismissReminder(id) {
     const nextIds = Array.from(new Set([...dismissedIds, id]));
@@ -474,11 +551,7 @@ export default function MainApp() {
     if (typeof window === "undefined") return undefined;
 
     const handleResize = () => {
-      const mobile = window.innerWidth <= 768;
-      setIsMobile(mobile);
-      if (!mobile) {
-        setSidebarOpen(false);
-      }
+      setIsMobile(window.innerWidth <= 768);
     };
 
     handleResize();
@@ -486,23 +559,10 @@ export default function MainApp() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  function renderTabContent() {
+  const renderTabContent = useCallback(() => {
     const fallback = tab === "settings" || (isAdmin && tab === "users")
       ? <SectionSkeleton rows={5} showHero={false} />
       : <SectionSkeleton rows={4} />;
-
-    const datePickerNode = (
-      <HeaderDatePicker
-        year={year}
-        month={month}
-        onChange={(nextYear, nextMonth) => {
-          setYear(nextYear);
-          setMonth(nextMonth);
-        }}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-      />
-    );
 
     return (
       <Suspense fallback={fallback}>
@@ -515,7 +575,7 @@ export default function MainApp() {
             month={month}
             orgType={currentOrgType}
             quickstartIntent={quickstartIntent}
-            onQuickstartHandled={() => setQuickstartIntent(null)}
+            onQuickstartHandled={handleQuickstartHandled}
             headerDatePicker={datePickerNode}
           />
         )}
@@ -528,20 +588,31 @@ export default function MainApp() {
             month={month}
             orgType={currentOrgType}
             quickstartIntent={quickstartIntent}
-            onQuickstartHandled={() => setQuickstartIntent(null)}
+            onQuickstartHandled={handleQuickstartHandled}
             headerDatePicker={datePickerNode}
           />
         )}
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
-  }
+  }, [currentOrgType, datePickerNode, handleNavigate, handleQuickstartHandled, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, month, quickstartIntent, settingsNavigation, tab, viewMode, year]);
 
 
-  const showSidebarLabels = isMobile || sidebarOpen;
-  const desktopSidebarWidth = sidebarOpen ? 180 : 60;
-  const drawerWidth = showSidebarLabels ? 180 : 60;
-  const sidebarWidth = isMobile ? 0 : desktopSidebarWidth;
+  const footerTabs = useMemo(() => {
+    const baseTabOrder = isAdmin
+      ? ["dashboard", "users", "invoices"]
+      : ["dashboard", "income", "expenses", "invoices", "org"];
+    const baseTabs = baseTabOrder
+      .filter(tabId => TABS.some(item => item.id === tabId))
+      .map(tabId => TABS.find(item => item.id === tabId))
+      .filter(Boolean);
+    if (baseTabs.some(item => item.id === tab) || !TABS.some(item => item.id === tab)) {
+      return baseTabs;
+    }
+    const fallbackTab = TABS.find(item => item.id === tab);
+    return fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
+  }, [TABS, isAdmin, tab]);
+  const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative", display: "flex" }}>
@@ -552,7 +623,7 @@ export default function MainApp() {
           <div style={{
             margin: '0 auto',
             marginTop: 12,
-            maxWidth: 700,
+            width: "min(calc(100% - 16px), 760px)",
             padding: '10px 12px',
             borderRadius: 12,
             border: '1px solid var(--gold)',
@@ -569,6 +640,16 @@ export default function MainApp() {
             <div style={{ fontSize: 11, color: 'var(--gold)', marginTop: 6, fontWeight: 500 }}>
               <span role="img" aria-label="info">⚠️</span> Password reset and registration emails may go to your spam folder. Please check spam if not found in inbox.
             </div>
+            {!reviewAccessEnabled && (
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={openUpgradeFlow}
+                style={{ marginTop: 8, padding: "7px 10px", fontSize: 11, color: "var(--gold)", borderColor: "var(--gold)" }}
+              >
+                Upgrade to Pro
+              </button>
+            )}
             <button
               style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--gold)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
               aria-label="Dismiss"
@@ -580,7 +661,7 @@ export default function MainApp() {
           <div style={{
             margin: '0 auto',
             marginTop: 12,
-            maxWidth: 700,
+            width: "min(calc(100% - 16px), 760px)",
             padding: '10px 12px',
             borderRadius: 12,
             border: '1px solid var(--accent)',
@@ -596,6 +677,16 @@ export default function MainApp() {
             <span style={{ fontWeight: 800 }}>
               Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
             </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+            {!reviewAccessEnabled && (
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={openUpgradeFlow}
+                style={{ marginTop: 8, padding: "7px 10px", fontSize: 11, color: "var(--accent)", borderColor: "var(--accent)" }}
+              >
+                Manage Subscription
+              </button>
+            )}
             <button
               style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
               aria-label="Dismiss"
@@ -604,157 +695,38 @@ export default function MainApp() {
           </div>
         )}
       </div>
-      {isMobile && sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(12, 12, 16, 0.34)", zIndex: 120 }}
-        />
-      )}
-
-      {/* Sidebar */}
-      <div style={{
-        width: drawerWidth,
-        position: "fixed",
-        top: 0,
-        left: 0,
-        height: "100dvh",
-        background: "var(--surface)",
-        borderRight: "1px solid var(--border)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: showSidebarLabels ? "flex-start" : "center",
-        padding: "12px 0",
-        transition: "transform 0.22s ease, width 0.2s ease",
-        transform: isMobile ? (sidebarOpen ? "translateX(0)" : "translateX(-100%)") : "translateX(0)",
-        boxShadow: isMobile && sidebarOpen ? "0 14px 40px rgba(0,0,0,0.24)" : "none",
-        zIndex: 130
-      }}>
-        <button
-          onClick={() => setSidebarOpen(open => !open)}
-          style={{
-            background: "none",
-            border: "none",
-            fontSize: 22,
-            margin: showSidebarLabels ? "0 0 18px 16px" : "0 0 18px 0",
-            cursor: "pointer",
-            color: "var(--text-dim)"
-          }}
-          title={sidebarOpen ? "Collapse menu" : "Expand menu"}
-        >
-          &#9776;
-        </button>
-        <div style={{ width: "100%", overflowY: "auto", overflowX: "hidden" }}>
-          {TABS.map(tabItem => (
-            <button
-              key={tabItem.id}
-              onClick={() => {
-                setTab(tabItem.id);
-                if (isMobile) setSidebarOpen(false);
-              }}
-              title={tabItem.label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: showSidebarLabels ? "flex-start" : "center",
-                gap: showSidebarLabels ? 14 : 0,
-                width: showSidebarLabels ? 160 : 44,
-                margin: showSidebarLabels ? "6px 0 6px 10px" : "6px auto",
-                padding: showSidebarLabels ? "10px 14px" : "10px 0",
-                border: "none",
-                borderRadius: 10,
-                background: tab === tabItem.id ? "var(--surface-pop)" : "transparent",
-                color: tabColor[tabItem.id] || "var(--text)",
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: "pointer",
-                transition: "background 0.2s, color 0.2s"
-              }}
-            >
-              <span
+      {/* Main content area */}
+      <div style={{ flex: 1, minWidth: 0, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? "10px 12px" : "12px 20px 12px", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
+              <button
+                onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
+                title="Open profile settings"
                 style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  display: "inline-flex",
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  border: "1px solid var(--border)",
+                  background: "var(--surface-high)",
+                  color: "var(--text-sec)",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  letterSpacing: 0.4,
-                  lineHeight: 1,
-                  background: tab === tabItem.id ? "var(--surface-high)" : "transparent",
-                  border: "1px solid var(--border)"
+                  flexShrink: 0,
+                  marginTop: 2
                 }}
               >
-                {tabItem.icon}
-              </span>
-              {showSidebarLabels && <span style={{ fontSize: 15, fontWeight: 600 }}>{tabItem.label}</span>}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ marginTop: "auto", width: "100%", paddingTop: 10 }}>
-          <button
-            onClick={() => {
-              handleNavigate({ tab: "settings", screen: "main" });
-              if (isMobile) setSidebarOpen(false);
-            }}
-            title="Profile"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: showSidebarLabels ? 10 : 0,
-              width: showSidebarLabels ? 160 : 44,
-              margin: showSidebarLabels ? "0 0 10px 10px" : "0 auto 10px",
-              padding: showSidebarLabels ? "10px 12px" : "10px 0",
-              border: "none",
-              borderRadius: 10,
-              background: tab === "settings" ? "var(--surface-pop)" : "transparent",
-              color: "var(--text-sec)",
-              cursor: "pointer"
-            }}
-          >
-            <span style={{ width: 26, height: 26, borderRadius: "50%", border: "1px solid var(--border)", background: "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-              {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
-            </span>
-            {showSidebarLabels && <span style={{ fontSize: 14, fontWeight: 700 }}>Profile</span>}
-          </button>
-        </div>
-      </div>
-
-      {/* Main content area */}
-      <div style={{ flex: 1, minWidth: 0, marginLeft: sidebarWidth, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: isMobile ? "10px 14px 12px 14px" : "10px 24px 12px 24px" }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
-              {isMobile && (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  title="Open menu"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    border: "1px solid var(--border)",
-                    background: "var(--surface-high)",
-                    color: "var(--text-sec)",
-                    cursor: "pointer",
-                    fontSize: 18,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    marginTop: 2
-                  }}
-                >
-                  &#9776;
-                </button>
-              )}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {String(user?.name || user?.email || "U").trim().charAt(0).toUpperCase() || "U"}
+              </button>
+              <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
+                <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {isAdmin ? "Admin Workspace" : (account?.name || currentOrgLabel || "Organization")}
                 </div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 18 : 24, color: "var(--text)", lineHeight: 1.15, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 16 : 24, color: "var(--text)", lineHeight: 1.15, marginTop: isMobile ? 2 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {TABS.find(item => item.id === tab)?.label}
                 </div>
               </div>
@@ -763,7 +735,7 @@ export default function MainApp() {
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: 36, height: 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center" }}
+                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", fontSize: isMobile ? 14 : 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
                 🔔
                 {inboxReminders.length > 0 && (
@@ -777,14 +749,33 @@ export default function MainApp() {
 
         </div>
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : "12px 16px 24px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)" : "14px 18px 104px" }}>
           {renderTabContent()}
         </div>
       </div>
 
+      <div
+        className="app-bottom-nav menu-glass"
+        style={{ gridTemplateColumns: `repeat(${Math.max(footerTabs.length, 1)}, minmax(0, 1fr))` }}
+      >
+          {footerTabs.map(tabItem => {
+            const active = tab === tabItem.id;
+            return (
+              <button
+                key={tabItem.id}
+                type="button"
+                className={`app-bottom-nav-btn${active ? " active" : ""}`}
+                onClick={() => setTab(tabItem.id)}
+              >
+                <span className="app-bottom-nav-icon">{TAB_ICON_GLYPHS[tabItem.id] || "•"}</span>
+                <span className="app-bottom-nav-label">{tabItem.label}</span>
+              </button>
+            );
+          })}
+      </div>
 
       {readOnlyNotice && (
-        <div style={{ position: "fixed", left: 16, right: 16, bottom: 86, zIndex: 140, display: "flex", justifyContent: "center" }}>
+        <div style={{ position: "fixed", left: 16, right: 16, bottom: bottomNoticeBase, zIndex: 140, display: "flex", justifyContent: "center" }}>
           <div style={{ maxWidth: 520, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13, fontWeight: 700, boxShadow: "0 10px 24px rgba(0,0,0,0.25)" }}>
             {readOnlyNotice.message}
           </div>
@@ -792,18 +783,18 @@ export default function MainApp() {
       )}
 
       {successNotice && (
-        <div style={{ position: "fixed", left: 16, right: 16, bottom: readOnlyNotice ? 150 : 86, zIndex: 142, display: "flex", justifyContent: "center" }}>
-          <div style={{ maxWidth: 560, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", boxShadow: "0 10px 24px rgba(0,0,0,0.25)", display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
-            <div>
+        <div style={{ position: "fixed", left: 16, right: 16, bottom: readOnlyNotice ? "calc(env(safe-area-inset-bottom, 0px) + 156px)" : bottomNoticeBase, zIndex: 142, display: "flex", justifyContent: "center" }}>
+          <div style={{ maxWidth: 560, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--accent)", background: "var(--accent-deep)", color: "var(--accent)", boxShadow: "0 10px 24px rgba(0,0,0,0.25)", display: "flex", gap: 10, alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", flexDirection: isMobile ? "column" : "row" }}>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{successNotice.title}</div>
               <div style={{ fontSize: 12, marginTop: 3, color: "var(--text-sec)", lineHeight: 1.45 }}>{successNotice.message}</div>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
               {successNotice.target && (
                 <button
                   className="btn-secondary"
                   type="button"
-                  style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)" }}
+                  style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)", flex: isMobile ? 1 : "unset" }}
                   onClick={() => {
                     handleNavigate(successNotice.target);
                     setSuccessNotice(null);
@@ -812,7 +803,7 @@ export default function MainApp() {
                   {successNotice.actionLabel}
                 </button>
               )}
-              <button className="btn-secondary" type="button" style={{ padding: "8px 10px", fontSize: 12 }} onClick={() => setSuccessNotice(null)}>
+              <button className="btn-secondary" type="button" style={{ padding: "8px 10px", fontSize: 12, flex: isMobile ? 1 : "unset" }} onClick={() => setSuccessNotice(null)}>
                 Dismiss
               </button>
             </div>

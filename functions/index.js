@@ -81,6 +81,10 @@ const PLAN_DURATION_DAYS = {
   monthly: 30,
   yearly: 365
 };
+const ENDPOINT_RATE_LIMITS_MS = {
+  createOrder: 30 * 1000,
+  verifyPayment: 15 * 1000
+};
 
 const ADMIN_DERIVATIVE_SYNC_LIMIT = 10000;
 
@@ -319,6 +323,15 @@ function getAmountInPaise(plan, billingCycle) {
   return Math.round(amountInRs * 100);
 }
 
+function isMatchingHexSignature(expectedHex, providedHex) {
+  const expected = Buffer.from(String(expectedHex || ""), "hex");
+  const provided = Buffer.from(String(providedHex || ""), "hex");
+  if (!expected.length || !provided.length || expected.length !== provided.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(expected, provided);
+}
+
 function computeSubscriptionEndDate(currentEndsAt, durationDays) {
   const now = new Date();
   const currentEnd = currentEndsAt ? new Date(currentEndsAt) : null;
@@ -326,6 +339,19 @@ function computeSubscriptionEndDate(currentEndsAt, durationDays) {
   const next = new Date(baseDate);
   next.setDate(next.getDate() + durationDays);
   return next.toISOString();
+}
+
+async function assertEndpointRateLimit(userId, endpointKey, minIntervalMs) {
+  const ref = db.collection("rate_limits").doc(`${userId}:${endpointKey}`);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const nowMs = Date.now();
+    const lastAtMs = snap.exists ? Number(snap.data()?.lastAtMs || 0) : 0;
+    if (lastAtMs && nowMs - lastAtMs < minIntervalMs) {
+      throw new HttpsError("failed-precondition", "Please wait a few seconds before retrying.");
+    }
+    tx.set(ref, { userId, endpointKey, lastAtMs: nowMs, updatedAt: new Date(nowMs).toISOString() }, { merge: true });
+  });
 }
 
 function getMonthWindow(date = new Date()) {
@@ -359,6 +385,11 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     const currentStatus = String(requestData.status || "pending").toLowerCase();
     if (currentStatus === "approved" || currentStatus === "auto_approved") {
       return;
+    }
+    const expectedAmountPaise = getAmountInPaise(requestedPlan, billingCycle);
+    const requestAmountPaise = Number(requestData.amountPaise || 0);
+    if (!Number.isFinite(requestAmountPaise) || requestAmountPaise !== expectedAmountPaise) {
+      throw new HttpsError("failed-precondition", "Payment request amount does not match the selected plan.");
     }
 
     const duration = PLAN_DURATION_DAYS[billingCycle];
@@ -614,6 +645,12 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
   const note = String(req.body?.data?.note || "").trim().slice(0, 300);
   const amount = getAmountInPaise(targetPlan, billingCycle);
   const userId = authUser.uid;
+  try {
+    await assertEndpointRateLimit(userId, "create-order", ENDPOINT_RATE_LIMITS_MS.createOrder);
+  } catch (err) {
+    sendError(res, err.code || "failed-precondition", err.message || "Please wait a few seconds before retrying.");
+    return;
+  }
 
   const userSnap = await db.collection("users").doc(userId).get();
   const userData = userSnap.exists ? userSnap.data() || {} : {};
@@ -678,7 +715,7 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
   }
 
   const expected = crypto.createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest("hex");
-  if (expected !== signature) {
+  if (!isMatchingHexSignature(expected, signature)) {
     sendError(res, "permission-denied", "Payment signature verification failed."); return;
   }
 
@@ -690,6 +727,12 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
   const requestData = requestSnap.data() || {};
   if (String(requestData.userId || "") !== authUser.uid) {
     sendError(res, "permission-denied", "Payment request does not belong to this user."); return;
+  }
+  try {
+    await assertEndpointRateLimit(authUser.uid, "verify-payment", ENDPOINT_RATE_LIMITS_MS.verifyPayment);
+  } catch (err) {
+    sendError(res, err.code || "failed-precondition", err.message || "Please wait a few seconds before retrying.");
+    return;
   }
 
   let requestedPlan, billingCycle;
@@ -758,7 +801,7 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
 
     const signature = String(req.headers["x-razorpay-signature"] || "");
     const expected = crypto.createHmac("sha256", webhookSecret).update(req.rawBody).digest("hex");
-    if (!signature || signature !== expected) {
+    if (!signature || !isMatchingHexSignature(expected, signature)) {
       res.status(401).send("Invalid signature");
       return;
     }

@@ -54,6 +54,42 @@ service cloud.firestore {
 
     function isSafeOwnerUserUpdate(userId) {
       return isOwner(userId) && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "name",
+          "email",
+          "phone",
+          "phoneCountryCode",
+          "gender",
+          "dateOfBirth",
+          "ageGroup",
+          "addressLine",
+          "city",
+          "state",
+          "country",
+          "location",
+          "address",
+          "organizationType",
+          "activeOrgId",
+          "orgs",
+          "onboardingSeenAt",
+          "role",
+          "plan",
+          "subscriptionStatus",
+          "subscriptionEndsAt",
+          "trialEligible",
+          "trialStartedAt",
+          "blocked",
+          "sharedLedgerId",
+          "sharedLedgerRole",
+          "legalAccepted",
+          "termsVersion",
+          "termsAcceptedAt",
+          "privacyAcceptedAt",
+          "refundsPolicyAcceptedAt",
+          "updatedAt",
+          "lastActivityAt",
+          "analytics"
+        ]) &&
         (
           resource.data.role == request.resource.data.role &&
           resource.data.plan == request.resource.data.plan &&
@@ -99,6 +135,23 @@ service cloud.firestore {
         resource.data.inviteCode == request.resource.data.inviteCode &&
         resource.data.members == request.resource.data.members &&
         resource.data.name == request.resource.data.name;
+    }
+
+    function isSafeSupportTicketUserUpdate() {
+      return isSignedIn() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          "messages",
+          "status",
+          "updatedAt",
+          "lastUserReplyAt"
+        ]) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.subject == resource.data.subject &&
+        request.resource.data.message == resource.data.message &&
+        request.resource.data.topic == resource.data.topic &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.status == "open";
     }
 
     match /users/{userId} {
@@ -161,7 +214,17 @@ service cloud.firestore {
     }
 
     match /payment_requests/{requestId} {
-      allow create: if isSignedIn() && request.auth.uid == requestId;
+      allow create: if isSignedIn() &&
+        (
+          request.auth.uid == requestId ||
+          request.resource.data.userId == request.auth.uid
+        ) &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.status == "pending" &&
+        request.resource.data.requestedPlan in ["pro", "business"] &&
+        request.resource.data.billingCycle in ["monthly", "yearly"] &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount >= 0;
       allow read: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid || request.auth.uid == requestId);
       allow update: if isAdmin();
       allow delete: if isAdmin();
@@ -170,7 +233,8 @@ service cloud.firestore {
     match /support_tickets/{ticketId} {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin() || isSafeSupportTicketUserUpdate();
+      allow delete: if isAdmin();
     }
 
     match /admin_metrics/{metricId} {

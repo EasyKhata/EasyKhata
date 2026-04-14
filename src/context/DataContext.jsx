@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { collection, deleteDoc, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
@@ -239,6 +239,29 @@ function extractActiveOrg(state = {}) {
     notificationPrefs: state.notificationPrefs,
     currency: state.currency
   });
+}
+
+function extractOrgMetadataOnly(state = {}) {
+  return normalizeOrgData({
+    income: [],
+    expenses: [],
+    invoices: [],
+    customers: [],
+    orgRecords: {},
+    summary: state.summary || buildOrgSummary(state),
+    account: state.account,
+    goals: state.goals,
+    budgets: state.budgets,
+    notificationPrefs: state.notificationPrefs,
+    currency: state.currency
+  });
+}
+
+function buildMetadataOrgMap(orgs = {}) {
+  return Object.entries(orgs || {}).reduce((acc, [orgId, orgValue]) => {
+    acc[orgId] = extractOrgMetadataOnly(orgValue || {});
+    return acc;
+  }, {});
 }
 
 function buildResetData(currentData, nextAccount) {
@@ -711,10 +734,12 @@ export function DataProvider({ children }) {
           lastActivityAt: activityAt,
           activeOrgId: nextState.activeOrgId,
           organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
-          orgs: {
+          // Keep only lightweight org metadata in user root document.
+          // High-volume records stay in org subcollections.
+          orgs: buildMetadataOrgMap({
             ...nextState.orgs,
-            [nextState.activeOrgId]: extractActiveOrg(nextState)
-          }
+            [nextState.activeOrgId]: extractOrgMetadataOnly(nextState)
+          })
         }),
         { merge: true }
       );
@@ -842,7 +867,7 @@ export function DataProvider({ children }) {
             sanitizeForFirestore({
               activeOrgId: nextState.activeOrgId,
               organizationType: nextState.account?.organizationType || userDoc.organizationType || "small_business",
-              orgs: nextState.orgs
+              orgs: buildMetadataOrgMap(nextState.orgs)
             }),
             { merge: true }
           );
@@ -1160,7 +1185,7 @@ export function DataProvider({ children }) {
       await updateDoc(doc(db, "users", user.id), {
         activeOrgId: nextActiveOrgId,
         organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
-        orgs: sanitizeForFirestore(nextState.orgs)
+        orgs: sanitizeForFirestore(buildMetadataOrgMap(nextState.orgs))
       });
     } catch (err) {
       return { error: err.message || "We couldn't finish deleting that organization right now." };
@@ -1389,59 +1414,90 @@ export function DataProvider({ children }) {
     }
   }
 
-  return (
-    <DataContext.Provider
-      value={{
-        ...data,
-        loaded,
-        isReadOnlyFreeMode: readOnlyFreeMode,
-        organizations,
-        activeOrgId: data.activeOrgId,
-        maxOrganizations,
-        canCreateOrganization: organizations.length < maxOrganizations,
-        switchOrganization,
-        createOrganization,
-        deleteOrganization,
-        setCurrency,
-        saveAccount,
-        resetForOrgTypeChange,
-        goals: data.goals,
-        saveGoals,
-        budgets: data.budgets,
-        saveBudgets,
-        notificationPrefs: data.notificationPrefs,
-        saveNotificationPrefs,
-        sharedLedger: data.sharedLedger,
-        createSharedLedger,
-        joinSharedLedger,
-        leaveSharedLedger,
-        regenerateLedgerInvite,
-        customers: data.customers,
-        addCustomer,
-        updateCustomer,
-        removeCustomer,
-        orgRecords: data.orgRecords,
-        saveOrgRecords,
-        addOrgRecord,
-        updateOrgRecord,
-        removeOrgRecord,
-        income: data.income,
-        addIncome,
-        updateIncome,
-        removeIncome,
-        expenses: data.expenses,
-        addExpense,
-        updateExpense,
-        removeExpense,
-        invoices: data.invoices,
-        addInvoice,
-        updateInvoice,
-        removeInvoice
-      }}
-    >
-      {children}
-    </DataContext.Provider>
-  );
+  const contextValue = useMemo(() => ({
+    ...data,
+    loaded,
+    isReadOnlyFreeMode: readOnlyFreeMode,
+    organizations,
+    activeOrgId: data.activeOrgId,
+    maxOrganizations,
+    canCreateOrganization: organizations.length < maxOrganizations,
+    switchOrganization,
+    createOrganization,
+    deleteOrganization,
+    setCurrency,
+    saveAccount,
+    resetForOrgTypeChange,
+    goals: data.goals,
+    saveGoals,
+    budgets: data.budgets,
+    saveBudgets,
+    notificationPrefs: data.notificationPrefs,
+    saveNotificationPrefs,
+    sharedLedger: data.sharedLedger,
+    createSharedLedger,
+    joinSharedLedger,
+    leaveSharedLedger,
+    regenerateLedgerInvite,
+    customers: data.customers,
+    addCustomer,
+    updateCustomer,
+    removeCustomer,
+    orgRecords: data.orgRecords,
+    saveOrgRecords,
+    addOrgRecord,
+    updateOrgRecord,
+    removeOrgRecord,
+    income: data.income,
+    addIncome,
+    updateIncome,
+    removeIncome,
+    expenses: data.expenses,
+    addExpense,
+    updateExpense,
+    removeExpense,
+    invoices: data.invoices,
+    addInvoice,
+    updateInvoice,
+    removeInvoice
+  }), [
+    addCustomer,
+    addExpense,
+    addIncome,
+    addInvoice,
+    addOrgRecord,
+    createOrganization,
+    createSharedLedger,
+    data,
+    deleteOrganization,
+    joinSharedLedger,
+    leaveSharedLedger,
+    loaded,
+    maxOrganizations,
+    organizations,
+    readOnlyFreeMode,
+    regenerateLedgerInvite,
+    removeCustomer,
+    removeExpense,
+    removeIncome,
+    removeInvoice,
+    removeOrgRecord,
+    resetForOrgTypeChange,
+    saveAccount,
+    saveBudgets,
+    saveGoals,
+    saveNotificationPrefs,
+    saveOrgRecords,
+    setCurrency,
+    switchOrganization,
+    updateCustomer,
+    updateExpense,
+    updateIncome,
+    updateInvoice,
+    updateOrgRecord
+  ]);
+
+  return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 }
 
 export function useData() {

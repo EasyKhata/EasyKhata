@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   buildDateFromParts,
@@ -85,7 +85,7 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     };
   }, []);
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
     if (!canSave || isSaving) return;
     setIsSaving(true);
     try {
@@ -93,10 +93,16 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     } finally {
       setIsSaving(false);
     }
-  }
+  }, [canSave, isSaving, onSave]);
+
+  const handleOverlayClick = useCallback((event) => {
+    if (event.target === event.currentTarget) {
+      onClose?.();
+    }
+  }, [onClose]);
 
   const modalNode = (
-    <div className="modal-overlay" onClick={event => event.target === event.currentTarget && onClose()}>
+    <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-surface">
         <div className="modal-header">
           <button onClick={onClose} className="btn-secondary" style={{ padding: "8px 14px", fontSize: 13 }}>
@@ -247,6 +253,16 @@ export function StructuredLocationFields({
 
 export function DateSelectInput({ value, onChange, min, max, allowEmpty = true, yearOrder = "desc" }) {
   const [parts, setParts] = useState(() => parseDateParts(value));
+  const [useNativePicker, setUseNativePicker] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const update = () => setUseNativePicker(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const nextValue = String(value || "").trim();
@@ -258,30 +274,34 @@ export function DateSelectInput({ value, onChange, min, max, allowEmpty = true, 
     if (!nextValue && currentValue && !value) {
       setParts({ day: "", month: "", year: "" });
     }
-  }, [parts, value]);
+  }, [value]);
 
-  const minParts = parseDateParts(min);
-  const maxParts = parseDateParts(max);
+  const minParts = useMemo(() => parseDateParts(min), [min]);
+  const maxParts = useMemo(() => parseDateParts(max), [max]);
   const nowYear = new Date().getFullYear();
   const selectedYear = Number(parts.year || 0);
   const selectedMonth = Number(parts.month || 0);
   const startYear = Number(minParts.year || parts.year || nowYear - 20);
   const endYear = Number(maxParts.year || parts.year || nowYear + 10);
-  const yearOptions = getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" });
-  const monthOptions = MONTH_OPTIONS.filter(option => {
+  const yearOptions = useMemo(
+    () => getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" }),
+    [endYear, startYear, yearOrder]
+  );
+  const monthOptions = useMemo(() => MONTH_OPTIONS.filter(option => {
     if (!selectedYear) return true;
     if (Number(minParts.year || 0) === selectedYear && option.value < minParts.month) return false;
     if (Number(maxParts.year || 0) === selectedYear && option.value > maxParts.month) return false;
     return true;
-  });
-  const dayOptions = getDayOptions(parts.month, parts.year).filter(option => {
+  }), [maxParts.month, maxParts.year, minParts.month, minParts.year, selectedYear]);
+  const validDayOptions = useMemo(() => getDayOptions(parts.month, parts.year), [parts.month, parts.year]);
+  const dayOptions = useMemo(() => validDayOptions.filter(option => {
     if (!selectedYear || !selectedMonth) return true;
     if (Number(minParts.year || 0) === selectedYear && Number(minParts.month || 0) === selectedMonth && option < minParts.day) return false;
     if (Number(maxParts.year || 0) === selectedYear && Number(maxParts.month || 0) === selectedMonth && option > maxParts.day) return false;
     return true;
-  });
+  }), [maxParts.day, maxParts.month, maxParts.year, minParts.day, minParts.month, minParts.year, selectedMonth, selectedYear, validDayOptions]);
 
-  function updateParts(nextParts) {
+  const updateParts = useCallback((nextParts) => {
     const normalized = { ...parts, ...nextParts };
     if (normalized.day && normalized.month && normalized.year && !getDayOptions(normalized.month, normalized.year).includes(normalized.day)) {
       normalized.day = "";
@@ -301,6 +321,18 @@ export function DateSelectInput({ value, onChange, min, max, allowEmpty = true, 
       return;
     }
     onChange?.(normalizedValue);
+  }, [max, min, onChange, parts]);
+
+  if (useNativePicker) {
+    return (
+      <Input
+        type="date"
+        value={value || ""}
+        min={min || undefined}
+        max={max || undefined}
+        onChange={event => onChange?.(event.target.value)}
+      />
+    );
   }
 
   return (
@@ -335,6 +367,16 @@ export function DateSelectInput({ value, onChange, min, max, allowEmpty = true, 
 
 export function MonthSelectInput({ value, onChange, min, max, allowEmpty = true, yearOrder = "desc" }) {
   const [parts, setParts] = useState(() => parseMonthParts(value));
+  const [useNativePicker, setUseNativePicker] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const mediaQuery = window.matchMedia("(max-width: 768px)");
+    const update = () => setUseNativePicker(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const nextValue = String(value || "").trim();
@@ -346,23 +388,26 @@ export function MonthSelectInput({ value, onChange, min, max, allowEmpty = true,
     if (!nextValue && currentValue && !value) {
       setParts({ month: "", year: "" });
     }
-  }, [parts, value]);
+  }, [value]);
 
-  const minParts = parseMonthParts(min);
-  const maxParts = parseMonthParts(max);
+  const minParts = useMemo(() => parseMonthParts(min), [min]);
+  const maxParts = useMemo(() => parseMonthParts(max), [max]);
   const nowYear = new Date().getFullYear();
   const selectedYear = Number(parts.year || 0);
   const startYear = Number(minParts.year || parts.year || nowYear - 20);
   const endYear = Number(maxParts.year || parts.year || nowYear + 10);
-  const yearOptions = getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" });
-  const monthOptions = MONTH_OPTIONS.filter(option => {
+  const yearOptions = useMemo(
+    () => getYearOptions({ startYear, endYear, descending: yearOrder !== "asc" }),
+    [endYear, startYear, yearOrder]
+  );
+  const monthOptions = useMemo(() => MONTH_OPTIONS.filter(option => {
     if (!selectedYear) return true;
     if (Number(minParts.year || 0) === selectedYear && option.value < minParts.month) return false;
     if (Number(maxParts.year || 0) === selectedYear && option.value > maxParts.month) return false;
     return true;
-  });
+  }), [maxParts.month, maxParts.year, minParts.month, minParts.year, selectedYear]);
 
-  function updateParts(nextParts) {
+  const updateParts = useCallback((nextParts) => {
     const normalized = { ...parts, ...nextParts };
     const normalizedValue = buildMonthValue(normalized);
     setParts(normalized);
@@ -379,6 +424,18 @@ export function MonthSelectInput({ value, onChange, min, max, allowEmpty = true,
       return;
     }
     onChange?.(normalizedValue);
+  }, [max, min, onChange, parts]);
+
+  if (useNativePicker) {
+    return (
+      <Input
+        type="month"
+        value={value || ""}
+        min={min || undefined}
+        max={max || undefined}
+        onChange={event => onChange?.(event.target.value)}
+      />
+    );
   }
 
   return (
@@ -568,7 +625,7 @@ export function ToastNotice({ notice, onClose }) {
   };
 
   return createPortal(
-    <div style={{ position: "fixed", left: 16, right: 16, bottom: 88, zIndex: 2200, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+    <div style={{ position: "fixed", left: 16, right: 16, bottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)", zIndex: 2200, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
       <div style={{ width: "min(560px, 100%)", pointerEvents: "auto", borderRadius: 16, border: `1px solid ${palette.border}55`, background: palette.background, boxShadow: "0 18px 40px rgba(0,0,0,0.28)", padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ width: 10, height: 10, borderRadius: 999, marginTop: 6, background: palette.border, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -729,9 +786,13 @@ export function DeleteBtn({ onDelete }) {
 
 export function CurrencyPicker({ value, onSelect, onClose }) {
   const [search, setSearch] = useState("");
-  const filtered = CURRENCIES.filter(currency =>
-    currency.name.toLowerCase().includes(search.toLowerCase()) || currency.code.toLowerCase().includes(search.toLowerCase())
-  );
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = useMemo(() => CURRENCIES.filter(currency =>
+    currency.name.toLowerCase().includes(normalizedSearch) || currency.code.toLowerCase().includes(normalizedSearch)
+  ), [normalizedSearch]);
+  const handleSelectCurrency = useCallback((currency) => {
+    onSelect?.(currency);
+  }, [onSelect]);
 
   return (
     <Modal title="Select Currency" onClose={onClose} onSave={onClose} saveLabel="Done">
@@ -742,7 +803,7 @@ export function CurrencyPicker({ value, onSelect, onClose }) {
           return (
             <div
               key={currency.code}
-              onClick={() => onSelect(currency)}
+              onClick={() => handleSelectCurrency(currency)}
               className="card-row"
               style={{ cursor: "pointer", background: active ? "var(--accent-deep)" : "transparent" }}
             >

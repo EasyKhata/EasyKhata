@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from "firebase/firestore";
+import { arrayUnion, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -76,6 +76,23 @@ const SUPPORT_STATUS_LABELS = {
   in_progress: "In Progress",
   resolved: "Resolved"
 };
+
+function normalizeSupportMessages(ticket) {
+  const baseMessages = Array.isArray(ticket?.messages) ? ticket.messages : [];
+  if (baseMessages.length) return baseMessages;
+  const fallbackMessage = String(ticket?.message || "").trim();
+  if (!fallbackMessage) return [];
+  return [
+    {
+      id: `${ticket?.id || "ticket"}-initial`,
+      senderRole: "user",
+      senderId: ticket?.userId || "",
+      senderName: ticket?.userName || "User",
+      message: fallbackMessage,
+      createdAt: ticket?.createdAt || ""
+    }
+  ];
+}
 
 function createEmptyServiceProduct() {
   return {
@@ -248,6 +265,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [supportTickets, setSupportTickets] = useState([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [submittingSupport, setSubmittingSupport] = useState(false);
+  const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
+  const [replyingTicketId, setReplyingTicketId] = useState("");
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -322,6 +341,18 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const activeOrgSection = useMemo(
     () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
     [orgConfig, orgSectionKey]
+  );
+  const visibleOrgSections = useMemo(
+    () => (orgConfig.extraSections || []).filter(section => !(orgType === ORG_TYPES.PERSONAL && section.key === "loans")),
+    [orgConfig.extraSections, orgType]
+  );
+  const selectedCustomerPayments = useMemo(
+    () => selectedCustomer?.payments || [],
+    [selectedCustomer]
+  );
+  const recentSupportTickets = useMemo(
+    () => supportTickets.slice(0, 5),
+    [supportTickets]
   );
   const stateProvinceOptions = useMemo(() => getStateProvinceOptions(userForm.country), [userForm.country]);
   const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions(accForm.country), [accForm.country]);
@@ -1185,7 +1216,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       const ticketsSnapshot = await getDocs(ticketsQuery);
       setSupportTickets(
         ticketsSnapshot.docs
-          .map(item => ({ id: item.id, ...item.data() }))
+          .map(item => {
+            const payload = { id: item.id, ...item.data() };
+            return {
+              ...payload,
+              messages: normalizeSupportMessages(payload)
+            };
+          })
           .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
     } catch (err) {
@@ -1218,6 +1255,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         topic,
         subject,
         message,
+        messages: [
+          {
+            id: `msg-${Date.now()}`,
+            senderRole: "user",
+            senderId: user.id,
+            senderName: user?.name || "User",
+            message,
+            createdAt: nowIso
+          }
+        ],
         status: "open",
         activeOrgId: activeOrgId || "",
         organizationName: account?.name || "",
@@ -1225,6 +1272,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         supportContext: buildSupportContext(),
         createdAt: nowIso,
         updatedAt: nowIso,
+        lastUserReplyAt: nowIso,
         resolvedAt: "",
         adminNote: ""
       };
@@ -1241,6 +1289,39 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       }
     } finally {
       setSubmittingSupport(false);
+    }
+  }
+
+  async function sendSupportReply(ticket) {
+    const draft = String(supportReplyDrafts?.[ticket.id] || "").trim();
+    if (!draft) {
+      showNotice("Write a reply before sending.");
+      return;
+    }
+    setReplyingTicketId(ticket.id);
+    try {
+      const nowIso = new Date().toISOString();
+      await updateDoc(doc(db, "support_tickets", ticket.id), {
+        messages: arrayUnion({
+          id: `msg-${Date.now()}`,
+          senderRole: "user",
+          senderId: user.id,
+          senderName: user?.name || "User",
+          message: draft,
+          createdAt: nowIso
+        }),
+        status: "open",
+        updatedAt: nowIso,
+        lastUserReplyAt: nowIso
+      });
+      setSupportReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
+      await loadSupportTickets();
+      showNotice("Reply sent to support.", "success");
+    } catch (err) {
+      console.error("Support reply error:", err);
+      showNotice("We couldn't send your reply right now.");
+    } finally {
+      setReplyingTicketId("");
     }
   }
 
@@ -1291,7 +1372,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
               <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
-              {(orgConfig.extraSections || []).filter(section => !(orgType === "personal" && section.key === "loans")).map(section => (
+              {visibleOrgSections.map(section => (
                 <MenuRow
                   key={section.key}
                   icon="•"
@@ -1846,10 +1927,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
         <div className="section-label">Payment History</div>
         <div className="card">
-          {selectedCustomer.payments.length === 0 ? (
+          {selectedCustomerPayments.length === 0 ? (
             <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No invoice history yet for this customer.</div>
           ) : (
-            selectedCustomer.payments.map(payment => (
+            selectedCustomerPayments.map(payment => (
               <div key={payment.id} className="card-row">
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{payment.number}</div>
@@ -1981,16 +2062,44 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Submit one above and it will appear here.</div>
             ) : (
               <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-                {supportTickets.slice(0, 5).map((ticket, index) => (
-                  <div key={ticket.id} style={{ padding: index === supportTickets.slice(0, 5).length - 1 ? "0" : "0 0 12px", marginBottom: index === supportTickets.slice(0, 5).length - 1 ? 0 : 12, borderBottom: index === supportTickets.slice(0, 5).length - 1 ? "none" : "1px solid var(--border)" }}>
+                {recentSupportTickets.map((ticket, index) => (
+                  <div key={ticket.id} style={{ padding: index === recentSupportTickets.length - 1 ? "0" : "0 0 12px", marginBottom: index === recentSupportTickets.length - 1 ? 0 : 12, borderBottom: index === recentSupportTickets.length - 1 ? "none" : "1px solid var(--border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 6 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
                       <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
                         {SUPPORT_STATUS_LABELS[ticket.status] || "Open"}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>{ticket.message}</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {(ticket.messages || []).slice(-3).map(msg => (
+                        <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
+                            {msg.senderRole === "admin" ? "Support" : "You"}
+                          </div>
+                          <div>{msg.message}</div>
+                        </div>
+                      ))}
+                    </div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
+                    {ticket.status !== "resolved" && (
+                      <div style={{ marginTop: 8 }}>
+                        <Textarea
+                          placeholder="Reply to support..."
+                          value={supportReplyDrafts?.[ticket.id] || ""}
+                          onChange={event => setSupportReplyDrafts(current => ({ ...current, [ticket.id]: event.target.value }))}
+                          style={{ minHeight: 60 }}
+                        />
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
+                          onClick={() => sendSupportReply(ticket)}
+                          disabled={replyingTicketId === ticket.id}
+                        >
+                          {replyingTicketId === ticket.id ? "Sending..." : "Send Reply"}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

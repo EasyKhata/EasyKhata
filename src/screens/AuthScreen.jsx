@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Field, Input, PhoneNumberInput, Select } from "../components/UI";
 import { isStrongPassword, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
@@ -7,22 +7,12 @@ import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 import { LEGAL_PATHS, LEGAL_VERSION } from "../utils/legal";
 import {
-  buildDateOfBirthFromParts,
   buildPhoneNumber,
-  COUNTRY_OPTIONS,
   DEFAULT_PHONE_COUNTRY_CODE,
-  getBirthDayOptions,
-  getBirthYearOptions,
-  getStateProvinceOptions,
-  isValidDateOfBirth,
   isValidUserPhoneNumber,
-  MONTH_OPTIONS,
   PHONE_COUNTRY_OPTIONS,
-  parseDateOfBirthParts,
   sanitizePhoneDigits
 } from "../utils/profile";
-
-const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
 
 export default function AuthScreen() {
   const { login, register, forgotPassword, resendVerification } = useAuth();
@@ -32,14 +22,6 @@ export default function AuthScreen() {
   const [name, setName] = useState("");
   const [organizationType, setOrganizationType] = useState(ORG_TYPES.SMALL_BUSINESS);
   const [email, setEmail] = useState("");
-  const [birthDay, setBirthDay] = useState("");
-  const [birthMonth, setBirthMonth] = useState("");
-  const [birthYear, setBirthYear] = useState("");
-  const [gender, setGender] = useState("");
-  const [addressLine, setAddressLine] = useState("");
-  const [city, setCity] = useState("");
-  const [stateName, setStateName] = useState("");
-  const [country, setCountry] = useState("India");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [legalAccepted, setLegalAccepted] = useState(false);
@@ -48,10 +30,11 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [showPasswordHint, setShowPasswordHint] = useState(false);
-  const stateOptions = useMemo(() => getStateProvinceOptions(country), [country]);
-  const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
-  const birthDayOptions = useMemo(() => getBirthDayOptions(birthMonth, birthYear), [birthMonth, birthYear]);
   const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(organizationType), [organizationType]);
+  const selectedOrgTypeDescription = useMemo(
+    () => selectableOrgTypeOptions.find(option => option.value === organizationType)?.description || "",
+    [organizationType, selectableOrgTypeOptions]
+  );
 
   // Password strength indicator
   const passStrength = password ? {
@@ -69,18 +52,6 @@ export default function AuthScreen() {
     setScreen(nextScreen);
     resetMessages();
   }
-
-  useEffect(() => {
-    if (stateName && !stateOptions.includes(stateName)) {
-      setStateName("");
-    }
-  }, [stateName, stateOptions]);
-
-  useEffect(() => {
-    if (birthDay && !birthDayOptions.includes(birthDay)) {
-      setBirthDay("");
-    }
-  }, [birthDay, birthDayOptions]);
 
   async function handleLogin() {
     resetMessages();
@@ -119,12 +90,6 @@ export default function AuthScreen() {
     const cleanEmail = normalizeEmail(email);
     const cleanPhoneNumber = sanitizePhoneDigits(phoneNumber);
     const cleanPhone = buildPhoneNumber(phoneCountryCode, cleanPhoneNumber);
-    const cleanDateOfBirth = buildDateOfBirthFromParts({ birthDay, birthMonth, birthYear });
-    const cleanAddressLine = String(addressLine || "").trim();
-    const cleanCity = String(city || "").trim();
-    const cleanState = String(stateName || "").trim();
-    const cleanCountry = String(country || "").trim();
-    const cleanGender = String(gender || "").trim();
 
     if (!isValidName(cleanName)) {
       setError("Please enter your full name.");
@@ -138,16 +103,6 @@ export default function AuthScreen() {
 
     if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
       setError("Please enter a valid phone number.");
-      return;
-    }
-
-    if (!isValidDateOfBirth(cleanDateOfBirth)) {
-      setError("Please enter a valid date of birth. Users must be at least 13 years old.");
-      return;
-    }
-
-    if (!cleanCity || !cleanState || !cleanCountry) {
-      setError("Please enter your city, state, and country.");
       return;
     }
 
@@ -176,12 +131,6 @@ export default function AuthScreen() {
         phone: cleanPhone,
         phoneCountryCode,
         organizationType,
-        dateOfBirth: cleanDateOfBirth,
-        gender: cleanGender,
-        addressLine: cleanAddressLine,
-        city: cleanCity,
-        state: cleanState,
-        country: cleanCountry,
         legalAccepted: true,
         termsVersion: LEGAL_VERSION,
         termsAcceptedAt: nowIso,
@@ -197,13 +146,10 @@ export default function AuthScreen() {
       return;
     }
 
-    setInfo((res?.message || "Account created successfully.") + " If you don't see the email, please check your spam folder.");
+    setInfo((res?.message || "Account created successfully.") + " Next: verify email -> sign in -> open Organization Profile to confirm business details.");
     setPassword("");
     setConfirmPassword("");
     setPhoneNumber("");
-    setBirthDay("");
-    setBirthMonth("");
-    setBirthYear("");
     setScreen("login");
   }
 
@@ -261,7 +207,7 @@ export default function AuthScreen() {
       <div style={{ position: "absolute", top: -80, right: -80, width: 260, height: 260, borderRadius: 130, background: "radial-gradient(circle, var(--accent-deep) 0%, transparent 70%)", pointerEvents: "none", opacity: 0.8 }} />
       <div style={{ position: "absolute", bottom: 120, left: -80, width: 220, height: 220, borderRadius: 110, background: "radial-gradient(circle, var(--blue-deep) 0%, transparent 70%)", pointerEvents: "none" }} />
 
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "48px 28px 32px", position: "relative", zIndex: 1 }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "40px 20px 28px", position: "relative", zIndex: 1, maxWidth: 560, width: "100%", margin: "0 auto" }}>
         <div style={{ marginBottom: 44 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>Welcome to</div>
           <BrandLogo showTagline center={false} />
@@ -272,23 +218,30 @@ export default function AuthScreen() {
                 ? "Create your account, verify your email, and start using the full app during the review period."
                 : "Reset your password from your inbox."}
           </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <span className="auth-flow-chip">Secure Email Login</span>
+            <span className="auth-flow-chip">Org-specific Workspace</span>
+            <span className="auth-flow-chip">Mobile-first</span>
+          </div>
         </div>
 
-        {(error || info) && (
-          <div style={{ background: error ? "var(--danger-deep)" : "var(--accent-deep)", border: `1px solid ${error ? "var(--danger)" : "var(--accent)"}44`, borderRadius: 14, padding: "14px 16px", marginBottom: 18, color: error ? "var(--danger)" : "var(--accent-text)", fontSize: 14, lineHeight: 1.5 }}>
-            {error || info}
-          </div>
-        )}
+        <div className="auth-panel menu-glass">
+          {(error || info) && (
+            <div style={{ background: error ? "var(--danger-deep)" : "var(--accent-deep)", border: `1px solid ${error ? "var(--danger)" : "var(--accent)"}44`, borderRadius: 14, padding: "14px 16px", marginBottom: 18, color: error ? "var(--danger)" : "var(--accent-text)", fontSize: 14, lineHeight: 1.5 }}>
+              {error || info}
+            </div>
+          )}
 
-        {screen === "login" && (
-          <div className="fade-in">
+          {screen === "login" && (
+            <div className="fade-in">
+            <form onSubmit={event => { event.preventDefault(); handleLogin(); }}>
             <Field label="Email Address" required>
               <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
             </Field>
             <Field label="Password" required hint="Use the password you created during registration.">
               <Input type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} />
             </Field>
-            <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleLogin} disabled={loading}>
+            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleLogin} disabled={loading}>
               {loading ? "Signing you in..." : "Sign In"}
             </button>
             {showResend && (
@@ -303,11 +256,13 @@ export default function AuthScreen() {
             <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
               By using EasyKhata, you accept our <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> and <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy Policy</a>.
             </div>
+            </form>
           </div>
-        )}
+          )}
 
-        {screen === "register" && (
-          <div className="fade-in">
+          {screen === "register" && (
+            <div className="fade-in">
+            <form onSubmit={event => { event.preventDefault(); handleRegister(); }}>
             <Field label="Full Name" required>
               <Input placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
             </Field>
@@ -324,71 +279,6 @@ export default function AuthScreen() {
                 phonePlaceholder="9876543210"
               />
             </Field>
-            <Field label="Date of Birth" required hint="Used for age-group insights and safer product planning.">
-              <div className="desktop-grid-3">
-                <Select value={birthDay} onChange={e => setBirthDay(e.target.value)}>
-                  <option value="">Day</option>
-                  {birthDayOptions.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
-                <Select value={birthMonth} onChange={e => setBirthMonth(e.target.value)}>
-                  <option value="">Month</option>
-                  {MONTH_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-                <Select value={birthYear} onChange={e => setBirthYear(e.target.value)}>
-                  <option value="">Year</option>
-                  {birthYearOptions.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </Field>
-            <Field label="Gender" hint="Optional. Used only for aggregate audience insights.">
-              <Select value={gender} onChange={e => setGender(e.target.value)}>
-                <option value="">Prefer not to share</option>
-                {GENDER_OPTIONS.filter(option => option).map(option => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Address Line" hint="House number, street, road, or area.">
-              <Input placeholder="Flat 12, MG Road" value={addressLine} onChange={e => setAddressLine(e.target.value)} autoComplete="address-line1" />
-            </Field>
-            <div className="desktop-grid-2">
-              <Field label="City" required>
-                <Input placeholder="Hyderabad" value={city} onChange={e => setCity(e.target.value)} autoComplete="address-level2" />
-              </Field>
-              <Field label="Country" required>
-                <Select value={country} onChange={e => setCountry(e.target.value)}>
-                  {COUNTRY_OPTIONS.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-            <Field label="State / Province" required>
-              <Select value={stateName} onChange={e => setStateName(e.target.value)}>
-                <option value="">Select state / province</option>
-                {stateOptions.map(option => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </Select>
-            </Field>
             <Field label="What Are You Using EasyKhata For?" required hint="This helps us tailor labels, fields, and sections for your workflow.">
               <Select value={organizationType} onChange={e => setOrganizationType(e.target.value)}>
                 {selectableOrgTypeOptions.map(option => (
@@ -397,6 +287,9 @@ export default function AuthScreen() {
                   </option>
                 ))}
               </Select>
+              {selectedOrgTypeDescription && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{selectedOrgTypeDescription}</div>
+              )}
             </Field>
             
             <Field label="Password" required hint={showPasswordHint ? "At least 6 characters. Add numbers or symbols for extra security." : 
@@ -455,27 +348,34 @@ export default function AuthScreen() {
               </label>
             </div>
 
-            <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
+            <div style={{ marginBottom: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.55 }}>
+              2-minute setup: create account, verify email, sign in. You can add profile details later from Personal Profile.
+            </div>
+            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
               {loading ? "Creating your account..." : "Create Account"}
             </button>
             <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Already have an account? Sign in</button>
+            </form>
           </div>
-        )}
+          )}
 
-        {screen === "forgot" && (
-          <div className="fade-in">
+          {screen === "forgot" && (
+            <div className="fade-in">
+            <form onSubmit={event => { event.preventDefault(); handleForgot(); }}>
             <Field label="Registered Email" required hint="We'll send a password reset link to this address.">
               <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
             </Field>
-            <button className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleForgot} disabled={loading}>
+            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleForgot} disabled={loading}>
               {loading ? "Sending reset email..." : "Send Reset Link"}
             </button>
             <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Back to Sign In</button>
             <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, textAlign: "center" }}>
               Legal: <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> · <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy</a>
             </div>
+            </form>
           </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
