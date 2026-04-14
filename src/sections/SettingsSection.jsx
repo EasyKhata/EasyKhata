@@ -76,6 +76,81 @@ const SUPPORT_STATUS_LABELS = {
   in_progress: "In Progress",
   resolved: "Resolved"
 };
+const APARTMENT_IMPORT_TYPES = ["flat", "collection", "expense", "opening_balance", "due"];
+const APARTMENT_IMPORT_TEMPLATE_HEADERS = [
+  "record_type",
+  "flat_number",
+  "name",
+  "owner_name",
+  "phone",
+  "email",
+  "date",
+  "month",
+  "amount",
+  "category",
+  "payment_mode",
+  "reference_no",
+  "paid_to",
+  "note"
+];
+
+function normalizeImportKey(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function parseCsvLine(line = "") {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  values.push(current);
+  return values.map(item => String(item || "").trim());
+}
+
+function parseApartmentImportCsv(text = "") {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const headers = parseCsvLine(lines[0]).map(normalizeImportKey);
+  const rows = lines.slice(1).map((line, index) => {
+    const values = parseCsvLine(line);
+    const record = {};
+    headers.forEach((header, columnIndex) => {
+      record[header] = String(values[columnIndex] || "").trim();
+    });
+    return { rowNumber: index + 2, raw: record };
+  });
+  return { headers, rows };
+}
+
+function isValidMonthValue(value = "") {
+  return /^\d{4}-\d{2}$/.test(String(value || "").trim());
+}
 
 function normalizeSupportMessages(ticket) {
   const baseMessages = Array.isArray(ticket?.messages) ? ticket.messages : [];
@@ -214,7 +289,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     saveGoals,
     budgets,
     income,
+    addIncome,
     expenses,
+    addExpense,
     invoices,
     notificationPrefs,
     saveNotificationPrefs,
@@ -310,6 +387,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [notice, setNotice] = useState(null);
   const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [importCsvText, setImportCsvText] = useState("");
+  const [importPreview, setImportPreview] = useState(null);
+  const [importingData, setImportingData] = useState(false);
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
     return {
@@ -1575,6 +1655,200 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
   }
 
+  function downloadApartmentImportTemplate() {
+    const sampleRows = [
+      APARTMENT_IMPORT_TEMPLATE_HEADERS.join(","),
+      "flat,A-101,A-101,Sushma Reddy,9876543210,sushma@example.com,,,,,,,," ,
+      "collection,A-101,,, , ,2026-04-05,2026-04,2500,Monthly Maintenance,upi,UPI-REF-7721,,April collection",
+      "expense,,,,,,2026-04-07,,1200,Cleaning,upi,UPI-REF-9102,Cleaning Vendor,Lobby cleaning",
+      "opening_balance,A-101,,,,,2026-04-01,,5000,due,,,,Carry-forward due",
+      "due,A-101,,,,,2026-04-01,2026-04,2500,Monthly Maintenance,,,,April due pending"
+    ];
+    const blob = new Blob([sampleRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "apartment_import_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleApartmentImportFile(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = loadEvent => {
+      const text = String(loadEvent?.target?.result || "");
+      setImportCsvText(text);
+      buildApartmentImportPreview(text);
+    };
+    reader.onerror = () => showNotice("Could not read this file. Please upload a CSV file.");
+    reader.readAsText(file);
+  }
+
+  function buildApartmentImportPreview(sourceText = importCsvText) {
+    const text = String(sourceText || "").trim();
+    if (!text) {
+      setImportPreview(null);
+      return;
+    }
+
+    const { headers, rows } = parseApartmentImportCsv(text);
+    const errors = [];
+    const validRows = [];
+    const summary = { flat: 0, collection: 0, expense: 0, opening_balance: 0, due: 0 };
+
+    if (!headers.includes("record_type") && !headers.includes("type")) {
+      setImportPreview({
+        headers,
+        rows: [],
+        validRows: [],
+        summary,
+        errors: [{ rowNumber: 1, message: "Missing required column: record_type" }]
+      });
+      return;
+    }
+
+    rows.forEach(row => {
+      const recordType = normalizeImportKey(row.raw.record_type || row.raw.type);
+      const flatNumber = String(row.raw.flat_number || row.raw.flat || row.raw.name || "").trim().toUpperCase();
+      const amount = Number(row.raw.amount || 0);
+      const date = String(row.raw.date || "").trim();
+      const month = String(row.raw.month || "").trim();
+
+      if (!APARTMENT_IMPORT_TYPES.includes(recordType)) {
+        errors.push({ rowNumber: row.rowNumber, message: `Unsupported record_type: ${recordType || "--"}` });
+        return;
+      }
+      if (recordType !== "expense" && !flatNumber) {
+        errors.push({ rowNumber: row.rowNumber, message: "Flat number is required for this record_type." });
+        return;
+      }
+      if ((recordType === "collection" || recordType === "expense" || recordType === "opening_balance" || recordType === "due") && !(amount > 0)) {
+        errors.push({ rowNumber: row.rowNumber, message: "Amount must be greater than 0." });
+        return;
+      }
+      if (recordType === "collection" || recordType === "expense" || recordType === "opening_balance" || recordType === "due") {
+        const dateToCheck = date || (isValidMonthValue(month) ? `${month}-01` : "");
+        if (!isValidDateValue(dateToCheck)) {
+          errors.push({ rowNumber: row.rowNumber, message: "Provide a valid date (YYYY-MM-DD) or month (YYYY-MM)." });
+          return;
+        }
+      }
+
+      summary[recordType] += 1;
+      validRows.push({ ...row, recordType, flatNumber, amount, date, month });
+    });
+
+    setImportPreview({ headers, rows, validRows, summary, errors });
+  }
+
+  function applyApartmentImport() {
+    if (!importPreview?.validRows?.length) {
+      showNotice("No valid rows to import. Please check your file and preview.");
+      return;
+    }
+
+    setImportingData(true);
+    try {
+      const flatByName = new Map((customers || []).map(flat => [String(flat?.name || "").trim().toUpperCase(), flat]));
+      let createdFlats = 0;
+      let updatedFlats = 0;
+      let importedCollections = 0;
+      let importedExpenses = 0;
+
+      importPreview.validRows.forEach(row => {
+        if (row.recordType === "flat") {
+          const existing = flatByName.get(row.flatNumber);
+          const basePayload = {
+            name: row.flatNumber,
+            ownerName: String(row.raw.owner_name || "").trim(),
+            phone: String(row.raw.phone || "").trim(),
+            email: String(row.raw.email || "").trim(),
+            monthlyMaintenance: String(row.raw.monthly_maintenance || "").trim(),
+            openingBalance: String(row.raw.opening_balance || "").trim()
+          };
+          if (existing) {
+            updateCustomer({ ...existing, ...basePayload, id: existing.id });
+            updatedFlats += 1;
+          } else {
+            addCustomer(basePayload);
+            createdFlats += 1;
+            flatByName.set(row.flatNumber, { ...basePayload, name: row.flatNumber });
+          }
+          return;
+        }
+
+        if (row.recordType === "opening_balance" || row.recordType === "due") {
+          const existing = flatByName.get(row.flatNumber);
+          const balancePayload = row.recordType === "opening_balance"
+            ? { openingBalance: String(row.amount), openingBalanceDate: row.date || `${row.month}-01` }
+            : { pendingDueAmount: String(row.amount), pendingDueMonth: row.month || (row.date ? row.date.slice(0, 7) : "") };
+          if (existing?.id) {
+            updateCustomer({ ...existing, ...balancePayload, id: existing.id });
+            updatedFlats += 1;
+          } else {
+            const createdPayload = { name: row.flatNumber, ...balancePayload };
+            addCustomer(createdPayload);
+            createdFlats += 1;
+            flatByName.set(row.flatNumber, createdPayload);
+          }
+          return;
+        }
+
+        if (row.recordType === "collection") {
+          const collectionDate = row.date || `${row.month}-01`;
+          addIncome({
+            label: String(row.raw.label || `Imported Collection - ${row.flatNumber}`).trim(),
+            amount: Number(row.amount),
+            date: collectionDate,
+            month: row.month || collectionDate.slice(0, 7),
+            note: String(row.raw.note || "").trim(),
+            flatNumber: row.flatNumber,
+            residentName: String(row.raw.owner_name || "").trim(),
+            collectionType: String(row.raw.category || "Imported Collection").trim(),
+            collectionMonth: row.month || collectionDate.slice(0, 7),
+            paymentMode: String(row.raw.payment_mode || "").trim(),
+            referenceNo: String(row.raw.reference_no || "").trim()
+          });
+          importedCollections += 1;
+          return;
+        }
+
+        if (row.recordType === "expense") {
+          const expenseDate = row.date || `${row.month}-01`;
+          addExpense({
+            label: String(row.raw.label || row.raw.note || "Imported Expense").trim(),
+            amount: Number(row.amount),
+            date: expenseDate,
+            month: expenseDate.slice(0, 7),
+            category: String(row.raw.category || "Operations").trim(),
+            note: String(row.raw.note || "").trim(),
+            paidTo: String(row.raw.paid_to || "").trim(),
+            paymentMode: String(row.raw.payment_mode || "").trim(),
+            referenceNo: String(row.raw.reference_no || "").trim()
+          });
+          importedExpenses += 1;
+        }
+      });
+
+      showNotice(
+        `Import complete: ${createdFlats} flat(s) created, ${updatedFlats} flat(s) updated, ${importedCollections} collection(s), ${importedExpenses} expense(s).`,
+        "success"
+      );
+      setImportPreview(null);
+      setImportCsvText("");
+      setScreen("main");
+    } catch (err) {
+      console.error("Apartment import error:", err);
+      showNotice("Import failed. Please review the file and try again.");
+    } finally {
+      setImportingData(false);
+    }
+  }
+
   useEffect(() => {
     if (screen !== "support") return;
     loadSupportTickets();
@@ -1631,6 +1905,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
+              {isApartmentOrg && (
+                <MenuRow
+                  icon="I"
+                  label="Import Apartment Data"
+                  sub="Upload one CSV file with flats, collections, expenses, dues, and opening balances"
+                  onClick={() => setScreen("apartment-import")}
+                />
+              )}
               {isApartmentOrg && (
                 <MenuRow
                   icon="M"
@@ -2489,6 +2771,85 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
         </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "apartment-import" && isApartmentOrg) {
+    return withNotice(
+      <Modal
+        title="Apartment Data Import"
+        onClose={() => setScreen("main")}
+        onSave={applyApartmentImport}
+        saveLabel={importingData ? "Importing..." : "Import Valid Rows"}
+        canSave={!importingData && Boolean(importPreview?.validRows?.length)}
+        accentColor="var(--blue)"
+      >
+        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Upload one CSV file with typed rows using <strong>record_type</strong> values:
+            {" "}<code>flat</code>, <code>collection</code>, <code>expense</code>, <code>opening_balance</code>, <code>due</code>.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={downloadApartmentImportTemplate}>
+              Download Template
+            </button>
+          </div>
+        </div>
+
+        <Field label="Upload CSV" required hint="Use UTF-8 CSV format. XLSX can be saved as CSV before upload.">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="input-field"
+            onChange={handleApartmentImportFile}
+            style={{ marginBottom: 0, padding: "10px 12px" }}
+          />
+        </Field>
+
+        <Field label="Or Paste CSV" hint="Useful when copying data directly from Excel or Google Sheets.">
+          <Textarea
+            placeholder="Paste CSV with header row..."
+            value={importCsvText}
+            onChange={event => setImportCsvText(event.target.value)}
+            style={{ minHeight: 140 }}
+          />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => buildApartmentImportPreview()}>
+            Validate Preview
+          </button>
+        </div>
+
+        {importPreview && (
+          <div className="card" style={{ padding: 14, marginTop: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Import Preview</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 10 }}>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Flats: {importPreview.summary.flat}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Collections: {importPreview.summary.collection}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Expenses: {importPreview.summary.expense}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Opening Balances: {importPreview.summary.opening_balance}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Dues: {importPreview.summary.due}</div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
+              Valid rows: {importPreview.validRows.length} / Total rows: {importPreview.rows.length}
+            </div>
+            {importPreview.errors.length > 0 && (
+              <div className="card" style={{ marginBottom: 0, padding: 12, background: "var(--danger-deep)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", marginBottom: 6 }}>
+                  {importPreview.errors.length} row error(s)
+                </div>
+                <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {importPreview.errors.slice(0, 20).map(item => (
+                    <div key={`${item.rowNumber}-${item.message}`} style={{ fontSize: 12, color: "var(--danger)" }}>
+                      Row {item.rowNumber}: {item.message}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     );
   }
