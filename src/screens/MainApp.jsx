@@ -24,6 +24,7 @@ const SettingsSection = lazy(() => import("../sections/SettingsSection"));
 const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
 const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
+const AdminSupportSection = lazy(() => import("../sections/AdminSupportSection"));
 
 const now = new Date();
 const TAB_COLOR = {
@@ -36,7 +37,8 @@ const TAB_COLOR = {
   khata: "var(--gold)",
   invoices: "var(--blue)",
   settings: "var(--purple)",
-  adminDashboard: "var(--gold)"
+  adminDashboard: "var(--gold)",
+  adminSupport: "var(--blue)"
 };
 const TAB_ICON_GLYPHS = {
   dashboard: "◉",
@@ -47,7 +49,8 @@ const TAB_ICON_GLYPHS = {
   khata: "¤",
   invoices: "▣",
   org: "◍",
-  settings: "◈"
+  settings: "◈",
+  adminSupport: "?"
 };
 
 function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
@@ -489,7 +492,7 @@ export default function MainApp() {
   const currentOrgLabel = account?.name?.trim() || "Organization";
   const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
-    ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }] : []),
+    ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "IN", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
@@ -568,6 +571,7 @@ export default function MainApp() {
       <Suspense fallback={fallback}>
         {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} headerDatePicker={datePickerNode} />)}
         {tab === "users" && isAdmin && <AdminUsersSection />}
+        {tab === "adminSupport" && isAdmin && <AdminSupportSection />}
         {tab === "org" && !isAdmin && <OrgSection navigationTarget={settingsNavigation} sectionMode="org" />}
         {tab === "income" && (
           <IncomeSection
@@ -600,7 +604,7 @@ export default function MainApp() {
 
   const footerTabs = useMemo(() => {
     const baseTabOrder = isAdmin
-      ? ["dashboard", "users", "invoices"]
+      ? ["dashboard", "users", "adminSupport", "invoices"]
       : ["dashboard", "income", "expenses", "invoices", "org"];
     const baseTabs = baseTabOrder
       .filter(tabId => TABS.some(item => item.id === tabId))

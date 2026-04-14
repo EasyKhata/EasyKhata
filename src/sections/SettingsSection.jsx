@@ -76,6 +76,81 @@ const SUPPORT_STATUS_LABELS = {
   in_progress: "In Progress",
   resolved: "Resolved"
 };
+const APARTMENT_IMPORT_TYPES = ["flat", "collection", "expense", "opening_balance", "due"];
+const APARTMENT_IMPORT_TEMPLATE_HEADERS = [
+  "record_type",
+  "flat_number",
+  "name",
+  "owner_name",
+  "phone",
+  "email",
+  "date",
+  "month",
+  "amount",
+  "category",
+  "payment_mode",
+  "reference_no",
+  "paid_to",
+  "note"
+];
+
+function normalizeImportKey(value = "") {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function parseCsvLine(line = "") {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  values.push(current);
+  return values.map(item => String(item || "").trim());
+}
+
+function parseApartmentImportCsv(text = "") {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return { headers: [], rows: [] };
+
+  const headers = parseCsvLine(lines[0]).map(normalizeImportKey);
+  const rows = lines.slice(1).map((line, index) => {
+    const values = parseCsvLine(line);
+    const record = {};
+    headers.forEach((header, columnIndex) => {
+      record[header] = String(values[columnIndex] || "").trim();
+    });
+    return { rowNumber: index + 2, raw: record };
+  });
+  return { headers, rows };
+}
+
+function isValidMonthValue(value = "") {
+  return /^\d{4}-\d{2}$/.test(String(value || "").trim());
+}
 
 function normalizeSupportMessages(ticket) {
   const baseMessages = Array.isArray(ticket?.messages) ? ticket.messages : [];
@@ -214,7 +289,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     saveGoals,
     budgets,
     income,
+    addIncome,
     expenses,
+    addExpense,
     invoices,
     notificationPrefs,
     saveNotificationPrefs,
@@ -277,6 +354,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [submittingSupport, setSubmittingSupport] = useState(false);
   const [supportReplyDrafts, setSupportReplyDrafts] = useState({});
   const [replyingTicketId, setReplyingTicketId] = useState("");
+  const [supportView, setSupportView] = useState("inbox");
+  const [selectedSupportTicketId, setSelectedSupportTicketId] = useState("");
   const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
@@ -308,6 +387,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [notice, setNotice] = useState(null);
   const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [importCsvText, setImportCsvText] = useState("");
+  const [importPreview, setImportPreview] = useState(null);
+  const [importingData, setImportingData] = useState(false);
   const [reportForm, setReportForm] = useState(() => {
     const now = new Date();
     return {
@@ -383,9 +465,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     () => selectedCustomer?.payments || [],
     [selectedCustomer]
   );
-  const recentSupportTickets = useMemo(
-    () => supportTickets.slice(0, 5),
-    [supportTickets]
+  const selectedSupportTicket = useMemo(
+    () => supportTickets.find(ticket => ticket.id === selectedSupportTicketId) || supportTickets[0] || null,
+    [selectedSupportTicketId, supportTickets]
   );
   const stateProvinceOptions = useMemo(() => getStateProvinceOptions(userForm.country), [userForm.country]);
   const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions(accForm.country), [accForm.country]);
@@ -1573,10 +1655,214 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
   }
 
+  function downloadApartmentImportTemplate() {
+    const sampleRows = [
+      APARTMENT_IMPORT_TEMPLATE_HEADERS.join(","),
+      "flat,A-101,A-101,Sushma Reddy,9876543210,sushma@example.com,,,,,,,," ,
+      "collection,A-101,,, , ,2026-04-05,2026-04,2500,Monthly Maintenance,upi,UPI-REF-7721,,April collection",
+      "expense,,,,,,2026-04-07,,1200,Cleaning,upi,UPI-REF-9102,Cleaning Vendor,Lobby cleaning",
+      "opening_balance,A-101,,,,,2026-04-01,,5000,due,,,,Carry-forward due",
+      "due,A-101,,,,,2026-04-01,2026-04,2500,Monthly Maintenance,,,,April due pending"
+    ];
+    const blob = new Blob([sampleRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "apartment_import_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleApartmentImportFile(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = loadEvent => {
+      const text = String(loadEvent?.target?.result || "");
+      setImportCsvText(text);
+      buildApartmentImportPreview(text);
+    };
+    reader.onerror = () => showNotice("Could not read this file. Please upload a CSV file.");
+    reader.readAsText(file);
+  }
+
+  function buildApartmentImportPreview(sourceText = importCsvText) {
+    const text = String(sourceText || "").trim();
+    if (!text) {
+      setImportPreview(null);
+      return;
+    }
+
+    const { headers, rows } = parseApartmentImportCsv(text);
+    const errors = [];
+    const validRows = [];
+    const summary = { flat: 0, collection: 0, expense: 0, opening_balance: 0, due: 0 };
+
+    if (!headers.includes("record_type") && !headers.includes("type")) {
+      setImportPreview({
+        headers,
+        rows: [],
+        validRows: [],
+        summary,
+        errors: [{ rowNumber: 1, message: "Missing required column: record_type" }]
+      });
+      return;
+    }
+
+    rows.forEach(row => {
+      const recordType = normalizeImportKey(row.raw.record_type || row.raw.type);
+      const flatNumber = String(row.raw.flat_number || row.raw.flat || row.raw.name || "").trim().toUpperCase();
+      const amount = Number(row.raw.amount || 0);
+      const date = String(row.raw.date || "").trim();
+      const month = String(row.raw.month || "").trim();
+
+      if (!APARTMENT_IMPORT_TYPES.includes(recordType)) {
+        errors.push({ rowNumber: row.rowNumber, message: `Unsupported record_type: ${recordType || "--"}` });
+        return;
+      }
+      if (recordType !== "expense" && !flatNumber) {
+        errors.push({ rowNumber: row.rowNumber, message: "Flat number is required for this record_type." });
+        return;
+      }
+      if ((recordType === "collection" || recordType === "expense" || recordType === "opening_balance" || recordType === "due") && !(amount > 0)) {
+        errors.push({ rowNumber: row.rowNumber, message: "Amount must be greater than 0." });
+        return;
+      }
+      if (recordType === "collection" || recordType === "expense" || recordType === "opening_balance" || recordType === "due") {
+        const dateToCheck = date || (isValidMonthValue(month) ? `${month}-01` : "");
+        if (!isValidDateValue(dateToCheck)) {
+          errors.push({ rowNumber: row.rowNumber, message: "Provide a valid date (YYYY-MM-DD) or month (YYYY-MM)." });
+          return;
+        }
+      }
+
+      summary[recordType] += 1;
+      validRows.push({ ...row, recordType, flatNumber, amount, date, month });
+    });
+
+    setImportPreview({ headers, rows, validRows, summary, errors });
+  }
+
+  function applyApartmentImport() {
+    if (!importPreview?.validRows?.length) {
+      showNotice("No valid rows to import. Please check your file and preview.");
+      return;
+    }
+
+    setImportingData(true);
+    try {
+      const flatByName = new Map((customers || []).map(flat => [String(flat?.name || "").trim().toUpperCase(), flat]));
+      let createdFlats = 0;
+      let updatedFlats = 0;
+      let importedCollections = 0;
+      let importedExpenses = 0;
+
+      importPreview.validRows.forEach(row => {
+        if (row.recordType === "flat") {
+          const existing = flatByName.get(row.flatNumber);
+          const basePayload = {
+            name: row.flatNumber,
+            ownerName: String(row.raw.owner_name || "").trim(),
+            phone: String(row.raw.phone || "").trim(),
+            email: String(row.raw.email || "").trim(),
+            monthlyMaintenance: String(row.raw.monthly_maintenance || "").trim(),
+            openingBalance: String(row.raw.opening_balance || "").trim()
+          };
+          if (existing) {
+            updateCustomer({ ...existing, ...basePayload, id: existing.id });
+            updatedFlats += 1;
+          } else {
+            addCustomer(basePayload);
+            createdFlats += 1;
+            flatByName.set(row.flatNumber, { ...basePayload, name: row.flatNumber });
+          }
+          return;
+        }
+
+        if (row.recordType === "opening_balance" || row.recordType === "due") {
+          const existing = flatByName.get(row.flatNumber);
+          const balancePayload = row.recordType === "opening_balance"
+            ? { openingBalance: String(row.amount), openingBalanceDate: row.date || `${row.month}-01` }
+            : { pendingDueAmount: String(row.amount), pendingDueMonth: row.month || (row.date ? row.date.slice(0, 7) : "") };
+          if (existing?.id) {
+            updateCustomer({ ...existing, ...balancePayload, id: existing.id });
+            updatedFlats += 1;
+          } else {
+            const createdPayload = { name: row.flatNumber, ...balancePayload };
+            addCustomer(createdPayload);
+            createdFlats += 1;
+            flatByName.set(row.flatNumber, createdPayload);
+          }
+          return;
+        }
+
+        if (row.recordType === "collection") {
+          const collectionDate = row.date || `${row.month}-01`;
+          addIncome({
+            label: String(row.raw.label || `Imported Collection - ${row.flatNumber}`).trim(),
+            amount: Number(row.amount),
+            date: collectionDate,
+            month: row.month || collectionDate.slice(0, 7),
+            note: String(row.raw.note || "").trim(),
+            flatNumber: row.flatNumber,
+            residentName: String(row.raw.owner_name || "").trim(),
+            collectionType: String(row.raw.category || "Imported Collection").trim(),
+            collectionMonth: row.month || collectionDate.slice(0, 7),
+            paymentMode: String(row.raw.payment_mode || "").trim(),
+            referenceNo: String(row.raw.reference_no || "").trim()
+          });
+          importedCollections += 1;
+          return;
+        }
+
+        if (row.recordType === "expense") {
+          const expenseDate = row.date || `${row.month}-01`;
+          addExpense({
+            label: String(row.raw.label || row.raw.note || "Imported Expense").trim(),
+            amount: Number(row.amount),
+            date: expenseDate,
+            month: expenseDate.slice(0, 7),
+            category: String(row.raw.category || "Operations").trim(),
+            note: String(row.raw.note || "").trim(),
+            paidTo: String(row.raw.paid_to || "").trim(),
+            paymentMode: String(row.raw.payment_mode || "").trim(),
+            referenceNo: String(row.raw.reference_no || "").trim()
+          });
+          importedExpenses += 1;
+        }
+      });
+
+      showNotice(
+        `Import complete: ${createdFlats} flat(s) created, ${updatedFlats} flat(s) updated, ${importedCollections} collection(s), ${importedExpenses} expense(s).`,
+        "success"
+      );
+      setImportPreview(null);
+      setImportCsvText("");
+      setScreen("main");
+    } catch (err) {
+      console.error("Apartment import error:", err);
+      showNotice("Import failed. Please review the file and try again.");
+    } finally {
+      setImportingData(false);
+    }
+  }
+
   useEffect(() => {
     if (screen !== "support") return;
     loadSupportTickets();
   }, [screen, user?.id]);
+
+  useEffect(() => {
+    if (!supportTickets.length) {
+      setSelectedSupportTicketId("");
+      return;
+    }
+    if (!supportTickets.some(ticket => ticket.id === selectedSupportTicketId)) {
+      setSelectedSupportTicketId(supportTickets[0].id);
+    }
+  }, [selectedSupportTicketId, supportTickets]);
 
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
@@ -1619,6 +1905,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
+              {isApartmentOrg && (
+                <MenuRow
+                  icon="I"
+                  label="Import Apartment Data"
+                  sub="Upload one CSV file with flats, collections, expenses, dues, and opening balances"
+                  onClick={() => setScreen("apartment-import")}
+                />
+              )}
               {isApartmentOrg && (
                 <MenuRow
                   icon="M"
@@ -1798,8 +2092,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow
                 icon="?"
                 label="Support Queue"
-                sub="Review and resolve customer support tickets from the admin dashboard"
-                onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "dashboard" } }))}
+                sub="Review and resolve customer support tickets from Support Ops"
+                onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "adminSupport" } }))}
               />
             ) : (
               <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
@@ -2336,39 +2630,130 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   if (screen === "support") {
     return withNotice(
-      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={submitSupportTicket} saveLabel={submittingSupport ? "Submitting..." : "Submit Ticket"} canSave={!submittingSupport && !!supportForm.message.trim()} accentColor="var(--blue)">
+      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={supportView === "new" ? submitSupportTicket : () => setScreen("main")} saveLabel={supportView === "new" ? (submittingSupport ? "Submitting..." : "Submit Ticket") : "Done"} canSave={supportView === "new" ? (!submittingSupport && !!supportForm.message.trim()) : true} accentColor="var(--blue)">
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Use this space to submit support tickets for account issues, billing questions, bugs, or feature requests. Your account context is attached automatically so support can respond faster.
+            Track ongoing conversations and create new tickets separately for a cleaner support workflow.
+          </div>
+        </div>
+        <div className="card" style={{ padding: 12, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "inbox" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("inbox")}>
+              Conversations
+            </button>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "new" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("new")}>
+              New Ticket
+            </button>
           </div>
         </div>
 
-        <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
-          <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
-            {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {supportView === "new" ? (
+          <>
+            <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
+              <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
+                {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-        <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
-          <Input
-            placeholder="Example: Invoice PDF is not downloading"
-            value={supportForm.subject}
-            onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
-          />
-        </Field>
+            <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
+              <Input
+                placeholder="Example: Invoice PDF is not downloading"
+                value={supportForm.subject}
+                onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
+              />
+            </Field>
 
-        <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
-          <Textarea
-            placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
-            value={supportForm.message}
-            onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
-          />
-        </Field>
+            <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
+              <Textarea
+                placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
+                value={supportForm.message}
+                onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
+              />
+            </Field>
+
+            <div className="card" style={{ padding: 16, marginTop: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
+                <div>• What you were trying to do</div>
+                <div>• What happened instead</div>
+                <div>• The screen or section where it happened</div>
+                <div>• Any invoice, customer, or report details that help reproduce it</div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
+            {supportLoading ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
+            ) : supportTickets.length === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Use New Ticket to raise your first request.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+                <div className="card" style={{ marginBottom: 0, maxHeight: 320, overflowY: "auto" }}>
+                  {supportTickets.map(ticket => {
+                    const active = selectedSupportTicket?.id === ticket.id;
+                    return (
+                      <button
+                        key={ticket.id}
+                        type="button"
+                        onClick={() => setSelectedSupportTicketId(ticket.id)}
+                        style={{ width: "100%", textAlign: "left", border: active ? "1px solid var(--accent)" : "1px solid transparent", borderRadius: 10, background: active ? "var(--surface-pop)" : "transparent", padding: "9px 10px", marginBottom: 8, cursor: "pointer" }}
+                      >
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                          {SUPPORT_STATUS_LABELS[ticket.status] || "Open"} · {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="card" style={{ marginBottom: 0 }}>
+                  {!selectedSupportTicket ? (
+                    <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Select a ticket from conversations.</div>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{selectedSupportTicket.subject || "Support ticket"}</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8, maxHeight: 220, overflowY: "auto" }}>
+                        {(selectedSupportTicket.messages || []).map(msg => (
+                          <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
+                              {msg.senderRole === "admin" ? "Support" : "You"}
+                            </div>
+                            <div>{msg.message}</div>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedSupportTicket.status !== "resolved" && (
+                        <div style={{ marginTop: 8 }}>
+                          <Textarea
+                            placeholder="Reply to support..."
+                            value={supportReplyDrafts?.[selectedSupportTicket.id] || ""}
+                            onChange={event => setSupportReplyDrafts(current => ({ ...current, [selectedSupportTicket.id]: event.target.value }))}
+                            style={{ minHeight: 70 }}
+                          />
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
+                            onClick={() => sendSupportReply(selectedSupportTicket)}
+                            disabled={replyingTicketId === selectedSupportTicket.id}
+                          >
+                            {replyingTicketId === selectedSupportTicket.id ? "Sending..." : "Send Reply"}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <Field label="Support Email">
           <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
@@ -2386,66 +2771,81 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
         </Field>
+      </Modal>
+    );
+  }
 
-        <div className="card" style={{ padding: 16, marginTop: 6 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-            <div>• What you were trying to do</div>
-            <div>• What happened instead</div>
-            <div>• The screen or section where it happened</div>
-            <div>• Any invoice, customer, or report details that help reproduce it</div>
+  if (screen === "apartment-import" && isApartmentOrg) {
+    return withNotice(
+      <Modal
+        title="Apartment Data Import"
+        onClose={() => setScreen("main")}
+        onSave={applyApartmentImport}
+        saveLabel={importingData ? "Importing..." : "Import Valid Rows"}
+        canSave={!importingData && Boolean(importPreview?.validRows?.length)}
+        accentColor="var(--blue)"
+      >
+        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Upload one CSV file with typed rows using <strong>record_type</strong> values:
+            {" "}<code>flat</code>, <code>collection</code>, <code>expense</code>, <code>opening_balance</code>, <code>due</code>.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={downloadApartmentImportTemplate}>
+              Download Template
+            </button>
           </div>
         </div>
 
-        {user?.role !== "admin" && (
-          <div className="card" style={{ padding: 16, marginTop: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Your Recent Tickets</div>
-            {supportLoading ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
-            ) : supportTickets.length === 0 ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Submit one above and it will appear here.</div>
-            ) : (
-              <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-                {recentSupportTickets.map((ticket, index) => (
-                  <div key={ticket.id} style={{ padding: index === recentSupportTickets.length - 1 ? "0" : "0 0 12px", marginBottom: index === recentSupportTickets.length - 1 ? 0 : 12, borderBottom: index === recentSupportTickets.length - 1 ? "none" : "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginBottom: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
-                      <span className="pill" style={{ background: ticket.status === "resolved" ? "var(--accent-deep)" : ticket.status === "in_progress" ? "var(--blue-deep)" : "var(--gold-deep)", color: ticket.status === "resolved" ? "var(--accent)" : ticket.status === "in_progress" ? "var(--blue)" : "var(--gold)" }}>
-                        {SUPPORT_STATUS_LABELS[ticket.status] || "Open"}
-                      </span>
+        <Field label="Upload CSV" required hint="Use UTF-8 CSV format. XLSX can be saved as CSV before upload.">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            className="input-field"
+            onChange={handleApartmentImportFile}
+            style={{ marginBottom: 0, padding: "10px 12px" }}
+          />
+        </Field>
+
+        <Field label="Or Paste CSV" hint="Useful when copying data directly from Excel or Google Sheets.">
+          <Textarea
+            placeholder="Paste CSV with header row..."
+            value={importCsvText}
+            onChange={event => setImportCsvText(event.target.value)}
+            style={{ minHeight: 140 }}
+          />
+        </Field>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => buildApartmentImportPreview()}>
+            Validate Preview
+          </button>
+        </div>
+
+        {importPreview && (
+          <div className="card" style={{ padding: 14, marginTop: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Import Preview</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 10 }}>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Flats: {importPreview.summary.flat}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Collections: {importPreview.summary.collection}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Expenses: {importPreview.summary.expense}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Opening Balances: {importPreview.summary.opening_balance}</div>
+              <div className="card" style={{ marginBottom: 0, padding: 10 }}>Dues: {importPreview.summary.due}</div>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 8 }}>
+              Valid rows: {importPreview.validRows.length} / Total rows: {importPreview.rows.length}
+            </div>
+            {importPreview.errors.length > 0 && (
+              <div className="card" style={{ marginBottom: 0, padding: 12, background: "var(--danger-deep)" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", marginBottom: 6 }}>
+                  {importPreview.errors.length} row error(s)
+                </div>
+                <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {importPreview.errors.slice(0, 20).map(item => (
+                    <div key={`${item.rowNumber}-${item.message}`} style={{ fontSize: 12, color: "var(--danger)" }}>
+                      Row {item.rowNumber}: {item.message}
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {(ticket.messages || []).slice(-3).map(msg => (
-                        <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
-                            {msg.senderRole === "admin" ? "Support" : "You"}
-                          </div>
-                          <div>{msg.message}</div>
-                        </div>
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>Updated {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}</div>
-                    {ticket.status !== "resolved" && (
-                      <div style={{ marginTop: 8 }}>
-                        <Textarea
-                          placeholder="Reply to support..."
-                          value={supportReplyDrafts?.[ticket.id] || ""}
-                          onChange={event => setSupportReplyDrafts(current => ({ ...current, [ticket.id]: event.target.value }))}
-                          style={{ minHeight: 60 }}
-                        />
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
-                          onClick={() => sendSupportReply(ticket)}
-                          disabled={replyingTicketId === ticket.id}
-                        >
-                          {replyingTicketId === ticket.id ? "Sending..." : "Send Reply"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
