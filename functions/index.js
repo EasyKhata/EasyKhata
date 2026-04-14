@@ -74,7 +74,7 @@ const RAZORPAY_WEBHOOK_SECRET = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 
 const PLAN_PRICES = {
   pro: { monthly: 49, yearly: 499 },
-  business: { monthly: 149, yearly: 1499 }
+  business: { monthly: 99, yearly: 999 }
 };
 
 const PLAN_DURATION_DAYS = {
@@ -323,6 +323,18 @@ function getAmountInPaise(plan, billingCycle) {
   return Math.round(amountInRs * 100);
 }
 
+function getActiveOrgType(userData = {}) {
+  const activeOrgId = String(userData?.activeOrgId || "");
+  const orgs = userData?.orgs && typeof userData.orgs === "object" ? userData.orgs : {};
+  const activeOrg = activeOrgId && orgs[activeOrgId] ? orgs[activeOrgId] : Object.values(orgs)[0];
+  return String(activeOrg?.account?.organizationType || userData?.organizationType || "small_business").trim().toLowerCase();
+}
+
+function assertBusinessPlanEligibility(userData = {}, requestedPlan = "pro") {
+  if (String(requestedPlan || "").toLowerCase() !== "business") return;
+  throw new HttpsError("failed-precondition", "Business plan subscriptions are temporarily disabled and will return in a future release.");
+}
+
 function isMatchingHexSignature(expectedHex, providedHex) {
   const expected = Buffer.from(String(expectedHex || ""), "hex");
   const provided = Buffer.from(String(providedHex || ""), "hex");
@@ -394,6 +406,7 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
 
     const duration = PLAN_DURATION_DAYS[billingCycle];
     const currentUser = userSnap.data() || {};
+    assertBusinessPlanEligibility(currentUser, requestedPlan);
     const nextEndDate = computeSubscriptionEndDate(currentUser.subscriptionEndsAt || "", duration);
     const nowIso = new Date().toISOString();
 
@@ -654,6 +667,12 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
 
   const userSnap = await db.collection("users").doc(userId).get();
   const userData = userSnap.exists ? userSnap.data() || {} : {};
+  try {
+    assertBusinessPlanEligibility(userData, targetPlan);
+  } catch (err) {
+    sendError(res, err.code || "failed-precondition", err.message || "Selected plan is not allowed.");
+    return;
+  }
 
   const order = await razorpay.orders.create({
     amount,

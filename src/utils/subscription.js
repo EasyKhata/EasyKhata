@@ -29,7 +29,9 @@ export const UPI_CONFIG = {
   payeeName: "EasyKhata",
   upiId: "yourupi@bank",
   monthlyAmount: 49,
-  yearlyAmount: 499
+  yearlyAmount: 499,
+  businessMonthlyAmount: 99,
+  businessYearlyAmount: 999
 };
 
 export const PLAN_LABELS = {
@@ -83,7 +85,10 @@ export function getSubscriptionEndDate(days) {
   return next.toISOString();
 }
 
-export function getBillingAmount(cycle) {
+export function getBillingAmount(cycle, plan = PLANS.PRO) {
+  if (plan === PLANS.BUSINESS) {
+    return cycle === BILLING_CYCLES.YEARLY ? UPI_CONFIG.businessYearlyAmount : UPI_CONFIG.businessMonthlyAmount;
+  }
   return cycle === BILLING_CYCLES.YEARLY ? UPI_CONFIG.yearlyAmount : UPI_CONFIG.monthlyAmount;
 }
 
@@ -139,6 +144,8 @@ export function canUseFeature(user, feature, usage = {}) {
       return plan === PLANS.PRO || plan === PLANS.BUSINESS;
     case "posSystem":
       return plan === PLANS.BUSINESS;
+    case "residentPortal":
+      return false;
     case "sharedLedger":
       return false;
     default:
@@ -185,8 +192,13 @@ export function getUpgradeCopy(feature) {
       };
     case "sharedLedger":
       return {
-        title: "Shared ledger is coming soon",
-        message: "Shared ledger and team collaboration are planned for a future release."
+        title: "Feature retired",
+        message: "Shared ledger has been retired from the app."
+      };
+    case "residentPortal":
+      return {
+        title: "Resident portal is coming soon",
+        message: "Apartment resident read-only portal is temporarily disabled and will roll out in a future update."
       };
     default:
       return {

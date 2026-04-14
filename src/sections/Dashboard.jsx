@@ -119,7 +119,7 @@ function PersonalUsagePie({ stats, sym, viewMode }) {
   );
 }
 
-function ApartmentUsagePie({ stats, sym, viewMode }) {
+function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
   const segments = [
     { label: "Expenses", value: Math.max(0, Number(stats.totalExpense || 0)), color: "var(--danger)" },
     {
@@ -410,7 +410,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             />
           </div>
 
-          <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} />
+          <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
           <Collapsible title="Society Alerts" icon="🚨" color="var(--gold)" count={stats.alertItems.length} defaultOpen={stats.alertItems.length > 0}>
             <div className="card">

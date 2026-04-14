@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { arrayUnion, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -92,6 +92,22 @@ function normalizeSupportMessages(ticket) {
       createdAt: ticket?.createdAt || ""
     }
   ];
+}
+
+function buildSocietyPortalId(ownerId = "", orgId = "") {
+  return `portal_${String(ownerId || "").trim()}_${String(orgId || "").trim()}`;
+}
+
+function normalizeInviteCode(value = "") {
+  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+}
+
+function createInviteCode() {
+  return normalizeInviteCode(Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-2));
+}
+
+function flatDueDocId(flatNumber = "") {
+  return String(flatNumber || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "-");
 }
 
 function createEmptyServiceProduct() {
@@ -206,11 +222,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     addOrgRecord,
     updateOrgRecord,
     removeOrgRecord,
-    sharedLedger,
-    createSharedLedger,
-    joinSharedLedger,
-    leaveSharedLedger,
-    regenerateLedgerInvite,
     organizations,
     activeOrgId,
     createOrganization,
@@ -250,7 +261,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     note: goals?.note || ""
   });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
-  const [sharedLedgerForm, setSharedLedgerForm] = useState({ name: "", code: "" });
   const [planRequestForm, setPlanRequestForm] = useState({
     targetPlan: PLANS.PRO,
     billingCycle: BILLING_CYCLES.MONTHLY,
@@ -278,6 +288,20 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [showReportPicker, setShowReportPicker] = useState(false);
+  const [societyPortalMeta, setSocietyPortalMeta] = useState(null);
+  const [societyPortalLoading, setSocietyPortalLoading] = useState(false);
+  const [societyPortalInvites, setSocietyPortalInvites] = useState([]);
+  const [societyPortalForm, setSocietyPortalForm] = useState({
+    month: new Date().toISOString().slice(0, 7),
+    notice: ""
+  });
+  const [memberInviteForm, setMemberInviteForm] = useState({
+    email: "",
+    flatNumber: ""
+  });
+  const [societyJoinForm, setSocietyJoinForm] = useState({
+    inviteCode: ""
+  });
   const [orgSectionKey, setOrgSectionKey] = useState("");
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
@@ -300,6 +324,15 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
+  const canManageSocietyPortal = Boolean(
+    user?.id &&
+    user?.role !== "admin" &&
+    isApartmentOrg &&
+    activeOrgId &&
+    canUseFeature(user, "residentPortal")
+  );
+  const societyPortalId = useMemo(() => buildSocietyPortalId(user?.id, activeOrgId), [activeOrgId, user?.id]);
+  const hasMemberPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
   const showOrgBusinessFields = !isPersonalOrg;
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
@@ -371,6 +404,39 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function showNotice(message, tone = "danger", title = "") {
     setNotice({ id: Date.now(), message, tone, title });
   }
+
+  const loadSocietyPortalMeta = useCallback(async () => {
+    if (!canManageSocietyPortal) {
+      setSocietyPortalMeta(null);
+      setSocietyPortalInvites([]);
+      return;
+    }
+    setSocietyPortalLoading(true);
+    try {
+      const portalSnap = await getDoc(doc(db, "society_portals", societyPortalId));
+      if (!portalSnap.exists()) {
+        setSocietyPortalMeta(null);
+        return;
+      }
+      const payload = { id: portalSnap.id, ...portalSnap.data() };
+      setSocietyPortalMeta(payload);
+      const inviteSnapshot = await getDocs(query(collection(db, "society_invites"), where("portalId", "==", societyPortalId)));
+      const invites = inviteSnapshot.docs
+        .map(item => ({ id: item.id, ...item.data() }))
+        .filter(item => item.ownerId === user?.id)
+        .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      setSocietyPortalInvites(invites);
+    } catch (err) {
+      console.error("Society portal load error:", err);
+      showNotice("Could not load resident access settings right now.");
+    } finally {
+      setSocietyPortalLoading(false);
+    }
+  }, [canManageSocietyPortal, societyPortalId, user?.id]);
+
+  useEffect(() => {
+    loadSocietyPortalMeta();
+  }, [loadSocietyPortalMeta]);
 
   async function handleSwitchOrganization(orgId) {
     const res = await switchOrganization(orgId);
@@ -972,62 +1038,240 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
   }
 
-  async function handleCreateSharedLedger() {
-    if (!canUseFeature(user, "sharedLedger")) {
-      setUpgradeInfo(getUpgradeCopy("sharedLedger"));
-      return;
+  async function saveSocietyPortal() {
+    if (!canManageSocietyPortal) return;
+    const nowIso = new Date().toISOString();
+    const payload = {
+      ownerId: user.id,
+      orgId: activeOrgId,
+      name: account?.name || "Society",
+      isActive: true,
+      updatedAt: nowIso,
+      createdAt: societyPortalMeta?.createdAt || nowIso
+    };
+    try {
+      await setDoc(doc(db, "society_portals", societyPortalId), payload, { merge: true });
+      await updateDoc(doc(db, "users", user.id), {
+        [`apartmentPortalRoles.${societyPortalId}`]: "admin",
+        updatedAt: nowIso
+      });
+      setUser(prev => prev ? ({
+        ...prev,
+        apartmentPortalRoles: { ...(prev.apartmentPortalRoles || {}), [societyPortalId]: "admin" }
+      }) : prev);
+      await loadSocietyPortalMeta();
+      showNotice("Resident read-only access is saved.", "success");
+    } catch (err) {
+      console.error("Society portal save error:", err);
+      showNotice("Could not save resident access settings.");
     }
-    if (!sharedLedgerForm.name?.trim()) {
-      showNotice("Please enter a name for the shared ledger.");
-      return;
-    }
-    const res = await createSharedLedger(sharedLedgerForm.name.trim());
-    if (res?.error) {
-      showNotice(res.error);
-      return;
-    }
-    showNotice("Shared ledger created. You can now invite members with the invite code.", "success");
-    setSharedLedgerForm({ name: "", code: "" });
-    setScreen("main");
   }
 
-  async function handleJoinSharedLedger() {
-    if (!canUseFeature(user, "sharedLedger")) {
-      setUpgradeInfo(getUpgradeCopy("sharedLedger"));
+  async function createMemberInvite() {
+    const inviteEmail = normalizeEmail(memberInviteForm.email || "");
+    const flatNumber = String(memberInviteForm.flatNumber || "").trim().toUpperCase();
+    if (!inviteEmail || !isValidEmail(inviteEmail)) {
+      showNotice("Enter a valid resident email for this invite.");
       return;
     }
-    if (!sharedLedgerForm.code?.trim()) {
-      showNotice("Please enter the invite code.");
+    if (!flatNumber) {
+      showNotice("Select a flat number for this resident invite.");
       return;
     }
-    const res = await joinSharedLedger(sharedLedgerForm.code.trim());
-    if (res?.error) {
-      showNotice(res.error);
-      return;
+    try {
+      await saveSocietyPortal();
+      const inviteCode = createInviteCode();
+      const nowIso = new Date().toISOString();
+      await setDoc(doc(db, "society_invites", inviteCode), {
+        portalId: societyPortalId,
+        ownerId: user.id,
+        orgId: activeOrgId,
+        flatNumber,
+        allowedEmail: inviteEmail,
+        isActive: true,
+        claimedBy: "",
+        claimedAt: "",
+        updatedAt: nowIso,
+        createdAt: nowIso
+      }, { merge: true });
+      setMemberInviteForm({ email: "", flatNumber: "" });
+      await loadSocietyPortalMeta();
+      showNotice(`Invite created for ${flatNumber}. Share code: ${inviteCode}`, "success");
+    } catch (err) {
+      console.error("Create member invite error:", err);
+      showNotice("Could not create resident invite.");
     }
-    showNotice("You have joined the shared ledger.", "success");
-    setSharedLedgerForm({ name: "", code: "" });
-    setScreen("main");
   }
 
-  async function handleRefreshInvite() {
-    const res = await regenerateLedgerInvite();
-    if (res?.error) {
-      showNotice(res.error);
-      return;
+  async function deactivateMemberInvite(inviteCode) {
+    try {
+      await setDoc(doc(db, "society_invites", inviteCode), {
+        isActive: false,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      await loadSocietyPortalMeta();
+      showNotice("Invite deactivated.", "success");
+    } catch (err) {
+      console.error("Deactivate invite error:", err);
+      showNotice("Could not deactivate invite.");
     }
-    showNotice("Invite code refreshed.", "success");
-    setScreen("shared-ledger");
   }
 
-  async function handleLeaveSharedLedger() {
-    const res = await leaveSharedLedger();
-    if (res?.error) {
-      showNotice(res.error);
+  async function publishSocietyPortalRecords() {
+    if (!canManageSocietyPortal) return;
+    const period = String(societyPortalForm.month || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(period)) {
+      showNotice("Choose a valid month before publishing.");
       return;
     }
-    showNotice("You left the shared ledger.", "success");
-    setScreen("main");
+    const symbol = currency?.symbol || "Rs";
+    const flats = (customers || []).filter(item => String(item?.name || "").trim());
+    const maintenanceRows = (income || []).filter(item => {
+      const itemPeriod = item.collectionMonth || item.month || item.date?.slice(0, 7);
+      return itemPeriod === period && String(item.collectionType || "").trim() === "Monthly Maintenance";
+    });
+    const expenseAmount = (expenses || []).reduce((sum, item) => {
+      const itemPeriod = item.month || item.date?.slice(0, 7);
+      return itemPeriod === period ? sum + Number(item.amount || 0) : sum;
+    }, 0);
+    const defaultMonthlyAmount = Number(account?.monthlyMaintenanceAmount || 0);
+    const flatRows = flats.map(flat => {
+      const flatNumber = String(flat.name || "").trim();
+      const expectedAmount = Number(flat.monthlyMaintenance || defaultMonthlyAmount || 0);
+      const paidAmount = maintenanceRows
+        .filter(item => String(item.flatNumber || "").trim() === flatNumber)
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const pendingAmount = Math.max(0, expectedAmount - paidAmount);
+      return {
+        flatNumber,
+        ownerName: flat.ownerName || "",
+        period,
+        expectedAmount,
+        paidAmount,
+        pendingAmount,
+        status: pendingAmount <= 0 ? "paid" : paidAmount > 0 ? "partial" : "pending",
+        currencySymbol: symbol,
+        updatedAt: new Date().toISOString()
+      };
+    });
+    const expectedAmount = flatRows.reduce((sum, row) => sum + Number(row.expectedAmount || 0), 0);
+    const collectedAmount = flatRows.reduce((sum, row) => sum + Number(row.paidAmount || 0), 0);
+    const pendingAmount = Math.max(0, expectedAmount - collectedAmount);
+    const notice = String(societyPortalForm.notice || "").trim();
+    try {
+      await saveSocietyPortal();
+      await setDoc(doc(db, "society_portals", societyPortalId, "common_records", period), {
+        period,
+        expectedAmount,
+        collectedAmount,
+        pendingAmount,
+        expenseAmount,
+        totalFlats: flatRows.length,
+        paidFlats: flatRows.filter(row => row.status === "paid").length,
+        pendingFlats: flatRows.filter(row => row.status !== "paid").length,
+        notices: notice ? [notice] : [],
+        currencySymbol: symbol,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+      await Promise.all(flatRows.map(row =>
+        setDoc(doc(db, "society_portals", societyPortalId, "flat_dues", flatDueDocId(row.flatNumber)), row, { merge: true })
+      ));
+      showNotice(`Published resident records for ${period}.`, "success");
+    } catch (err) {
+      console.error("Society publish error:", err);
+      showNotice("Could not publish resident records.");
+    }
+  }
+
+  async function joinSocietyPortalWithInvite() {
+    const inviteCode = normalizeInviteCode(societyJoinForm.inviteCode);
+    if (!inviteCode) {
+      showNotice("Enter invite code shared by your apartment admin.");
+      return;
+    }
+    try {
+      const inviteSnap = await getDoc(doc(db, "society_invites", inviteCode));
+      if (!inviteSnap.exists() || inviteSnap.data()?.isActive !== true) {
+        showNotice("Invite code is invalid or expired.");
+        return;
+      }
+      const invite = inviteSnap.data();
+      const portalSnap = await getDoc(doc(db, "society_portals", invite.portalId));
+      if (!portalSnap.exists() || portalSnap.data()?.isActive !== true) {
+        showNotice("This resident portal is not active.");
+        return;
+      }
+      if (String(invite.allowedEmail || "").trim().toLowerCase() !== String(user?.email || "").trim().toLowerCase()) {
+        showNotice("This invite is mapped to a different email. Contact your apartment admin.");
+        return;
+      }
+      if (!String(invite.flatNumber || "").trim()) {
+        showNotice("Invite is missing flat mapping. Ask admin to regenerate invite.");
+        return;
+      }
+      const mappedFlatNumber = String(invite.flatNumber || "").trim().toUpperCase();
+      const nowIso = new Date().toISOString();
+      await updateDoc(doc(db, "users", user.id), {
+        societyPortalId: invite.portalId,
+        societyPortalRole: "member",
+        societyFlatNumber: mappedFlatNumber,
+        societyInviteCode: inviteCode,
+        [`apartmentPortalRoles.${invite.portalId}`]: "resident",
+        updatedAt: nowIso
+      });
+      await setDoc(doc(db, "society_invites", inviteCode), {
+        isActive: false,
+        claimedBy: user.id,
+        claimedAt: nowIso,
+        updatedAt: nowIso
+      }, { merge: true });
+      setUser(prev => prev ? ({
+        ...prev,
+        societyPortalId: invite.portalId,
+        societyPortalRole: "member",
+        societyFlatNumber: mappedFlatNumber,
+        societyInviteCode: inviteCode,
+        apartmentPortalRoles: { ...(prev.apartmentPortalRoles || {}), [invite.portalId]: "resident" }
+      }) : prev);
+      setSocietyJoinForm({ inviteCode: "" });
+      showNotice("Resident access joined successfully.", "success");
+      setScreen("main");
+    } catch (err) {
+      console.error("Join portal error:", err);
+      showNotice("Could not join resident access with this code.");
+    }
+  }
+
+  async function leaveSocietyPortalAccess() {
+    if (!user?.societyPortalId) return;
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        [`apartmentPortalRoles.${user.societyPortalId}`]: deleteField(),
+        societyPortalId: "",
+        societyPortalRole: "",
+        societyFlatNumber: "",
+        societyInviteCode: "",
+        updatedAt: new Date().toISOString()
+      });
+      setUser(prev => {
+        if (!prev) return prev;
+        const nextRoles = { ...(prev.apartmentPortalRoles || {}) };
+        delete nextRoles[user.societyPortalId];
+        return {
+          ...prev,
+          societyPortalId: "",
+          societyPortalRole: "",
+          societyFlatNumber: "",
+          societyInviteCode: "",
+          apartmentPortalRoles: nextRoles
+        };
+      });
+      showNotice("You left resident access.", "success");
+      setScreen("main");
+    } catch (err) {
+      console.error("Leave portal error:", err);
+      showNotice("Could not leave resident access right now.");
+    }
   }
 
   async function saveNotificationSettings() {
@@ -1059,6 +1303,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
     const cleanNote = planRequestForm.note.trim();
+    if (targetPlan === PLANS.BUSINESS) {
+      showNotice("Business plan subscriptions are temporarily disabled and will return in a future release.");
+      return;
+    }
 
     setSubmittingPayment(true);
     try {
@@ -1170,7 +1418,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function emailPaymentProof() {
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY);
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, planRequestForm.targetPlan || PLANS.PRO);
     const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
     const body = encodeURIComponent(
       `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: ${PLAN_LABELS[planRequestForm.targetPlan || PLANS.PRO] || "Pro"}\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
@@ -1371,7 +1619,15 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
-              <MenuRow icon="L" label="Shared Ledger" badge="Coming Soon" sub="Team collaboration and shared books are planned for a future release." disabled />
+              {isApartmentOrg && (
+                <MenuRow
+                  icon="M"
+                  label="Apartment Resident Portal"
+                  badge="Coming Soon"
+                  sub="Apartment resident portal is temporarily disabled and will be rolled out in a future release."
+                  onClick={() => setUpgradeInfo(getUpgradeCopy("residentPortal"))}
+                />
+              )}
               {visibleOrgSections.map(section => (
                 <MenuRow
                   key={section.key}
@@ -1548,9 +1804,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             ) : (
               <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
             )}
-
-
-
           </div>
         </div>
 
@@ -1990,6 +2243,97 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
+  if (screen === "society-portal") {
+    return withNotice(
+      <Modal
+        title="Resident Read-Only Access"
+        onClose={() => setScreen("main")}
+        onSave={publishSocietyPortalRecords}
+        saveLabel="Publish Records"
+        canSave={!societyPortalLoading}
+        accentColor="var(--blue)"
+      >
+        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Share common monthly records with residents without exposing full society data. Flat mapping is controlled by owner-approved invite codes.
+          </div>
+        </div>
+        <Field label="Create Member Invite" required hint="Map a resident email to a flat. Resident can only join this mapped flat.">
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 160px) auto", gap: 8 }}>
+            <Input value={memberInviteForm.email} onChange={event => setMemberInviteForm(current => ({ ...current, email: event.target.value }))} placeholder="resident@email.com" />
+            <Select value={memberInviteForm.flatNumber} onChange={event => setMemberInviteForm(current => ({ ...current, flatNumber: event.target.value }))}>
+              <option value="">Select flat</option>
+              {(customers || []).map(flat => (
+                <option key={flat.id} value={String(flat.name || "").trim().toUpperCase()}>{flat.name}</option>
+              ))}
+            </Select>
+            <button type="button" className="btn-secondary" onClick={createMemberInvite}>Create Invite</button>
+          </div>
+        </Field>
+        <div className="card" style={{ marginBottom: 14 }}>
+          {societyPortalInvites.length === 0 ? (
+            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>No member invites yet.</div>
+          ) : (
+            societyPortalInvites.slice(0, 8).map(invite => (
+              <div key={invite.id} className="card-row" style={{ alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{invite.id}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                    {invite.allowedEmail || "--"} · Flat {invite.flatNumber || "--"} · {invite.isActive ? "Active" : `Claimed by ${invite.claimedBy || "resident"}`}
+                  </div>
+                </div>
+                {invite.isActive && (
+                  <button type="button" className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => deactivateMemberInvite(invite.id)}>
+                    Deactivate
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        <Field label="Month to Publish" required hint="Publishes common summary and flat-wise dues for this month.">
+          <MonthSelectInput value={societyPortalForm.month} max={new Date().toISOString().slice(0, 7)} onChange={value => setSocietyPortalForm(current => ({ ...current, month: value }))} />
+        </Field>
+        <Field label="Notice (optional)" hint="Example: Please clear dues by 10th of this month.">
+          <Textarea value={societyPortalForm.notice} onChange={event => setSocietyPortalForm(current => ({ ...current, notice: event.target.value }))} placeholder="Maintenance payment last date..." />
+        </Field>
+      </Modal>
+    );
+  }
+
+  if (screen === "society-member-access") {
+    return withNotice(
+      <Modal
+        title="Resident Access"
+        onClose={() => setScreen("main")}
+        onSave={hasMemberPortalAccess ? leaveSocietyPortalAccess : joinSocietyPortalWithInvite}
+        saveLabel={hasMemberPortalAccess ? "Leave Access" : "Join Access"}
+        canSave
+        accentColor="var(--blue)"
+      >
+        {hasMemberPortalAccess ? (
+          <div className="card" style={{ padding: 16 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Access Active</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              You are connected to resident read-only records for Flat {user?.societyFlatNumber || "-"}. Use the Resident View tab to track your common records and dues.
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="card" style={{ padding: 14, marginBottom: 14 }}>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+                Enter the invite code shared by your apartment admin to enable read-only tracking.
+              </div>
+            </div>
+            <Field label="Invite Code" required>
+              <Input value={societyJoinForm.inviteCode} onChange={event => setSocietyJoinForm(current => ({ ...current, inviteCode: normalizeInviteCode(event.target.value) }))} placeholder="AB12CD34" />
+            </Field>
+          </>
+        )}
+      </Modal>
+    );
+  }
+
   if (screen === "support") {
     return withNotice(
       <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={submitSupportTicket} saveLabel={submittingSupport ? "Submitting..." : "Submit Ticket"} canSave={!submittingSupport && !!supportForm.message.trim()} accentColor="var(--blue)">
@@ -2253,25 +2597,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
-  if (screen === "shared-ledger") {
-    if (user?.role === "admin") return null;
-    return withNotice(
-      <Modal title="Shared Ledger" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done">
-        <div className="card" style={{ padding: 18, marginBottom: 16, opacity: 0.76 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Shared ledger is coming soon</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            We are still building collaborative books, team invites, and shared business access. This feature is visible for roadmap clarity, but it is not live for customers yet.
-          </div>
-        </div>
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>
-            For now, EasyKhata focuses on single-user bookkeeping, invoicing, reports, and alerts. Shared ledger and Business collaboration will be enabled in a future release.
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
   if (screen === "notifications") {
     const ToggleRow = ({ label, sub, checked, onChange }) => (
       <div className="card-row">
@@ -2336,7 +2661,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "plan-request") {
-    const amount = getBillingAmount(planRequestForm.billingCycle);
+    const amount = getBillingAmount(planRequestForm.billingCycle, planRequestForm.targetPlan || PLANS.PRO);
+    const canChooseBusinessPlan = false;
     return withNotice(
       <Modal
         title="Upgrade Subscription"
@@ -2346,11 +2672,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         canSave={!submittingPayment}
       >
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, marginBottom: 12 }}>
+            Pro plan includes advanced analytics, reminders, and exports. Business plan is planned for future rollout.
+          </div>
           <Field label="Plan" required hint="Choose the subscription plan to activate immediately after successful payment.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
                 [PLANS.PRO, "Pro", false],
-                [PLANS.BUSINESS, "Business (Coming Soon)", true]
+                [PLANS.BUSINESS, "Business (Coming Soon)", !canChooseBusinessPlan]
               ].map(([value, label, disabled]) => (
                 <button
                   key={value}
@@ -2375,8 +2704,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               {[
-                [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${UPI_CONFIG.monthlyAmount}`],
-                [BILLING_CYCLES.YEARLY, `Yearly - Rs ${UPI_CONFIG.yearlyAmount}`]
+                [
+                  BILLING_CYCLES.MONTHLY,
+                  `Monthly - Rs ${planRequestForm.targetPlan === PLANS.BUSINESS ? UPI_CONFIG.businessMonthlyAmount : UPI_CONFIG.monthlyAmount}`
+                ],
+                [
+                  BILLING_CYCLES.YEARLY,
+                  `Yearly - Rs ${planRequestForm.targetPlan === PLANS.BUSINESS ? UPI_CONFIG.businessYearlyAmount : UPI_CONFIG.yearlyAmount}`
+                ]
               ].map(([value, label]) => (
                 <button
                   key={value}
@@ -2416,6 +2751,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
             After a successful payment, your subscription is updated automatically. If activation does not reflect immediately, wait a moment and refresh the app.
           </div>
+          {!canChooseBusinessPlan && (
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
+              Business plan subscriptions are temporarily disabled and will be enabled in a future release.
+            </div>
+          )}
         </div>
       </Modal>
     );
