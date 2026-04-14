@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
   DateSelectInput,
@@ -101,6 +101,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const [formError, setFormError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const [form, setForm] = useState(buildBlankForm(year, month, config, categoryOptions));
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
   const openFlatManager = openPeopleManager;
@@ -186,6 +187,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       })),
     [stats.budgetStatus]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -387,7 +396,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
             Total {config.expensesLabel} - {MONTHS[month]} {year}
@@ -397,9 +406,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10, flexShrink: 0 }}>
-          {headerDatePicker}
-          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
+          <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
+          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
             + {config.expensesActionLabel}
           </button>
         </div>

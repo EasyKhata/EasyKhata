@@ -379,7 +379,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
     return (
       <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
               Society Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
@@ -389,7 +389,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{apartmentHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -461,7 +461,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       : (stats.netAfterEmi >= 0 ? "Your household stayed ahead of spending and EMI commitments this year." : "Household cash flow is under pressure this year.");
     return (
       <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
               Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
@@ -471,7 +471,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{personalHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -560,7 +560,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
         </div>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
               Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
@@ -570,7 +570,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{freelancerHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
         </div>
 
         <div style={{ padding: "20px 18px 0" }}>
@@ -698,7 +698,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
   return (
     <div style={{ paddingBottom: 20 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
             {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
@@ -708,7 +708,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{heroSub}</div>
         </div>
-        {headerDatePicker && <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>}
+        {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
       </div>
 
       <div style={{ padding: "20px 18px 0" }}>

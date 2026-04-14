@@ -134,6 +134,10 @@ export function canUseFeature(user, feature, usage = {}) {
       return plan !== PLANS.FREE || (usage.invoiceCount || 0) < FREE_LIMITS.invoices;
     case "customerCreate":
       return plan !== PLANS.FREE || (usage.customerCount || 0) < FREE_LIMITS.customers;
+    case "apartmentFlatCreate":
+      if (plan === PLANS.BUSINESS) return true;
+      if (plan === PLANS.PRO) return (usage.flatCount || 0) < 40;
+      return false;
     case "invoicePdf":
     case "reports":
       return true;
@@ -164,6 +168,11 @@ export function getUpgradeCopy(feature) {
       return {
         title: "Customer limit reached",
         message: "Free plan includes up to 10 customers. Upgrade to Pro to manage unlimited customers."
+      };
+    case "apartmentFlatCreate":
+      return {
+        title: "Flat limit reached",
+        message: "Pro plan supports up to 40 flats per apartment organization. Upgrade to Business for more than 40 flats."
       };
     case "invoicePdf":
       return {

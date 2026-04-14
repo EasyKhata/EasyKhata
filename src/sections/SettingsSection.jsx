@@ -6,7 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
-import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, StructuredLocationFields, UpgradeModal, EmptyState, ToastNotice, PhoneNumberInput } from "../components/UI";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, StructuredLocationFields, UpgradeModal, EmptyState, ToastNotice, PhoneNumberInput, PaginatedListControls } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import {
@@ -387,6 +387,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [notice, setNotice] = useState(null);
   const [pendingOrgTypeChange, setPendingOrgTypeChange] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerPageSize, setCustomerPageSize] = useState(25);
   const [importCsvText, setImportCsvText] = useState("");
   const [importPreview, setImportPreview] = useState(null);
   const [importingData, setImportingData] = useState(false);
@@ -406,6 +408,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
+  const showApartmentWhatsappField = isApartmentOrg;
   const canManageSocietyPortal = Boolean(
     user?.id &&
     user?.role !== "admin" &&
@@ -453,6 +456,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return fields.includes(needle);
     });
   }, [customerDirectory, customerSearch]);
+  const paginatedCustomerDirectory = useMemo(() => {
+    const startIndex = (customerPage - 1) * customerPageSize;
+    return filteredCustomerDirectory.slice(startIndex, startIndex + customerPageSize);
+  }, [customerPage, customerPageSize, filteredCustomerDirectory]);
   const activeOrgSection = useMemo(
     () => (orgConfig.extraSections || []).find(section => section.key === orgSectionKey) || null,
     [orgConfig, orgSectionKey]
@@ -871,7 +878,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function saveCust() {
     const cleanName = String(custForm?.name || "").trim();
     const cleanEmail = showFullCustomerForm ? normalizeEmail(custForm?.email) : "";
-    const cleanPhoneNumber = showPersonContactFields ? sanitizePhoneDigits(custForm?.phoneNumber) : "";
+    const canCapturePhone = showPersonContactFields || showApartmentWhatsappField;
+    const cleanPhoneNumber = canCapturePhone ? sanitizePhoneDigits(custForm?.phoneNumber) : "";
     const cleanPhoneCountryCode = custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
     const cleanAddressLine = showFullCustomerForm ? String(custForm?.addressLine || "").trim() : "";
@@ -912,17 +920,25 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter customer city, state, and country.");
       return;
     }
-    if (!editCust && !canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
-      setUpgradeInfo(getUpgradeCopy("customerCreate"));
-      return;
+    if (!editCust) {
+      if (isApartmentOrg) {
+        const flatCount = (customers || []).filter(item => String(item?.name || "").trim()).length;
+        if (!canUseFeature(user, "apartmentFlatCreate", { flatCount })) {
+          setUpgradeInfo(getUpgradeCopy("apartmentFlatCreate"));
+          return;
+        }
+      } else if (!canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
+        setUpgradeInfo(getUpgradeCopy("customerCreate"));
+        return;
+      }
     }
 
     const payload = {
       name: cleanName,
       email: orgType === "apartment" ? "" : cleanEmail,
       phone: cleanPhone,
-      phoneCountryCode: orgType === "apartment" ? "" : cleanPhoneCountryCode,
-      phoneNumber: orgType === "apartment" ? "" : cleanPhoneNumber,
+      phoneCountryCode: cleanPhone ? cleanPhoneCountryCode : "",
+      phoneNumber: cleanPhone ? cleanPhoneNumber : "",
       addressLine: showFullCustomerForm ? cleanAddressLine : "",
       city: showFullCustomerForm ? cleanCity : "",
       state: showFullCustomerForm ? cleanState : "",
@@ -1754,10 +1770,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setImportingData(true);
     try {
       const flatByName = new Map((customers || []).map(flat => [String(flat?.name || "").trim().toUpperCase(), flat]));
+      const initialFlatCount = Array.from(flatByName.values()).filter(flat => String(flat?.name || "").trim()).length;
       let createdFlats = 0;
       let updatedFlats = 0;
       let importedCollections = 0;
       let importedExpenses = 0;
+      const canCreateAnotherFlat = () => canUseFeature(user, "apartmentFlatCreate", { flatCount: initialFlatCount + createdFlats });
 
       importPreview.validRows.forEach(row => {
         if (row.recordType === "flat") {
@@ -1774,6 +1792,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             updateCustomer({ ...existing, ...basePayload, id: existing.id });
             updatedFlats += 1;
           } else {
+            if (!canCreateAnotherFlat()) {
+              throw new Error(getUpgradeCopy("apartmentFlatCreate").message || "Flat limit reached for current plan.");
+            }
             addCustomer(basePayload);
             createdFlats += 1;
             flatByName.set(row.flatNumber, { ...basePayload, name: row.flatNumber });
@@ -1790,6 +1811,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             updateCustomer({ ...existing, ...balancePayload, id: existing.id });
             updatedFlats += 1;
           } else {
+            if (!canCreateAnotherFlat()) {
+              throw new Error(getUpgradeCopy("apartmentFlatCreate").message || "Flat limit reached for current plan.");
+            }
             const createdPayload = { name: row.flatNumber, ...balancePayload };
             addCustomer(createdPayload);
             createdFlats += 1;
@@ -1864,6 +1888,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
   }, [selectedSupportTicketId, supportTickets]);
 
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(filteredCustomerDirectory.length / customerPageSize));
+    if (customerPage > totalPages) setCustomerPage(totalPages);
+  }, [customerPage, customerPageSize, filteredCustomerDirectory.length]);
+
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1904,7 +1933,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="card">
               <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
-              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : "Download a monthly or financial year PDF report"} onClick={openReportPicker} />
+              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
                   icon="I"
@@ -2385,8 +2414,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         ) : filteredCustomerDirectory.length === 0 ? (
           <EmptyState title="No matching records" message="Try a different search term to find the flat or customer you need." accentColor="var(--blue)" />
         ) : (
-          <div className="card">
-            {filteredCustomerDirectory.map(customer => (
+          <>
+            <div className="card" style={{ marginBottom: 10, padding: 10 }}>
+              <PaginatedListControls
+                totalItems={filteredCustomerDirectory.length}
+                page={customerPage}
+                pageSize={customerPageSize}
+                onPageChange={setCustomerPage}
+                onPageSizeChange={nextSize => {
+                  setCustomerPageSize(nextSize);
+                  setCustomerPage(1);
+                }}
+                itemLabel={orgConfig.customerLabel.toLowerCase()}
+              />
+            </div>
+            <div className="card">
+            {paginatedCustomerDirectory.map(customer => (
               <div key={customer.id} className="card-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openCustomerDetail(customer)}>
                   <Avatar name={customer.name} size={38} fontSize={13} />
@@ -2411,7 +2454,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </Modal>
     );
@@ -2503,7 +2547,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     return withNotice(
       <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
         <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        {showPersonContactFields && <Field label="Phone">
+        {(showPersonContactFields || showApartmentWhatsappField) && <Field label={showApartmentWhatsappField ? "Resident WhatsApp Number" : "Phone"} hint={showApartmentWhatsappField ? "Used for due reminders and invoice updates on WhatsApp." : ""}>
           <PhoneNumberInput
             countryCode={custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
             phoneNumber={custForm?.phoneNumber || ""}

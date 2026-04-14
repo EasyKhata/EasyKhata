@@ -566,6 +566,46 @@ export function EmptyState({ title, message, actionLabel, onAction, accentColor 
   );
 }
 
+export function PaginatedListControls({
+  totalItems = 0,
+  page = 1,
+  pageSize = 25,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = [10, 25, 50, 100],
+  itemLabel = "items"
+}) {
+  const safePageSize = Math.max(1, Number(pageSize) || 25);
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  const safePage = Math.min(Math.max(1, Number(page) || 1), totalPages);
+  const from = totalItems === 0 ? 0 : (safePage - 1) * safePageSize + 1;
+  const to = Math.min(totalItems, safePage * safePageSize);
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+        {from}-{to} of {totalItems} {itemLabel}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Select value={String(safePageSize)} onChange={event => onPageSizeChange?.(Number(event.target.value))} style={{ marginBottom: 0, minWidth: 78 }}>
+          {pageSizeOptions.map(option => (
+            <option key={option} value={option}>{option} / page</option>
+          ))}
+        </Select>
+        <button className="btn-secondary" type="button" style={{ padding: "7px 10px", fontSize: 12 }} disabled={safePage <= 1} onClick={() => onPageChange?.(safePage - 1)}>
+          Prev
+        </button>
+        <span style={{ fontSize: 12, color: "var(--text-sec)", minWidth: 72, textAlign: "center" }}>
+          Page {safePage}/{totalPages}
+        </span>
+        <button className="btn-secondary" type="button" style={{ padding: "7px 10px", fontSize: 12 }} disabled={safePage >= totalPages} onClick={() => onPageChange?.(safePage + 1)}>
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function UpgradeModal({ open, title, message, onClose }) {
   if (!open) return null;
   return (
