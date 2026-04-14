@@ -637,9 +637,6 @@ export default function MainApp() {
             pointerEvents: 'auto'
           }}>
             Free Plan (Read-only): You can view existing records and download reports. Create, edit, and delete actions require Pro.
-            <div style={{ fontSize: 11, color: 'var(--gold)', marginTop: 6, fontWeight: 500 }}>
-              <span role="img" aria-label="info">⚠️</span> Password reset and registration emails may go to your spam folder. Please check spam if not found in inbox.
-            </div>
             {!reviewAccessEnabled && (
               <button
                 className="btn-secondary"

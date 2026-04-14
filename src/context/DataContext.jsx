@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { collection, deleteDoc, doc, getDoc, getDocs, increment, query, setDoc, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, increment, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations, isFreeReadOnlyMode } from "../utils/subscription";
@@ -20,10 +20,6 @@ function uid() {
 
 function withId(record = {}) {
   return { ...record, id: record.id || uid() };
-}
-
-function inviteCode() {
-  return Math.random().toString(36).slice(2, 8).toUpperCase();
 }
 
 const EMPTY_ORG_DATA = {
@@ -377,26 +373,6 @@ export function DataProvider({ children }) {
     );
   }, [user?.id]);
 
-  const syncSharedLedgerCollections = useCallback(async (ledgerId, nextState, { force = false } = {}) => {
-    if (!ledgerId || !nextState) return;
-
-    await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(collectionKey =>
-        syncOrgCollection({
-          db,
-          userId: `shared-ledger-${ledgerId}`,
-          orgId: DEFAULT_ORG_ID,
-          collectionKey,
-          records: nextState[collectionKey] || [],
-          signatureStore: collectionSyncRef.current,
-          force,
-          pathSegments: ["shared_ledgers", ledgerId],
-          scopeKey: `shared-ledger:${ledgerId}`
-        })
-      )
-    );
-  }, []);
-
   const deleteOrgCollectionsForOrg = useCallback(async (userId, orgId) => {
     if (!userId || !orgId) return;
 
@@ -411,41 +387,6 @@ export function DataProvider({ children }) {
         })
       )
     );
-  }, []);
-
-  const hydrateSharedLedgerCollections = useCallback(async (ledgerId, ledgerDoc = {}) => {
-    const nextLedgerDoc = { ...ledgerDoc };
-    const backfillTargets = [];
-
-    for (const collectionKey of ORG_COLLECTION_KEYS) {
-      try {
-        const snapshot = await getDocs(collection(db, "shared_ledgers", ledgerId, collectionKey));
-        if (snapshot.empty) {
-          const embeddedRecords = sortOrgCollectionRecords(collectionKey, nextLedgerDoc?.[collectionKey] || []);
-          nextLedgerDoc[collectionKey] = embeddedRecords;
-          collectionSyncRef.current[`shared-ledger:${ledgerId}:${collectionKey}`] = JSON.stringify(embeddedRecords);
-          if (embeddedRecords.length) {
-            backfillTargets.push({ collectionKey, records: embeddedRecords });
-          }
-          continue;
-        }
-
-        nextLedgerDoc[collectionKey] = sortOrgCollectionRecords(
-          collectionKey,
-          snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-        );
-      } catch (err) {
-        console.error(`Shared ledger ${collectionKey} load failed for ${ledgerId}:`, err);
-        nextLedgerDoc[collectionKey] = sortOrgCollectionRecords(collectionKey, nextLedgerDoc?.[collectionKey] || []);
-      }
-    }
-
-    nextLedgerDoc.summary = {
-      ...buildOrgSummary(nextLedgerDoc),
-      ...(ledgerDoc.summary || {})
-    };
-
-    return { ledgerDoc: nextLedgerDoc, backfillTargets };
   }, []);
 
   const syncOrgInvoices = useCallback(async (userId, orgId, invoices = [], { force = false } = {}) => {
@@ -715,18 +656,6 @@ export function DataProvider({ children }) {
 
       setUserData(user.id, "appData", nextState);
 
-      if (nextState.sharedLedger?.id) {
-        const payload = extractActiveOrg(nextState);
-        setDoc(doc(db, "shared_ledgers", nextState.sharedLedger.id), sanitizeForFirestore(payload), { merge: true });
-        syncSharedLedgerCollections(nextState.sharedLedger.id, nextState);
-        setDoc(
-          doc(db, "users", user.id),
-          sanitizeForFirestore({ updatedAt: activityAt, lastActivityAt: activityAt }),
-          { merge: true }
-        );
-        return;
-      }
-
       setDoc(
         doc(db, "users", user.id),
         sanitizeForFirestore({
@@ -756,7 +685,7 @@ export function DataProvider({ children }) {
           : prev
       );
     },
-    [setUser, syncActiveOrgCollections, syncSharedLedgerCollections, user?.id, user?.organizationType]
+    [setUser, syncActiveOrgCollections, user?.id, user?.organizationType]
   );
 
   useEffect(() => {
@@ -774,55 +703,6 @@ export function DataProvider({ children }) {
       try {
         const userSnap = await getDoc(doc(db, "users", user.id));
         const userDoc = userSnap.exists() ? userSnap.data() : {};
-
-        if (userDoc.sharedLedgerId) {
-          const ledgerSnap = await getDoc(doc(db, "shared_ledgers", userDoc.sharedLedgerId));
-          if (ledgerSnap.exists()) {
-            const { ledgerDoc, backfillTargets } = await hydrateSharedLedgerCollections(userDoc.sharedLedgerId, ledgerSnap.data());
-            setData(
-              buildStateFromOrganizations({
-                orgs: {
-                  [DEFAULT_ORG_ID]: normalizeOrgData(ledgerDoc, {
-                    account: {
-                      email: userDoc.email || user.email || "",
-                      phone: userDoc.phone || user.phone || "",
-                      organizationType: ledgerDoc.account?.organizationType || userDoc.organizationType
-                    }
-                  })
-                },
-                activeOrgId: DEFAULT_ORG_ID,
-                sharedLedger: {
-                  id: ledgerSnap.id,
-                  name: ledgerDoc.name || "Shared Ledger",
-                  ownerId: ledgerDoc.ownerId || "",
-                  inviteCode: ledgerDoc.inviteCode || "",
-                  members: ledgerDoc.members || [],
-                  role: userDoc.sharedLedgerRole || "member"
-                }
-              })
-            );
-            if (backfillTargets.length) {
-              Promise.allSettled(
-                backfillTargets.map(target =>
-                  syncOrgCollection({
-                    db,
-                    userId: `shared-ledger-${userDoc.sharedLedgerId}`,
-                    orgId: DEFAULT_ORG_ID,
-                    collectionKey: target.collectionKey,
-                    records: target.records,
-                    signatureStore: collectionSyncRef.current,
-                    force: true,
-                    deleteMissing: false,
-                    pathSegments: ["shared_ledgers", userDoc.sharedLedgerId],
-                    scopeKey: `shared-ledger:${userDoc.sharedLedgerId}`
-                  })
-                )
-              );
-            }
-            setLoaded(true);
-            return;
-          }
-        }
 
         const fallback = {
           account: {
@@ -901,7 +781,7 @@ export function DataProvider({ children }) {
             }
           }),
           activeOrgId: localData.activeOrgId || DEFAULT_ORG_ID,
-          sharedLedger: localData.sharedLedger || null
+          sharedLedger: null
         });
         setData(nextState);
       } finally {
@@ -1042,7 +922,7 @@ export function DataProvider({ children }) {
             [nextActiveOrgId]: extractActiveOrg({ ...proposed, activeOrgId: nextActiveOrgId })
           },
           activeOrgId: nextActiveOrgId,
-          sharedLedger: proposed.sharedLedger
+          sharedLedger: null
         });
         return nextState;
       });
@@ -1094,13 +974,12 @@ export function DataProvider({ children }) {
 
   async function switchOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
-    if (data.sharedLedger?.id) return { error: "Org switching is not available inside a shared ledger." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
     const nextState = buildStateFromOrganizations({
       orgs: data.orgs,
       activeOrgId: orgId,
-      sharedLedger: data.sharedLedger
+      sharedLedger: null
     });
 
     setData(nextState);
@@ -1111,7 +990,6 @@ export function DataProvider({ children }) {
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
     if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
-    if (data.sharedLedger?.id) return { error: "Org creation is not available inside a shared ledger." };
 
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
@@ -1147,7 +1025,7 @@ export function DataProvider({ children }) {
         [nextOrgId]: nextOrg
       },
       activeOrgId: nextOrgId,
-      sharedLedger: data.sharedLedger
+      sharedLedger: null
     });
 
     setData(nextState);
@@ -1158,7 +1036,6 @@ export function DataProvider({ children }) {
   async function deleteOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
     if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
-    if (data.sharedLedger?.id) return { error: "Org deletion is not available inside a shared ledger." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
     const orgIds = Object.keys(data.orgs || {});
@@ -1173,7 +1050,7 @@ export function DataProvider({ children }) {
     const nextState = buildStateFromOrganizations({
       orgs: nextOrgs,
       activeOrgId: nextActiveOrgId,
-      sharedLedger: data.sharedLedger
+      sharedLedger: null
     });
 
     setData(nextState);
@@ -1209,209 +1086,19 @@ export function DataProvider({ children }) {
   const maxOrganizations = getMaxOrganizations(user);
 
   async function createSharedLedger(name) {
-    if (!user?.id) return { error: "No active user found." };
-    if (data.sharedLedger?.id) return { error: "You are already inside a shared ledger." };
-
-    try {
-      const ledgerId = uid() + uid();
-      const nextInviteCode = inviteCode();
-      const members = [
-        {
-          userId: user.id,
-          name: user.name || "",
-          email: user.email || "",
-          role: "owner",
-          status: "active",
-          joinedAt: new Date().toISOString()
-        }
-      ];
-
-      await setDoc(doc(db, "shared_ledgers", ledgerId), {
-        name: name.trim(),
-        ownerId: user.id,
-        inviteCode: nextInviteCode,
-        members,
-        ...extractActiveOrg(data)
-      });
-      await syncSharedLedgerCollections(ledgerId, data, { force: true });
-
-      await updateDoc(doc(db, "users", user.id), {
-        sharedLedgerId: ledgerId,
-        sharedLedgerRole: "owner"
-      });
-
-      setUser(prev => (prev ? { ...prev, sharedLedgerId: ledgerId, sharedLedgerRole: "owner" } : prev));
-      setData(prev => ({
-        ...prev,
-        sharedLedger: {
-          id: ledgerId,
-          name: name.trim(),
-          ownerId: user.id,
-          inviteCode: nextInviteCode,
-          members,
-          role: "owner"
-        }
-      }));
-
-      const snap = await getDoc(doc(db, "shared_ledgers", ledgerId));
-      if (snap.exists()) {
-        const ledgerDoc = snap.data();
-        setData(prev => ({
-          ...prev,
-          sharedLedger: {
-            id: ledgerId,
-            name: ledgerDoc.name,
-            ownerId: ledgerDoc.ownerId,
-            inviteCode: ledgerDoc.inviteCode,
-            members: ledgerDoc.members || [],
-            role: "owner"
-          }
-        }));
-      }
-
-      return { success: true };
-    } catch (err) {
-      return { error: err.message || "We couldn't create the shared ledger right now." };
-    }
+    return { error: "Shared ledger has been retired from the app." };
   }
 
   async function joinSharedLedger(code) {
-    if (!user?.id) return { error: "No active user found." };
-    if (data.sharedLedger?.id) return { error: "Leave the current shared ledger before joining another one." };
-
-    try {
-      const q = query(collection(db, "shared_ledgers"), where("inviteCode", "==", code.trim().toUpperCase()));
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        return { error: "Invite code not found. Please check and try again." };
-      }
-
-      const ledgerRef = snap.docs[0].ref;
-      const ledgerDoc = snap.docs[0].data();
-      const members = ledgerDoc.members || [];
-      const exists = members.find(member => member.userId === user.id);
-      const nextMembers = exists
-        ? members.map(member => (member.userId === user.id ? { ...member, status: "active" } : member))
-        : [
-            ...members,
-            {
-              userId: user.id,
-              name: user.name || "",
-              email: user.email || "",
-              role: "member",
-              status: "active",
-              joinedAt: new Date().toISOString()
-            }
-          ];
-
-      await updateDoc(ledgerRef, { members: nextMembers });
-      await updateDoc(doc(db, "users", user.id), {
-        sharedLedgerId: ledgerRef.id,
-        sharedLedgerRole: "member"
-      });
-
-      const { ledgerDoc: hydratedLedgerDoc, backfillTargets } = await hydrateSharedLedgerCollections(ledgerRef.id, ledgerDoc);
-      if (backfillTargets.length) {
-        Promise.allSettled(
-          backfillTargets.map(target =>
-            syncOrgCollection({
-              db,
-              userId: `shared-ledger-${ledgerRef.id}`,
-              orgId: DEFAULT_ORG_ID,
-              collectionKey: target.collectionKey,
-              records: target.records,
-              signatureStore: collectionSyncRef.current,
-              force: true,
-              deleteMissing: false,
-              pathSegments: ["shared_ledgers", ledgerRef.id],
-              scopeKey: `shared-ledger:${ledgerRef.id}`
-            })
-          )
-        );
-      }
-
-      setUser(prev => (prev ? { ...prev, sharedLedgerId: ledgerRef.id, sharedLedgerRole: "member" } : prev));
-      setData(
-        buildStateFromOrganizations({
-          orgs: {
-            [DEFAULT_ORG_ID]: normalizeOrgData(hydratedLedgerDoc)
-          },
-          activeOrgId: DEFAULT_ORG_ID,
-          sharedLedger: {
-            id: ledgerRef.id,
-            name: hydratedLedgerDoc.name || "Shared Ledger",
-            ownerId: hydratedLedgerDoc.ownerId || "",
-            inviteCode: hydratedLedgerDoc.inviteCode || "",
-            members: nextMembers,
-            role: "member"
-          }
-        })
-      );
-
-      return { success: true };
-    } catch (err) {
-      return { error: err.message || "We couldn't join that shared ledger right now." };
-    }
+    return { error: "Shared ledger has been retired from the app." };
   }
 
   async function leaveSharedLedger() {
-    if (!user?.id || !data.sharedLedger?.id) return { error: "You are not in a shared ledger." };
-    if (data.sharedLedger.role === "owner") return { error: "Transfer ownership or remove the ledger before the owner leaves." };
-
-    try {
-      const ledgerRef = doc(db, "shared_ledgers", data.sharedLedger.id);
-      const snap = await getDoc(ledgerRef);
-      if (snap.exists()) {
-        const ledgerDoc = snap.data();
-        const nextMembers = (ledgerDoc.members || []).filter(member => member.userId !== user.id);
-        await updateDoc(ledgerRef, { members: nextMembers });
-      }
-
-      await updateDoc(doc(db, "users", user.id), {
-        sharedLedgerId: "",
-        sharedLedgerRole: ""
-      });
-
-      setUser(prev => (prev ? { ...prev, sharedLedgerId: "", sharedLedgerRole: "" } : prev));
-
-      const userSnap = await getDoc(doc(db, "users", user.id));
-      const nextDoc = userSnap.exists() ? userSnap.data() : {};
-      setData(
-        buildStateFromOrganizations({
-          orgs: normalizeOrgCollection(nextDoc, {
-            account: {
-              email: nextDoc.email || user.email || "",
-              phone: nextDoc.phone || user.phone || "",
-              organizationType: nextDoc.organizationType || user.organizationType
-            }
-          }),
-          activeOrgId: nextDoc.activeOrgId || DEFAULT_ORG_ID,
-          sharedLedger: null
-        })
-      );
-
-      return { success: true };
-    } catch (err) {
-      return { error: err.message || "We couldn't leave the shared ledger right now." };
-    }
+    return { error: "Shared ledger has been retired from the app." };
   }
 
   async function regenerateLedgerInvite() {
-    if (!data.sharedLedger?.id || data.sharedLedger.role !== "owner") {
-      return { error: "Only the ledger owner can refresh the invite code." };
-    }
-
-    try {
-      const nextCode = inviteCode();
-      await updateDoc(doc(db, "shared_ledgers", data.sharedLedger.id), { inviteCode: nextCode });
-      setData(prev => ({
-        ...prev,
-        sharedLedger: prev.sharedLedger ? { ...prev.sharedLedger, inviteCode: nextCode } : prev.sharedLedger
-      }));
-      return { success: true, inviteCode: nextCode };
-    } catch (err) {
-      return { error: err.message || "We couldn't refresh the invite code right now." };
-    }
+    return { error: "Shared ledger has been retired from the app." };
   }
 
   const contextValue = useMemo(() => ({

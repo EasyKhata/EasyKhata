@@ -164,6 +164,11 @@ export function AuthProvider({ children }) {
         blocked: false,
         sharedLedgerId: "",
         sharedLedgerRole: "",
+        societyPortalId: "",
+        societyPortalRole: "",
+        societyFlatNumber: "",
+        societyInviteCode: "",
+        apartmentPortalRoles: {},
         legalAccepted: baseLegalAccepted,
         termsVersion: baseTermsVersion,
         termsAcceptedAt: baseTermsAcceptedAt,
@@ -330,7 +335,12 @@ export function AuthProvider({ children }) {
       subscriptionEndsAt: profile?.subscriptionEndsAt || "",
       blocked: Boolean(profile?.blocked),
       sharedLedgerId: profile?.sharedLedgerId || "",
-      sharedLedgerRole: profile?.sharedLedgerRole || ""
+      sharedLedgerRole: profile?.sharedLedgerRole || "",
+      societyPortalId: profile?.societyPortalId || "",
+      societyPortalRole: profile?.societyPortalRole || "",
+      societyFlatNumber: profile?.societyFlatNumber || "",
+      societyInviteCode: profile?.societyInviteCode || "",
+      apartmentPortalRoles: profile?.apartmentPortalRoles || {}
     };
   }
 

@@ -632,7 +632,7 @@ function downloadCsv(filename, rows) {
 
 export function downloadAdminUsersCsv(users) {
   const rows = [
-    ["User ID", "Name", "Email", "Phone", "Plan", "Subscription Status", "Joined", "Blocked", "Shared Ledger"]
+    ["User ID", "Name", "Email", "Phone", "Plan", "Subscription Status", "Joined", "Blocked"]
   ];
   users.forEach(user => {
     rows.push([
@@ -643,8 +643,7 @@ export function downloadAdminUsersCsv(users) {
       user.plan || user.subscriptionPlan || "free",
       user.subscriptionStatus || user.status || "active",
       user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN") : "",
-      user.blocked ? "Yes" : "No",
-      user.sharedLedgerId || ""
+      user.blocked ? "Yes" : "No"
     ]);
   });
   downloadCsv(`admin-users-${new Date().toISOString().slice(0, 10)}.csv`, rows);

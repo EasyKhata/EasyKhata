@@ -87,7 +87,6 @@ export default function AdminUsersSection() {
         userFilter === "all" ||
         (userFilter === "blocked" && member.blocked) ||
         (userFilter === "active" && !member.blocked) ||
-        (userFilter === "shared" && member.sharedLedgerId) ||
         (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS));
       return matchesSearch && matchesFilter;
     });
@@ -135,17 +134,6 @@ export default function AdminUsersSection() {
 
     setAdminError("");
     try {
-      const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
-      await Promise.all(
-        ledgersSnapshot.docs.map(async ledgerDoc => {
-          const ledger = ledgerDoc.data();
-          const members = (ledger.members || []).filter(item => item.userId !== member.id);
-          if (members.length !== (ledger.members || []).length) {
-            await updateDoc(ledgerDoc.ref, { members });
-          }
-        })
-      );
-
       await setDoc(doc(db, "admin_cleanup_queue", member.id), {
         uid: member.id,
         email: member.email || "",
@@ -298,8 +286,7 @@ export default function AdminUsersSection() {
             ["all", "All"],
             ["active", "Unblocked"],
             ["blocked", "Blocked"],
-            ["premium", "Premium"],
-            ["shared", "Shared"]
+            ["premium", "Premium"]
           ].map(([value, label]) => (
             <button
               key={value}
@@ -340,7 +327,6 @@ export default function AdminUsersSection() {
                 <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
                 <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
                   {member.phone || "No phone"} - {(member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE)} access
-                  {member.sharedLedgerId ? ` - Shared ledger ${member.sharedLedgerId}` : ""}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.6 }}>
                   {buildLocationLabel({
