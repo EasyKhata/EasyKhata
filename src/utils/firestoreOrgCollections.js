@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, writeBatch } from "firebase/firestore";
 
-export const ORG_COLLECTION_KEYS = ["income", "expenses", "invoices"];
+export const ORG_COLLECTION_KEYS = ["income", "expenses", "invoices", "customers"];
 
 function countOrgRecords(orgRecords = {}) {
   return Object.values(orgRecords || {}).reduce((sum, items) => sum + (Array.isArray(items) ? items.length : 0), 0);
