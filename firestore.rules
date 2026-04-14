@@ -253,6 +253,10 @@ service cloud.firestore {
       match /orgs/{orgId}/expenses/{expenseId} {
         allow create, read, update, delete: if isOwner(userId) || isAdmin();
       }
+
+      match /orgs/{orgId}/customers/{customerId} {
+        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /shared_ledgers/{ledgerId} {

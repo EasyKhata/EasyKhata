@@ -120,6 +120,10 @@ function isOpeningBalanceCollection(item) {
   return String(item?.collectionType || "").trim().toLowerCase() === "opening balance";
 }
 
+function isMonthlyMaintenanceCollection(item) {
+  return String(item?.collectionType || "Monthly Maintenance").trim().toLowerCase() === "monthly maintenance";
+}
+
 function sumCollectionAmounts(entries) {
   return (entries || []).reduce((total, entry) => total + Number(entry?.amount || 0), 0);
 }
@@ -580,7 +584,7 @@ function getApartmentFlatStatusRows(data, year, month) {
       ownerName: String(flat.ownerName || "").trim(),
       expected: Number(flat.monthlyMaintenance || 0)
     }));
-  const collections = getApartmentCollectionEntries(data, year, month).filter(item => !isOpeningBalanceCollection(item));
+  const collections = getApartmentCollectionEntries(data, year, month).filter(item => !isOpeningBalanceCollection(item) && isMonthlyMaintenanceCollection(item));
 
   return flats
     .map(flat => {
@@ -814,7 +818,7 @@ function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
     { label: "Statement Period", value: `${MONTHS[month]} ${year}` },
     { label: "Pending Flats", value: String(stats.unpaidFlats?.length || 0) },
     { label: "Collection Efficiency", value: `${Math.round(stats.collectionRate || 0)}%` },
-    { label: "Pending Dues", value: money(totalDueAmount, sym) }
+    { label: "Pending Dues", value: money(stats.pendingDuesAmount ?? totalDueAmount, sym) }
   ]);
 
   y = ensureSpace(doc, y + 2, 60);

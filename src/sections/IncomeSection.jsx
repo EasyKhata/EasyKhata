@@ -1101,9 +1101,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                           className="btn-secondary"
                           style={{ padding: "7px 12px", fontSize: 12 }}
                           onClick={() => openFlatWhatsapp(flat)}
+                          title={flat.paidEntry ? "Send WhatsApp receipt" : "Send WhatsApp reminder"}
                           disabled={!String(flat.phone || `${flat.phoneCountryCode || ""}${flat.phoneNumber || ""}`).replace(/\D/g, "")}
                         >
-                          {flat.paidEntry ? "WhatsApp Receipt" : "WhatsApp Reminder"}
+                          {"💬"}
                         </button>
                         {isCurrentViewedMonth && !flat.paidEntry && (
                           <button
