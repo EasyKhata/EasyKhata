@@ -5,6 +5,20 @@ function toNumber(value) {
   return Number(value) || 0;
 }
 
+function normalizeMonthValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const directMatch = raw.match(/^(\d{4})-(\d{1,2})/);
+  if (directMatch) {
+    const year = directMatch[1];
+    const month = String(Number(directMatch[2])).padStart(2, "0");
+    return `${year}-${month}`;
+  }
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function getGoalSnapshot(goals = {}) {
   const targetAmount = toNumber(goals.targetAmount ?? goals.monthlySavings);
   const targetDate = String(goals.targetDate || "");
@@ -142,21 +156,27 @@ function getApartmentFlats(data) {
 }
 
 function getApartmentCollectionsForMonth(data, mk) {
+  const monthValue = normalizeMonthValue(mk);
   return (data?.income || []).filter(item => {
-    const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
-    return itemMonth === mk;
+    const itemMonth = normalizeMonthValue(item.collectionMonth || item.month || item.date?.slice(0, 7) || "");
+    return itemMonth === monthValue;
   });
 }
 
 function getApartmentCollectionsForYear(data, year) {
+  const yearValue = String(year);
   return (data?.income || []).filter(item => {
-    const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
-    return itemMonth.slice(0, 4) === String(year);
+    const itemMonth = normalizeMonthValue(item.collectionMonth || item.month || item.date?.slice(0, 7) || "");
+    return itemMonth.slice(0, 4) === yearValue;
   });
 }
 
 function getApartmentExpectedCollection(flats) {
   return flats.reduce((sum, flat) => sum + toNumber(flat.monthlyMaintenance), 0);
+}
+
+function isMonthlyMaintenanceCollection(item) {
+  return String(item?.collectionType || "Monthly Maintenance").trim().toLowerCase() === "monthly maintenance";
 }
 
 function getApartmentExpenseCategoryMap(expenses) {
@@ -168,17 +188,85 @@ function getApartmentExpenseCategoryMap(expenses) {
 }
 
 function getApartmentUnpaidFlats(flats, collections) {
-  const paidFlatNumbers = new Set(collections.map(item => String(item.flatNumber || "").trim()).filter(Boolean));
-  return flats.filter(flat => !paidFlatNumbers.has(String(flat.name || flat.flatNumber || "").trim()));
+  const { unpaidFlats } = getApartmentCollectionHealth(flats, collections);
+  return unpaidFlats;
+}
+
+function getApartmentCollectionHealth(flats, collections) {
+  const paidByFlat = collections.reduce((map, item) => {
+    const flatNumber = String(item.flatNumber || "").trim();
+    if (!flatNumber) return map;
+    map[flatNumber] = (map[flatNumber] || 0) + toNumber(item.amount);
+    return map;
+  }, {});
+  let expectedTotal = 0;
+  let pendingDuesAmount = 0;
+  let cappedCollectedAmount = 0;
+
+  const unpaidFlats = flats.filter(flat => {
+    const flatNumber = String(flat.name || flat.flatNumber || "").trim();
+    const expected = toNumber(flat.monthlyMaintenance);
+    if (expected <= 0) return false;
+    const paid = toNumber(paidByFlat[flatNumber]);
+    const due = Math.max(0, expected - paid);
+    expectedTotal += expected;
+    pendingDuesAmount += due;
+    cappedCollectedAmount += Math.min(expected, paid);
+    return due > 0;
+  });
+
+  return {
+    unpaidFlats,
+    expectedTotal,
+    pendingDuesAmount,
+    cappedCollectedAmount
+  };
+}
+
+function parseMonthKey(value) {
+  const [yearRaw, monthRaw] = String(value || "").split("-");
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return null;
+  return { year, month: month - 1 };
+}
+
+function formatMonthKey(year, month) {
+  return `${year}-${String(month + 1).padStart(2, "0")}`;
+}
+
+function getNextMonthKey(value) {
+  const parsed = parseMonthKey(value);
+  if (!parsed) return null;
+  const date = new Date(parsed.year, parsed.month + 1, 1);
+  return formatMonthKey(date.getFullYear(), date.getMonth());
+}
+
+function getApartmentStartMonthKey(data, fallbackKey) {
+  const keys = [];
+  (data?.income || []).forEach(item => {
+    const itemMonth = normalizeMonthValue(item.collectionMonth || item.month || item.date?.slice(0, 7));
+    if (parseMonthKey(itemMonth)) keys.push(itemMonth);
+  });
+  (data?.expenses || []).forEach(item => {
+    const expenseMonth = normalizeMonthValue(item.month || item.startMonth);
+    if (parseMonthKey(expenseMonth)) keys.push(expenseMonth);
+  });
+  if (!keys.length) return fallbackKey;
+  return keys.sort((a, b) => String(a).localeCompare(String(b)))[0] || fallbackKey;
 }
 
 function sumApartmentReserveToMonth(data, year, month) {
+  const endKey = monthKey(year, month);
+  const startKey = getApartmentStartMonthKey(data, endKey);
+  let pointerKey = startKey;
   let runningTotal = 0;
-  for (let monthIdx = 0; monthIdx <= month; monthIdx += 1) {
-    const mk = monthKey(year, monthIdx);
-    const income = getApartmentCollectionsForMonth(data, mk).reduce((sum, item) => sum + toNumber(item.amount), 0);
-    const expenses = sumExpensesForMonth(data, mk);
+
+  while (pointerKey && pointerKey <= endKey) {
+    const income = getApartmentCollectionsForMonth(data, pointerKey).reduce((sum, item) => sum + toNumber(item.amount), 0);
+    const expenses = sumExpensesForMonth(data, pointerKey);
     runningTotal += income - expenses;
+    pointerKey = getNextMonthKey(pointerKey);
   }
   return runningTotal;
 }
@@ -188,12 +276,16 @@ export function calculateApartmentDashboard(data, year, month) {
   const flats = getApartmentFlats(data);
   const residents = flats.reduce((count, flat) => count + (flat.ownerName ? 1 : 0) + (flat.tenantName ? 1 : 0), 0);
   const collections = getApartmentCollectionsForMonth(data, mk);
+  const maintenanceCollections = collections.filter(isMonthlyMaintenanceCollection);
   const totalIncome = collections.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const maintenanceCollected = maintenanceCollections.reduce((sum, item) => sum + toNumber(item.amount), 0);
   const totalExpense = sumExpensesForMonth(data, mk);
   const profit = totalIncome - totalExpense;
-  const expectedCollection = getApartmentExpectedCollection(flats);
-  const collectionRate = expectedCollection > 0 ? Math.min(100, (totalIncome / expectedCollection) * 100) : 0;
-  const unpaidFlats = getApartmentUnpaidFlats(flats, collections);
+  const collectionHealth = getApartmentCollectionHealth(flats, maintenanceCollections);
+  const expectedCollection = collectionHealth.expectedTotal || getApartmentExpectedCollection(flats);
+  const collectionRate = expectedCollection > 0 ? Math.min(100, (collectionHealth.cappedCollectedAmount / expectedCollection) * 100) : 0;
+  const pendingDuesAmount = collectionHealth.pendingDuesAmount;
+  const unpaidFlats = collectionHealth.unpaidFlats;
   const monthlyReserve = profit;
   const totalReserve = sumApartmentReserveToMonth(data, year, month);
   const directExpenses = (data?.expenses || []).filter(expense => {
@@ -202,7 +294,7 @@ export function calculateApartmentDashboard(data, year, month) {
         const notEnded = !expense.endMonth || expense.endMonth >= mk;
         return started && notEnded;
       }
-      return expense.month === mk;
+      return getRecordMonth(expense) === mk;
     });
   const expenseCategoryMap = getApartmentExpenseCategoryMap(directExpenses);
   const topExpenseCategories = Object.entries(expenseCategoryMap)
@@ -230,10 +322,11 @@ export function calculateApartmentDashboard(data, year, month) {
 
   const alertItems = [];
   if (unpaidFlats.length) {
+    const fullyCollectedFlats = Math.max(0, flats.length - unpaidFlats.length);
     alertItems.push({
       tone: "gold",
       title: `${unpaidFlats.length} flat(s) pending collection`,
-      message: `${flats.length - unpaidFlats.length} flat(s) have a recorded collection this month and ${unpaidFlats.length} are still pending.`
+      message: `${fullyCollectedFlats} flat(s) are fully collected and ${unpaidFlats.length} still have pending dues.`
     });
   }
   if (profit < 0) {
@@ -252,7 +345,9 @@ export function calculateApartmentDashboard(data, year, month) {
     flatsCount: flats.length,
     residentsCount: residents,
     expectedCollection,
+    maintenanceCollected,
     collectionRate,
+    pendingDuesAmount,
     monthlyReserve,
     totalReserve,
     paidFlatsCount: flats.length ? flats.length - unpaidFlats.length : 0,
@@ -276,7 +371,9 @@ export function calculateApartmentDashboard(data, year, month) {
 export function calculateApartmentYearlyDashboard(data, year) {
   const flats = getApartmentFlats(data);
   const residents = flats.reduce((count, flat) => count + (flat.ownerName ? 1 : 0) + (flat.tenantName ? 1 : 0), 0);
-  const totalIncome = getApartmentCollectionsForYear(data, year).reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const yearlyCollections = getApartmentCollectionsForYear(data, year);
+  const totalIncome = yearlyCollections.reduce((sum, item) => sum + toNumber(item.amount), 0);
+  const maintenanceCollected = yearlyCollections.filter(isMonthlyMaintenanceCollection).reduce((sum, item) => sum + toNumber(item.amount), 0);
   let totalExpense = 0;
   const monthlyBreakdown = Array.from({ length: 12 }, (_, monthIdx) => {
     const mk = monthKey(year, monthIdx);
@@ -294,9 +391,10 @@ export function calculateApartmentYearlyDashboard(data, year) {
   });
   const profit = totalIncome - totalExpense;
   const expectedCollection = getApartmentExpectedCollection(flats) * 12;
-  const collectionRate = expectedCollection > 0 ? Math.min(100, (totalIncome / expectedCollection) * 100) : 0;
+  const collectionRate = expectedCollection > 0 ? Math.min(100, (maintenanceCollected / expectedCollection) * 100) : 0;
+  const pendingDuesAmount = Math.max(0, expectedCollection - maintenanceCollected);
   const monthlyReserve = monthlyBreakdown[monthlyBreakdown.length - 1]?.net || 0;
-  const totalReserve = profit;
+  const totalReserve = sumApartmentReserveToMonth(data, year, 11);
   const topExpenseCategories = Object.entries(
     getApartmentExpenseCategoryMap(
       (data?.expenses || []).filter(expense => {
@@ -335,7 +433,9 @@ export function calculateApartmentYearlyDashboard(data, year) {
     flatsCount: flats.length,
     residentsCount: residents,
     expectedCollection,
+    maintenanceCollected,
     collectionRate,
+    pendingDuesAmount,
     monthlyReserve,
     totalReserve,
     topExpenseCategories,
@@ -699,15 +799,15 @@ export function getPersonalMemberOptions(data) {
 }
 
 function getRecordMonth(record) {
-  return String(record?.month || record?.date?.slice(0, 7) || "");
+  return normalizeMonthValue(record?.month || record?.date?.slice(0, 7) || "");
 }
 
 function getRecurringStartMonth(record) {
-  return String(record?.startMonth || record?.date?.slice(0, 7) || "");
+  return normalizeMonthValue(record?.startMonth || record?.date?.slice(0, 7) || "");
 }
 
 function getRecurringEndMonth(record) {
-  return String(record?.endMonth || record?.endDate?.slice(0, 7) || "");
+  return normalizeMonthValue(record?.endMonth || record?.endDate?.slice(0, 7) || "");
 }
 
 function endOfMonthValue(year, month) {

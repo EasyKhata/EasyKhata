@@ -120,11 +120,18 @@ function PersonalUsagePie({ stats, sym, viewMode }) {
 }
 
 function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
+  const totalCollected = Math.max(0, Number(stats.totalIncome || 0));
+  const totalSpent = Math.max(0, Number(stats.totalExpense || 0));
+  const netAmount = Number(stats.profit || 0);
+  const pendingDueAmount = Math.max(0, Number(stats.pendingDuesAmount || 0));
+  const expenseShare = totalCollected > 0 ? Math.min(100, Math.round((totalSpent / totalCollected) * 100)) : 0;
+  const netShare = totalCollected > 0 ? Math.min(100, Math.round((Math.abs(netAmount) / totalCollected) * 100)) : 0;
+  const collectionEfficiency = Math.max(0, Math.round(stats.collectionRate || 0));
   const segments = [
-    { label: "Expenses", value: Math.max(0, Number(stats.totalExpense || 0)), color: "var(--danger)" },
+    { label: "Money Spent", value: totalSpent, color: "var(--danger)" },
     {
-      label: (stats.profit || 0) >= 0 ? "Reserve" : "Shortfall",
-      value: Math.abs(Number(stats.profit || 0)),
+      label: (stats.profit || 0) >= 0 ? "Balance Left" : "Shortfall",
+      value: Math.abs(netAmount),
       color: (stats.profit || 0) >= 0 ? "var(--accent)" : "var(--gold)"
     }
   ].filter(item => item.value > 0);
@@ -155,7 +162,28 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
           </div>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          Total tracked {fmtMoney(total, sym)}
+          Total collected {fmtMoney(totalCollected, sym)}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14, padding: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collection Efficiency</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{collectionEfficiency}%</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Spent from Collected</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{expenseShare}%</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{netAmount >= 0 ? "Balance Left" : "Shortfall"}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: netAmount >= 0 ? "var(--accent)" : "var(--gold)" }}>{netShare}%</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Dues</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: pendingDueAmount > 0 ? "var(--gold)" : "var(--text)" }}>{fmtMoney(pendingDueAmount, sym)}</div>
+          </div>
         </div>
       </div>
 
@@ -373,19 +401,39 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   );
 
   if (isApartmentOrg) {
+    const selectedMonthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const monthCollections = (data.income || []).filter(item => (item.collectionMonth || item.month || item.date?.slice(0, 7) || "") === selectedMonthKey);
+    const openingBalanceCollectionsForMonth = monthCollections.reduce((sum, item) => (
+      String(item?.collectionType || "").trim().toLowerCase() === "opening balance"
+        ? sum + Number(item?.amount || 0)
+        : sum
+    ), 0);
+    const openingBalanceCollectionsForYear = (data.income || []).reduce((sum, item) => {
+      const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
+      if (!itemMonth.startsWith(String(year))) return sum;
+      return String(item?.collectionType || "").trim().toLowerCase() === "opening balance"
+        ? sum + Number(item?.amount || 0)
+        : sum;
+    }, 0);
+    const overallBalance = Number(stats.totalReserve || 0);
+    const monthlyBalance = Number(stats.monthlyReserve || 0);
+    const openingBalance = viewMode === "month"
+      ? (overallBalance - monthlyBalance + openingBalanceCollectionsForMonth)
+      : openingBalanceCollectionsForYear;
+    const formatSignedMoney = value => `${value < 0 ? "-" : ""}${fmtMoney(Math.abs(value), sym)}`;
     const apartmentHeroSub = viewMode === "month"
-      ? (stats.profit >= 0 ? "Collections are covering society expenses this month." : "Society expenses are ahead of collections this month.")
-      : (stats.profit >= 0 ? "Collections are covering society expenses this year." : "Society expenses are ahead of collections this year.");
+      ? `Overall balance till ${MONTHS[month]} ${year}.`
+      : `Overall balance for ${year}.`;
 
     return (
       <div style={{ paddingBottom: 20 }}>
         <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-              Society Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+              Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
             </div>
             <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
-              {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+              {overallBalance < 0 ? "-" : ""}{fmtMoney(Math.abs(overallBalance), sym)}
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{apartmentHeroSub}</div>
           </div>
@@ -397,10 +445,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
-            <Tile label={viewMode === "month" ? "Collections" : "Total Collections"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Recorded maintenance collections" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
-            <Tile label={viewMode === "month" ? "Society Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, utilities, repairs, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
-            <Tile label={viewMode === "month" ? "Monthly Reserve" : "Latest Month Reserve"} value={fmtMoney(stats.monthlyReserve || 0, sym)} color={(stats.monthlyReserve || 0) >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collections minus expenses for this month" : "Net result of the latest month in this year"} />
-            <Tile label="Total Reserve" value={fmtMoney(stats.totalReserve || 0, sym)} color={(stats.totalReserve || 0) >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? "Running reserve up to this month" : "Collections minus expenses for the year"} />
+            <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
+            <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
+            <Tile label={viewMode === "month" ? "Balance This Month" : "Latest Month Balance"} value={formatSignedMoney(monthlyBalance)} color={monthlyBalance >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collected minus spent in this month" : "Collected minus spent in the latest month"} />
+            <Tile label="Opening Balance" value={formatSignedMoney(openingBalance)} color={openingBalance >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? `Balance at start of ${MONTHS[month]} ${year}` : `Balance brought into ${year}`} />
             <Tile
               label="Flats"
               value={String(stats.flatsCount || 0)}
