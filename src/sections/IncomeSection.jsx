@@ -613,11 +613,11 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     }));
   }
 
-  function handlePrintSaleReceipt(item) {
+  async function handlePrintSaleReceipt(item) {
     const saleItemsForReceipt = normalizeSaleItems(item.saleItems || []);
     if (!saleItemsForReceipt.length) return;
     const billToCustomer = (d.customers || []).find(customer => String(customer.name || "").trim().toLowerCase() === String(item.customerName || "").trim().toLowerCase());
-    downloadInvoice({
+    await downloadInvoice({
       id: item.id,
       number: item.invoiceNumber || item.receiptNumber || `SALE-${String(item.date || TODAY).replaceAll("-", "")}-${String(item.id || "").slice(-4)}`,
       date: item.date || TODAY,

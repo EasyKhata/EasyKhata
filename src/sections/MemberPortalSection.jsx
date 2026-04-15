@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { EmptyState, fmtMoney, MONTHS } from "../components/UI";
+import { logError } from "../utils/logger";
 
 function toPeriodKey(year, month) {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -52,7 +53,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
           setFlatDue(null);
         }
       } catch (err) {
-        console.error("Member portal load error:", err);
+        logError("Member portal load error", err);
         setError("Unable to load resident view right now.");
       } finally {
         setLoading(false);

@@ -51,6 +51,7 @@ import {
 import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { logError } from "../utils/logger";
 
 const REQUEST_FILTERS = [
   [PAYMENT_REQUEST_STATUS.PENDING, "Pending"],
@@ -214,7 +215,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           ...item.data()
         })));
       } catch (err) {
-        console.error("Fetch users error:", err);
+        logError("Fetch users error", err);
       }
 
       try {
@@ -229,7 +230,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         );
         setPaymentRequestsEnabled(true);
       } catch (err) {
-        console.error("Fetch payment requests error:", err);
+        logError("Fetch payment requests error", err);
         setPaymentRequests([]);
         setPaymentRequestsEnabled(false);
       }
@@ -275,7 +276,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         )
       );
     } catch (err) {
-      console.error("Payment request status update error:", err);
+      logError("Payment request status update error", err);
       setAdminRequestError("Unable to update the payment request. Please try again.");
       alert(err?.message || "Unable to update the payment request. Please try again.");
     }
@@ -435,12 +436,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     setShowForm(true);
   }
 
-  function handleDownloadPdf(invoice) {
+  async function handleDownloadPdf(invoice) {
     if (!canUseFeature(user, "invoicePdf")) {
       setUpgradeInfo(getUpgradeCopy("invoicePdf"));
       return;
     }
-    downloadInvoice(invoice, d.account, sym, { isApartment: isApartmentOrg });
+    await downloadInvoice(invoice, d.account, sym, { isApartment: isApartmentOrg });
   }
 
   function closeForm() {

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
+import { logError } from "../utils/logger";
 import {
   calculateApartmentDashboard,
   calculateApartmentYearlyDashboard,
@@ -393,7 +394,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             organizationType: accountInfo.organizationType || data.account?.organizationType || user?.organizationType
           });
         } catch (err) {
-          console.error("Account update error:", err);
+          logError("Account update error", err);
           alert("Failed to save account details. Please try again.");
         }
       }}

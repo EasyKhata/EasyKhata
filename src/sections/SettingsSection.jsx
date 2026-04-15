@@ -2,11 +2,19 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { auth } from "../firebase";
+import { logError } from "../utils/logger";
+import PlanRequestModal from "./settings/PlanRequestModal";
+import NotificationsModal from "./settings/NotificationsModal";
+import SupportModal, { SUPPORT_TOPIC_OPTIONS } from "./settings/SupportModal";
+import ProfileModal from "./settings/ProfileModal";
+import AccountModal from "./settings/AccountModal";
+import CustomersScreen from "./settings/CustomersScreen";
+import SocietyPortalScreen from "./settings/SocietyPortalScreen";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
-import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, StructuredLocationFields, UpgradeModal, EmptyState, ToastNotice, PhoneNumberInput, PaginatedListControls } from "../components/UI";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import {
@@ -25,7 +33,6 @@ import {
   buildDateOfBirthFromParts,
   buildLocationLabel,
   buildPhoneNumber,
-  COUNTRY_OPTIONS,
   DEFAULT_PHONE_COUNTRY_CODE,
   getBirthDayOptions,
   getBirthYearOptions,
@@ -33,9 +40,7 @@ import {
   getAgeGroupFromDateOfBirth,
   isValidDateOfBirth,
   isValidUserPhoneNumber,
-  MONTH_OPTIONS,
   parseLocationFields,
-  PHONE_COUNTRY_OPTIONS,
   parseDateOfBirthParts,
   sanitizePhoneDigits,
   splitPhoneNumber
@@ -62,20 +67,6 @@ function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
 }
 
-const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
-const SUPPORT_TOPIC_OPTIONS = [
-  ["account", "Account access"],
-  ["billing", "Billing and subscription"],
-  ["bug", "Bug report"],
-  ["feature", "Feature request"],
-  ["data", "Data or reports"],
-  ["other", "Other"]
-];
-const SUPPORT_STATUS_LABELS = {
-  open: "Open",
-  in_progress: "In Progress",
-  resolved: "Resolved"
-};
 const APARTMENT_IMPORT_TYPES = ["flat", "collection", "expense", "opening_balance", "due"];
 const APARTMENT_IMPORT_TEMPLATE_HEADERS = [
   "record_type",
@@ -339,7 +330,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [planRequestForm, setPlanRequestForm] = useState({
-    targetPlan: PLANS.PRO,
     billingCycle: BILLING_CYCLES.MONTHLY,
     note: ""
   });
@@ -516,7 +506,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
       setSocietyPortalInvites(invites);
     } catch (err) {
-      console.error("Society portal load error:", err);
+      logError("Society portal load error", err);
       showNotice("Could not load resident access settings right now.");
     } finally {
       setSocietyPortalLoading(false);
@@ -1108,7 +1098,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         showNotice("Admin report downloaded.", "success");
         setShowReportPicker(false);
       } catch (err) {
-        console.error("Admin report error:", err);
+        logError("Admin report error", err);
         showNotice(err?.message || "Unable to generate admin report right now.");
       } finally {
         setGeneratingReport(false);
@@ -1121,15 +1111,15 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       const reportData = { account, currency, customers, income, expenses, invoices, goals, budgets, orgRecords };
 
       if (reportForm.period === "financial-year") {
-        downloadFinancialYearReport(reportData, financialYearStart, currency?.symbol || "Rs");
+        await downloadFinancialYearReport(reportData, financialYearStart, currency?.symbol || "Rs");
       } else {
-        downloadMonthlyReport(reportData, year, month, currency?.symbol || "Rs");
+        await downloadMonthlyReport(reportData, year, month, currency?.symbol || "Rs");
       }
 
       showNotice("Report downloaded.", "success");
       setShowReportPicker(false);
     } catch (err) {
-      console.error("Report download error:", err);
+      logError("Report download error", err);
       showNotice(err?.message || "Unable to generate the report right now.");
     } finally {
       setGeneratingReport(false);
@@ -1160,7 +1150,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       await loadSocietyPortalMeta();
       showNotice("Resident read-only access is saved.", "success");
     } catch (err) {
-      console.error("Society portal save error:", err);
+      logError("Society portal save error", err);
       showNotice("Could not save resident access settings.");
     }
   }
@@ -1196,7 +1186,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       await loadSocietyPortalMeta();
       showNotice(`Invite created for ${flatNumber}. Share code: ${inviteCode}`, "success");
     } catch (err) {
-      console.error("Create member invite error:", err);
+      logError("Create member invite error", err);
       showNotice("Could not create resident invite.");
     }
   }
@@ -1210,7 +1200,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       await loadSocietyPortalMeta();
       showNotice("Invite deactivated.", "success");
     } catch (err) {
-      console.error("Deactivate invite error:", err);
+      logError("Deactivate invite error", err);
       showNotice("Could not deactivate invite.");
     }
   }
@@ -1276,7 +1266,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       ));
       showNotice(`Published resident records for ${period}.`, "success");
     } catch (err) {
-      console.error("Society publish error:", err);
+      logError("Society publish error", err);
       showNotice("Could not publish resident records.");
     }
   }
@@ -1335,7 +1325,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Resident access joined successfully.", "success");
       setScreen("main");
     } catch (err) {
-      console.error("Join portal error:", err);
+      logError("Join portal error", err);
       showNotice("Could not join resident access with this code.");
     }
   }
@@ -1367,7 +1357,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("You left resident access.", "success");
       setScreen("main");
     } catch (err) {
-      console.error("Leave portal error:", err);
+      logError("Leave portal error", err);
       showNotice("Could not leave resident access right now.");
     }
   }
@@ -1398,13 +1388,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   async function submitPlanRequest() {
-    const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
+    const targetPlan = PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
     const cleanNote = planRequestForm.note.trim();
-    if (targetPlan === PLANS.BUSINESS) {
-      showNotice("Business plan subscriptions are temporarily disabled and will return in a future release.");
-      return;
-    }
 
     setSubmittingPayment(true);
     try {
@@ -1477,11 +1463,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               updatedAt: nowIso
             } : prev);
 
-            setPlanRequestForm({ targetPlan: PLANS.PRO, billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
+            setPlanRequestForm({ billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
             setScreen("main");
             showNotice(`Payment successful! ${PLAN_LABELS[targetPlan] || "Pro"} is now active.`, "success");
           } catch (verifyErr) {
-            console.error("Payment verification error:", verifyErr);
+            logError("Payment verification error", verifyErr);
             showNotice(verifyErr?.message || "Payment received but activation is pending. Please wait a moment — your plan will update automatically.");
           }
         }
@@ -1495,7 +1481,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
       checkout.open();
     } catch (err) {
-      console.error("Payment request error:", err);
+      logError("Payment request error", err);
       if (err?.code === "permission-denied") {
         showNotice("Payment checkout is blocked by server permissions. Please contact support.");
         return;
@@ -1516,10 +1502,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function emailPaymentProof() {
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, planRequestForm.targetPlan || PLANS.PRO);
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO);
     const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
     const body = encodeURIComponent(
-      `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: ${PLAN_LABELS[planRequestForm.targetPlan || PLANS.PRO] || "Pro"}\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
+      `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
     );
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
@@ -1572,7 +1558,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
     } catch (err) {
-      console.error("Support ticket load error:", err);
+      logError("Support ticket load error", err);
       showNotice("We couldn't load your support tickets right now.");
       setSupportTickets([]);
     } finally {
@@ -1627,7 +1613,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       setSupportForm({ topic: "account", subject: "", message: "" });
       await loadSupportTickets();
     } catch (err) {
-      console.error("Support ticket submit error:", err);
+      logError("Support ticket submit error", err);
       if (err?.code === "permission-denied") {
         showNotice("Support tickets are blocked by Firestore rules right now. Please allow support_tickets first.");
       } else {
@@ -1664,7 +1650,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       await loadSupportTickets();
       showNotice("Reply sent to support.", "success");
     } catch (err) {
-      console.error("Support reply error:", err);
+      logError("Support reply error", err);
       showNotice("We couldn't send your reply right now.");
     } finally {
       setReplyingTicketId("");
@@ -1866,7 +1852,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       setImportCsvText("");
       setScreen("main");
     } catch (err) {
-      console.error("Apartment import error:", err);
+      logError("Apartment import error", err);
       showNotice("Import failed. Please review the file and try again.");
     } finally {
       setImportingData(false);
@@ -2201,92 +2187,21 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return null;
     }
     return withNotice(
-      <>
-        <Modal title="Organization Profile" onClose={() => setScreen("main")} onSave={saveAcc} canSave={!!accForm.name.trim()}>
-          <Field label="Usage Type" required>
-            <Select value={accForm.organizationType || orgType} onChange={e => setAccForm(f => ({ ...f, organizationType: e.target.value }))}>
-              {selectableOrgTypeOptions.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={orgConfig.profileNameLabel} required><Input placeholder={orgConfig.profileNamePlaceholder} value={accForm.name || ""} onChange={e => setAccForm(f => ({ ...f, name: e.target.value }))} /></Field>
-          <Field label="Address" required hint="Society name, street, area, and any landmark."><Input placeholder="Lake View Residency, MG Road, Hyderabad" value={accForm.addressLine || ""} onChange={e => setAccForm(f => ({ ...f, addressLine: e.target.value }))} autoComplete="street-address" /></Field>
-          {!isApartmentOrg && (
-            <>
-              <div className="desktop-grid-2">
-                <Field label="City" required>
-                  <Input placeholder="Hyderabad" value={accForm.city || ""} onChange={e => setAccForm(f => ({ ...f, city: e.target.value }))} autoComplete="address-level2" />
-                </Field>
-                <Field label="Country" required>
-                  <Select value={accForm.country || "India"} onChange={e => setAccForm(f => ({ ...f, country: e.target.value }))}>
-                    {COUNTRY_OPTIONS.map(option => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-              <Field label="State / Province" required>
-                <Select value={accForm.state || ""} onChange={e => setAccForm(f => ({ ...f, state: e.target.value }))}>
-                  <option value="">Select state / province</option>
-                  {orgStateProvinceOptions.map(option => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            </>
-          )}
-          {showOrgBusinessFields && <Field label="GSTIN"><Input placeholder="GSTIN" value={accForm.gstin || ""} onChange={e => setAccForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
-          {showOrgBusinessFields && <Field label="Phone">
-            <PhoneNumberInput
-              countryCode={accForm.phoneCountryCode}
-              phoneNumber={accForm.phoneNumber}
-              onCountryCodeChange={value => setAccForm(f => ({ ...f, phoneCountryCode: value }))}
-              onPhoneNumberChange={value => setAccForm(f => ({ ...f, phoneNumber: value }))}
-              countryOptions={PHONE_COUNTRY_OPTIONS}
-              phonePlaceholder="9876543210"
-            />
-          </Field>}
-          {showOrgBusinessFields && <Field label="Email"><Input type="email" placeholder="email@example.com" value={accForm.email || ""} onChange={e => setAccForm(f => ({ ...f, email: e.target.value }))} /></Field>}
-          {showOrgBusinessFields && <Field label="Show HSN/SAC on Invoices">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "var(--surface-high)", borderRadius: 12 }}>
-              <span style={{ fontSize: 15, color: "var(--text)" }}>Include HSN/SAC column</span>
-              <button onClick={() => setAccForm(f => ({ ...f, showHSN: !f.showHSN }))} style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: accForm.showHSN ? "var(--accent)" : "var(--border)" }}>
-                <div style={{ position: "absolute", top: 3, left: accForm.showHSN ? undefined : 3, right: accForm.showHSN ? 3 : undefined, width: 22, height: 22, borderRadius: 11, background: "#fff", transition: "all 0.3s" }} />
-              </button>
-            </div>
-          </Field>}
-        </Modal>
-
-        {pendingOrgTypeChange && (
-          <Modal
-            title="Confirm Usage Type Change"
-            onClose={() => setPendingOrgTypeChange(null)}
-            onSave={confirmOrgTypeChange}
-            saveLabel="Yes, Delete Existing Data"
-            canSave={true}
-          >
-            <div className="card" style={{ padding: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)", marginBottom: 8 }}>
-                Warning: This action will permanently delete existing workspace data.
-              </div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-                You are changing usage type from <b>{pendingOrgTypeChange.previousOrganizationType}</b> to <b>{pendingOrgTypeChange.nextOrganizationType}</b>.
-                All current records in this workspace (customers, income, expenses, invoices, goals, budgets, and organization-specific entries) will be removed.
-              </div>
-              <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                If you want to keep this data, click Cancel and continue with the current workspace setup.
-              </div>
-            </div>
-          </Modal>
-        )}
-      </>
+      <AccountModal
+        form={accForm}
+        onFormChange={setAccForm}
+        onSave={saveAcc}
+        onClose={() => setScreen("main")}
+        orgConfig={orgConfig}
+        isApartmentOrg={isApartmentOrg}
+        showOrgBusinessFields={showOrgBusinessFields}
+        orgStateProvinceOptions={orgStateProvinceOptions}
+        selectableOrgTypeOptions={selectableOrgTypeOptions}
+        orgType={orgType}
+        pendingOrgTypeChange={pendingOrgTypeChange}
+        onCancelOrgTypeChange={() => setPendingOrgTypeChange(null)}
+        onConfirmOrgTypeChange={confirmOrgTypeChange}
+      />
     );
   }
 
@@ -2307,515 +2222,101 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   if (screen === "profile") {
     return withNotice(
-      <Modal title={user?.role === "admin" ? "Admin Account" : "Personal Profile"} onClose={() => setScreen("main")} onSave={saveUserProfile} canSave={!!userForm.name.trim()}>
-        <Field label="Full Name" required>
-          <Input placeholder="Your name" value={userForm.name} onChange={event => setUserForm(current => ({ ...current, name: event.target.value }))} />
-        </Field>
-        <Field label="Email" required hint="Linked to your sign-in account and cannot be edited here.">
-          <Input type="email" placeholder="you@example.com" value={userForm.email} readOnly aria-readonly="true" style={{ background: "var(--surface-high)", color: "var(--text-sec)", cursor: "not-allowed" }} />
-        </Field>
-        <Field label="Phone" required>
-          <PhoneNumberInput
-            countryCode={userForm.phoneCountryCode}
-            phoneNumber={userForm.phoneNumber}
-            onCountryCodeChange={value => setUserForm(current => ({ ...current, phoneCountryCode: value }))}
-            onPhoneNumberChange={value => setUserForm(current => ({ ...current, phoneNumber: value }))}
-            countryOptions={PHONE_COUNTRY_OPTIONS}
-            phonePlaceholder="9876543210"
-          />
-        </Field>
-        <Field label="Date of Birth" hint="Used to derive age-group insights for admin analytics.">
-          <div className="desktop-grid-3">
-            <Select value={userForm.birthDay} onChange={event => setUserForm(current => ({ ...current, birthDay: event.target.value }))}>
-              <option value="">Day</option>
-              {birthDayOptions.map(option => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-            <Select value={userForm.birthMonth} onChange={event => setUserForm(current => ({ ...current, birthMonth: event.target.value }))}>
-              <option value="">Month</option>
-              {MONTH_OPTIONS.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-            <Select value={userForm.birthYear} onChange={event => setUserForm(current => ({ ...current, birthYear: event.target.value }))}>
-              <option value="">Year</option>
-              {birthYearOptions.map(option => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </Field>
-        <Field label="Gender" hint="Optional. Used only for aggregated audience insights.">
-          <Select value={userForm.gender} onChange={event => setUserForm(current => ({ ...current, gender: event.target.value }))}>
-            <option value="">Prefer not to share</option>
-            {GENDER_OPTIONS.filter(option => option).map(option => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Address Line" hint="House number, street, road, or locality.">
-          <Input placeholder="Flat 12, MG Road" value={userForm.addressLine} onChange={event => setUserForm(current => ({ ...current, addressLine: event.target.value }))} autoComplete="address-line1" />
-        </Field>
-        <div className="desktop-grid-2">
-          <Field label="City" required hint="Used for market-level segmentation.">
-            <Input placeholder="Hyderabad" value={userForm.city} onChange={event => setUserForm(current => ({ ...current, city: event.target.value }))} autoComplete="address-level2" />
-          </Field>
-          <Field label="Country" required>
-            <Select value={userForm.country} onChange={event => setUserForm(current => ({ ...current, country: event.target.value }))}>
-              {COUNTRY_OPTIONS.map(option => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-        <Field label="State / Province" required>
-          <Select value={userForm.state} onChange={event => setUserForm(current => ({ ...current, state: event.target.value }))}>
-            <option value="">Select state / province</option>
-            {stateProvinceOptions.map(option => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <div className="card" style={{ padding: 14 }}>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            {user?.role === "admin"
-              ? "This information belongs to your sign-in identity and admin account. Structured phone, date of birth, and location improve aggregate admin insights, not person-level tracking."
-              : "This information belongs to your sign-in identity. Organization name, GSTIN, org phone, and invoice details stay in the organization profile. Structured phone, date of birth, and location improve aggregate product and marketing insights."}
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
-  if (screen === "customers") {
-    if (user?.role === "admin") return null;
-    return withNotice(
-      <Modal title={orgConfig.customerLabel} onClose={() => setScreen("main")} onSave={openNewCust} saveLabel={`Add ${orgConfig.customerEntryLabel}`}>
-        {customerDirectory.length > 0 && (
-          <Field label={`Search ${orgConfig.customerLabel}`} hint="Find records by flat number, owner, or contact.">
-            <Input placeholder={`Search ${orgConfig.customerLabel.toLowerCase()}...`} value={customerSearch} onChange={event => setCustomerSearch(event.target.value)} />
-          </Field>
-        )}
-        {customerDirectory.length === 0 ? (
-          <EmptyState title={`No ${orgConfig.customerLabel.toLowerCase()} yet`} message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`} accentColor="var(--blue)" />
-        ) : filteredCustomerDirectory.length === 0 ? (
-          <EmptyState title="No matching records" message="Try a different search term to find the flat or customer you need." accentColor="var(--blue)" />
-        ) : (
-          <>
-            <div className="card" style={{ marginBottom: 10, padding: 10 }}>
-              <PaginatedListControls
-                totalItems={filteredCustomerDirectory.length}
-                page={customerPage}
-                pageSize={customerPageSize}
-                onPageChange={setCustomerPage}
-                onPageSizeChange={nextSize => {
-                  setCustomerPageSize(nextSize);
-                  setCustomerPage(1);
-                }}
-                itemLabel={orgConfig.customerLabel.toLowerCase()}
-              />
-            </div>
-            <div className="card">
-            {paginatedCustomerDirectory.map(customer => (
-              <div key={customer.id} className="card-row">
-                <div style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }} onClick={() => openCustomerDetail(customer)}>
-                  <Avatar name={customer.name} size={38} fontSize={13} />
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                    {orgConfig.showCustomerFinancials === false ? (
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[customer.ownerName || "No owner"]
-                          .filter(Boolean)
-                          .join(" · ") || "Flat details"}
-                      </div>
-                    ) : (
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        Balance {fmtMoney(customer.outstanding, currency?.symbol || "Rs")} · Revenue {fmtMoney(customer.totalRevenue, currency?.symbol || "Rs")}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button onClick={() => openEditCust(customer)} style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}>Edit</button>
-                  <DeleteBtn onDelete={() => { if (window.confirm(`Remove ${customer.name}?`)) removeCustomer(customer.id); }} />
-                </div>
-              </div>
-            ))}
-            </div>
-          </>
-        )}
-      </Modal>
-    );
-  }
-
-  if (screen === "customer-detail" && selectedCustomer) {
-    if (user?.role === "admin") return null;
-    if (orgConfig.showCustomerFinancials === false) {
-      return withNotice(
-        <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
-          <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Flat</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.name || "--"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Owner</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{selectedCustomer.ownerName || "--"}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Record Type</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>Flat record</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: "18px" }}>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-              <div>This flat record is used to auto-fill apartment collections and apartment invoices.</div>
-            </div>
-          </div>
-        </Modal>
-      );
-    }
-    return withNotice(
-      <Modal title={selectedCustomer.name} onClose={() => setScreen("customers")} onSave={() => openEditCust(selectedCustomer)} saveLabel="Edit">
-        <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Outstanding</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: selectedCustomer.outstanding > 0 ? "var(--gold)" : "var(--accent)" }}>{fmtMoney(selectedCustomer.outstanding, currency?.symbol || "Rs")}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Total Revenue</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(selectedCustomer.totalRevenue, currency?.symbol || "Rs")}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Paid Invoices</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>{selectedCustomer.paidInvoices}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Risk Level</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: selectedCustomer.risk > 0 ? "var(--danger)" : "var(--accent)" }}>
-                {selectedCustomer.risk > 0 ? `${Math.round(selectedCustomer.risk * 100)}% late` : "Healthy"}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="section-label">Payment History</div>
-        <div className="card">
-          {selectedCustomerPayments.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No invoice history yet for this customer.</div>
-          ) : (
-            selectedCustomerPayments.map(payment => (
-              <div key={payment.id} className="card-row">
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{payment.number}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    {payment.date ? new Date(`${payment.date}T00:00:00`).toLocaleDateString("en-IN") : "--"}
-                    {payment.dueMessage ? ` · ${payment.dueMessage}` : ""}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(payment.total, currency?.symbol || "Rs")}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: payment.status === "overdue" ? "var(--danger)" : payment.status === "paid" ? "var(--accent)" : "var(--gold)" }}>{payment.status}</div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Modal>
-    );
-  }
-
-  if (screen === "customer-form") {
-    if (user?.role === "admin") return null;
-    return withNotice(
-      <Modal title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`} onClose={() => setScreen("customers")} onSave={saveCust} canSave={!!custForm?.name.trim()}>
-        <Field label={orgConfig.customerNameLabel} required><Input placeholder={orgConfig.customerNamePlaceholder} value={custForm?.name || ""} onChange={e => setCustForm(f => ({ ...f, name: e.target.value }))} /></Field>
-        {(showPersonContactFields || showApartmentWhatsappField) && <Field label={showApartmentWhatsappField ? "Resident WhatsApp Number" : "Phone"} hint={showApartmentWhatsappField ? "Used for due reminders and invoice updates on WhatsApp." : ""}>
-          <PhoneNumberInput
-            countryCode={custForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
-            phoneNumber={custForm?.phoneNumber || ""}
-            onCountryCodeChange={value => setCustForm(f => ({ ...f, phoneCountryCode: value }))}
-            onPhoneNumberChange={value => setCustForm(f => ({ ...f, phoneNumber: value }))}
-            countryOptions={PHONE_COUNTRY_OPTIONS}
-            phonePlaceholder="9876543210"
-          />
-        </Field>}
-        {showFullCustomerForm && <Field label="Email"><Input type="email" placeholder="billing@company.com" value={custForm?.email || ""} onChange={e => setCustForm(f => ({ ...f, email: e.target.value }))} /></Field>}
-        {showFullCustomerForm && (
-          <StructuredLocationFields
-            addressLine={custForm?.addressLine || ""}
-            city={custForm?.city || ""}
-            state={custForm?.state || ""}
-            country={custForm?.country || "India"}
-            onAddressLineChange={value => setCustForm(f => ({ ...f, addressLine: value }))}
-            onCityChange={value => setCustForm(f => ({ ...f, city: value }))}
-            onStateChange={value => setCustForm(f => ({ ...f, state: value }))}
-            onCountryChange={value => setCustForm(f => ({ ...f, country: value }))}
-            required
-          />
-        )}
-        {showFullCustomerForm && <Field label="GSTIN (optional)"><Input placeholder="GSTIN" value={custForm?.gstin || ""} onChange={e => setCustForm(f => ({ ...f, gstin: e.target.value }))} /></Field>}
-        {(orgConfig.customerFields || []).map(field => (
-          <Field key={field.key} label={field.label} required={Boolean(field.required)}>
-            {renderDynamicField(field, custForm?.[field.key], value => setCustForm(current => ({ ...current, [field.key]: value })))}
-          </Field>
-        ))}
-      </Modal>
-    );
-  }
-
-  if (screen === "society-portal") {
-    return withNotice(
-      <Modal
-        title="Resident Read-Only Access"
+      <ProfileModal
+        form={userForm}
+        onFormChange={setUserForm}
+        onSave={saveUserProfile}
         onClose={() => setScreen("main")}
-        onSave={publishSocietyPortalRecords}
-        saveLabel="Publish Records"
-        canSave={!societyPortalLoading}
-        accentColor="var(--blue)"
-      >
-        <div className="card" style={{ padding: 14, marginBottom: 14 }}>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Share common monthly records with residents without exposing full society data. Flat mapping is controlled by owner-approved invite codes.
-          </div>
-        </div>
-        <Field label="Create Member Invite" required hint="Map a resident email to a flat. Resident can only join this mapped flat.">
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 160px) auto", gap: 8 }}>
-            <Input value={memberInviteForm.email} onChange={event => setMemberInviteForm(current => ({ ...current, email: event.target.value }))} placeholder="resident@email.com" />
-            <Select value={memberInviteForm.flatNumber} onChange={event => setMemberInviteForm(current => ({ ...current, flatNumber: event.target.value }))}>
-              <option value="">Select flat</option>
-              {(customers || []).map(flat => (
-                <option key={flat.id} value={String(flat.name || "").trim().toUpperCase()}>{flat.name}</option>
-              ))}
-            </Select>
-            <button type="button" className="btn-secondary" onClick={createMemberInvite}>Create Invite</button>
-          </div>
-        </Field>
-        <div className="card" style={{ marginBottom: 14 }}>
-          {societyPortalInvites.length === 0 ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>No member invites yet.</div>
-          ) : (
-            societyPortalInvites.slice(0, 8).map(invite => (
-              <div key={invite.id} className="card-row" style={{ alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{invite.id}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    {invite.allowedEmail || "--"} · Flat {invite.flatNumber || "--"} · {invite.isActive ? "Active" : `Claimed by ${invite.claimedBy || "resident"}`}
-                  </div>
-                </div>
-                {invite.isActive && (
-                  <button type="button" className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => deactivateMemberInvite(invite.id)}>
-                    Deactivate
-                  </button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-        <Field label="Month to Publish" required hint="Publishes common summary and flat-wise dues for this month.">
-          <MonthSelectInput value={societyPortalForm.month} max={new Date().toISOString().slice(0, 7)} onChange={value => setSocietyPortalForm(current => ({ ...current, month: value }))} />
-        </Field>
-        <Field label="Notice (optional)" hint="Example: Please clear dues by 10th of this month.">
-          <Textarea value={societyPortalForm.notice} onChange={event => setSocietyPortalForm(current => ({ ...current, notice: event.target.value }))} placeholder="Maintenance payment last date..." />
-        </Field>
-      </Modal>
+        user={user}
+      />
     );
   }
 
-  if (screen === "society-member-access") {
+  if (screen === "customers" || (screen === "customer-detail" && selectedCustomer) || screen === "customer-form") {
+    if (user?.role === "admin") return null;
     return withNotice(
-      <Modal
-        title="Resident Access"
+      <CustomersScreen
+        screen={screen}
+        orgConfig={orgConfig}
+        currency={currency}
+        customerDirectory={customerDirectory}
+        filteredCustomerDirectory={filteredCustomerDirectory}
+        paginatedCustomerDirectory={paginatedCustomerDirectory}
+        customerSearch={customerSearch}
+        onCustomerSearchChange={setCustomerSearch}
+        customerPage={customerPage}
+        onCustomerPageChange={setCustomerPage}
+        customerPageSize={customerPageSize}
+        onCustomerPageSizeChange={setCustomerPageSize}
+        selectedCustomer={selectedCustomer}
+        selectedCustomerPayments={selectedCustomerPayments}
+        editCust={editCust}
+        custForm={custForm}
+        onCustFormChange={setCustForm}
+        showPersonContactFields={showPersonContactFields}
+        showApartmentWhatsappField={showApartmentWhatsappField}
+        showFullCustomerForm={showFullCustomerForm}
+        renderDynamicField={renderDynamicField}
+        onOpenNewCust={openNewCust}
+        onOpenEditCust={openEditCust}
+        onOpenDetail={openCustomerDetail}
+        onSaveCust={saveCust}
+        onRemoveCustomer={removeCustomer}
+        onBackToList={() => setScreen("customers")}
         onClose={() => setScreen("main")}
-        onSave={hasMemberPortalAccess ? leaveSocietyPortalAccess : joinSocietyPortalWithInvite}
-        saveLabel={hasMemberPortalAccess ? "Leave Access" : "Join Access"}
-        canSave
-        accentColor="var(--blue)"
-      >
-        {hasMemberPortalAccess ? (
-          <div className="card" style={{ padding: 16 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Access Active</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              You are connected to resident read-only records for Flat {user?.societyFlatNumber || "-"}. Use the Resident View tab to track your common records and dues.
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="card" style={{ padding: 14, marginBottom: 14 }}>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-                Enter the invite code shared by your apartment admin to enable read-only tracking.
-              </div>
-            </div>
-            <Field label="Invite Code" required>
-              <Input value={societyJoinForm.inviteCode} onChange={event => setSocietyJoinForm(current => ({ ...current, inviteCode: normalizeInviteCode(event.target.value) }))} placeholder="AB12CD34" />
-            </Field>
-          </>
-        )}
-      </Modal>
+      />
+    );
+  }
+
+  if (screen === "society-portal" || screen === "society-member-access") {
+    return withNotice(
+      <SocietyPortalScreen
+        screen={screen}
+        user={user}
+        customers={customers}
+        societyPortalLoading={societyPortalLoading}
+        societyPortalInvites={societyPortalInvites}
+        memberInviteForm={memberInviteForm}
+        onMemberInviteFormChange={setMemberInviteForm}
+        societyPortalForm={societyPortalForm}
+        onSocietyPortalFormChange={setSocietyPortalForm}
+        societyJoinForm={societyJoinForm}
+        onSocietyJoinFormChange={setSocietyJoinForm}
+        hasMemberPortalAccess={hasMemberPortalAccess}
+        onCreateMemberInvite={createMemberInvite}
+        onDeactivateMemberInvite={deactivateMemberInvite}
+        onPublish={publishSocietyPortalRecords}
+        onJoin={joinSocietyPortalWithInvite}
+        onLeave={leaveSocietyPortalAccess}
+        normalizeInviteCode={normalizeInviteCode}
+        onClose={() => setScreen("main")}
+      />
     );
   }
 
   if (screen === "support") {
     return withNotice(
-      <Modal title="Customer Support" onClose={() => setScreen("main")} onSave={supportView === "new" ? submitSupportTicket : () => setScreen("main")} saveLabel={supportView === "new" ? (submittingSupport ? "Submitting..." : "Submit Ticket") : "Done"} canSave={supportView === "new" ? (!submittingSupport && !!supportForm.message.trim()) : true} accentColor="var(--blue)">
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Track ongoing conversations and create new tickets separately for a cleaner support workflow.
-          </div>
-        </div>
-        <div className="card" style={{ padding: 12, marginBottom: 14 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "inbox" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("inbox")}>
-              Conversations
-            </button>
-            <button type="button" className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12, background: supportView === "new" ? "var(--surface-pop)" : "var(--surface-high)" }} onClick={() => setSupportView("new")}>
-              New Ticket
-            </button>
-          </div>
-        </div>
-
-        {supportView === "new" ? (
-          <>
-            <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
-              <Select value={supportForm.topic} onChange={event => setSupportForm(current => ({ ...current, topic: event.target.value }))}>
-                {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-
-            <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
-              <Input
-                placeholder="Example: Invoice PDF is not downloading"
-                value={supportForm.subject}
-                onChange={event => setSupportForm(current => ({ ...current, subject: event.target.value }))}
-              />
-            </Field>
-
-            <Field label="Message" hint="Describe what happened, what you expected, and any relevant steps.">
-              <Textarea
-                placeholder="Example: I created an invoice, clicked Download PDF, and nothing happened. This started after I updated the customer address."
-                value={supportForm.message}
-                onChange={event => setSupportForm(current => ({ ...current, message: event.target.value }))}
-              />
-            </Field>
-
-            <div className="card" style={{ padding: 16, marginTop: 6 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>What to include</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.8 }}>
-                <div>• What you were trying to do</div>
-                <div>• What happened instead</div>
-                <div>• The screen or section where it happened</div>
-                <div>• Any invoice, customer, or report details that help reproduce it</div>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-            {supportLoading ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Loading tickets...</div>
-            ) : supportTickets.length === 0 ? (
-              <div style={{ fontSize: 13, color: "var(--text-dim)", lineHeight: 1.7 }}>No support tickets yet. Use New Ticket to raise your first request.</div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-                <div className="card" style={{ marginBottom: 0, maxHeight: 320, overflowY: "auto" }}>
-                  {supportTickets.map(ticket => {
-                    const active = selectedSupportTicket?.id === ticket.id;
-                    return (
-                      <button
-                        key={ticket.id}
-                        type="button"
-                        onClick={() => setSelectedSupportTicketId(ticket.id)}
-                        style={{ width: "100%", textAlign: "left", border: active ? "1px solid var(--accent)" : "1px solid transparent", borderRadius: 10, background: active ? "var(--surface-pop)" : "transparent", padding: "9px 10px", marginBottom: 8, cursor: "pointer" }}
-                      >
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{ticket.subject || "Support ticket"}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
-                          {SUPPORT_STATUS_LABELS[ticket.status] || "Open"} · {new Date(ticket.updatedAt || ticket.createdAt || Date.now()).toLocaleDateString("en-IN")}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="card" style={{ marginBottom: 0 }}>
-                  {!selectedSupportTicket ? (
-                    <div style={{ fontSize: 13, color: "var(--text-dim)" }}>Select a ticket from conversations.</div>
-                  ) : (
-                    <>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{selectedSupportTicket.subject || "Support ticket"}</div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8, maxHeight: 220, overflowY: "auto" }}>
-                        {(selectedSupportTicket.messages || []).map(msg => (
-                          <div key={msg.id || `${msg.senderRole}-${msg.createdAt}`} style={{ alignSelf: msg.senderRole === "admin" ? "flex-start" : "flex-end", maxWidth: "90%", padding: "8px 10px", borderRadius: 10, background: msg.senderRole === "admin" ? "var(--blue-deep)" : "var(--surface-high)", color: msg.senderRole === "admin" ? "var(--blue)" : "var(--text-sec)", fontSize: 12, lineHeight: 1.5 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, color: "var(--text-dim)" }}>
-                              {msg.senderRole === "admin" ? "Support" : "You"}
-                            </div>
-                            <div>{msg.message}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {selectedSupportTicket.status !== "resolved" && (
-                        <div style={{ marginTop: 8 }}>
-                          <Textarea
-                            placeholder="Reply to support..."
-                            value={supportReplyDrafts?.[selectedSupportTicket.id] || ""}
-                            onChange={event => setSupportReplyDrafts(current => ({ ...current, [selectedSupportTicket.id]: event.target.value }))}
-                            style={{ minHeight: 70 }}
-                          />
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{ marginTop: 8, padding: "8px 12px", fontSize: 12 }}
-                            onClick={() => sendSupportReply(selectedSupportTicket)}
-                            disabled={replyingTicketId === selectedSupportTicket.id}
-                          >
-                            {replyingTicketId === selectedSupportTicket.id ? "Sending..." : "Send Reply"}
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        <Field label="Support Email">
-          <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 12 }}>{APP_SUPPORT_EMAIL}</div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportEmail}>
-                Copy Email
-              </button>
-              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={openSupportComposer}>
-                Email Instead
-              </button>
-              <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={copySupportContext}>
-                Copy Support Context
-              </button>
-            </div>
-          </div>
-        </Field>
-      </Modal>
+      <SupportModal
+        view={supportView}
+        onViewChange={setSupportView}
+        form={supportForm}
+        onFormChange={setSupportForm}
+        tickets={supportTickets}
+        loading={supportLoading}
+        submitting={submittingSupport}
+        replyDrafts={supportReplyDrafts}
+        onReplyDraftChange={setSupportReplyDrafts}
+        replyingTicketId={replyingTicketId}
+        selectedTicketId={selectedSupportTicketId}
+        onSelectTicket={setSelectedSupportTicketId}
+        selectedTicket={selectedSupportTicket}
+        onSubmit={submitSupportTicket}
+        onSendReply={sendSupportReply}
+        onCopyEmail={copySupportEmail}
+        onEmailInstead={openSupportComposer}
+        onCopySupportContext={copySupportContext}
+        onClose={() => setScreen("main")}
+      />
     );
   }
 
@@ -3042,166 +2543,26 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "notifications") {
-    const ToggleRow = ({ label, sub, checked, onChange }) => (
-      <div className="card-row">
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{label}</div>
-          {sub && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{sub}</div>}
-        </div>
-        <button onClick={onChange} style={{ width: 48, height: 28, borderRadius: 14, border: "none", cursor: "pointer", position: "relative", transition: "background 0.3s", background: checked ? "var(--accent)" : "var(--border)" }}>
-          <div style={{ position: "absolute", top: 3, left: checked ? undefined : 3, right: checked ? 3 : undefined, width: 22, height: 22, borderRadius: 11, background: "#fff", transition: "all 0.3s" }} />
-        </button>
-      </div>
-    );
-
     return withNotice(
-      <Modal title="Notifications" onClose={() => setScreen("main")} onSave={saveNotificationSettings} saveLabel="Save">
-        <div className="card">
-          <ToggleRow
-            label="Browser Notifications"
-            sub="Show system popups for important reminders when your browser allows it."
-            checked={Boolean(notificationForm?.browserEnabled)}
-            onChange={() => setNotificationForm(current => ({ ...current, browserEnabled: !current.browserEnabled }))}
-          />
-          {orgConfig.hideInvoices !== true && (
-            <>
-              <ToggleRow
-                label="Due Soon Invoices"
-                sub="Warn when invoices are due within the next 3 days."
-                checked={Boolean(notificationForm?.invoiceDue)}
-                onChange={() => setNotificationForm(current => ({ ...current, invoiceDue: !current.invoiceDue }))}
-              />
-              <ToggleRow
-                label="Overdue Invoices"
-                sub="Highlight invoices that have passed their due date."
-                checked={Boolean(notificationForm?.overdueInvoices)}
-                onChange={() => setNotificationForm(current => ({ ...current, overdueInvoices: !current.overdueInvoices }))}
-              />
-            </>
-          )}
-          {orgConfig.enableBudgets !== false && (
-            <ToggleRow
-              label="Budget Alerts"
-              sub="Alert when category budgets are fully used."
-              checked={Boolean(notificationForm?.budgetAlerts)}
-              onChange={() => setNotificationForm(current => ({ ...current, budgetAlerts: !current.budgetAlerts }))}
-            />
-          )}
-          <ToggleRow
-            label="Low Balance"
-            sub="Warn when the current month is running at a loss."
-            checked={Boolean(notificationForm?.lowBalance)}
-            onChange={() => setNotificationForm(current => ({ ...current, lowBalance: !current.lowBalance }))}
-          />
-          <ToggleRow
-            label="High Spending"
-            sub="Alert when this month is sharply above your recent spending average."
-            checked={Boolean(notificationForm?.spendingSpike)}
-            onChange={() => setNotificationForm(current => ({ ...current, spendingSpike: !current.spendingSpike }))}
-          />
-        </div>
-      </Modal>
+      <NotificationsModal
+        form={notificationForm}
+        onFormChange={setNotificationForm}
+        onSave={saveNotificationSettings}
+        onClose={() => setScreen("main")}
+        orgConfig={orgConfig}
+      />
     );
   }
 
   if (screen === "plan-request") {
-    const amount = getBillingAmount(planRequestForm.billingCycle, planRequestForm.targetPlan || PLANS.PRO);
-    const canChooseBusinessPlan = false;
     return withNotice(
-      <Modal
-        title="Upgrade Subscription"
+      <PlanRequestModal
+        form={planRequestForm}
+        onFormChange={setPlanRequestForm}
+        onSubmit={submitPlanRequest}
+        submitting={submittingPayment}
         onClose={() => setScreen("main")}
-        onSave={submitPlanRequest}
-        saveLabel={submittingPayment ? "Starting..." : "Pay Securely"}
-        canSave={!submittingPayment}
-      >
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, marginBottom: 12 }}>
-            Pro plan includes advanced analytics, reminders, and exports. Business plan is planned for future rollout.
-          </div>
-          <Field label="Plan" required hint="Choose the subscription plan to activate immediately after successful payment.">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[
-                [PLANS.PRO, "Pro", false],
-                [PLANS.BUSINESS, "Business (Coming Soon)", !canChooseBusinessPlan]
-              ].map(([value, label, disabled]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => !disabled && setPlanRequestForm(current => ({ ...current, targetPlan: value }))}
-                  style={{
-                    padding: "12px 14px",
-                    background: planRequestForm.targetPlan === value && !disabled ? "var(--surface-pop)" : "var(--surface-high)",
-                    borderColor: planRequestForm.targetPlan === value && !disabled ? "var(--accent)" : "var(--border)",
-                    color: disabled ? "var(--text-dim)" : planRequestForm.targetPlan === value ? "var(--text)" : "var(--text-sec)",
-                    opacity: disabled ? 0.55 : 1,
-                    cursor: disabled ? "not-allowed" : "pointer"
-                  }}
-                  disabled={disabled}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[
-                [
-                  BILLING_CYCLES.MONTHLY,
-                  `Monthly - Rs ${planRequestForm.targetPlan === PLANS.BUSINESS ? UPI_CONFIG.businessMonthlyAmount : UPI_CONFIG.monthlyAmount}`
-                ],
-                [
-                  BILLING_CYCLES.YEARLY,
-                  `Yearly - Rs ${planRequestForm.targetPlan === PLANS.BUSINESS ? UPI_CONFIG.businessYearlyAmount : UPI_CONFIG.yearlyAmount}`
-                ]
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setPlanRequestForm(current => ({ ...current, billingCycle: value }))}
-                  style={{
-                    padding: "12px 14px",
-                    background: planRequestForm.billingCycle === value ? "var(--surface-pop)" : "var(--surface-high)",
-                    borderColor: planRequestForm.billingCycle === value ? "var(--accent)" : "var(--border)",
-                    color: planRequestForm.billingCycle === value ? "var(--text)" : "var(--text-sec)"
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Payment Details" required hint="You will be redirected to secure Razorpay checkout for this amount.">
-            <div className="card" style={{ padding: 14, background: "var(--surface-high)" }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Payee: {UPI_CONFIG.payeeName}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6 }}>Gateway: Razorpay (UPI, Cards, Netbanking, Wallets, Pay Later)</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)" }}>Amount to pay: Rs {amount}</div>
-            </div>
-          </Field>
-          <Field label="Notes" hint="Optional note for your own payment record.">
-            <Textarea
-              placeholder="Example: Payment from company card or personal UPI."
-              value={planRequestForm.note}
-              onChange={event => setPlanRequestForm(current => ({ ...current, note: event.target.value }))}
-            />
-          </Field>
-        </div>
-
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>How activation works</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            After a successful payment, your subscription is updated automatically. If activation does not reflect immediately, wait a moment and refresh the app.
-          </div>
-          {!canChooseBusinessPlan && (
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
-              Business plan subscriptions are temporarily disabled and will be enabled in a future release.
-            </div>
-          )}
-        </div>
-      </Modal>
+      />
     );
   }
 

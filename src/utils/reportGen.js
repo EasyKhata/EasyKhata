@@ -1,6 +1,10 @@
-import { jsPDF } from "jspdf";
 import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isSmallBusinessOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
+
+let jsPDF = null;
+async function ensureJsPDF() {
+  if (!jsPDF) ({ jsPDF } = await import("jspdf"));
+}
 
 const PAGE = {
   left: 16,
@@ -897,7 +901,8 @@ export function downloadAdminRequestsCsv(requests) {
   downloadCsv(`admin-requests-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-export function downloadAdminMonthlyReport(data, year, month, sym) {
+export async function downloadAdminMonthlyReport(data, year, month, sym) {
+  await ensureJsPDF();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const title = `Admin Activity Report - ${MONTHS[month]} ${year}`;
   const users = data.users || [];
@@ -990,7 +995,8 @@ export function downloadAdminMonthlyReport(data, year, month, sym) {
   doc.save(`admin-report-${monthKey}.pdf`);
 }
 
-export function downloadFinancialYearReport(data, startYear, sym) {
+export async function downloadFinancialYearReport(data, startYear, sym) {
+  await ensureJsPDF();
   if (isApartmentOrgData(data)) {
     downloadApartmentFinancialYearStatementReport(data, startYear, sym);
     return;
@@ -1088,7 +1094,8 @@ export function downloadFinancialYearReport(data, startYear, sym) {
   doc.save(getFinancialYearFilename(data, startYear));
 }
 
-export function downloadMonthlyReport(data, year, month, sym) {
+export async function downloadMonthlyReport(data, year, month, sym) {
+  await ensureJsPDF();
   if (isApartmentOrgData(data)) {
     downloadApartmentMonthlyStatementReport(data, year, month, sym);
     return;

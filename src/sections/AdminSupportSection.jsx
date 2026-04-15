@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { arrayUnion, collection, doc, getDocs, limit, orderBy, query, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { EmptyState, SectionSkeleton, PaginatedListControls } from "../components/UI";
+import { logError } from "../utils/logger";
 
 function formatTicketStatus(status) {
   if (status === "resolved") return "Resolved";
@@ -67,7 +68,7 @@ export default function AdminSupportSection() {
       );
       setTicketsEnabled(true);
     } catch (err) {
-      console.error("Admin support load error:", err);
+      logError("Admin support load error", err);
       if (err?.code === "permission-denied") {
         setTicketsEnabled(false);
         setTickets([]);
@@ -146,7 +147,7 @@ export default function AdminSupportSection() {
       });
       await fetchTickets();
     } catch (err) {
-      console.error("Support status update error:", err);
+      logError("Support status update error", err);
       setError("Unable to update ticket status.");
     }
   }
@@ -172,7 +173,7 @@ export default function AdminSupportSection() {
       setReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
       await fetchTickets();
     } catch (err) {
-      console.error("Support reply error:", err);
+      logError("Support reply error", err);
       setError("Unable to send reply right now.");
     } finally {
       setReplyingTicketId("");

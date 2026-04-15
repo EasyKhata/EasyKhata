@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
+import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
@@ -53,7 +54,7 @@ export default function AdminUsersSection() {
       setLastUserDoc(usersSnapshot.docs.length ? usersSnapshot.docs[usersSnapshot.docs.length - 1] : (append ? lastUserDoc : null));
       setHasMoreUsers(usersSnapshot.docs.length === USERS_PAGE_SIZE);
     } catch (err) {
-      console.error("Admin users load error:", err);
+      logError("Admin users load error", err);
       setAdminError("Failed to load admin user activity. Please check your Firestore permissions and try again.");
       if (!append) {
         setUsers([]);
@@ -117,7 +118,7 @@ export default function AdminUsersSection() {
       await updateDoc(doc(db, "users", id), { blocked: !blocked });
       fetchAdminData();
     } catch (err) {
-      console.error("Block/unblock error:", err);
+      logError("Block/unblock error", err);
       setAdminError("Unable to update the user's block status. Please try again.");
       alert(err?.message || "Unable to update the user's block status. Please try again.");
     }
@@ -149,7 +150,7 @@ export default function AdminUsersSection() {
       fetchAdminData();
       alert("User profile removed from Firestore and auth cleanup has been queued.");
     } catch (err) {
-      console.error("Delete user error:", err);
+      logError("Delete user error", err);
       setAdminError("Unable to delete the user profile right now. Please try again.");
       alert(err?.message || "Unable to delete the user profile right now. Please try again.");
     }
@@ -170,7 +171,7 @@ export default function AdminUsersSection() {
       await updateDoc(doc(db, "users", member.id), updates);
       fetchAdminData();
     } catch (err) {
-      console.error("Update plan error:", err);
+      logError("Update plan error", err);
       setAdminError("Unable to update the user's plan. Please try again.");
       alert(err?.message || "Unable to update the user's plan. Please try again.");
     }
@@ -189,7 +190,7 @@ export default function AdminUsersSection() {
       await updateDoc(doc(db, "users", member.id), updates);
       fetchAdminData();
     } catch (err) {
-      console.error("Update subscription status error:", err);
+      logError("Update subscription status error", err);
       setAdminError("Unable to update the user's subscription status. Please try again.");
       alert(err?.message || "Unable to update the user's subscription status. Please try again.");
     }
@@ -221,7 +222,7 @@ export default function AdminUsersSection() {
       await setDoc(requestRef, updates, { merge: true });
       fetchAdminData();
     } catch (err) {
-      console.error("Payment request status update error:", err);
+      logError("Payment request status update error", err);
       setAdminError("Unable to update the payment request. Please try again.");
       alert(err?.message || "Unable to update the payment request. Please try again.");
     }

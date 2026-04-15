@@ -3,6 +3,7 @@ import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, se
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
+import { logError } from "../utils/logger";
 import { callAuthedFunction } from "../utils/functionsClient";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import { PAYMENT_REQUEST_STATUS, PLANS, SUBSCRIPTION_STATUS, formatSubscriptionDate } from "../utils/subscription";
@@ -236,7 +237,7 @@ export default function AdminPanel({ year, month }) {
             });
             return { ...item, orgs };
           } catch (err) {
-            console.error(`Admin invoice hydration failed for ${item.id}:`, err);
+            logError(`Admin invoice hydration failed for ${item.id}`, err);
             return item;
           }
         })
@@ -249,7 +250,7 @@ export default function AdminPanel({ year, month }) {
         const snapshotDoc = await getDoc(snapshotRef);
         setGlobalSnapshot(snapshotDoc.exists() ? snapshotDoc.data() : null);
       } catch (err) {
-        console.error("Admin metrics snapshot load error:", err);
+        logError("Admin metrics snapshot load error", err);
         setGlobalSnapshot(null);
       }
 
@@ -264,7 +265,7 @@ export default function AdminPanel({ year, month }) {
         setPaymentRequests(nextRequests);
         setPaymentRequestsEnabled(true);
       } catch (err) {
-        console.error("Payment request load error:", err);
+        logError("Payment request load error", err);
         setPaymentRequests([]);
         setPaymentRequestsEnabled(false);
       }
@@ -291,12 +292,12 @@ export default function AdminPanel({ year, month }) {
         );
         setSupportTicketsEnabled(true);
       } catch (err) {
-        console.error("Support ticket load error:", err);
+        logError("Support ticket load error", err);
         setSupportTickets([]);
         setSupportTicketsEnabled(false);
       }
     } catch (err) {
-      console.error("Admin panel load error:", err);
+      logError("Admin panel load error", err);
       setAdminError("Failed to load admin data. Please check your Firestore permissions and try again.");
       setUsers([]);
     } finally {
@@ -414,7 +415,7 @@ export default function AdminPanel({ year, month }) {
       });
       await fetchAdminData();
     } catch (err) {
-      console.error("Historical org migration error:", err);
+      logError("Historical org migration error", err);
       setMigrationInfo(current => ({ ...current, running: false, message: "Migration failed before completion." }));
       setAdminError(err?.message || "Unable to backfill org subcollections right now.");
     }
@@ -428,7 +429,7 @@ export default function AdminPanel({ year, month }) {
       await callAuthedFunction("refreshAdminMetricsNow", {});
       await fetchAdminData();
     } catch (err) {
-      console.error("Admin aggregate refresh error:", err);
+      logError("Admin aggregate refresh error", err);
       setAdminError(err?.message || "Unable to refresh executive aggregates right now.");
     } finally {
       setRefreshingAggregates(false);
@@ -875,10 +876,10 @@ export default function AdminPanel({ year, month }) {
               className="btn-secondary"
               type="button"
               style={{ padding: "10px 14px", fontSize: 12 }}
-              onClick={() => {
+              onClick={async () => {
                 setExporting("pdf");
                 try {
-                  downloadAdminMonthlyReport({ users, paymentRequests }, year, month, "Rs");
+                  await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, "Rs");
                 } finally {
                   setExporting("");
                 }
