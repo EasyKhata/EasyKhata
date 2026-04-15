@@ -448,7 +448,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
             <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
-            <Tile label={viewMode === "month" ? "Balance This Month" : "Latest Month Balance"} value={formatSignedMoney(monthlyBalance)} color={monthlyBalance >= 0 ? "var(--blue)" : "var(--danger)"} sub={viewMode === "month" ? "Collected minus spent in this month" : "Collected minus spent in the latest month"} />
             <Tile label="Opening Balance" value={formatSignedMoney(openingBalance)} color={openingBalance >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? `Balance at start of ${MONTHS[month]} ${year}` : `Balance brought into ${year}`} />
             <Tile
               label="Flats"
