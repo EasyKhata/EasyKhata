@@ -903,41 +903,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     }
   }
 
-  function markAllPendingFlatsAsPaid() {
-    if (!bulkPayableFlats.length) return;
-    const targetIds = bulkPayableFlats.map(flat => flat.id);
-    setPendingFlatPayments(current => Array.from(new Set([...current, ...targetIds])));
-    try {
-      bulkPayableFlats.forEach((flat, index) => createMaintenanceEntryForFlat(flat, index === 0));
-    } finally {
-      setPendingFlatPayments(current => current.filter(item => !targetIds.includes(item)));
-    }
-  }
-
-  async function copyPendingReminders() {
-    const pendingFlats = apartmentCollectionStatus.filter(flat => !flat.paidEntry && Number(flat.monthlyAmount || 0) > 0);
-    if (!pendingFlats.length) return;
-    const reminderText = [
-      `Maintenance reminder - ${societyName || "Society"}`,
-      `Month: ${MONTHS[month]} ${year}`,
-      "",
-      ...pendingFlats.map(flat => `${flat.value}: ${fmtMoney(flat.monthlyAmount, sym)} pending`),
-      "",
-      "Please clear dues at the earliest. Thank you."
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(reminderText);
-      window.dispatchEvent(new CustomEvent("ledger:second-success", {
-        detail: {
-          title: "Pending reminder copied",
-          message: "Share this message in your resident WhatsApp group."
-        }
-      }));
-    } catch (err) {
-      window.alert("Could not copy reminder text on this browser.");
-    }
-  }
-
   function markFlatAsPending(flat) {
     if (!flat?.paidEntry?.id) return;
     d.removeIncome(flat.paidEntry.id);
@@ -1055,12 +1020,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     <option value="paid">Paid</option>
                     <option value="unpriced">No amount set</option>
                   </Select>
-                  <button className="btn-secondary" onClick={markAllPendingFlatsAsPaid} disabled={!isCurrentViewedMonth || bulkPayableFlats.length === 0}>
-                    Mark All Pending Paid
-                  </button>
-                  <button className="btn-secondary" onClick={copyPendingReminders} disabled={apartmentCollectionMetrics.pendingFlats === 0}>
-                    Copy Pending Reminder
-                  </button>
                 </div>
                 <div className="card" style={{ marginBottom: 10, padding: 10 }}>
                   <PaginatedListControls
@@ -1096,15 +1055,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         )}
                         <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
                           Review
-                        </button>
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "7px 12px", fontSize: 12 }}
-                          onClick={() => openFlatWhatsapp(flat)}
-                          title={flat.paidEntry ? "Send WhatsApp receipt" : "Send WhatsApp reminder"}
-                          disabled={!String(flat.phone || `${flat.phoneCountryCode || ""}${flat.phoneNumber || ""}`).replace(/\D/g, "")}
-                        >
-                          {"💬"}
                         </button>
                         {isCurrentViewedMonth && !flat.paidEntry && (
                           <button
