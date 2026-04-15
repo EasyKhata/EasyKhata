@@ -415,11 +415,14 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     const totalFlats = apartmentCollectionStatus.length;
     const paidFlats = apartmentCollectionStatus.filter(flat => Boolean(flat.paidEntry)).length;
     const pendingFlats = totalFlats - paidFlats;
-    const expectedAmount = apartmentCollectionStatus.reduce((sum, flat) => sum + Number(flat.monthlyAmount || 0), 0);
+    const singleFlatAmount = Number(bulkMaintenanceAmount || 0);
+    const expectedAmount = singleFlatAmount * totalFlats;
     const collectedAmount = apartmentCollectionStatus.reduce((sum, flat) => sum + Number(flat.paidEntry?.amount || 0), 0);
     const pendingAmount = Math.max(0, expectedAmount - collectedAmount);
     return { totalFlats, paidFlats, pendingFlats, expectedAmount, collectedAmount, pendingAmount };
-  }, [apartmentCollectionStatus]);
+  }, [apartmentCollectionStatus, bulkMaintenanceAmount]);
+  const anyFlatPaidThisMonth = apartmentCollectionStatus.some(f => f.paidEntry);
+  const paidFlatsCount = apartmentCollectionStatus.filter(f => f.paidEntry).length;
   const normalizedFlatSearch = flatSearchTerm.trim().toLowerCase();
   const visibleApartmentCollectionStatus = useMemo(() => apartmentCollectionStatus.filter(flat => {
     if (flatStatusFilter === "paid" && !flat.paidEntry) return false;
@@ -996,12 +999,26 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               />
             ) : (
               <>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: 14 }}>
-                  <Input type="number" min="0" step="0.01" placeholder="Monthly amount for all flats" value={bulkMaintenanceAmount} onChange={event => setBulkMaintenanceAmount(event.target.value)} />
-                  <button className="btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0)}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: anyFlatPaidThisMonth ? 8 : 14 }}>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Monthly amount for all flats"
+                    value={bulkMaintenanceAmount}
+                    disabled={anyFlatPaidThisMonth}
+                    onChange={event => setBulkMaintenanceAmount(event.target.value)}
+                    style={{ opacity: anyFlatPaidThisMonth ? 0.55 : 1 }}
+                  />
+                  <button className="btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0) || anyFlatPaidThisMonth}>
                     Apply to All Flats
                   </button>
                 </div>
+                {anyFlatPaidThisMonth && (
+                  <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>
+                    {paidFlatsCount} flat{paidFlatsCount !== 1 ? "s" : ""} already marked as paid this month — the monthly amount is locked. Mark them as pending first if you need to change it. Note: changing the amount will affect records for all pending flats.
+                  </div>
+                )}
                 <div className="card" style={{ marginBottom: 12, padding: 12 }}>
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
                     <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Flats</div><div style={{ fontSize: 14, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
@@ -1059,8 +1076,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         {isCurrentViewedMonth && !flat.paidEntry && (
                           <button
                             className="btn-secondary"
-                            style={{ padding: "7px 12px", fontSize: 12, color: "var(--accent)" }}
-                            disabled={pendingFlatPayments.includes(flat.id) || !(flat.monthlyAmount > 0)}
+                            style={{ padding: "7px 12px", fontSize: 12, color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
+                            disabled={pendingFlatPayments.includes(flat.id) || !(Number(bulkMaintenanceAmount) > 0)}
+                            title={!(Number(bulkMaintenanceAmount) > 0) ? "Set the monthly maintenance amount above before marking as paid" : undefined}
                             onClick={() => markFlatAsPaid(flat)}
                           >
                             {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark as Paid"}

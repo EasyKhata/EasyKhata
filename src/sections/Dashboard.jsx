@@ -460,42 +460,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
-          <Collapsible title="Society Alerts" icon="🚨" color="var(--gold)" count={stats.alertItems.length} defaultOpen={stats.alertItems.length > 0}>
-            <div className="card">
-              {stats.alertItems.length === 0 ? (
-                <EmptyState title="No society alerts right now" message="Collections and expenses look stable for the selected period." accentColor="var(--accent)" />
-              ) : (
-                stats.alertItems.map((alert, index) => {
-                  const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
-                  return (
-                    <div key={`${alert.title}-${index}`} className="card-row">
-                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Expense Categories" icon="💰" color="var(--danger)" count={stats.topExpenseCategories.length} defaultOpen={stats.topExpenseCategories.length > 0}>
-            <div className="card">
-              {stats.topExpenseCategories.length === 0 ? (
-                <EmptyState title="No society expenses yet" message="Record utility bills, repairs, and other society expenses from the Expenses tab." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
-              ) : (
-                stats.topExpenseCategories.map(category => (
-                  <div key={category.category} className="card-row">
-                    <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
         </div>
 
         {onboardingGuide}

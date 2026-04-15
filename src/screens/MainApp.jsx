@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
@@ -55,6 +55,8 @@ const TAB_ICON_GLYPHS = {
 
 function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
   const [open, setOpen] = useState(false);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
+  const triggerRef = useRef(null);
   const [useNativeMonthPicker, setUseNativeMonthPicker] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -174,7 +176,14 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         </div>
       ) : (
         <button
-          onClick={() => setOpen(current => !current)}
+          ref={triggerRef}
+          onClick={() => {
+            if (triggerRef.current) {
+              const rect = triggerRef.current.getBoundingClientRect();
+              setDropdownPos({ top: rect.bottom + 10, right: window.innerWidth - rect.right });
+            }
+            setOpen(current => !current);
+          }}
           style={{
             minWidth: 96,
             maxWidth: 118,
@@ -223,9 +232,9 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
       {open && !useNativeMonthPicker && (
         <div
           style={{
-            position: "absolute",
-            top: "calc(100% + 10px)",
-            right: 0,
+            position: "fixed",
+            top: dropdownPos.top,
+            right: dropdownPos.right,
             width: 280,
             maxWidth: "calc(100vw - 32px)",
             padding: 14,
@@ -335,7 +344,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 }
 
 export default function MainApp() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const data = useData();
   const { account, isReadOnlyFreeMode } = data;
   // Banner visibility state (must be before usage)
@@ -764,6 +773,13 @@ export default function MainApp() {
                   </span>
                 )}
               </button>
+              <button
+                onClick={() => { if (window.confirm("Sign out of EasyKhata?")) logout(); }}
+                title="Sign out"
+                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", fontSize: isMobile ? 14 : 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              >
+                ⏻
+              </button>
             </div>
           </div>
 
@@ -840,14 +856,13 @@ export default function MainApp() {
               <div style={{ padding: "24px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No unread reminders right now.</div>
             ) : (
               inboxReminders.map(reminder => (
-                <div key={reminder.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
+                <div key={reminder.id} className="card-row" style={{ alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => openReminder(reminder)}>
                   <div style={{ width: 10, height: 10, borderRadius: 999, background: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)", marginTop: 6, flexShrink: 0 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)" }}>{reminder.title}</div>
                     <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.5 }}>{reminder.message}</div>
                     <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => openReminder(reminder)}>Open</button>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => dismissReminder(reminder.id)}>Dismiss</button>
+                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={event => { event.stopPropagation(); dismissReminder(reminder.id); }}>Dismiss</button>
                     </div>
                   </div>
                 </div>
