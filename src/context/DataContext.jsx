@@ -349,12 +349,25 @@ export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
+  const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
+  const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
+  const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
   const readOnlyFreeMode = isFreeReadOnlyMode(user);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
   const invoiceSyncRef = useRef({});
+
+  // Derived: shared orgs list and viewer-mode flag
+  const sharedOrgs = useMemo(() =>
+    Object.entries(user?.sharedOrgs || {}).map(([key, info]) => ({ key, ...info })),
+    [user?.sharedOrgs]
+  );
+  const isViewerMode = useMemo(() => {
+    if (!activeSharedOrgKey) return false;
+    return (user?.sharedOrgs?.[activeSharedOrgKey]?.role || "viewer") === "viewer";
+  }, [activeSharedOrgKey, user?.sharedOrgs]);
 
   const syncActiveOrgCollections = useCallback(async (nextState, { force = false } = {}) => {
     if (!user?.id || !nextState?.activeOrgId) return;
@@ -373,6 +386,24 @@ export function DataProvider({ children }) {
       )
     );
   }, [user?.id]);
+
+  // Syncs org collections to the owner's path (used when in shared org admin mode)
+  const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo, { force = false } = {}) => {
+    if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
+    await Promise.allSettled(
+      ORG_COLLECTION_KEYS.map(collectionKey =>
+        syncOrgCollection({
+          db,
+          userId: sharedInfo.ownerId,
+          orgId: sharedInfo.orgId,
+          collectionKey,
+          records: nextState[collectionKey] || [],
+          signatureStore: collectionSyncRef.current,
+          force
+        })
+      )
+    );
+  }, []);
 
   const deleteOrgCollectionsForOrg = useCallback(async (userId, orgId) => {
     if (!userId || !orgId) return;
@@ -653,6 +684,16 @@ export function DataProvider({ children }) {
   const persistState = useCallback(
     nextState => {
       if (!user?.id) return;
+
+      // In shared org mode: only sync collections to owner's path; don't touch member's own doc
+      const sharedInfo = activeSharedOrgRef.current;
+      if (sharedInfo) {
+        if (!sharedInfo.isViewer) {
+          syncSharedOrgCollections(nextState, sharedInfo);
+        }
+        return;
+      }
+
       const activityAt = new Date().toISOString();
 
       setUserData(user.id, "appData", nextState);
@@ -686,11 +727,14 @@ export function DataProvider({ children }) {
           : prev
       );
     },
-    [setUser, syncActiveOrgCollections, user?.id, user?.organizationType]
+    [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id, user?.organizationType]
   );
 
   useEffect(() => {
     async function loadData() {
+      // Skip own-data load if currently viewing a shared org
+      if (activeSharedOrgRef.current) return;
+
       if (!user?.id) {
         collectionSyncRef.current = {};
         invoiceSyncRef.current = {};
@@ -791,7 +835,7 @@ export function DataProvider({ children }) {
     }
 
     loadData();
-  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone]);
+  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone, ownDataReloadKey]);
 
   useEffect(() => {
     if (!user?.id || !loaded) {
@@ -894,6 +938,8 @@ export function DataProvider({ children }) {
   const update = useCallback(
     updater => {
       if (!user?.id) return;
+      // Viewer-mode members cannot write
+      if (activeSharedOrgRef.current?.isViewer) return;
       if (readOnlyFreeMode) {
         if (typeof window !== "undefined") {
           const nowMs = Date.now();
@@ -963,13 +1009,19 @@ export function DataProvider({ children }) {
         [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
       }
     }));
-  const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(i), ...d.income]) }));
+  const withAudit = record => ({
+    ...record,
+    createdBy: record.createdBy || user?.id || "",
+    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: record.createdAt || new Date().toISOString()
+  });
+  const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(withAudit(i)), ...d.income]) }));
   const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => (i.id === income.id ? income : i))) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
-  const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(e), ...d.expenses]) }));
+  const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(withAudit(e)), ...d.expenses]) }));
   const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => (e.id === expense.id ? expense : e))) }));
   const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
-  const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(inv), ...d.invoices]) }));
+  const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(withAudit(inv)), ...d.invoices]) }));
   const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
   const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
@@ -1086,6 +1138,56 @@ export function DataProvider({ children }) {
   }));
   const maxOrganizations = getMaxOrganizations(user);
 
+  async function switchToSharedOrg(key) {
+    const sharedInfo = user?.sharedOrgs?.[key];
+    if (!sharedInfo) return;
+
+    const { ownerId, orgId } = sharedInfo;
+    setLoaded(false);
+    activeSharedOrgRef.current = { ...sharedInfo, isViewer: sharedInfo.role === "viewer" };
+    setActiveSharedOrgKey(key);
+
+    try {
+      // Load the owner's org data from Firestore
+      const { orgs } = await hydrateUserOrgCollections({
+        db,
+        userId: ownerId,
+        orgs: { [orgId]: EMPTY_ORG_DATA },
+        collectionKeys: ORG_COLLECTION_KEYS,
+        signatureStore: collectionSyncRef.current
+      });
+
+      // Use org name from the accepted invite — member cannot read owner's root user doc
+      const orgAccountMeta = { account: { name: sharedInfo.orgName || "" } };
+
+      const nextState = buildStateFromOrganizations({
+        orgs: {
+          [orgId]: {
+            ...EMPTY_ORG_DATA,
+            ...normalizeOrgData(orgAccountMeta, {}),
+            ...(orgs[orgId] || {})
+          }
+        },
+        activeOrgId: orgId
+      });
+
+      setData(nextState);
+    } catch (err) {
+      logError("switchToSharedOrg failed", err);
+      activeSharedOrgRef.current = null;
+      setActiveSharedOrgKey(null);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  function switchToOwnOrg() {
+    activeSharedOrgRef.current = null;
+    setActiveSharedOrgKey(null);
+    // Increment reload key to force the own-data useEffect to re-run
+    setOwnDataReloadKey(k => k + 1);
+  }
+
   async function createSharedLedger(name) {
     return { error: "Shared ledger has been retired from the app." };
   }
@@ -1106,6 +1208,11 @@ export function DataProvider({ children }) {
     ...data,
     loaded,
     isReadOnlyFreeMode: readOnlyFreeMode,
+    isViewerMode,
+    sharedOrgs,
+    activeSharedOrgKey,
+    switchToSharedOrg,
+    switchToOwnOrg,
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
@@ -1178,11 +1285,16 @@ export function DataProvider({ children }) {
     saveOrgRecords,
     setCurrency,
     switchOrganization,
+    switchToSharedOrg,
+    switchToOwnOrg,
     updateCustomer,
     updateExpense,
     updateIncome,
     updateInvoice,
-    updateOrgRecord
+    updateOrgRecord,
+    isViewerMode,
+    sharedOrgs,
+    activeSharedOrgKey
   ]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;

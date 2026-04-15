@@ -20,6 +20,27 @@ service cloud.firestore {
       );
     }
 
+    // ── Org member helpers ─────────────────────────────────────────
+    // Checks users/{ownerId}/orgMembers/{orgId}_{memberUid}
+    function isMemberOf(ownerId, orgId) {
+      let key = orgId + "_" + request.auth.uid;
+      let ref = /databases/$(database)/documents/users/$(ownerId)/orgMembers/$(key);
+      return isSignedIn() &&
+        request.auth.uid != ownerId &&
+        exists(ref) &&
+        get(ref).data.status == "accepted";
+    }
+
+    function isAdminMemberOf(ownerId, orgId) {
+      let key = orgId + "_" + request.auth.uid;
+      let ref = /databases/$(database)/documents/users/$(ownerId)/orgMembers/$(key);
+      return isSignedIn() &&
+        request.auth.uid != ownerId &&
+        exists(ref) &&
+        get(ref).data.status == "accepted" &&
+        get(ref).data.role == "admin";
+    }
+
     function isTrialActivationForSelf(userId) {
       return isOwner(userId) &&
         resource.data.role == request.resource.data.role &&
@@ -127,6 +148,7 @@ service cloud.firestore {
           "societyFlatNumber",
           "societyInviteCode",
           "apartmentPortalRoles",
+          "sharedOrgs",
           "legalAccepted",
           "termsVersion",
           "termsAcceptedAt",
@@ -236,27 +258,44 @@ service cloud.firestore {
       return isAdmin() || isPortalOwner(portalId) || isPortalMember(portalId);
     }
 
+    // ── Users ──────────────────────────────────────────────────────
     match /users/{userId} {
       allow create: if isAdmin() || isValidOwnerUserCreate(userId);
-      allow read: if isOwner(userId) || isAdmin();
+      allow read:   if isOwner(userId) || isAdmin();
       allow update: if isAdmin() || isSafeOwnerUserUpdate(userId);
       allow delete: if isAdmin() && request.auth.uid != userId;
 
-      match /orgs/{orgId}/invoices/{invoiceId} {
-        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      // ── Org data — owner + accepted members ───────────────────
+      match /orgs/{orgId}/{document=**} {
+        allow read:   if isOwner(userId) || isAdmin() || isMemberOf(userId, orgId);
+        allow write:  if isOwner(userId) || isAdmin() || isAdminMemberOf(userId, orgId);
       }
 
-      match /orgs/{orgId}/income/{incomeId} {
-        allow create, read, update, delete: if isOwner(userId) || isAdmin();
+      // ── Member roster — drives security-rule lookups ──────────
+      // key: {orgId}_{memberUid}
+      match /orgMembers/{memberKey} {
+        // Owner sees and manages all
+        allow read, write: if isOwner(userId) || isAdmin();
+        // Member reads/creates their own entry (on accept)
+        allow read:   if isSignedIn() && resource.data.memberUid == request.auth.uid;
+        allow create: if isSignedIn() && request.resource.data.memberUid == request.auth.uid
+                      && request.resource.data.status == "accepted";
       }
+    }
 
-      match /orgs/{orgId}/expenses/{expenseId} {
-        allow create, read, update, delete: if isOwner(userId) || isAdmin();
-      }
-
-      match /orgs/{orgId}/customers/{customerId} {
-        allow create, read, update, delete: if isOwner(userId) || isAdmin();
-      }
+    // ── Pending invites (invitee discovery across all orgs) ────────
+    // key: {ownerId}_{orgId}_{sanitizedEmail}
+    match /pendingInvites/{inviteId} {
+      // Invitee reads their own pending invites
+      allow read: if isSignedIn() && resource.data.email == request.auth.token.email;
+      // Owner creates
+      allow create: if isSignedIn();
+      // Invitee updates status (accept / decline); owner deletes on remove
+      allow update: if isSignedIn() && resource.data.email == request.auth.token.email;
+      allow delete: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.email == request.auth.token.email
+      );
     }
 
     match /shared_ledgers/{ledgerId} {

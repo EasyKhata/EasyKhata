@@ -148,6 +148,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
+  const isViewerMode = d.isViewerMode || false;
   const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
@@ -712,13 +713,19 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           </div>
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
             <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
-            {!isAdmin && (
+            {!isAdmin && !isViewerMode && (
               <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
                 + New {documentLabel}
               </button>
             )}
           </div>
         </div>
+
+      {isViewerMode && (
+        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+          View only · Contact the org owner to add or edit records
+        </div>
+      )}
 
       <div style={{ padding: "22px 18px 0" }}>
         {monthInv.length > 0 && (
