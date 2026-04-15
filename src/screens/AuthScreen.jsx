@@ -279,16 +279,46 @@ export default function AuthScreen() {
                 phonePlaceholder="9876543210"
               />
             </Field>
-            <Field label="What Are You Using EasyKhata For?" required hint="This helps us tailor labels, fields, and sections for your workflow.">
-              <Select value={organizationType} onChange={e => setOrganizationType(e.target.value)}>
-                {selectableOrgTypeOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
+            <Field label="What Are You Using EasyKhata For?" required hint="Pick the one that matches your situation — you can change it later in settings.">
+              {(() => {
+                const ORG_CARD_META = {
+                  personal:       { icon: "🏠", bestFor: "Families & individuals tracking household money" },
+                  freelancer:     { icon: "💼", bestFor: "Designers, developers, consultants tracking client work" },
+                  small_business: { icon: "🏪", bestFor: "Shops, clinics, service businesses with customers" },
+                  apartment:      { icon: "🏢", bestFor: "RWA, housing societies collecting maintenance" }
+                };
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+                    {selectableOrgTypeOptions.map(option => {
+                      const meta = ORG_CARD_META[option.value] || {};
+                      const selected = organizationType === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => setOrganizationType(option.value)}
+                          style={{
+                            padding: "12px 10px",
+                            borderRadius: 12,
+                            border: `2px solid ${selected ? "var(--accent)" : "var(--border)"}`,
+                            background: selected ? "var(--accent-deep)" : "var(--surface)",
+                            cursor: "pointer",
+                            textAlign: "left"
+                          }}
+                        >
+                          <div style={{ fontSize: 22, marginBottom: 6 }}>{meta.icon}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: selected ? "var(--accent)" : "var(--text)", marginBottom: 4, lineHeight: 1.3 }}>{option.label}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{meta.bestFor}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {selectedOrgTypeDescription && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{selectedOrgTypeDescription}</div>
+                <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, padding: "8px 10px", background: "var(--surface)", borderRadius: 8, borderLeft: "3px solid var(--accent)" }}>
+                  {selectedOrgTypeDescription}
+                </div>
               )}
             </Field>
             

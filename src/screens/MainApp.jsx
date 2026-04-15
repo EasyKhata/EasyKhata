@@ -361,6 +361,8 @@ export default function MainApp() {
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+  const historyMountedRef = useRef(false);
+  const isPopStateRef = useRef(false);
 
   const handleNavigate = useCallback((target) => {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
@@ -386,6 +388,34 @@ export default function MainApp() {
 
     setSettingsNavigation(null);
   }, []);
+
+  // Sync tab → browser history so back/forward work
+  useEffect(() => {
+    if (isPopStateRef.current) {
+      isPopStateRef.current = false;
+      return;
+    }
+    if (!historyMountedRef.current) {
+      historyMountedRef.current = true;
+      window.history.replaceState({ tab }, "", window.location.pathname);
+      return;
+    }
+    window.history.pushState({ tab }, "", window.location.pathname);
+  }, [tab]);
+
+  // Handle browser back/forward button
+  useEffect(() => {
+    function handlePopState(event) {
+      const nextTab = event.state?.tab;
+      if (nextTab) {
+        isPopStateRef.current = true;
+        setTab(nextTab);
+        setSettingsNavigation(null);
+      }
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleAppNavigate = event => {

@@ -199,6 +199,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const [bulkMaintenanceAmount, setBulkMaintenanceAmount] = useState("");
   const [maintenanceAmountHydrated, setMaintenanceAmountHydrated] = useState(false);
   const [pendingFlatPayments, setPendingFlatPayments] = useState([]);
+  const [applyAmountToast, setApplyAmountToast] = useState("");
   const [flatSearchTerm, setFlatSearchTerm] = useState("");
   const [flatStatusFilter, setFlatStatusFilter] = useState("all");
   const [flatPage, setFlatPage] = useState(1);
@@ -860,14 +861,20 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     if (!Number.isFinite(amount) || amount <= 0) return;
     const normalized = String(amount);
     setBulkMaintenanceAmount(normalized);
+    let count = 0;
     (d.customers || []).forEach(customer => {
       if (!String(customer?.name || "").trim()) return;
-      d.updateCustomer?.({
-        ...customer,
-        monthlyMaintenance: normalized
-      });
+      d.updateCustomer?.({ ...customer, monthlyMaintenance: normalized });
+      count++;
     });
+    setApplyAmountToast(`${fmtMoney(amount, sym)} applied to ${count} flat${count !== 1 ? "s" : ""}.`);
   }
+
+  useEffect(() => {
+    if (!applyAmountToast) return undefined;
+    const t = setTimeout(() => setApplyAmountToast(""), 3000);
+    return () => clearTimeout(t);
+  }, [applyAmountToast]);
 
   function createMaintenanceEntryForFlat(flat, triggerSuccessNotice = false) {
     if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0)) return;
@@ -1014,6 +1021,11 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     Apply to All Flats
                   </button>
                 </div>
+                {applyAmountToast && (
+                  <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                    ✓ {applyAmountToast}
+                  </div>
+                )}
                 {anyFlatPaidThisMonth && (
                   <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>
                     {paidFlatsCount} flat{paidFlatsCount !== 1 ? "s" : ""} already marked as paid this month — the monthly amount is locked. Mark them as pending first if you need to change it. Note: changing the amount will affect records for all pending flats.
@@ -1059,7 +1071,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                           {[
                             flat.ownerName || "No owner",
-                            flat.phone ? `WhatsApp ${flat.phone}` : "WhatsApp missing",
                             flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"
                           ]
                             .filter(Boolean)
