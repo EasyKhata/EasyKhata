@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { APP_SUPPORT_LABEL } from "./utils/brand";
 import "./index.css";
 
@@ -62,10 +63,14 @@ function AppRouter() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AppRouter />
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AuthProvider>
+          <ErrorBoundary>
+            <AppRouter />
+          </ErrorBoundary>
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

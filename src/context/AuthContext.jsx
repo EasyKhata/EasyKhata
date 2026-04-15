@@ -16,6 +16,7 @@ import { clearCurrentUser, setCurrentUser } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, normalizeSupportedCountry, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS, getTrialEndDate } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
+import { logError } from "../utils/logger";
 
 const AuthContext = createContext();
 const PENDING_PROFILE_KEY = "pending-profile:";
@@ -373,7 +374,7 @@ export function AuthProvider({ children }) {
         setUser(buildSessionUser(firebaseUser, profile));
         setCurrentUser(firebaseUser.uid);
       } catch (err) {
-        console.error("Profile load error:", err);
+        logError("Profile load error", err);
         setUser(null);
       } finally {
         setLoading(false);

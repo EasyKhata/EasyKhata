@@ -7,6 +7,7 @@ import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, deleteOrgCollectionDocs, sortOrgCollectionRecords, syncOrgCollection, hydrateUserOrgCollections } from "../utils/firestoreOrgCollections";
 import { useAuth } from "./AuthContext";
+import { logError } from "../utils/logger";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
@@ -433,7 +434,7 @@ export function DataProvider({ children }) {
       await batch.commit();
       invoiceSyncRef.current[syncKey] = nextSignature;
     } catch (err) {
-      console.error(`Invoice subcollection sync failed for ${orgId}:`, err);
+      logError(`Invoice subcollection sync failed for ${orgId}`, err);
     }
   }, []);
 
@@ -452,7 +453,7 @@ export function DataProvider({ children }) {
       await batch.commit();
       delete invoiceSyncRef.current[`${userId}:${orgId}`];
     } catch (err) {
-      console.error(`Invoice subcollection cleanup failed for ${orgId}:`, err);
+      logError(`Invoice subcollection cleanup failed for ${orgId}`, err);
     }
   }, []);
 
@@ -489,7 +490,7 @@ export function DataProvider({ children }) {
             shouldBackfill: false
           };
         } catch (err) {
-          console.error(`Invoice subcollection load failed for ${orgId}:`, err);
+          logError(`Invoice subcollection load failed for ${orgId}`, err);
           const embeddedInvoices = sortInvoices(orgValue?.invoices || []);
           invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(embeddedInvoices);
           return {

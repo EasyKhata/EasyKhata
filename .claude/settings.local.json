@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /c/Users/SushmaReddy/Desktop/IphoneApp/ledger-app/.claude/worktrees/nifty-varahamihira/src/sections/*.jsx)",
+      "Bash(npx vite:*)",
+      "Bash(npm run:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 7208 /F)",
+      "Bash(cmd.exe /c \"taskkill /PID 7208 /F\")",
+      "Bash(cmd.exe /c \"netstat -ano | findstr :3001\")",
+      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")"
+    ]
+  }
+}

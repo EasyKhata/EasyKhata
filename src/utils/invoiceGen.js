@@ -1,7 +1,11 @@
-import { jsPDF } from "jspdf";
 import { fmtDate } from "../components/UI";
 import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
 import { buildLocationLabel, parseLocationFields } from "./profile";
+
+let jsPDF = null;
+async function ensureJsPDF() {
+  if (!jsPDF) ({ jsPDF } = await import("jspdf"));
+}
 
 const PAGE = {
   width: 210,
@@ -111,7 +115,8 @@ function drawWrappedBlock(doc, x, y, width, title, lines) {
   return y + Math.max(6, wrapped.length * 4.8);
 }
 
-export function downloadInvoice(invoice, account, sym, options = {}) {
+export async function downloadInvoice(invoice, account, sym, options = {}) {
+  await ensureJsPDF();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
   const isApartment = Boolean(options.isApartment);
