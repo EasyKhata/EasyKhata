@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+// TODO Step 12: admin panel still reads directly from Firestore.
+// Migrate to dedicated admin API endpoints once the core migration is complete.
 import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";

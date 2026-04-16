@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+// TODO Step 12: society portal reads still use Firestore. Migrate to API once portal
+// endpoints are added to the Node.js backend.
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { EmptyState, fmtMoney, MONTHS } from "../components/UI";

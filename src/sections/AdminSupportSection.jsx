@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+// TODO Step 12: admin support ticket management still uses Firestore directly.
+// Migrate to dedicated admin API endpoints once the core migration is complete.
 import { arrayUnion, collection, doc, getDocs, limit, orderBy, query, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { EmptyState, SectionSkeleton, PaginatedListControls } from "../components/UI";

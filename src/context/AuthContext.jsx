@@ -10,11 +10,11 @@ import {
   signOut,
   updatePassword
 } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { auth } from "../firebase";
+import { usersApi } from "../lib/api";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
-import { buildLocationLabel, getAgeGroupFromDateOfBirth, normalizeSupportedCountry, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
-import { PLANS, SUBSCRIPTION_STATUS, getTrialEndDate } from "../utils/subscription";
+import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
+import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
 
@@ -110,9 +110,12 @@ export function AuthProvider({ children }) {
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
     const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
-    const userRef = doc(db, "users", firebaseUser.uid);
-    const snap = await getDoc(userRef);
-    const existing = snap.exists() ? snap.data() : {};
+    let existing = {};
+    try {
+      existing = await usersApi.get(firebaseUser.uid);
+    } catch {
+      // user doesn't exist yet — will be created below
+    }
     const baseName = normalizedOverrides.name || existing?.name || firebaseUser.displayName || "";
     const baseEmail = normalizedOverrides.email || existing?.email || firebaseUser.email || "";
     const basePhone = normalizedOverrides.phone || existing?.phone || "";
@@ -134,11 +137,10 @@ export function AuthProvider({ children }) {
     const baseRefundsPolicyAcceptedAt = normalizedOverrides.refundsPolicyAcceptedAt || existing?.refundsPolicyAcceptedAt || "";
     const baseLegalAccepted = Boolean(normalizedOverrides.legalAccepted || existing?.legalAccepted);
 
-    if (!snap.exists()) {
-      const nowIso = new Date().toISOString();
-      await setDoc(userRef, {
+    if (!existing?.id) {
+      // New user — create via API (server also auto-starts a 14-day trial)
+      const created = await usersApi.create({
         name: baseName,
-        email: baseEmail,
         phone: basePhone,
         phoneCountryCode: phoneParts.phoneCountryCode,
         gender: baseGender,
@@ -151,36 +153,14 @@ export function AuthProvider({ children }) {
         location: baseLocation,
         address: baseAddress,
         organizationType: baseOrganizationType,
-        activeOrgId: DEFAULT_ORG_ID,
-        orgs: {
-          [DEFAULT_ORG_ID]: createDefaultOrgProfile({ email: baseEmail, phone: basePhone, organizationType: baseOrganizationType })
-        },
-        onboardingSeenAt: "",
-        role: "user",
-        plan: PLANS.FREE,
-        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-        subscriptionEndsAt: "",
-        trialEligible: true,
-        trialStartedAt: "",
-        blocked: false,
-        sharedLedgerId: "",
-        sharedLedgerRole: "",
-        societyPortalId: "",
-        societyPortalRole: "",
-        societyFlatNumber: "",
-        societyInviteCode: "",
-        apartmentPortalRoles: {},
         legalAccepted: baseLegalAccepted,
         termsVersion: baseTermsVersion,
         termsAcceptedAt: baseTermsAcceptedAt,
         privacyAcceptedAt: basePrivacyAcceptedAt,
-        refundsPolicyAcceptedAt: baseRefundsPolicyAcceptedAt,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        lastActivityAt: nowIso
+        refundsPolicyAcceptedAt: baseRefundsPolicyAcceptedAt
       });
       clearPendingProfile(baseEmail);
-      return;
+      return created;
     }
 
     const updates = {};
@@ -208,105 +188,13 @@ export function AuthProvider({ children }) {
       updates.lastActivityAt = existing?.updatedAt || existing?.createdAt;
     }
 
-    if (!existing?.orgs || Object.keys(existing.orgs || {}).length === 0) {
-      const activeOrgId = existing?.activeOrgId || DEFAULT_ORG_ID;
-      updates.activeOrgId = activeOrgId;
-      updates.orgs = {
-        [activeOrgId]: {
-          ...createDefaultOrgProfile({ email: baseEmail, phone: basePhone, organizationType: baseOrganizationType }),
-          income: existing?.income || [],
-          expenses: existing?.expenses || [],
-          invoices: existing?.invoices || [],
-          customers: existing?.customers || [],
-          orgRecords: existing?.orgRecords || {},
-          goals: existing?.goals || { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
-          budgets: existing?.budgets || {},
-          notificationPrefs: existing?.notificationPrefs || {
-            browserEnabled: false,
-            invoiceDue: true,
-            overdueInvoices: true,
-            budgetAlerts: true,
-            lowBalance: true,
-            spendingSpike: true
-          },
-          currency: existing?.currency || {
-            code: "INR",
-            symbol: "Rs",
-            name: "Indian Rupee",
-            flag: "IN"
-          },
-          account: (() => {
-            const existingAccountLocation = parseLocationFields(existing?.account?.location || existing?.account?.address || "");
-            const addressLine = existing?.account?.addressLine || existingAccountLocation.addressLine || "";
-            const city = existing?.account?.city || existingAccountLocation.city || "";
-            const state = existing?.account?.state || existingAccountLocation.state || "";
-            const rawCountry = String(existing?.account?.country || existingAccountLocation.country || "").trim();
-            const country = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
-            const location = existing?.account?.location || buildLocationLabel({ city, state, country });
-            const address = existing?.account?.address || buildLocationLabel({ addressLine, city, state, country });
-            return {
-              name: existing?.account?.name || "",
-              email: existing?.account?.email || baseEmail,
-              phone: existing?.account?.phone || basePhone,
-              addressLine,
-              city,
-              state,
-              country,
-              location,
-              address,
-              gstin: existing?.account?.gstin || "",
-              showHSN: Boolean(existing?.account?.showHSN),
-              organizationType: getOrgType(existing?.account?.organizationType || existing?.organizationType || baseOrganizationType)
-            };
-          })()
-        }
-      };
-    }
-
     if (Object.keys(updates).length > 0) {
-      await updateDoc(userRef, updates);
+      const updated = await usersApi.update(firebaseUser.uid, updates);
+      clearPendingProfile(baseEmail);
+      return updated;
     }
     clearPendingProfile(baseEmail);
-  }
-
-  async function activateTrialIfEligible(firebaseUser, profile = null) {
-    const nextProfile = profile || (await getDoc(doc(db, "users", firebaseUser.uid))).data() || {};
-    if (!nextProfile?.trialEligible || nextProfile?.trialStartedAt) {
-      return nextProfile;
-    }
-
-    const updates = {
-      plan: PLANS.PRO,
-      subscriptionStatus: SUBSCRIPTION_STATUS.TRIAL,
-      subscriptionEndsAt: getTrialEndDate(),
-      trialEligible: false,
-      trialStartedAt: new Date().toISOString()
-    };
-
-    await updateDoc(doc(db, "users", firebaseUser.uid), updates);
-    return { ...nextProfile, ...updates };
-  }
-
-  async function downgradeExpiredTrialIfNeeded(firebaseUser, profile = null) {
-    const nextProfile = profile || (await getDoc(doc(db, "users", firebaseUser.uid))).data() || {};
-    if ((nextProfile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE) !== SUBSCRIPTION_STATUS.TRIAL) {
-      return nextProfile;
-    }
-
-    const trialEndsAt = new Date(nextProfile?.subscriptionEndsAt || "");
-    if (!nextProfile?.subscriptionEndsAt || Number.isNaN(trialEndsAt.getTime()) || trialEndsAt.getTime() >= Date.now()) {
-      return nextProfile;
-    }
-
-    const updates = {
-      plan: PLANS.FREE,
-      subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-      subscriptionEndsAt: "",
-      updatedAt: new Date().toISOString()
-    };
-
-    await updateDoc(doc(db, "users", firebaseUser.uid), updates);
-    return { ...nextProfile, ...updates };
+    return existing;
   }
 
   function buildSessionUser(firebaseUser, profile = {}) {
@@ -367,12 +255,8 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        await ensureUserProfile(firebaseUser, readPendingProfile(firebaseUser.email));
-        const snap = await getDoc(doc(db, "users", firebaseUser.uid));
-        const trialProfile = await activateTrialIfEligible(firebaseUser, snap.exists() ? snap.data() : {});
-        const profile = await downgradeExpiredTrialIfNeeded(firebaseUser, trialProfile);
-
-        setUser(buildSessionUser(firebaseUser, profile));
+        const profile = await ensureUserProfile(firebaseUser, readPendingProfile(firebaseUser.email));
+        setUser(buildSessionUser(firebaseUser, profile || {}));
         setCurrentUser(firebaseUser.uid);
       } catch (err) {
         logError("Profile load error", err);
@@ -396,10 +280,7 @@ export function AuthProvider({ children }) {
         return { error: "Please verify your email before logging in." };
       }
 
-      await ensureUserProfile(userCred.user, readPendingProfile(userCred.user.email));
-      const snap = await getDoc(doc(db, "users", userCred.user.uid));
-      const trialProfile = await activateTrialIfEligible(userCred.user, snap.exists() ? snap.data() : {});
-      const profile = await downgradeExpiredTrialIfNeeded(userCred.user, trialProfile);
+      const profile = await ensureUserProfile(userCred.user, readPendingProfile(userCred.user.email));
 
       if (profile?.blocked) {
         await signOut(auth);
@@ -575,7 +456,7 @@ export function AuthProvider({ children }) {
       if ("phone" in nextUpdates || "phoneCountryCode" in nextUpdates) {
         nextUpdates.phoneCountryCode = nextUpdates.phoneCountryCode || user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
       }
-      await updateDoc(doc(db, "users", auth.currentUser.uid), nextUpdates);
+      await usersApi.update(auth.currentUser.uid, nextUpdates);
       setUser(prev => (prev ? { ...prev, ...nextUpdates } : prev));
       return { success: true };
     } catch (err) {

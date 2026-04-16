@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+// TODO Step 12: admin users management still uses Firestore directly.
+// Migrate to dedicated admin API endpoints once the core migration is complete.
 import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { logError } from "../utils/logger";

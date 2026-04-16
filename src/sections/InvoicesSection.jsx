@@ -48,6 +48,8 @@ import {
   getSubscriptionEndDate,
   getUpgradeCopy
 } from "../utils/subscription";
+// TODO Step 12: admin payment-request approval still uses Firestore directly.
+// Migrate to a dedicated admin API endpoint once the migration is complete.
 import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";

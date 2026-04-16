@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+// TODO Step 12: society portal, support tickets, and admin payment approvals still use
+// Firestore directly. Migrate to dedicated API endpoints once the core migration is complete.
 import { arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { auth } from "../firebase";
