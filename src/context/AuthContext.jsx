@@ -605,8 +605,12 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
+    const userId = auth.currentUser?.uid;
     await signOut(auth);
     clearCurrentUser();
+    if (userId) {
+      try { localStorage.removeItem(`ledger-session-analytics:${userId}`); } catch {}
+    }
     setUser(null);
   }
 

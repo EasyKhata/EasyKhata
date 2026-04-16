@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
+import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import PendingInviteBanner from "../components/PendingInviteBanner";
@@ -364,8 +365,53 @@ export default function MainApp() {
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+  const [idleWarning, setIdleWarning] = useState(false);
+  const [idleCountdown, setIdleCountdown] = useState(120);
+  const idleCountdownRef = useRef(null);
   const historyMountedRef = useRef(false);
   const isPopStateRef = useRef(false);
+
+  const handleIdleWarn = useCallback((remainingSeconds) => {
+    setIdleCountdown(remainingSeconds);
+    setIdleWarning(true);
+  }, []);
+
+  const handleIdleLogout = useCallback(async () => {
+    setIdleWarning(false);
+    await logout();
+  }, [logout]);
+
+  const { resetTimer: resetIdle } = useIdleTimeout({
+    idleMinutes: 15,
+    warningMinutes: 2,
+    onWarn: handleIdleWarn,
+    onLogout: handleIdleLogout,
+    enabled: Boolean(user)
+  });
+
+  // Dismiss idle warning when user acts
+  const handleStayLoggedIn = useCallback(() => {
+    setIdleWarning(false);
+    resetIdle();
+  }, [resetIdle]);
+
+  // Countdown tick while warning is visible
+  useEffect(() => {
+    if (!idleWarning) {
+      if (idleCountdownRef.current) clearInterval(idleCountdownRef.current);
+      return undefined;
+    }
+    idleCountdownRef.current = setInterval(() => {
+      setIdleCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(idleCountdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(idleCountdownRef.current);
+  }, [idleWarning]);
 
   const handleNavigate = useCallback((target) => {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
@@ -978,6 +1024,33 @@ export default function MainApp() {
             )}
           </div>
         </Modal>
+      )}
+
+      {idleWarning && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9000, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--surface)", borderRadius: 18, padding: "32px 28px", maxWidth: 380, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>⏳</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Session Expiring</div>
+            <div style={{ fontSize: 14, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 24 }}>
+              You&apos;ve been inactive for a while. For your security, you&apos;ll be signed out in{" "}
+              <span style={{ fontWeight: 800, color: "var(--danger)" }}>{idleCountdown}s</span>.
+            </div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+              <button
+                onClick={handleIdleLogout}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+              >
+                Sign Out
+              </button>
+              <button
+                onClick={handleStayLoggedIn}
+                style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "var(--accent)", color: "#fff", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+              >
+                Stay Logged In
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

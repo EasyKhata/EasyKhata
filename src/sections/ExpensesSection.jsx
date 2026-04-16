@@ -79,7 +79,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function ExpensesSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
-  const isViewerMode = d.isViewerMode || false;
+  const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
