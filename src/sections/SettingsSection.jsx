@@ -24,6 +24,7 @@ import {
   isOptionalEmail,
   isOptionalPhone,
   isStrongPassword,
+  passwordStrengthMessage,
   isValidDateValue,
   isValidEmail,
   isValidGstin,
@@ -1017,7 +1018,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
     if (!isStrongPassword(passForm.next)) {
-      setPassError("Password must be at least 6 characters long.");
+      setPassError(passwordStrengthMessage(passForm.next) || "Password does not meet requirements.");
       return;
     }
     if (passForm.next !== passForm.confirm) {
@@ -2650,7 +2651,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Field label="Current Password">
           <Input type="password" autoComplete="current-password" placeholder="Enter your current password" value={passForm.current} onChange={e => setPassForm(f => ({ ...f, current: e.target.value }))} />
         </Field>
-        <Field label="New Password" hint="Use at least 6 characters.">
+        <Field label="New Password" hint="8+ characters with uppercase, lowercase, and a number.">
           <Input type="password" autoComplete="new-password" placeholder="Create a new password" value={passForm.next} onChange={e => setPassForm(f => ({ ...f, next: e.target.value }))} />
         </Field>
         <Field label="Confirm New Password">

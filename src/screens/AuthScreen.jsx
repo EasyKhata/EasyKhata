@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Field, Input, PhoneNumberInput, Select } from "../components/UI";
-import { isStrongPassword, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
+import { isStrongPassword, passwordStrengthMessage, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
@@ -38,7 +38,7 @@ export default function AuthScreen() {
 
   // Password strength indicator
   const passStrength = password ? {
-    length: password.length >= 8 ? "strong" : password.length >= 6 ? "medium" : "weak",
+    length: isStrongPassword(password) ? "strong" : password.length >= 6 ? "medium" : "weak",
     hasNumber: /\d/.test(password),
     hasSpecial: /[!@#$%^&*]/.test(password),
   } : null;
@@ -64,11 +64,6 @@ export default function AuthScreen() {
 
     if (!password) {
       setError("Please enter your password.");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters long.");
       return;
     }
 
@@ -107,7 +102,7 @@ export default function AuthScreen() {
     }
 
     if (!isStrongPassword(password)) {
-      setError("Password must be at least 6 characters long.");
+      setError(passwordStrengthMessage(password) || "Password does not meet requirements.");
       return;
     }
 
@@ -322,7 +317,7 @@ export default function AuthScreen() {
               )}
             </Field>
             
-            <Field label="Password" required hint={showPasswordHint ? "At least 6 characters. Add numbers or symbols for extra security." : 
+            <Field label="Password" required hint={showPasswordHint ? "8+ characters with uppercase, lowercase, and a number." :
               <button onClick={() => setShowPasswordHint(true)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--font)", fontSize: "inherit" }}>
                 View password tips
               </button>

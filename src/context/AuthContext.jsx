@@ -490,7 +490,7 @@ export function AuthProvider({ children }) {
         return { error: "Please enter a valid email address." };
       }
       if (err.code === "auth/weak-password") {
-        return { error: "Password must be at least 6 characters long." };
+        return { error: "Password must be at least 8 characters and include uppercase, lowercase, and a number." };
       }
       if (err.code === "auth/too-many-requests") {
         return { error: "Too many attempts were made. Please wait a little and try again." };
@@ -598,7 +598,7 @@ export function AuthProvider({ children }) {
         return { error: "Your current password is incorrect." };
       }
       if (err.code === "auth/weak-password") {
-        return { error: "Password must be at least 6 characters long." };
+        return { error: "Password must be at least 8 characters and include uppercase, lowercase, and a number." };
       }
       return { error: err.message || "We couldn't update your password right now. Please try again." };
     }
