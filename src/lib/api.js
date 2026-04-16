@@ -115,3 +115,44 @@ export const membersApi = {
   getPending: () =>
     api.get("/invitations/pending")
 };
+
+// ── Support Tickets ───────────────────────────────────────────────────────────
+
+export const supportApi = {
+  list: () =>
+    api.get("/support-tickets"),
+
+  create: (payload) =>
+    api.post("/support-tickets", payload),
+
+  reply: (ticketId, message) =>
+    api.post(`/support-tickets/${ticketId}/reply`, { message })
+};
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export const adminApi = {
+  // Users
+  listUsers: (page = 1, limit = 60) =>
+    api.get(`/admin/users?page=${page}&limit=${limit}`),
+
+  updateUser: (userId, updates) =>
+    api.put(`/admin/users/${userId}`, updates),
+
+  deleteUser: (userId) =>
+    api.delete(`/admin/users/${userId}`),
+
+  // Support tickets
+  listSupportTickets: () =>
+    api.get("/admin/support-tickets"),
+
+  updateSupportTicket: (ticketId, updates) =>
+    api.put(`/admin/support-tickets/${ticketId}`, updates),
+
+  // Payment requests
+  listPaymentRequests: () =>
+    api.get("/admin/payment-requests"),
+
+  updatePaymentRequest: (requestId, updates) =>
+    api.put(`/admin/payment-requests/${requestId}`, updates)
+};

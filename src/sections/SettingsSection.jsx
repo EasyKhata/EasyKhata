@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-// TODO Step 12: society portal, support tickets, and admin payment approvals still use
-// Firestore directly. Migrate to dedicated API endpoints once the core migration is complete.
+// TODO: society portal and admin report export still use Firestore directly.
+// Support tickets have been migrated to the Node.js API.
 import { arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../firebase";
-import { auth } from "../firebase";
+import { supportApi, adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
 import NotificationsModal from "./settings/NotificationsModal";
@@ -1094,13 +1094,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setGeneratingReport(true);
     if (user?.role === "admin") {
       try {
-        const usersSnapshot = await getDocs(collection(db, "users"));
-        const paymentsSnapshot = await getDocs(collection(db, "payment_requests"));
-
-        const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const paymentRequests = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, currency?.symbol || "Rs");
+        const [usersResult, paymentRequests] = await Promise.all([
+          adminApi.listUsers(1, 500),
+          adminApi.listPaymentRequests()
+        ]);
+        await downloadAdminMonthlyReport({ users: usersResult.users || [], paymentRequests: paymentRequests || [] }, year, month, currency?.symbol || "Rs");
         showNotice("Admin report downloaded.", "success");
         setShowReportPicker(false);
       } catch (err) {
@@ -1587,17 +1585,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!user?.id || user?.role === "admin") return;
     setSupportLoading(true);
     try {
-      const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", user.id));
-      const ticketsSnapshot = await getDocs(ticketsQuery);
+      const tickets = await supportApi.list();
       setSupportTickets(
-        ticketsSnapshot.docs
-          .map(item => {
-            const payload = { id: item.id, ...item.data() };
-            return {
-              ...payload,
-              messages: normalizeSupportMessages(payload)
-            };
-          })
+        tickets
+          .map(t => ({ ...t, messages: normalizeSupportMessages(t) }))
           .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
     } catch (err) {
@@ -1621,47 +1612,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
     setSubmittingSupport(true);
     try {
-      const ticketRef = doc(collection(db, "support_tickets"));
-      const nowIso = new Date().toISOString();
-      const payload = {
-        userId: user.id,
-        userName: user?.name || "",
-        userEmail: user?.email || "",
-        topic,
+      await supportApi.create({
         subject,
         message,
-        messages: [
-          {
-            id: `msg-${Date.now()}`,
-            senderRole: "user",
-            senderId: user.id,
-            senderName: user?.name || "User",
-            message,
-            createdAt: nowIso
-          }
-        ],
-        status: "open",
-        activeOrgId: activeOrgId || "",
+        topic,
+        userName: user?.name || "",
+        userEmail: user?.email || "",
         organizationName: account?.name || "",
-        organizationType: account?.organizationType || user?.organizationType || "",
-        supportContext: buildSupportContext(),
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        lastUserReplyAt: nowIso,
-        resolvedAt: "",
-        adminNote: ""
-      };
-      await setDoc(ticketRef, payload);
+        activeOrgId: activeOrgId || "",
+        supportContext: buildSupportContext()
+      });
       showNotice("Support ticket submitted.", "success");
       setSupportForm({ topic: "account", subject: "", message: "" });
       await loadSupportTickets();
     } catch (err) {
       logError("Support ticket submit error", err);
-      if (err?.code === "permission-denied") {
-        showNotice("Support tickets are blocked by Firestore rules right now. Please allow support_tickets first.");
-      } else {
-        showNotice(err?.message || "We couldn't submit your support ticket right now.");
-      }
+      showNotice(err?.message || "We couldn't submit your support ticket right now.");
     } finally {
       setSubmittingSupport(false);
     }
@@ -1675,20 +1641,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     setReplyingTicketId(ticket.id);
     try {
-      const nowIso = new Date().toISOString();
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        messages: arrayUnion({
-          id: `msg-${Date.now()}`,
-          senderRole: "user",
-          senderId: user.id,
-          senderName: user?.name || "User",
-          message: draft,
-          createdAt: nowIso
-        }),
-        status: "open",
-        updatedAt: nowIso,
-        lastUserReplyAt: nowIso
-      });
+      await supportApi.reply(ticket.id, draft);
       setSupportReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
       await loadSupportTickets();
       showNotice("Reply sent to support.", "success");

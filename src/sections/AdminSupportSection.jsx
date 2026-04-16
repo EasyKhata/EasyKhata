@@ -1,8 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-// TODO Step 12: admin support ticket management still uses Firestore directly.
-// Migrate to dedicated admin API endpoints once the core migration is complete.
-import { arrayUnion, collection, doc, getDocs, limit, orderBy, query, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { adminApi } from "../lib/api";
 import { EmptyState, SectionSkeleton, PaginatedListControls } from "../components/UI";
 import { logError } from "../utils/logger";
 
@@ -52,7 +49,6 @@ export default function AdminSupportSection() {
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [replyDrafts, setReplyDrafts] = useState({});
   const [replyingTicketId, setReplyingTicketId] = useState("");
-  const [ticketsEnabled, setTicketsEnabled] = useState(true);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 900 : false));
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(25);
@@ -61,22 +57,11 @@ export default function AdminSupportSection() {
     setLoading(true);
     setError("");
     try {
-      const ticketsSnapshot = await getDocs(query(collection(db, "support_tickets"), orderBy("createdAt", "desc"), limit(1000)));
-      setTickets(
-        ticketsSnapshot.docs.map(item => {
-          const payload = { id: item.id, ...item.data() };
-          return { ...payload, messages: normalizeSupportMessages(payload) };
-        })
-      );
-      setTicketsEnabled(true);
+      const list = await adminApi.listSupportTickets();
+      setTickets(list.map(t => ({ ...t, messages: normalizeSupportMessages(t) })));
     } catch (err) {
       logError("Admin support load error", err);
-      if (err?.code === "permission-denied") {
-        setTicketsEnabled(false);
-        setTickets([]);
-      } else {
-        setError("Unable to load support tickets right now.");
-      }
+      setError("Unable to load support tickets right now.");
     } finally {
       setLoading(false);
     }
@@ -142,11 +127,7 @@ export default function AdminSupportSection() {
 
   async function updateSupportTicketStatus(ticket, status) {
     try {
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        status,
-        updatedAt: new Date().toISOString(),
-        resolvedAt: status === "resolved" ? new Date().toISOString() : ""
-      });
+      await adminApi.updateSupportTicket(ticket.id, { status });
       await fetchTickets();
     } catch (err) {
       logError("Support status update error", err);
@@ -159,19 +140,7 @@ export default function AdminSupportSection() {
     if (!draft) return;
     setReplyingTicketId(ticket.id);
     try {
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        messages: arrayUnion({
-          id: `admin-${Date.now()}`,
-          senderRole: "admin",
-          senderId: "admin",
-          senderName: "Support",
-          message: draft,
-          createdAt: new Date().toISOString()
-        }),
-        status: "in_progress",
-        updatedAt: new Date().toISOString(),
-        resolvedAt: ""
-      });
+      await adminApi.updateSupportTicket(ticket.id, { reply: draft });
       setReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
       await fetchTickets();
     } catch (err) {
@@ -236,11 +205,7 @@ export default function AdminSupportSection() {
           {error}
         </div>
       )}
-      {!ticketsEnabled ? (
-        <div className="card">
-          <EmptyState title="Support tickets are locked by rules" message="Allow support_tickets read/write for admins to operate support from this section." accentColor="var(--gold)" />
-        </div>
-      ) : !visibleTickets.length ? (
+      {!visibleTickets.length ? (
         <div className="card">
           <EmptyState title="No support tickets" message="No tickets match this filter right now." accentColor="var(--blue)" />
         </div>

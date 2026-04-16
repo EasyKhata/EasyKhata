@@ -48,10 +48,7 @@ import {
   getSubscriptionEndDate,
   getUpgradeCopy
 } from "../utils/subscription";
-// TODO Step 12: admin payment-request approval still uses Firestore directly.
-// Migrate to a dedicated admin API endpoint once the migration is complete.
-import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { adminApi } from "../lib/api";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
 
@@ -212,24 +209,16 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
     const fetchUsers = async () => {
       try {
-        const usersSnapshot = await getDocs(collection(db, "users"));
-        setUsers(usersSnapshot.docs.map(item => ({
-          id: item.id,
-          ...item.data()
-        })));
+        const { users: fetchedUsers } = await adminApi.listUsers(1, 100);
+        setUsers(fetchedUsers);
       } catch (err) {
         logError("Fetch users error", err);
       }
 
       try {
-        const requestsSnapshot = await getDocs(collection(db, "payment_requests"));
+        const requests = await adminApi.listPaymentRequests();
         setPaymentRequests(
-          requestsSnapshot.docs
-            .map(item => ({
-              id: item.id,
-              ...item.data()
-            }))
-            .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+          requests.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
         );
         setPaymentRequestsEnabled(true);
       } catch (err) {
@@ -249,39 +238,13 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   async function updatePaymentRequestStatus(request, status) {
     setAdminRequestError("");
     try {
-      const requestRef = doc(db, "payment_requests", request.id);
-      const updates = {
-        status,
-        reviewedBy: user.id,
-        reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
-        await updateDoc(doc(db, "users", request.userId), {
-          plan: request.requestedPlan || PLANS.PRO,
-          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-          subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
-        });
-      }
-
-      if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
-        updates.rejectionReason = "Payment proof not approved";
-      }
-
-      await setDoc(requestRef, updates, { merge: true });
-
+      const updated = await adminApi.updatePaymentRequest(request.id, { status });
       setPaymentRequests(current =>
-        current.map(item =>
-          item.id === request.id
-            ? { ...item, ...updates }
-            : item
-        )
+        current.map(item => item.id === request.id ? { ...item, ...updated } : item)
       );
     } catch (err) {
       logError("Payment request status update error", err);
       setAdminRequestError("Unable to update the payment request. Please try again.");
-      alert(err?.message || "Unable to update the payment request. Please try again.");
     }
   }
 

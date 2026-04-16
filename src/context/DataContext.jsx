@@ -718,7 +718,7 @@ export function DataProvider({ children }) {
         }
       };
       persistSessionDraft();
-      await usersApi.update(user.id, updates).catch(() => {});
+      await usersApi.update(user.id, updates).catch(err => logError("Session org change flush failed", err));
     },
     [data.orgs, persistSessionDraft, user?.id, user?.organizationType]
   );

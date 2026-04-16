@@ -16,7 +16,12 @@
       "Bash(rm .env)",
       "Bash(railway --version)",
       "Bash(git --version)",
-      "Bash(railway login *)"
+      "Bash(railway login *)",
+      "Bash(grep -n \"TODO Step 12\" /c/Users/SushmaReddy/Desktop/EasyKhata/EasyKhata/src/sections/*.jsx)",
+      "Bash(grep -n \"requireAuth\" /c/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/*.js)",
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(node -e \"const fs = require\\('fs'\\); fs.readFileSync\\('c:/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/support.js', 'utf8'\\)\")",
+      "Bash(node -e \"const fs = require\\('fs'\\); fs.readFileSync\\('c:/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/admin.js', 'utf8'\\)\")"
     ]
   }
 }
