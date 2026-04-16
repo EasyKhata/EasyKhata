@@ -128,14 +128,21 @@ export default function OrgMembersScreen({ onBack }) {
     if (!user?.id) return;
     try {
       const sanitized = (member.email || "").replace(/[^a-z0-9]/gi, "_");
-      // Remove from owner's invitations list
-      await deleteDoc(doc(getInvitationsCollectionRef(user.id, orgId), member.id));
-      // Remove from pendingInvites (stops showing banner if not yet accepted)
-      await deleteDoc(getPendingInviteRef(user.id, orgId, sanitized)).catch(() => {});
-      // Remove from orgMembers — this immediately revokes Firestore access
+
+      // 1. Revoke org access via orgMembers doc.
+      //    Set status "removed" FIRST so the member's live onSnapshot fires while the
+      //    doc still exists (Firestore can evaluate resource.data.memberUid == member's uid).
+      //    Then delete the doc so isMemberOf() permanently denies access.
       if (member.memberUid) {
-        await deleteDoc(getOrgMemberRef(user.id, orgId, member.memberUid)).catch(() => {});
+        const memberRef = getOrgMemberRef(user.id, orgId, member.memberUid);
+        await updateDoc(memberRef, { status: "removed" }).catch(() => {});
+        await deleteDoc(memberRef).catch(() => {});
       }
+
+      // 2. Remove from owner's invitations list (removes from member management UI)
+      await deleteDoc(doc(getInvitationsCollectionRef(user.id, orgId), member.id));
+      // 3. Remove from pendingInvites (stops showing banner if not yet accepted)
+      await deleteDoc(getPendingInviteRef(user.id, orgId, sanitized)).catch(() => {});
     } catch {
       setError("Failed to remove member.");
     }

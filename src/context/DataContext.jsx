@@ -380,14 +380,18 @@ export function DataProvider({ children }) {
     const memberKey = `${sharedInfo.orgId}_${user.id}`;
     const docRef = doc(db, "users", sharedInfo.ownerId, "orgMembers", memberKey);
     const unsub = onSnapshot(docRef, snap => {
-      if (snap.exists()) {
+      // status:"removed" is set before deletion so the event is delivered while
+      // resource.data.memberUid can still be evaluated by Firestore security rules.
+      const isRemoved = !snap.exists() || snap.data()?.status === "removed";
+      if (!isRemoved) {
         const liveRole = snap.data().role || "viewer";
         setActiveSharedOrgRole(liveRole);
         // Keep the ref in sync so update() guard stays current
         if (activeSharedOrgRef.current) {
-          activeSharedOrgRef.current = { ...activeSharedOrgRef.current, isViewer: liveRole === "viewer" };
+          activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: liveRole, isViewer: liveRole === "viewer" };
         }
-      } else if (activeSharedOrgRef.current) {
+      }
+      if (isRemoved && activeSharedOrgRef.current) {
         // Owner removed this member while they were viewing — revoke immediately
         const removedInfo = activeSharedOrgRef.current;
         const staleKey = `${removedInfo.ownerId}_${removedInfo.orgId}`;
@@ -408,7 +412,7 @@ export function DataProvider({ children }) {
         setActiveSharedOrgRole(null);
         setOwnDataReloadKey(k => k + 1);
       }
-    }, () => {}); // ignore permission errors silently
+    }, err => logError("orgMembers onSnapshot failed", err));
     return unsub;
   }, [activeSharedOrgKey, user?.id, user?.sharedOrgs]);
 
@@ -1244,8 +1248,8 @@ export function DataProvider({ children }) {
         getDoc(doc(db, "users", ownerId, "orgs", orgId, "meta", "profile"))
       ]);
 
-      // orgMembers doc missing = owner removed this member — revoke access and clean up
-      if (!memberSnap.exists()) {
+      // orgMembers doc missing or status:"removed" = owner removed this member — revoke access and clean up
+      if (!memberSnap.exists() || memberSnap.data()?.status === "removed") {
         activeSharedOrgRef.current = null;
         setActiveSharedOrgKey(null);
         setActiveSharedOrgRole(null);
@@ -1272,19 +1276,24 @@ export function DataProvider({ children }) {
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
-      const orgAccountMeta = {
-        account: {
-          name: effectiveOrgName,
-          organizationType: effectiveOrgType
-        }
-      };
-
+      // Take only the live collections from hydrateUserOrgCollections.
+      // Do NOT spread the whole orgs[orgId] object — it carries EMPTY_ORG_DATA.account
+      // (organizationType:"small_business") which would overwrite effectiveOrgType.
+      const hydratedOrg = orgs[orgId] || {};
       const nextState = buildStateFromOrganizations({
         orgs: {
           [orgId]: {
             ...EMPTY_ORG_DATA,
-            ...normalizeOrgData(orgAccountMeta, {}),
-            ...(orgs[orgId] || {})
+            income: hydratedOrg.income || [],
+            expenses: hydratedOrg.expenses || [],
+            invoices: hydratedOrg.invoices || [],
+            customers: hydratedOrg.customers || [],
+            orgRecords: hydratedOrg.orgRecords || {},
+            account: {
+              ...EMPTY_ORG_DATA.account,
+              name: effectiveOrgName,
+              organizationType: effectiveOrgType
+            }
           }
         },
         activeOrgId: orgId

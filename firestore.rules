@@ -271,6 +271,17 @@ service cloud.firestore {
         allow write:  if isOwner(userId) || isAdmin() || isAdminMemberOf(userId, orgId);
       }
 
+      // ── Invitation accept — member writes their UID back ──────
+      // Allows the invited member to stamp memberUid/status/acceptedAt on their
+      // own invitation doc so the owner can find and delete the orgMembers entry
+      // on removal. Only the three fields may change; email must match.
+      match /orgs/{orgId}/invitations/{inviteId} {
+        allow update: if isSignedIn() &&
+          resource.data.email == request.auth.token.email &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(["status", "memberUid", "acceptedAt"]);
+      }
+
       // ── Member roster — drives security-rule lookups ──────────
       // key: {orgId}_{memberUid}
       match /orgMembers/{memberKey} {

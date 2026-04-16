@@ -64,11 +64,11 @@ export default function PendingInviteBanner() {
         acceptedAt: now
       });
 
-      // 3. Update owner's invitations list so the owner sees "Active"
+      // 3. Update owner's invitations list so the owner sees "Active" and has memberUid for removal
       await updateDoc(
         doc(db, "users", ownerId, "orgs", orgId, "invitations", sanitizedEmail),
         { status: "accepted", memberUid: user.id, acceptedAt: now }
-      ).catch(() => {}); // non-critical if invite doc key differs
+      );
 
       // 4. Write sharedOrgs into member's own user doc
       const sharedOrgEntry = {
@@ -106,7 +106,7 @@ export default function PendingInviteBanner() {
     setProcessing(prev => ({ ...prev, [invite._id]: true }));
     try {
       await updateDoc(doc(db, "pendingInvites", invite._id), { status: "declined" });
-      const sanitizedEmail = (user.email || "").replace(/[^a-z0-9]/gi, "_");
+      const sanitizedEmail = (user.email || "").toLowerCase().replace(/[^a-z0-9]/gi, "_");
       await updateDoc(
         doc(db, "users", invite.ownerId, "orgs", invite.orgId, "invitations", sanitizedEmail),
         { status: "declined" }
