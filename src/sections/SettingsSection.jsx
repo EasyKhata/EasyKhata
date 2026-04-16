@@ -10,6 +10,8 @@ import ProfileModal from "./settings/ProfileModal";
 import AccountModal from "./settings/AccountModal";
 import CustomersScreen from "./settings/CustomersScreen";
 import SocietyPortalScreen from "./settings/SocietyPortalScreen";
+import AuditLogScreen from "./settings/AuditLogScreen";
+import OrgMembersScreen from "./settings/OrgMembersScreen";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
@@ -17,6 +19,7 @@ import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
 import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
+import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
   isOptionalEmail,
   isOptionalPhone,
@@ -1126,6 +1129,43 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
   }
 
+  function handleCSVDownload() {
+    const sym = currency?.symbol || "Rs";
+    const year = Number(reportForm.year);
+    const month = Number(reportForm.month);
+    const financialYearStart = Number(reportForm.financialYearStart);
+
+    if (reportForm.period === "financial-year") {
+      const startMk = `${financialYearStart}-04`;
+      const endMk = `${financialYearStart + 1}-03`;
+      const incomeRows = (income || []).filter(r => {
+        const mk = (r.date || r.month || "").slice(0, 7);
+        return mk >= startMk && mk <= endMk;
+      });
+      const expenseRows = (expenses || []).filter(r => {
+        const mk = (r.date || "").slice(0, 7);
+        return mk >= startMk && mk <= endMk;
+      });
+      const incomeCsv = generateIncomeCSV(incomeRows, sym);
+      const expensesCsv = generateExpensesCSV(expenseRows, sym);
+      downloadCSV(`income-FY${financialYearStart}-${financialYearStart + 1}.csv`, incomeCsv);
+      setTimeout(() => downloadCSV(`expenses-FY${financialYearStart}-${financialYearStart + 1}.csv`, expensesCsv), 300);
+    } else {
+      const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+      if (isApartmentOrg) {
+        const csv = generateCollectionsCSV(income || [], customers || [], sym, mk);
+        downloadCSV(`collections-${mk}.csv`, csv);
+      } else {
+        const incomeRows = (income || []).filter(r => (r.date || r.month || "").startsWith(mk));
+        const expenseRows = (expenses || []).filter(r => (r.date || "").startsWith(mk));
+        downloadCSV(`income-${mk}.csv`, generateIncomeCSV(incomeRows, sym));
+        setTimeout(() => downloadCSV(`expenses-${mk}.csv`, generateExpensesCSV(expenseRows, sym)), 300);
+      }
+    }
+    showNotice("CSV downloaded.", "success");
+    setShowReportPicker(false);
+  }
+
   async function saveSocietyPortal() {
     if (!canManageSocietyPortal) return;
     const nowIso = new Date().toISOString();
@@ -1999,6 +2039,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     : "This will export the selected month as a PDF report."}
                 </div>
               </div>
+              <button
+                className="btn-secondary"
+                onClick={handleCSVDownload}
+                style={{ width: "100%", marginTop: 4, fontWeight: 700, fontSize: 13 }}
+              >
+                ↓ Download CSV instead
+              </button>
             </Modal>
           )}
         </div>
@@ -2082,6 +2129,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
           </div>
         </div>
+
+        {user?.role !== "admin" && isApartmentOrg && (
+          <div style={{ marginBottom: 10, marginTop: 20 }}>
+            <div className="section-label">Team &amp; Access</div>
+            <div className="card">
+              <MenuRow icon="T" label="Team Members" sub="Invite members and manage their roles" onClick={() => setScreen("org-members")} />
+              <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 10, marginTop: 20 }}>
           <div className="section-label">Preferences</div>
@@ -2176,9 +2233,30 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     : "This will export the selected month as a PDF report."}
               </div>
             </div>
+            {user?.role !== "admin" && (
+              <button
+                className="btn-secondary"
+                onClick={handleCSVDownload}
+                style={{ width: "100%", marginTop: 4, fontWeight: 700, fontSize: 13 }}
+              >
+                ↓ Download CSV instead
+              </button>
+            )}
           </Modal>
         )}
       </div>
+    );
+  }
+
+  if (screen === "org-members") {
+    return withNotice(
+      <OrgMembersScreen onBack={() => setScreen("main")} />
+    );
+  }
+
+  if (screen === "audit-log") {
+    return withNotice(
+      <AuditLogScreen onBack={() => setScreen("main")} />
     );
   }
 

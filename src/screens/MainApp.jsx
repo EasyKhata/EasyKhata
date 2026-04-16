@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
+import PendingInviteBanner from "../components/PendingInviteBanner";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -346,7 +347,9 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 export default function MainApp() {
   const { user, logout } = useAuth();
   const data = useData();
-  const { account, isReadOnlyFreeMode } = data;
+  const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
+  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
+  const orgSwitcherRef = useRef(null);
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [showTrialBanner, setShowTrialBanner] = useState(true);
@@ -426,6 +429,18 @@ export default function MainApp() {
     window.addEventListener("ledger:navigate", handleAppNavigate);
     return () => window.removeEventListener("ledger:navigate", handleAppNavigate);
   }, []);
+
+  // Close org switcher dropdown on outside click
+  useEffect(() => {
+    if (!showOrgSwitcher) return;
+    function handleClickOutside(e) {
+      if (orgSwitcherRef.current && !orgSwitcherRef.current.contains(e.target)) {
+        setShowOrgSwitcher(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showOrgSwitcher]);
 
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
@@ -538,10 +553,10 @@ export default function MainApp() {
       ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : [])
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
-    ...(!hideInvoices ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
-    ...(!isAdmin ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
+    ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
+    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
     ...(isAdmin ? [] : [])
-  ]), [currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
+  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
   const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
   const handleDateChange = useCallback((nextYear, nextMonth) => {
@@ -588,6 +603,13 @@ export default function MainApp() {
       setTab("income");
     }
   }, [hideInvoices, tab]);
+
+  // When switching into a shared org, leave owner-only tabs
+  useEffect(() => {
+    if (activeSharedOrgKey && (tab === "org" || tab === "invoices")) {
+      setTab("dashboard");
+    }
+  }, [activeSharedOrgKey, tab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -770,6 +792,44 @@ export default function MainApp() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Org switcher — only shown when user has shared orgs */}
+              {sharedOrgs.length > 0 && (
+                <div style={{ position: "relative" }} ref={orgSwitcherRef}>
+                  <button
+                    onClick={() => setShowOrgSwitcher(v => !v)}
+                    title="Switch organization"
+                    style={{ height: isMobile ? 34 : 36, borderRadius: 10, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "var(--border)"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "var(--surface-high)", color: activeSharedOrgKey ? "var(--accent)" : "var(--text-sec)", cursor: "pointer", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: "0 10px", flexShrink: 0 }}
+                  >
+                    {activeSharedOrgKey
+                      ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared Org")
+                      : "My Org"} ▾
+                  </button>
+                  {showOrgSwitcher && (
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 200, overflow: "hidden" }}>
+                      <button
+                        onClick={() => { switchToOwnOrg(); setShowOrgSwitcher(false); }}
+                        style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: !activeSharedOrgKey ? "var(--accent-deep)" : "transparent", border: "none", color: !activeSharedOrgKey ? "var(--accent)" : "var(--text)", fontSize: 13, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                      >
+                        {!activeSharedOrgKey && <span style={{ fontSize: 10 }}>✓</span>}
+                        {account?.name || "My Organization"}
+                        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>Owner</span>
+                      </button>
+                      <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
+                      {sharedOrgs.map(org => (
+                        <button
+                          key={org.key}
+                          onClick={() => { switchToSharedOrg(org.key); setShowOrgSwitcher(false); }}
+                          style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: activeSharedOrgKey === org.key ? "var(--accent-deep)" : "transparent", border: "none", color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text)", fontSize: 13, fontWeight: activeSharedOrgKey === org.key ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                        >
+                          {activeSharedOrgKey === org.key && <span style={{ fontSize: 10 }}>✓</span>}
+                          {org.orgName || "Organization"}
+                          <span style={{ marginLeft: "auto", fontSize: 10, color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text-dim)", fontWeight: 600, textTransform: "capitalize" }}>{org.role}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <button
                 onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
                 title="Open profile settings"
@@ -814,6 +874,24 @@ export default function MainApp() {
           </div>
 
         </div>
+
+        {/* Invite banners — shown when pending invitations exist */}
+        <PendingInviteBanner />
+
+        {/* Shared-org context strip — shown when viewing someone else's org */}
+        {activeSharedOrgKey && (() => {
+          const org = sharedOrgs.find(o => o.key === activeSharedOrgKey);
+          return org ? (
+            <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: "7px 18px", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+              <span style={{ color: "var(--text-dim)" }}>Viewing</span>
+              <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
+              {(() => { const liveRole = activeSharedOrgRole ?? org.role ?? "viewer"; return (
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole}</span>
+              ); })()}
+              <button onClick={() => { switchToOwnOrg(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>← Back to my org</button>
+            </div>
+          ) : null;
+        })()}
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)" : "14px 18px 104px" }}>
           {renderTabContent()}

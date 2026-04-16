@@ -79,6 +79,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function ExpensesSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
+  const isViewerMode = d.isViewerMode || false;
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
@@ -388,8 +389,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
-        <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
-        <DeleteBtn onDelete={() => d.removeExpense(expense.id)} />
+        {!isViewerMode && (
+          <>
+            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
+            <DeleteBtn onDelete={() => d.removeExpense(expense.id)} />
+          </>
+        )}
       </div>
     </div>
   );
@@ -408,11 +413,19 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
         </div>
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
           <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
-          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
-            + {config.expensesActionLabel}
-          </button>
+          {!isViewerMode && (
+            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
+              + {config.expensesActionLabel}
+            </button>
+          )}
         </div>
       </div>
+
+      {isViewerMode && (
+        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+          View only · Contact the org owner to add or edit records
+        </div>
+      )}
 
       <div style={{ padding: "22px 18px 0" }}>
         {isPersonalOrg ? (

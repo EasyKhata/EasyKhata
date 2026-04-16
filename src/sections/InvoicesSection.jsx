@@ -148,6 +148,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
+  const isViewerMode = d.isViewerMode || false;
   const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
@@ -712,13 +713,19 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           </div>
           <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
             <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
-            {!isAdmin && (
+            {!isAdmin && !isViewerMode && (
               <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
                 + New {documentLabel}
               </button>
             )}
           </div>
         </div>
+
+      {isViewerMode && (
+        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+          View only · Contact the org owner to add or edit records
+        </div>
+      )}
 
       <div style={{ padding: "22px 18px 0" }}>
         {monthInv.length > 0 && (
@@ -880,7 +887,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         const grandTotal = invoiceGrandTotal(invoice);
         const dueMessage = isApartmentOrg ? "" : getDocumentDueMessage(invoice, isQuote);
         return (
-          <Modal title={invoice.number} onClose={() => setDetail(null)} onSave={() => openEdit(invoice)} saveLabel="Edit" accentColor="var(--blue)">
+          <Modal title={invoice.number} onClose={() => setDetail(null)} onSave={!isViewerMode ? () => openEdit(invoice) : undefined} saveLabel="Edit" accentColor="var(--blue)">
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
               <Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={52} fontSize={20} />
               <div style={{ minWidth: 0 }}>
@@ -983,23 +990,27 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             {invoice.notes && <div className="card" style={{ padding: "14px 18px", fontSize: 14, color: "var(--text-sec)", marginBottom: 14, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Notes:</strong> {invoice.notes}</div>}
             {invoice.terms && <div className="card" style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-sec)", marginBottom: 18, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Terms:</strong> {invoice.terms}</div>}
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${isApartmentOrg ? 2 : 3}, 1fr)`, gap: 10, marginBottom: 12 }}>
-              {!isApartmentOrg && (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${isViewerMode ? 1 : isApartmentOrg ? 2 : 3}, 1fr)`, gap: 10, marginBottom: 12 }}>
+              {!isApartmentOrg && !isViewerMode && (
                 <button onClick={() => updateInvoiceStatus(invoice, isQuote ? (computedStatus === "draft" ? "sent" : computedStatus === "sent" ? "approved" : "draft") : computedStatus === "paid" ? "pending" : "paid")} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: isQuote ? "var(--gold-deep)" : computedStatus === "paid" ? "var(--gold-deep)" : "var(--accent)", color: isQuote ? "var(--gold)" : computedStatus === "paid" ? "var(--gold)" : "#0C0C10" }}>
                   {isQuote ? (computedStatus === "draft" ? "Mark Sent" : computedStatus === "sent" ? "Mark Approved" : "Mark Draft") : computedStatus === "paid" ? "Mark Pending" : "Mark Paid"}
                 </button>
               )}
-              <button onClick={() => openDuplicate(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--surface-high)", color: "var(--text)" }}>
-                Duplicate
-              </button>
+              {!isViewerMode && (
+                <button onClick={() => openDuplicate(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--surface-high)", color: "var(--text)" }}>
+                  Duplicate
+                </button>
+              )}
               <button onClick={() => handleDownloadPdf(invoice)} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: "var(--blue)", color: "#fff" }}>
                 Download PDF
               </button>
             </div>
 
-            <button onClick={() => { if (window.confirm(`Delete this ${documentLabel.toLowerCase()}?`)) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
-              Delete {documentLabel}
-            </button>
+            {!isViewerMode && (
+              <button onClick={() => { if (window.confirm(`Delete this ${documentLabel.toLowerCase()}?`)) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
+                Delete {documentLabel}
+              </button>
+            )}
           </Modal>
         );
       })()}

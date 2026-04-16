@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { collection, deleteDoc, doc, getDoc, getDocs, increment, setDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, increment, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations, isFreeReadOnlyMode } from "../utils/subscription";
@@ -349,12 +349,78 @@ export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
   const [loaded, setLoaded] = useState(false);
+  const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
+  const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
+  const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
+  const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
   const readOnlyFreeMode = isFreeReadOnlyMode(user);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
   const invoiceSyncRef = useRef({});
+
+  // Derived: shared orgs list and viewer-mode flag
+  const sharedOrgs = useMemo(() =>
+    Object.entries(user?.sharedOrgs || {}).map(([key, info]) => ({ key, ...info })),
+    [user?.sharedOrgs]
+  );
+
+  // Live role listener — updates when the owner changes the member's role in real-time
+  useEffect(() => {
+    if (!activeSharedOrgKey || !user?.id) {
+      setActiveSharedOrgRole(null);
+      return undefined;
+    }
+    const sharedInfo = user?.sharedOrgs?.[activeSharedOrgKey];
+    if (!sharedInfo?.ownerId || !sharedInfo?.orgId) {
+      setActiveSharedOrgRole(null);
+      return undefined;
+    }
+    const memberKey = `${sharedInfo.orgId}_${user.id}`;
+    const docRef = doc(db, "users", sharedInfo.ownerId, "orgMembers", memberKey);
+    const unsub = onSnapshot(docRef, snap => {
+      // status:"removed" is set before deletion so the event is delivered while
+      // resource.data.memberUid can still be evaluated by Firestore security rules.
+      const isRemoved = !snap.exists() || snap.data()?.status === "removed";
+      if (!isRemoved) {
+        const liveRole = snap.data().role || "viewer";
+        setActiveSharedOrgRole(liveRole);
+        // Keep the ref in sync so update() guard stays current
+        if (activeSharedOrgRef.current) {
+          activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: liveRole, isViewer: liveRole === "viewer" };
+        }
+      }
+      if (isRemoved && activeSharedOrgRef.current) {
+        // Owner removed this member while they were viewing — revoke immediately
+        const removedInfo = activeSharedOrgRef.current;
+        const staleKey = `${removedInfo.ownerId}_${removedInfo.orgId}`;
+        // Remove stale sharedOrgs entry from member's own user doc (uid is stable, no stale-closure risk)
+        if (user?.id) {
+          updateDoc(doc(db, "users", user.id), {
+            [`sharedOrgs.${staleKey}`]: deleteField()
+          }).catch(() => {});
+        }
+        setUser(prev => {
+          if (!prev) return prev;
+          const next = { ...(prev.sharedOrgs || {}) };
+          delete next[staleKey];
+          return { ...prev, sharedOrgs: next };
+        });
+        activeSharedOrgRef.current = null;
+        setActiveSharedOrgKey(null);
+        setActiveSharedOrgRole(null);
+        setOwnDataReloadKey(k => k + 1);
+      }
+    }, err => logError("orgMembers onSnapshot failed", err));
+    return unsub;
+  }, [activeSharedOrgKey, user?.id, user?.sharedOrgs]);
+
+  const isViewerMode = useMemo(() => {
+    if (!activeSharedOrgKey) return false;
+    const role = activeSharedOrgRole ?? user?.sharedOrgs?.[activeSharedOrgKey]?.role ?? "viewer";
+    return role === "viewer";
+  }, [activeSharedOrgKey, activeSharedOrgRole, user?.sharedOrgs]);
 
   const syncActiveOrgCollections = useCallback(async (nextState, { force = false } = {}) => {
     if (!user?.id || !nextState?.activeOrgId) return;
@@ -373,6 +439,24 @@ export function DataProvider({ children }) {
       )
     );
   }, [user?.id]);
+
+  // Syncs org collections to the owner's path (used when in shared org admin mode)
+  const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo, { force = false } = {}) => {
+    if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
+    await Promise.allSettled(
+      ORG_COLLECTION_KEYS.map(collectionKey =>
+        syncOrgCollection({
+          db,
+          userId: sharedInfo.ownerId,
+          orgId: sharedInfo.orgId,
+          collectionKey,
+          records: nextState[collectionKey] || [],
+          signatureStore: collectionSyncRef.current,
+          force
+        })
+      )
+    );
+  }, []);
 
   const deleteOrgCollectionsForOrg = useCallback(async (userId, orgId) => {
     if (!userId || !orgId) return;
@@ -653,6 +737,16 @@ export function DataProvider({ children }) {
   const persistState = useCallback(
     nextState => {
       if (!user?.id) return;
+
+      // In shared org mode: only sync collections to owner's path; don't touch member's own doc
+      const sharedInfo = activeSharedOrgRef.current;
+      if (sharedInfo) {
+        if (!sharedInfo.isViewer) {
+          syncSharedOrgCollections(nextState, sharedInfo);
+        }
+        return;
+      }
+
       const activityAt = new Date().toISOString();
 
       setUserData(user.id, "appData", nextState);
@@ -676,6 +770,20 @@ export function DataProvider({ children }) {
 
       syncActiveOrgCollections(nextState);
 
+      // Write a readable org profile into the org's own subcollection.
+      // Members can read this via the existing orgs/{orgId}/{document=**} Firestore rule.
+      // This is how members get the correct org name + type when switching to a shared org.
+      setDoc(
+        doc(db, "users", user.id, "orgs", nextState.activeOrgId, "meta", "profile"),
+        {
+          name: nextState.account?.name || "",
+          organizationType: nextState.account?.organizationType || "small_business",
+          currency: sanitizeForFirestore(nextState.currency || EMPTY_ORG_DATA.currency),
+          updatedAt: new Date().toISOString()
+        },
+        { merge: true }
+      ).catch(() => {});
+
       setUser(prev =>
         prev
           ? {
@@ -686,11 +794,14 @@ export function DataProvider({ children }) {
           : prev
       );
     },
-    [setUser, syncActiveOrgCollections, user?.id, user?.organizationType]
+    [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id, user?.organizationType]
   );
 
   useEffect(() => {
     async function loadData() {
+      // Skip own-data load if currently viewing a shared org
+      if (activeSharedOrgRef.current) return;
+
       if (!user?.id) {
         collectionSyncRef.current = {};
         invoiceSyncRef.current = {};
@@ -742,6 +853,23 @@ export function DataProvider({ children }) {
             : prev
         );
 
+        // Write meta/profile for every org so invited members always get the correct
+        // org name + organizationType when they switch to this shared org.
+        // Fire-and-forget; errors are ignored.
+        const profileWriteAt = new Date().toISOString();
+        Object.entries(nextState.orgs || {}).forEach(([orgId, orgValue]) => {
+          setDoc(
+            doc(db, "users", user.id, "orgs", orgId, "meta", "profile"),
+            {
+              name: orgValue.account?.name || "",
+              organizationType: orgValue.account?.organizationType || "small_business",
+              currency: sanitizeForFirestore(orgValue.currency || EMPTY_ORG_DATA.currency),
+              updatedAt: profileWriteAt
+            },
+            { merge: true }
+          ).catch(() => {});
+        });
+
         if (!userDoc.orgs || !userDoc.activeOrgId) {
           setDoc(
             doc(db, "users", user.id),
@@ -770,6 +898,38 @@ export function DataProvider({ children }) {
             )
           );
         }
+
+        // Validate sharedOrgs: prune entries whose orgMembers doc is gone or has status "removed".
+        // This handles removal while the member was on their own org (onSnapshot not running).
+        const sharedOrgsToCheck = Object.entries(user?.sharedOrgs || {});
+        if (sharedOrgsToCheck.length > 0) {
+          const snapResults = await Promise.allSettled(
+            sharedOrgsToCheck.map(([, info]) =>
+              info?.ownerId && info?.orgId
+                ? getDoc(doc(db, "users", info.ownerId, "orgMembers", `${info.orgId}_${user.id}`))
+                : Promise.resolve(null)
+            )
+          );
+          const invalidKeys = sharedOrgsToCheck
+            .filter((_, i) => {
+              const r = snapResults[i];
+              if (r.status === "rejected") return false; // assume valid on error
+              const snap = r.value;
+              if (!snap) return true;
+              return !snap.exists() || snap.data()?.status === "removed";
+            })
+            .map(([key]) => key);
+          if (invalidKeys.length > 0) {
+            const fieldUpdates = Object.fromEntries(invalidKeys.map(key => [`sharedOrgs.${key}`, deleteField()]));
+            updateDoc(doc(db, "users", user.id), fieldUpdates).catch(() => {});
+            setUser(prev => {
+              if (!prev) return prev;
+              const next = { ...(prev.sharedOrgs || {}) };
+              invalidKeys.forEach(key => delete next[key]);
+              return { ...prev, sharedOrgs: next };
+            });
+          }
+        }
       } catch (err) {
         console.log("Firebase error, using local:", err);
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
@@ -791,7 +951,7 @@ export function DataProvider({ children }) {
     }
 
     loadData();
-  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone]);
+  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone, ownDataReloadKey]);
 
   useEffect(() => {
     if (!user?.id || !loaded) {
@@ -894,6 +1054,8 @@ export function DataProvider({ children }) {
   const update = useCallback(
     updater => {
       if (!user?.id) return;
+      // Viewer-mode members cannot write
+      if (activeSharedOrgRef.current?.isViewer) return;
       if (readOnlyFreeMode) {
         if (typeof window !== "undefined") {
           const nowMs = Date.now();
@@ -963,13 +1125,19 @@ export function DataProvider({ children }) {
         [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
       }
     }));
-  const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(i), ...d.income]) }));
+  const withAudit = record => ({
+    ...record,
+    createdBy: record.createdBy || user?.id || "",
+    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: record.createdAt || new Date().toISOString()
+  });
+  const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(withAudit(i)), ...d.income]) }));
   const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => (i.id === income.id ? income : i))) }));
   const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
-  const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(e), ...d.expenses]) }));
+  const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(withAudit(e)), ...d.expenses]) }));
   const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => (e.id === expense.id ? expense : e))) }));
   const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
-  const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(inv), ...d.invoices]) }));
+  const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(withAudit(inv)), ...d.invoices]) }));
   const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
   const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
 
@@ -1086,6 +1254,102 @@ export function DataProvider({ children }) {
   }));
   const maxOrganizations = getMaxOrganizations(user);
 
+  async function switchToSharedOrg(key) {
+    const sharedInfo = user?.sharedOrgs?.[key];
+    if (!sharedInfo) return;
+
+    const { ownerId, orgId } = sharedInfo;
+    setLoaded(false);
+    setActiveSharedOrgRole(null); // will be set by onSnapshot once effect fires
+    activeSharedOrgRef.current = { ...sharedInfo, isViewer: sharedInfo.role === "viewer" };
+    setActiveSharedOrgKey(key);
+
+    try {
+      // Load the owner's org data from Firestore (collections) + orgMembers doc (role) + meta/profile (name + type)
+      const [{ orgs }, memberSnap, profileSnap] = await Promise.all([
+        hydrateUserOrgCollections({
+          db,
+          userId: ownerId,
+          orgs: { [orgId]: EMPTY_ORG_DATA },
+          collectionKeys: ORG_COLLECTION_KEYS,
+          signatureStore: collectionSyncRef.current
+        }),
+        // orgMembers doc — holds current role; missing means member was removed
+        getDoc(doc(db, "users", ownerId, "orgMembers", `${orgId}_${user.id}`)),
+        // meta/profile — authoritative org name + organizationType written by the owner's app on every load/save
+        getDoc(doc(db, "users", ownerId, "orgs", orgId, "meta", "profile"))
+      ]);
+
+      // orgMembers doc missing or status:"removed" = owner removed this member — revoke access and clean up
+      if (!memberSnap.exists() || memberSnap.data()?.status === "removed") {
+        activeSharedOrgRef.current = null;
+        setActiveSharedOrgKey(null);
+        setActiveSharedOrgRole(null);
+        updateDoc(doc(db, "users", user.id), {
+          [`sharedOrgs.${ownerId}_${orgId}`]: deleteField()
+        }).catch(() => {});
+        setUser(prev => {
+          if (!prev) return prev;
+          const next = { ...(prev.sharedOrgs || {}) };
+          delete next[`${ownerId}_${orgId}`];
+          return { ...prev, sharedOrgs: next };
+        });
+        return;
+      }
+
+      const memberDocData = memberSnap.data();
+      const profileData = profileSnap.exists() ? profileSnap.data() : {};
+      // meta/profile is the authoritative source; fall back to orgMembers then sharedOrgs cache
+      const effectiveOrgName = profileData.name || memberDocData.orgName || sharedInfo.orgName || "";
+      const effectiveOrgType = profileData.organizationType || memberDocData.organizationType || sharedInfo.organizationType || "small_business";
+      // Use the live role from Firestore — owner may have changed it since the invite was accepted
+      const effectiveRole = memberDocData.role || sharedInfo.role || "viewer";
+      // Update the ref and state with accurate current role before setData
+      activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
+      setActiveSharedOrgRole(effectiveRole);
+
+      // Take only the live collections from hydrateUserOrgCollections.
+      // Do NOT spread the whole orgs[orgId] object — it carries EMPTY_ORG_DATA.account
+      // (organizationType:"small_business") which would overwrite effectiveOrgType.
+      const hydratedOrg = orgs[orgId] || {};
+      const nextState = buildStateFromOrganizations({
+        orgs: {
+          [orgId]: {
+            ...EMPTY_ORG_DATA,
+            income: hydratedOrg.income || [],
+            expenses: hydratedOrg.expenses || [],
+            invoices: hydratedOrg.invoices || [],
+            customers: hydratedOrg.customers || [],
+            orgRecords: hydratedOrg.orgRecords || {},
+            account: {
+              ...EMPTY_ORG_DATA.account,
+              name: effectiveOrgName,
+              organizationType: effectiveOrgType
+            }
+          }
+        },
+        activeOrgId: orgId
+      });
+
+      setData(nextState);
+    } catch (err) {
+      logError("switchToSharedOrg failed", err);
+      activeSharedOrgRef.current = null;
+      setActiveSharedOrgKey(null);
+      setActiveSharedOrgRole(null);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  function switchToOwnOrg() {
+    activeSharedOrgRef.current = null;
+    setActiveSharedOrgKey(null);
+    setActiveSharedOrgRole(null);
+    // Increment reload key to force the own-data useEffect to re-run
+    setOwnDataReloadKey(k => k + 1);
+  }
+
   async function createSharedLedger(name) {
     return { error: "Shared ledger has been retired from the app." };
   }
@@ -1106,6 +1370,12 @@ export function DataProvider({ children }) {
     ...data,
     loaded,
     isReadOnlyFreeMode: readOnlyFreeMode,
+    isViewerMode,
+    activeSharedOrgRole,
+    sharedOrgs,
+    activeSharedOrgKey,
+    switchToSharedOrg,
+    switchToOwnOrg,
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
@@ -1178,11 +1448,17 @@ export function DataProvider({ children }) {
     saveOrgRecords,
     setCurrency,
     switchOrganization,
+    switchToSharedOrg,
+    switchToOwnOrg,
     updateCustomer,
     updateExpense,
     updateIncome,
     updateInvoice,
-    updateOrgRecord
+    updateOrgRecord,
+    isViewerMode,
+    sharedOrgs,
+    activeSharedOrgKey,
+    activeSharedOrgRole
   ]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;

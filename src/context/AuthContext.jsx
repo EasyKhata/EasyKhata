@@ -341,7 +341,8 @@ export function AuthProvider({ children }) {
       societyPortalRole: profile?.societyPortalRole || "",
       societyFlatNumber: profile?.societyFlatNumber || "",
       societyInviteCode: profile?.societyInviteCode || "",
-      apartmentPortalRoles: profile?.apartmentPortalRoles || {}
+      apartmentPortalRoles: profile?.apartmentPortalRoles || {},
+      sharedOrgs: profile?.sharedOrgs || {}
     };
   }
 

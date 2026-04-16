@@ -180,6 +180,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
+  const isViewerMode = d.isViewerMode || false;
   const { user } = useAuth();
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
@@ -980,14 +981,22 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
         </div>
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
           <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
-          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
-            + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
-          </button>
+          {!isViewerMode && (
+            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
+              + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
+            </button>
+          )}
         </div>
       </div>
 
+      {isViewerMode && (
+        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+          View only · Contact the org owner to add or edit records
+        </div>
+      )}
+
       <div style={{ padding: "22px 18px 0" }}>
-        {isApartmentOrg && (
+        {isApartmentOrg && !isViewerMode && (
           <div className="card" style={{ padding: 16, marginBottom: 18 }}>
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
@@ -1006,6 +1015,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               />
             ) : (
               <>
+                {!isViewerMode && (
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: anyFlatPaidThisMonth ? 8 : 14 }}>
                   <Input
                     type="number"
@@ -1021,6 +1031,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     Apply to All Flats
                   </button>
                 </div>
+                )}
                 {applyAmountToast && (
                   <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
                     ✓ {applyAmountToast}
@@ -1081,10 +1092,12 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         {flat.paidEntry && (
                           <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
                         )}
-                        <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
-                          Review
-                        </button>
-                        {isCurrentViewedMonth && !flat.paidEntry && (
+                        {!isViewerMode && (
+                          <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
+                            Review
+                          </button>
+                        )}
+                        {!isViewerMode && isCurrentViewedMonth && !flat.paidEntry && (
                           <button
                             className="btn-secondary"
                             style={{ padding: "7px 12px", fontSize: 12, color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
@@ -1224,7 +1237,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       }}>
                         {String(item.saleStatus || "pending") === "paid" ? "Paid" : String(item.saleStatus || "pending") === "refunded" ? "Refunded" : String(item.saleStatus || "pending") === "canceled" ? "Canceled" : "Pending"}
                       </span>
-                      {String(item.saleStatus || "pending") !== "canceled" && String(item.saleStatus || "pending") !== "refunded" && (
+                      {!isViewerMode && String(item.saleStatus || "pending") !== "canceled" && String(item.saleStatus || "pending") !== "refunded" && (
                         <>
                           <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handlePrintSaleReceipt(item)}>Print Receipt</button>
                           <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handleSendSaleReceipt(item)}>Send Receipt</button>
@@ -1245,16 +1258,18 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       }}>
                         {String(item.saleStatus) === "paid" ? "Paid" : "Pending"}
                       </span>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "7px 10px", fontSize: 12 }}
-                        onClick={() => toggleSaleStatus(item)}
-                      >
-                        {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
-                      </button>
+                      {!isViewerMode && (
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: "7px 10px", fontSize: 12 }}
+                          onClick={() => toggleSaleStatus(item)}
+                        >
+                          {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
+                        </button>
+                      )}
                     </>
                   )}
-                  {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && (
+                  {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && !isViewerMode && (
                     <>
                       <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
                       <DeleteBtn onDelete={() => d.removeIncome(item.id)} />
