@@ -9,7 +9,14 @@
       "Bash(taskkill /PID 7208 /F)",
       "Bash(cmd.exe /c \"taskkill /PID 7208 /F\")",
       "Bash(cmd.exe /c \"netstat -ano | findstr :3001\")",
-      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")"
+      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(echo DATABASE_URL=\"postgresql://placeholder:placeholder@localhost:5432/easykhata\")",
+      "Bash(rm .env)",
+      "Bash(railway --version)",
+      "Bash(git --version)",
+      "Bash(railway login *)"
     ]
   }
 }
