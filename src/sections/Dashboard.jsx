@@ -262,6 +262,7 @@ function QuickstartChecklistCard({ progressLabel, items }) {
 
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
+  const { activeSharedOrgKey } = data;
   const { user, updateProfile } = useAuth();
   const sym = data.currency?.symbol || "Rs";
   const [showSetupGuide, setShowSetupGuide] = useState(false);
@@ -273,10 +274,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     setViewMode(propViewMode || "month");
   }, [propViewMode]);
 
+  // Never show the setup guide when viewing a shared org — it belongs to the member's own account
   useEffect(() => {
-    if (!data.loaded || !user?.id || user?.onboardingSeenAt) return;
+    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) return;
     setShowSetupGuide(true);
-  }, [data.loaded, user?.id, user?.onboardingSeenAt]);
+  }, [activeSharedOrgKey, data.loaded, user?.id, user?.onboardingSeenAt]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -336,7 +338,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     }
   ]), [firstValueCompleted, hasCustomerRecord, isApartmentOrg, isPersonalOrg, onNav, orgConfig.hideInvoices]);
   const quickstartDone = useMemo(() => quickstartItems.filter(item => item.completed).length, [quickstartItems]);
-  const showQuickstartChecklist = !showSetupGuide && quickstartDone < quickstartItems.length;
+  const showQuickstartChecklist = !activeSharedOrgKey && !showSetupGuide && quickstartDone < quickstartItems.length;
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = isSmallBusinessOrg
@@ -724,7 +726,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       </div>
 
       <div style={{ padding: "20px 18px 0" }}>
-        {(reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
+        {!activeSharedOrgKey && (reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
           <div style={{ marginBottom: 18, padding: "12px 14px", background: reviewAccessEnabled ? "var(--blue-deep)" : currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6 }}>

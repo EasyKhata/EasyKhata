@@ -347,7 +347,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 export default function MainApp() {
   const { user, logout } = useAuth();
   const data = useData();
-  const { account, isReadOnlyFreeMode, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
+  const { account, isReadOnlyFreeMode, isViewerMode, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
   // Banner visibility state (must be before usage)
@@ -554,7 +554,7 @@ export default function MainApp() {
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
     ...(!hideInvoices ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
-    ...(!isAdmin ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
+    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
     ...(isAdmin ? [] : [])
   ]), [currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
@@ -603,6 +603,13 @@ export default function MainApp() {
       setTab("income");
     }
   }, [hideInvoices, tab]);
+
+  // When switching into a shared org, leave the "org" settings tab — it shows the member's own org config
+  useEffect(() => {
+    if (activeSharedOrgKey && tab === "org") {
+      setTab("dashboard");
+    }
+  }, [activeSharedOrgKey, tab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

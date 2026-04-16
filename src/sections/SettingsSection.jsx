@@ -2130,7 +2130,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
         </div>
 
-        {user?.role !== "admin" && (
+        {user?.role !== "admin" && isApartmentOrg && (
           <div style={{ marginBottom: 10, marginTop: 20 }}>
             <div className="section-label">Team &amp; Access</div>
             <div className="card">

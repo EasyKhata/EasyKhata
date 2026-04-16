@@ -88,6 +88,7 @@ export default function OrgMembersScreen({ onBack }) {
         status: "invited",
         orgId,
         orgName,
+        organizationType: data.account?.organizationType || "small_business",
         ownerId: user.id,
         ownerName: user.name || user.email || "",
         invitedAt
@@ -113,6 +114,10 @@ export default function OrgMembersScreen({ onBack }) {
         { ...member, role: newRole },
         { merge: true }
       );
+      // Also update orgMembers doc so Firestore rules + the member's live role listener reflect the change
+      if (member.memberUid) {
+        await setDoc(getOrgMemberRef(user.id, orgId, member.memberUid), { role: newRole }, { merge: true });
+      }
     } catch {
       setError("Failed to update role.");
     }

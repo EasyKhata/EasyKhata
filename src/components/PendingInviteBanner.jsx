@@ -39,7 +39,7 @@ export default function PendingInviteBanner() {
   async function handleAccept(invite) {
     setProcessing(prev => ({ ...prev, [invite._id]: true }));
     const now = new Date().toISOString();
-    const { ownerId, orgId, orgName, ownerName, role } = invite;
+    const { ownerId, orgId, orgName, ownerName, role, organizationType } = invite;
     const sanitizedEmail = (user.email || "").replace(/[^a-z0-9]/gi, "_");
     const memberKey = `${orgId}_${user.id}`;
 
@@ -51,7 +51,8 @@ export default function PendingInviteBanner() {
         status: "accepted",
         ownerId,
         orgId,
-        orgName,
+        orgName: orgName || "",
+        organizationType: organizationType || "small_business",
         ownerName: ownerName || "",
         acceptedAt: now
       });
@@ -70,15 +71,18 @@ export default function PendingInviteBanner() {
       ).catch(() => {}); // non-critical if invite doc key differs
 
       // 4. Write sharedOrgs into member's own user doc
+      const sharedOrgEntry = {
+        ownerId,
+        orgId,
+        orgName: orgName || "Organization",
+        ownerName: ownerName || "",
+        organizationType: organizationType || "small_business",
+        role,
+        acceptedAt: now
+      };
+
       await updateDoc(doc(db, "users", user.id), {
-        [`sharedOrgs.${ownerId}_${orgId}`]: {
-          ownerId,
-          orgId,
-          orgName: orgName || "Organization",
-          ownerName: ownerName || "",
-          role,
-          acceptedAt: now
-        }
+        [`sharedOrgs.${ownerId}_${orgId}`]: sharedOrgEntry
       });
 
       // 5. Update local user state so the org switcher appears immediately
@@ -86,7 +90,7 @@ export default function PendingInviteBanner() {
         ...prev,
         sharedOrgs: {
           ...(prev.sharedOrgs || {}),
-          [`${ownerId}_${orgId}`]: { ownerId, orgId, orgName, ownerName, role, acceptedAt: now }
+          [`${ownerId}_${orgId}`]: sharedOrgEntry
         }
       }) : prev);
 

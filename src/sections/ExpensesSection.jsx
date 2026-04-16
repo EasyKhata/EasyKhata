@@ -389,8 +389,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
-        <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
-        <DeleteBtn onDelete={() => d.removeExpense(expense.id)} />
+        {!isViewerMode && (
+          <>
+            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
+            <DeleteBtn onDelete={() => d.removeExpense(expense.id)} />
+          </>
+        )}
       </div>
     </div>
   );

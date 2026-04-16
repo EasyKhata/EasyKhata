@@ -1233,7 +1233,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       }}>
                         {String(item.saleStatus || "pending") === "paid" ? "Paid" : String(item.saleStatus || "pending") === "refunded" ? "Refunded" : String(item.saleStatus || "pending") === "canceled" ? "Canceled" : "Pending"}
                       </span>
-                      {String(item.saleStatus || "pending") !== "canceled" && String(item.saleStatus || "pending") !== "refunded" && (
+                      {!isViewerMode && String(item.saleStatus || "pending") !== "canceled" && String(item.saleStatus || "pending") !== "refunded" && (
                         <>
                           <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handlePrintSaleReceipt(item)}>Print Receipt</button>
                           <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handleSendSaleReceipt(item)}>Send Receipt</button>
@@ -1254,16 +1254,18 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       }}>
                         {String(item.saleStatus) === "paid" ? "Paid" : "Pending"}
                       </span>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "7px 10px", fontSize: 12 }}
-                        onClick={() => toggleSaleStatus(item)}
-                      >
-                        {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
-                      </button>
+                      {!isViewerMode && (
+                        <button
+                          className="btn-secondary"
+                          style={{ padding: "7px 10px", fontSize: 12 }}
+                          onClick={() => toggleSaleStatus(item)}
+                        >
+                          {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
+                        </button>
+                      )}
                     </>
                   )}
-                  {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && (
+                  {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && !isViewerMode && (
                     <>
                       <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
                       <DeleteBtn onDelete={() => d.removeIncome(item.id)} />
