@@ -741,23 +741,11 @@ export function DataProvider({ children }) {
       persistSessionDraft();
 
       const nowIso = new Date().toISOString();
+      // analytics.* fields are not in server PROFILE_FIELDS — only update activity timestamp
       const updates = {
         updatedAt: nowIso,
-        lastActivityAt: nowIso,
-        "analytics.totalSessionMs": increment(totalMs),
-        "analytics.lastSessionAt": nowIso,
-        "analytics.lastSessionDurationMs": totalMs
+        lastActivityAt: nowIso
       };
-
-      Object.entries(byOrg).forEach(([orgId, orgMs]) => {
-        const rounded = Math.round(orgMs || 0);
-        if (rounded < SESSION_MIN_FLUSH_MS) return;
-        const meta = sessionRef.current.orgMeta?.[orgId] || {};
-        updates[`analytics.byOrg.${orgId}.totalSessionMs`] = increment(rounded);
-        updates[`analytics.byOrg.${orgId}.lastActivityAt`] = nowIso;
-        if (meta.name) updates[`analytics.byOrg.${orgId}.name`] = meta.name;
-        if (meta.organizationType) updates[`analytics.byOrg.${orgId}.organizationType`] = meta.organizationType;
-      });
 
       flushInFlightRef.current = true;
       try {
