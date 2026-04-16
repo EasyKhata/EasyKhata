@@ -898,6 +898,38 @@ export function DataProvider({ children }) {
             )
           );
         }
+
+        // Validate sharedOrgs: prune entries whose orgMembers doc is gone or has status "removed".
+        // This handles removal while the member was on their own org (onSnapshot not running).
+        const sharedOrgsToCheck = Object.entries(user?.sharedOrgs || {});
+        if (sharedOrgsToCheck.length > 0) {
+          const snapResults = await Promise.allSettled(
+            sharedOrgsToCheck.map(([, info]) =>
+              info?.ownerId && info?.orgId
+                ? getDoc(doc(db, "users", info.ownerId, "orgMembers", `${info.orgId}_${user.id}`))
+                : Promise.resolve(null)
+            )
+          );
+          const invalidKeys = sharedOrgsToCheck
+            .filter((_, i) => {
+              const r = snapResults[i];
+              if (r.status === "rejected") return false; // assume valid on error
+              const snap = r.value;
+              if (!snap) return true;
+              return !snap.exists() || snap.data()?.status === "removed";
+            })
+            .map(([key]) => key);
+          if (invalidKeys.length > 0) {
+            const fieldUpdates = Object.fromEntries(invalidKeys.map(key => [`sharedOrgs.${key}`, deleteField()]));
+            updateDoc(doc(db, "users", user.id), fieldUpdates).catch(() => {});
+            setUser(prev => {
+              if (!prev) return prev;
+              const next = { ...(prev.sharedOrgs || {}) };
+              invalidKeys.forEach(key => delete next[key]);
+              return { ...prev, sharedOrgs: next };
+            });
+          }
+        }
       } catch (err) {
         console.log("Firebase error, using local:", err);
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
@@ -1339,6 +1371,7 @@ export function DataProvider({ children }) {
     loaded,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
+    activeSharedOrgRole,
     sharedOrgs,
     activeSharedOrgKey,
     switchToSharedOrg,
@@ -1424,7 +1457,8 @@ export function DataProvider({ children }) {
     updateOrgRecord,
     isViewerMode,
     sharedOrgs,
-    activeSharedOrgKey
+    activeSharedOrgKey,
+    activeSharedOrgRole
   ]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;

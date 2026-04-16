@@ -996,7 +996,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       )}
 
       <div style={{ padding: "22px 18px 0" }}>
-        {isApartmentOrg && (
+        {isApartmentOrg && !isViewerMode && (
           <div className="card" style={{ padding: 16, marginBottom: 18 }}>
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
@@ -1015,6 +1015,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               />
             ) : (
               <>
+                {!isViewerMode && (
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: anyFlatPaidThisMonth ? 8 : 14 }}>
                   <Input
                     type="number"
@@ -1030,6 +1031,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     Apply to All Flats
                   </button>
                 </div>
+                )}
                 {applyAmountToast && (
                   <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
                     ✓ {applyAmountToast}
@@ -1090,10 +1092,12 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                         {flat.paidEntry && (
                           <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
                         )}
-                        <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
-                          Review
-                        </button>
-                        {isCurrentViewedMonth && !flat.paidEntry && (
+                        {!isViewerMode && (
+                          <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
+                            Review
+                          </button>
+                        )}
+                        {!isViewerMode && isCurrentViewedMonth && !flat.paidEntry && (
                           <button
                             className="btn-secondary"
                             style={{ padding: "7px 12px", fontSize: 12, color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}

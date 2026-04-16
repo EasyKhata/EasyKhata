@@ -347,7 +347,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 export default function MainApp() {
   const { user, logout } = useAuth();
   const data = useData();
-  const { account, isReadOnlyFreeMode, isViewerMode, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
+  const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
   // Banner visibility state (must be before usage)
@@ -553,10 +553,10 @@ export default function MainApp() {
       ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : [])
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
-    ...(!hideInvoices ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
+    ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
     ...(isAdmin ? [] : [])
-  ]), [currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
+  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
   const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
   const handleDateChange = useCallback((nextYear, nextMonth) => {
@@ -604,9 +604,9 @@ export default function MainApp() {
     }
   }, [hideInvoices, tab]);
 
-  // When switching into a shared org, leave the "org" settings tab — it shows the member's own org config
+  // When switching into a shared org, leave owner-only tabs
   useEffect(() => {
-    if (activeSharedOrgKey && tab === "org") {
+    if (activeSharedOrgKey && (tab === "org" || tab === "invoices")) {
       setTab("dashboard");
     }
   }, [activeSharedOrgKey, tab]);
@@ -885,7 +885,9 @@ export default function MainApp() {
             <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: "7px 18px", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
               <span style={{ color: "var(--text-dim)" }}>Viewing</span>
               <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
-              <span style={{ padding: "2px 8px", borderRadius: 6, background: org.role === "admin" ? "var(--accent-deep)" : "var(--surface)", color: org.role === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{org.role}</span>
+              {(() => { const liveRole = activeSharedOrgRole ?? org.role ?? "viewer"; return (
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole}</span>
+              ); })()}
               <button onClick={() => { switchToOwnOrg(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>← Back to my org</button>
             </div>
           ) : null;
