@@ -21,7 +21,21 @@ export function isOptionalPhone(phone) {
 
 export function isStrongPassword(password) {
   const value = String(password || "");
-  return value.length >= 6;
+  return (
+    value.length >= 8 &&
+    /[A-Z]/.test(value) &&
+    /[a-z]/.test(value) &&
+    /[0-9]/.test(value)
+  );
+}
+
+export function passwordStrengthMessage(password) {
+  const value = String(password || "");
+  if (value.length < 8) return "At least 8 characters required.";
+  if (!/[A-Z]/.test(value)) return "Add at least one uppercase letter.";
+  if (!/[a-z]/.test(value)) return "Add at least one lowercase letter.";
+  if (!/[0-9]/.test(value)) return "Add at least one number.";
+  return null;
 }
 
 export function hasMinLength(value, min = 1) {

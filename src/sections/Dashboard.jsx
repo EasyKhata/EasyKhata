@@ -38,7 +38,7 @@ function describeArc(cx, cy, radius, startAngle, endAngle) {
   return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
 }
 
-function PersonalUsagePie({ stats, sym, viewMode }) {
+function PersonalUsagePie({ stats, sym, viewMode, isMobile = false }) {
   const segments = [
     { label: "Spending", value: Math.max(0, Number(stats.totalExpense || 0)), color: "var(--danger)" },
     { label: "EMI", value: Math.max(0, Number(stats.totalEmi || 0)), color: "var(--gold)" },
@@ -498,7 +498,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <Tile label="Spending Ratio" value={`${Math.round(stats.spendingRatio || 0)}%`} color={(stats.spendingRatio || 0) >= 100 ? "var(--danger)" : "var(--gold)"} sub="Spending as a share of earnings" />
           </div>
 
-          <PersonalUsagePie stats={stats} sym={sym} viewMode={viewMode} />
+          <PersonalUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
           <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
             <div className="card">

@@ -782,7 +782,7 @@ export function DataProvider({ children }) {
           updatedAt: new Date().toISOString()
         },
         { merge: true }
-      ).catch(() => {});
+      ).catch(err => logError("meta/profile write failed", err));
 
       setUser(prev =>
         prev
@@ -855,7 +855,6 @@ export function DataProvider({ children }) {
 
         // Write meta/profile for every org so invited members always get the correct
         // org name + organizationType when they switch to this shared org.
-        // Fire-and-forget; errors are ignored.
         const profileWriteAt = new Date().toISOString();
         Object.entries(nextState.orgs || {}).forEach(([orgId, orgValue]) => {
           setDoc(
@@ -867,7 +866,7 @@ export function DataProvider({ children }) {
               updatedAt: profileWriteAt
             },
             { merge: true }
-          ).catch(() => {});
+          ).catch(err => logError("meta/profile write failed", err));
         });
 
         if (!userDoc.orgs || !userDoc.activeOrgId) {

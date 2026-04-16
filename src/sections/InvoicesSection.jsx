@@ -148,7 +148,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
-  const isViewerMode = d.isViewerMode || false;
+  const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
