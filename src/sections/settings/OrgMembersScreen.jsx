@@ -56,7 +56,7 @@ export default function OrgMembersScreen({ onBack }) {
       setError("You cannot invite yourself.");
       return;
     }
-    if (members.some(m => (m.memberEmail || "").toLowerCase() === email)) {
+    if (members.some(m => (m.email || "").toLowerCase() === email)) {
       setError("This email already has access.");
       return;
     }
@@ -81,9 +81,9 @@ export default function OrgMembersScreen({ onBack }) {
   }, [inviteEmail, inviteRole, members, orgId, orgName, user?.email, user?.id, data.account?.organizationType]);
 
   const handleRoleChange = useCallback(async (member, newRole) => {
-    if (!user?.id || !member.memberUid) return;
+    if (!user?.id) return;
     try {
-      await membersApi.changeRole(user.id, orgId, member.memberUid, newRole);
+      await membersApi.changeRole(user.id, orgId, member.id, newRole);
       setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
     } catch {
       setError("Failed to update role.");
@@ -91,10 +91,10 @@ export default function OrgMembersScreen({ onBack }) {
   }, [orgId, user?.id]);
 
   const handleRemove = useCallback(async member => {
-    if (!window.confirm(`Remove ${member.memberEmail || member.email} from this organization?`)) return;
-    if (!user?.id || !member.memberUid) return;
+    if (!window.confirm(`Remove ${member.email} from this organization?`)) return;
+    if (!user?.id) return;
     try {
-      await membersApi.remove(user.id, orgId, member.memberUid);
+      await membersApi.remove(user.id, orgId, member.id);
       setMembers(prev => prev.filter(m => m.id !== member.id));
     } catch {
       setError("Failed to remove member.");
@@ -208,47 +208,43 @@ export default function OrgMembersScreen({ onBack }) {
             <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", wordBreak: "break-all" }}>
-                  {member.memberEmail || member.member?.email || ""}
+                  {member.email}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
                   Invited {member.invitedAt ? new Date(member.invitedAt).toLocaleDateString("en-IN") : ""}
                 </div>
-                {member.memberUid && (
-                  <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                    {ROLES.map(r => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => handleRoleChange(member, r.value)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: 8,
-                          border: `1px solid ${member.role === r.value ? "var(--accent)" : "var(--border)"}`,
-                          background: member.role === r.value ? "var(--accent-deep)" : "transparent",
-                          color: member.role === r.value ? "var(--accent)" : "var(--text-dim)",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: "pointer"
-                        }}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  {ROLES.map(r => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => handleRoleChange(member, r.value)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${member.role === r.value ? "var(--accent)" : "var(--border)"}`,
+                        background: member.role === r.value ? "var(--accent-deep)" : "transparent",
+                        color: member.role === r.value ? "var(--accent)" : "var(--text-dim)",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer"
+                      }}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 8, background: `color-mix(in srgb, ${statusColor(member.status)} 15%, transparent)`, color: statusColor(member.status), fontWeight: 700 }}>
                   {statusLabel(member.status)}
                 </span>
-                {member.memberUid && (
-                  <button
-                    onClick={() => handleRemove(member)}
-                    style={{ background: "none", border: "none", color: "var(--danger)", fontSize: 11, cursor: "pointer", fontWeight: 700, padding: 0 }}
-                  >
-                    Remove
-                  </button>
-                )}
+                <button
+                  onClick={() => handleRemove(member)}
+                  style={{ background: "none", border: "none", color: "var(--danger)", fontSize: 11, cursor: "pointer", fontWeight: 700, padding: 0 }}
+                >
+                  Remove
+                </button>
               </div>
             </div>
           ))}
