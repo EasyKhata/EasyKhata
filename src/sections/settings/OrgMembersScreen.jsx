@@ -36,7 +36,7 @@ export default function OrgMembersScreen({ onBack }) {
         );
         setMembers(sorted);
       })
-      .catch(() => {})
+      .catch(err => setError(err.message || "Failed to load members."))
       .finally(() => setLoading(false));
   }, [user?.id, orgId]);
 
