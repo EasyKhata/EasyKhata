@@ -300,7 +300,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     if (!data.loaded || !user?.id || !data.activeOrgId) return;
     let cancelled = false;
     setStatsLoading(true);
-    orgsApi.getDashboard(user.id, data.activeOrgId, year, month, viewMode)
+    const sharedInfo = data.activeSharedOrgKey ? user?.sharedOrgs?.[data.activeSharedOrgKey] : null;
+    const dashboardUserId = sharedInfo?.ownerId || user?.id;
+    orgsApi.getDashboard(dashboardUserId, data.activeOrgId, year, month, viewMode)
       .then(result => { if (!cancelled) setStats(result); })
       .catch(err => logError("dashboard fetch", err))
       .finally(() => { if (!cancelled) setStatsLoading(false); });

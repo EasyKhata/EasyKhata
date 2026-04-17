@@ -909,8 +909,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
-    if (showFullCustomerForm && (!cleanCity || !cleanState || !cleanCountry)) {
-      showNotice("Please enter customer city, state, and country.");
+    const hasPartialAddress = cleanCity || cleanState;
+    if (showFullCustomerForm && hasPartialAddress && (!cleanCity || !cleanState || !cleanCountry)) {
+      showNotice("Please complete the address — city, state, and country are all required together.");
       return;
     }
     if (!editCust) {
@@ -1996,7 +1997,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
         </div>
 
-        {user?.role !== "admin" && isApartmentOrg && (
+        {user?.role !== "admin" && (
           <div style={{ marginBottom: 10, marginTop: 20 }}>
             <div className="section-label">Team &amp; Access</div>
             <div className="card">

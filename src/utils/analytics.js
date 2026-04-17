@@ -83,7 +83,7 @@ export function getInvoiceTaxBreakdown(invoice) {
 
       return totals;
     },
-    { subtotal, discount, taxable: 0, cgst: 0, sgst: 0, igst: 0 }
+    { subtotal: 0, discount, taxable: 0, cgst: 0, sgst: 0, igst: 0 }
   );
 }
 
