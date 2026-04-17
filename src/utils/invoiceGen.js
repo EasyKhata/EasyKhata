@@ -128,7 +128,6 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
 
   doc.setFillColor(22, 22, 28);
   doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 28, 6, 6, "F");
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 3, "light");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(21);
@@ -318,5 +317,6 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     doc.text(doc.splitTextToSize(safeText(invoice.terms), 168), PAGE.left + 4, y + 12);
   }
 
+  drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
   doc.save(`${safeText(invoice.number || "invoice")}.pdf`);
 }

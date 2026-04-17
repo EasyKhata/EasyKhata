@@ -159,8 +159,15 @@ export function Field({ label, hint, children, required }) {
   );
 }
 
-export function Input({ style, ...props }) {
-  return <input className="input-field" style={style} {...props} />;
+export function Input({ style, onWheel, onKeyDown, ...props }) {
+  const isNumber = props.type === "number";
+  const handleWheel = isNumber
+    ? (e) => { e.target.blur(); onWheel?.(e); }
+    : onWheel;
+  const handleKeyDown = isNumber
+    ? (e) => { if (["e", "E", "+"].includes(e.key)) e.preventDefault(); onKeyDown?.(e); }
+    : onKeyDown;
+  return <input className="input-field" style={style} onWheel={handleWheel} onKeyDown={handleKeyDown} {...props} />;
 }
 
 export function Textarea({ style, ...props }) {
