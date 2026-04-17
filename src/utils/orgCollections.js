@@ -1,6 +1,3 @@
-// Pure utility functions — no Firestore dependency.
-// The Firestore-specific sync/hydrate functions remain in firestoreOrgCollections.js
-// and are only used by the legacy admin panel during the migration period.
 
 export const ORG_COLLECTION_KEYS = ["income", "expenses", "invoices", "customers"];
 

@@ -363,28 +363,6 @@ function buildResetData(currentData, nextAccount) {
   };
 }
 
-function sanitizeForFirestore(value) {
-  if (value === undefined) {
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(item => sanitizeForFirestore(item)).filter(item => item !== undefined);
-  }
-
-  if (value && typeof value === "object") {
-    return Object.entries(value).reduce((acc, [key, entry]) => {
-      const cleaned = sanitizeForFirestore(entry);
-      if (cleaned !== undefined) {
-        acc[key] = cleaned;
-      }
-      return acc;
-    }, {});
-  }
-
-  return value;
-}
-
 function getSessionStorageKey(userId) {
   return `${SESSION_STORAGE_PREFIX}${userId}`;
 }
@@ -409,29 +387,6 @@ function clearSessionDraft(userId) {
   window.localStorage.removeItem(getSessionStorageKey(userId));
 }
 
-function getOrgInvoicesCollection(userId, orgId) {
-  return collection(db, "users", userId, "orgs", orgId, "invoices");
-}
-
-function getOrgInvoiceDoc(userId, orgId, invoiceId) {
-  return doc(db, "users", userId, "orgs", orgId, "invoices", invoiceId);
-}
-
-function sortInvoices(invoices = []) {
-  return [...(invoices || [])].sort((left, right) => {
-    const dateCompare = String(right?.date || "").localeCompare(String(left?.date || ""));
-    if (dateCompare !== 0) return dateCompare;
-
-    const updatedCompare = String(right?.updatedAt || right?.createdAt || "").localeCompare(String(left?.updatedAt || left?.createdAt || ""));
-    if (updatedCompare !== 0) return updatedCompare;
-
-    return String(right?.id || "").localeCompare(String(left?.id || ""));
-  });
-}
-
-function buildInvoiceSyncSignature(invoices = []) {
-  return JSON.stringify(sortInvoices(invoices).map(invoice => sanitizeForFirestore(invoice)));
-}
 
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
@@ -447,7 +402,6 @@ export function DataProvider({ children }) {
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
-  const invoiceSyncRef = useRef({});
 
   // Derived: shared orgs list and viewer-mode flag
   const sharedOrgs = useMemo(() =>
@@ -531,131 +485,6 @@ export function DataProvider({ children }) {
         orgsApi.syncCollection(sharedInfo.ownerId, sharedInfo.orgId, key, nextState[key] || [])
       )
     );
-  }, []);
-
-  const syncOrgInvoices = useCallback(async (userId, orgId, invoices = [], { force = false } = {}) => {
-    if (!userId || !orgId) return;
-
-    const syncKey = `${userId}:${orgId}`;
-    const normalizedInvoices = sortInvoices((invoices || []).map(invoice => ({ ...invoice, id: invoice.id || uid() })));
-    const nextSignature = buildInvoiceSyncSignature(normalizedInvoices);
-
-    if (!force && invoiceSyncRef.current[syncKey] === nextSignature) {
-      return;
-    }
-
-    try {
-      const invoicesCollection = getOrgInvoicesCollection(userId, orgId);
-      const snapshot = await getDocs(invoicesCollection);
-      const existingDocs = new Map(snapshot.docs.map(item => [item.id, item.data()]));
-      const nextIds = new Set();
-      const batch = writeBatch(db);
-      const nowIso = new Date().toISOString();
-
-      normalizedInvoices.forEach(invoice => {
-        const invoiceId = invoice.id || uid();
-        const existingInvoice = existingDocs.get(invoiceId) || {};
-        nextIds.add(invoiceId);
-        batch.set(
-          getOrgInvoiceDoc(userId, orgId, invoiceId),
-          sanitizeForFirestore({
-            ...invoice,
-            id: invoiceId,
-            orgId,
-            createdAt: invoice.createdAt || existingInvoice.createdAt || nowIso,
-            updatedAt: nowIso
-          })
-        );
-      });
-
-      snapshot.docs.forEach(item => {
-        if (!nextIds.has(item.id)) {
-          batch.delete(item.ref);
-        }
-      });
-
-      await batch.commit();
-      invoiceSyncRef.current[syncKey] = nextSignature;
-    } catch (err) {
-      logError(`Invoice subcollection sync failed for ${orgId}`, err);
-    }
-  }, []);
-
-  const deleteOrgInvoiceCollection = useCallback(async (userId, orgId) => {
-    if (!userId || !orgId) return;
-
-    try {
-      const snapshot = await getDocs(getOrgInvoicesCollection(userId, orgId));
-      if (snapshot.empty) {
-        delete invoiceSyncRef.current[`${userId}:${orgId}`];
-        return;
-      }
-
-      const batch = writeBatch(db);
-      snapshot.docs.forEach(item => batch.delete(item.ref));
-      await batch.commit();
-      delete invoiceSyncRef.current[`${userId}:${orgId}`];
-    } catch (err) {
-      logError(`Invoice subcollection cleanup failed for ${orgId}`, err);
-    }
-  }, []);
-
-  const hydrateOrgInvoices = useCallback(async (userId, orgs = {}) => {
-    const orgEntries = Object.entries(orgs || {});
-    if (!userId || !orgEntries.length) {
-      return { orgs, orgIdsToBackfill: [] };
-    }
-
-    const results = await Promise.all(
-      orgEntries.map(async ([orgId, orgValue]) => {
-        try {
-          const snapshot = await getDocs(getOrgInvoicesCollection(userId, orgId));
-          if (snapshot.empty) {
-            const embeddedInvoices = sortInvoices(orgValue?.invoices || []);
-            invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(embeddedInvoices);
-            return {
-              orgId,
-              orgValue: { ...orgValue, invoices: embeddedInvoices },
-              shouldBackfill: embeddedInvoices.length > 0
-            };
-          }
-
-          const subcollectionInvoices = sortInvoices(
-            snapshot.docs.map(item => ({
-              id: item.id,
-              ...item.data()
-            }))
-          );
-          invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(subcollectionInvoices);
-          return {
-            orgId,
-            orgValue: { ...orgValue, invoices: subcollectionInvoices },
-            shouldBackfill: false
-          };
-        } catch (err) {
-          logError(`Invoice subcollection load failed for ${orgId}`, err);
-          const embeddedInvoices = sortInvoices(orgValue?.invoices || []);
-          invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(embeddedInvoices);
-          return {
-            orgId,
-            orgValue: { ...orgValue, invoices: embeddedInvoices },
-            shouldBackfill: false
-          };
-        }
-      })
-    );
-
-    const nextOrgs = {};
-    const orgIdsToBackfill = [];
-
-    results.forEach(result => {
-      nextOrgs[result.orgId] = result.orgValue;
-      if (result.shouldBackfill) {
-        orgIdsToBackfill.push(result.orgId);
-      }
-    });
-
-    return { orgs: nextOrgs, orgIdsToBackfill };
   }, []);
 
   const persistSessionDraft = useCallback(() => {
