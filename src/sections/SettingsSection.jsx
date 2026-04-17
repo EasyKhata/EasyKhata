@@ -1827,7 +1827,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div style={{ marginBottom: 10 }}>
             <div className="section-label">Khata</div>
             <div className="card">
-              <MenuRow icon="B" label="Khata Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
               {isApartmentOrg && (

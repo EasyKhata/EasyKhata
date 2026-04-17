@@ -38,7 +38,7 @@ export default function AccountModal({
   return (
     <>
       <Modal
-        title="Khata Profile"
+        title="Your Khata"
         onClose={onClose}
         onSave={onSave}
         canSave={!!form.name?.trim()}
