@@ -712,7 +712,7 @@ export default function MainApp() {
   const footerTabs = useMemo(() => {
     const baseTabOrder = isAdmin
       ? ["dashboard", "users", "adminSupport", "invoices"]
-      : ["dashboard", "income", "expenses", "invoices", "org"];
+      : ["dashboard", "income", "expenses", "emi", "invoices", "org"];
     const baseTabs = baseTabOrder
       .filter(tabId => TABS.some(item => item.id === tabId))
       .map(tabId => TABS.find(item => item.id === tabId))
@@ -806,7 +806,7 @@ export default function MainApp() {
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? "10px 12px" : "12px 20px 12px", gap: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? "calc(env(safe-area-inset-top, 0px) + 10px) 12px 10px" : "12px 20px 12px", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
               <button
                 onClick={() => setTab("dashboard")}
