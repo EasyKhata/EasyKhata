@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "../lib/api";
-import { EmptyState, SectionSkeleton, PaginatedListControls } from "../components/UI";
+import { EmptyState, SectionSkeleton } from "../components/UI";
 import { logError } from "../utils/logger";
 
 function formatTicketStatus(status) {
@@ -42,25 +42,33 @@ function getSlaBadge(ticket) {
 
 export default function AdminSupportSection() {
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [tickets, setTickets] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [apiPage, setApiPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTicketId, setSelectedTicketId] = useState("");
   const [replyDrafts, setReplyDrafts] = useState({});
   const [replyingTicketId, setReplyingTicketId] = useState("");
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 900 : false));
-  const [queuePage, setQueuePage] = useState(1);
-  const [queuePageSize, setQueuePageSize] = useState(25);
 
-  async function fetchTickets() {
+  const PAGE_SIZE = 50;
+
+  // Fetch page 1 fresh — replaces current ticket list
+  async function fetchTickets(filter) {
+    const activeFilter = filter !== undefined ? filter : statusFilter;
     setLoading(true);
     setError("");
+    setApiPage(1);
     try {
-      const res = await adminApi.listSupportTickets();
-      // API now returns { tickets, total, page, hasMore } — handle both shapes for safety
+      const res = await adminApi.listSupportTickets(1, PAGE_SIZE, activeFilter !== "all" ? activeFilter : undefined);
       const list = Array.isArray(res) ? res : (res.tickets || []);
       setTickets(list.map(t => ({ ...t, messages: normalizeSupportMessages(t) })));
+      setTotal(res.total ?? list.length);
+      setHasMore(res.hasMore ?? false);
     } catch (err) {
       logError("Admin support load error", err);
       setError("Unable to load support tickets right now.");
@@ -69,8 +77,29 @@ export default function AdminSupportSection() {
     }
   }
 
+  // Append next page to existing list
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    const nextPage = apiPage + 1;
+    setLoadingMore(true);
+    try {
+      const res = await adminApi.listSupportTickets(nextPage, PAGE_SIZE, statusFilter !== "all" ? statusFilter : undefined);
+      const list = Array.isArray(res) ? res : (res.tickets || []);
+      setTickets(prev => [...prev, ...list.map(t => ({ ...t, messages: normalizeSupportMessages(t) }))]);
+      setTotal(res.total ?? (tickets.length + list.length));
+      setHasMore(res.hasMore ?? false);
+      setApiPage(nextPage);
+    } catch (err) {
+      logError("Admin support load-more error", err);
+      setError("Unable to load more tickets.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   useEffect(() => {
     fetchTickets();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -81,51 +110,36 @@ export default function AdminSupportSection() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const visibleTickets = useMemo(() => tickets.filter(ticket => {
-    if (statusFilter !== "all" && String(ticket.status || "open") !== statusFilter) return false;
+  // Client-side search filter on already-loaded tickets
+  const visibleTickets = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase();
-    if (!needle) return true;
-    const haystack = [
-      ticket.subject,
-      ticket.message,
-      ticket.userName,
-      ticket.userEmail,
-      ticket.topic,
-      ticket.organizationName
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(needle);
-  }), [searchTerm, statusFilter, tickets]);
+    if (!needle) return tickets;
+    return tickets.filter(ticket => {
+      const haystack = [ticket.subject, ticket.message, ticket.userName, ticket.userEmail, ticket.topic, ticket.organizationName]
+        .filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [searchTerm, tickets]);
+
   const queueStats = useMemo(() => ({
-    all: tickets.length,
-    open: tickets.filter(ticket => String(ticket.status || "open") === "open").length,
-    in_progress: tickets.filter(ticket => String(ticket.status || "open") === "in_progress").length,
-    resolved: tickets.filter(ticket => String(ticket.status || "open") === "resolved").length
+    open: tickets.filter(t => String(t.status || "open") === "open").length,
+    in_progress: tickets.filter(t => String(t.status || "open") === "in_progress").length,
+    resolved: tickets.filter(t => String(t.status || "open") === "resolved").length
   }), [tickets]);
+
   const selectedTicket = useMemo(() => (
     visibleTickets.find(ticket => ticket.id === selectedTicketId) || visibleTickets[0] || null
   ), [selectedTicketId, visibleTickets]);
-  const paginatedQueueTickets = useMemo(() => {
-    const startIndex = (queuePage - 1) * queuePageSize;
-    return visibleTickets.slice(startIndex, startIndex + queuePageSize);
-  }, [queuePage, queuePageSize, visibleTickets]);
 
   useEffect(() => {
-    if (!visibleTickets.length) {
-      setSelectedTicketId("");
-      return;
-    }
-    if (!visibleTickets.some(ticket => ticket.id === selectedTicketId)) {
-      setSelectedTicketId(visibleTickets[0].id);
-    }
+    if (!visibleTickets.length) { setSelectedTicketId(""); return; }
+    if (!visibleTickets.some(t => t.id === selectedTicketId)) setSelectedTicketId(visibleTickets[0].id);
   }, [selectedTicketId, visibleTickets]);
 
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(visibleTickets.length / queuePageSize));
-    if (queuePage > totalPages) setQueuePage(totalPages);
-  }, [queuePage, queuePageSize, visibleTickets.length]);
+  function changeStatusFilter(value) {
+    setStatusFilter(value);
+    fetchTickets(value);
+  }
 
   async function updateSupportTicketStatus(ticket, status) {
     try {
@@ -173,33 +187,24 @@ export default function AdminSupportSection() {
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
           {[
-            ["all", `All (${queueStats.all})`],
-            ["open", `Open (${queueStats.open})`],
+            ["all",         "All"],
+            ["open",        `Open (${queueStats.open})`],
             ["in_progress", `In Progress (${queueStats.in_progress})`],
-            ["resolved", `Resolved (${queueStats.resolved})`]
+            ["resolved",    `Resolved (${queueStats.resolved})`]
           ].map(([value, label]) => (
             <button
               key={value}
               className="btn-secondary"
-              onClick={() => setStatusFilter(value)}
+              onClick={() => changeStatusFilter(value)}
               style={{ padding: "8px 12px", fontSize: 12, background: statusFilter === value ? "var(--surface-pop)" : "var(--surface-high)" }}
             >
               {label}
             </button>
           ))}
         </div>
-        <div style={{ marginTop: 10 }}>
-          <PaginatedListControls
-            totalItems={visibleTickets.length}
-            page={queuePage}
-            pageSize={queuePageSize}
-            onPageChange={setQueuePage}
-            onPageSizeChange={nextSize => {
-              setQueuePageSize(nextSize);
-              setQueuePage(1);
-            }}
-            itemLabel="tickets"
-          />
+        <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>
+          Showing {tickets.length}{total > tickets.length ? ` of ${total}` : ""} ticket{tickets.length !== 1 ? "s" : ""}
+          {searchTerm.trim() && visibleTickets.length !== tickets.length ? ` · ${visibleTickets.length} match search` : ""}
         </div>
       </div>
       {error && (
@@ -214,7 +219,7 @@ export default function AdminSupportSection() {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 340px) minmax(0, 1fr)", gap: 14 }}>
           <div className="card" style={{ marginBottom: 0, maxHeight: "calc(100vh - 230px)", overflowY: "auto" }}>
-            {paginatedQueueTickets.map(ticket => {
+            {visibleTickets.map(ticket => {
               const active = selectedTicket?.id === ticket.id;
               return (
                 <button
@@ -251,6 +256,17 @@ export default function AdminSupportSection() {
                 </button>
               );
             })}
+            {hasMore && (
+              <button
+                className="btn-secondary"
+                type="button"
+                onClick={loadMore}
+                disabled={loadingMore}
+                style={{ width: "100%", padding: "10px 12px", fontSize: 12, marginTop: 4 }}
+              >
+                {loadingMore ? "Loading..." : `Load more (${total - tickets.length} remaining)`}
+              </button>
+            )}
           </div>
           <div className="card" style={{ marginBottom: 0 }}>
             {!selectedTicket ? (
