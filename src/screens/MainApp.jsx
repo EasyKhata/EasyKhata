@@ -353,7 +353,19 @@ export default function MainApp() {
   const orgSwitcherRef = useRef(null);
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
-  const [showTrialBanner, setShowTrialBanner] = useState(true);
+  const [trialBannerVisible, setTrialBannerVisible] = useState(true);
+  const [trialBannerOpacity, setTrialBannerOpacity] = useState(1);
+  const showTrialBanner = trialBannerVisible;
+  const dismissTrialBanner = React.useCallback(() => {
+    setTrialBannerOpacity(0);
+    setTimeout(() => setTrialBannerVisible(false), 400);
+  }, []);
+  React.useEffect(() => {
+    if (!trialBannerVisible) return;
+    const fadeTimer = setTimeout(() => setTrialBannerOpacity(0), 5000);
+    const hideTimer = setTimeout(() => setTrialBannerVisible(false), 5400);
+    return () => { clearTimeout(fadeTimer); clearTimeout(hideTimer); };
+  }, [trialBannerVisible]);
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [quickstartIntent, setQuickstartIntent] = useState(null);
@@ -776,7 +788,9 @@ export default function MainApp() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              gap: 8
+              gap: 8,
+              opacity: trialBannerOpacity,
+              transition: 'opacity 0.4s ease'
             }}>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 Trial active{trialEndLabel ? ` · ends ${trialEndLabel}` : ""}
@@ -793,7 +807,7 @@ export default function MainApp() {
               <button
                 style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, cursor: 'pointer', fontWeight: 900, lineHeight: 1, flexShrink: 0, padding: '0 2px' }}
                 aria-label="Dismiss"
-                onClick={() => setShowTrialBanner(false)}
+                onClick={dismissTrialBanner}
               >×</button>
             </div>
           ) : (
@@ -811,7 +825,9 @@ export default function MainApp() {
               lineHeight: 1.5,
               position: 'relative',
               boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
-              pointerEvents: 'auto'
+              pointerEvents: 'auto',
+              opacity: trialBannerOpacity,
+              transition: 'opacity 0.4s ease'
             }}>
               <span style={{ fontWeight: 800 }}>
                 Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
@@ -829,7 +845,7 @@ export default function MainApp() {
               <button
                 style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
                 aria-label="Dismiss"
-                onClick={() => setShowTrialBanner(false)}
+                onClick={dismissTrialBanner}
               >×</button>
             </div>
           )

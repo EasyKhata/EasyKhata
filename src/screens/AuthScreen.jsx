@@ -141,7 +141,7 @@ export default function AuthScreen() {
       return;
     }
 
-    setInfo((res?.message || "Account created successfully.") + " Next: verify email → sign in → open Khata Profile to confirm your details.");
+    setInfo((res?.message || "Account created successfully.") + " Next: verify email → sign in → open Your Khata to confirm your details.");
     setPassword("");
     setConfirmPassword("");
     setPhoneNumber("");

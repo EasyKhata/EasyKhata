@@ -49,15 +49,15 @@ export function getSelectableOrgTypeOptions(currentType = "") {
 export const ORG_TYPE_CONFIGS = {
   [ORG_TYPES.PERSONAL]: {
     ...BASE_CONFIG,
-    incomeLabel: "Earnings",
-    incomeEntryLabel: "Earning",
-    incomeActionLabel: "Add Earning",
-    expensesLabel: "Spending",
-    expensesEntryLabel: "Spending Entry",
-    expensesActionLabel: "Add Spending",
-    invoicesLabel: "Borrow / Lend",
-    invoiceEntryLabel: "Borrow / Lend Record",
-    invoiceActionLabel: "Add Borrow / Lend",
+    incomeLabel: "Income",
+    incomeEntryLabel: "Income",
+    incomeActionLabel: "Add Income",
+    expensesLabel: "Expenses",
+    expensesEntryLabel: "Expense",
+    expensesActionLabel: "Add Expense",
+    invoicesLabel: "Udhaar / Credit",
+    invoiceEntryLabel: "Udhaar / Credit Record",
+    invoiceActionLabel: "Add Udhaar / Credit",
     customerLabel: "People",
     customerEntryLabel: "Person",
     customerNameLabel: "Person Name",
@@ -67,18 +67,18 @@ export const ORG_TYPE_CONFIGS = {
     accountIntro: "Use this profile for your household or personal finance records.",
     hideInvoices: true,
     incomeFields: [
-      { key: "personName", label: "Person", type: "text", placeholder: "Select household member" },
-      { key: "incomeType", label: "Earning Type", type: "select", options: ["Salary", "Bonus", "Rental", "Interest", "Gift", "Other"] }
+      { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
+      { key: "incomeType", label: "Income Type", type: "select", options: ["Salary", "Bonus", "Rental", "Interest", "Gift", "Other"] }
     ],
     expenseFields: [
-      { key: "personName", label: "Person", type: "text", placeholder: "Select household member" },
-      { key: "necessityType", label: "Need Type", type: "select", options: ["Essential", "Non-Essential"] }
+      { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
+      { key: "necessityType", label: "Type", type: "select", options: ["Needs", "Wants"] }
     ],
     expenseCategories: ["Groceries", "Rent", "Utilities", "Education", "Healthcare", "Transport", "Shopping", "Entertainment", "Insurance", "EMI", "Other"],
     extraSections: [
       {
         key: "loans",
-        label: "Loans / EMIs",
+        label: "Loans & EMI",
         entryLabel: "EMI",
         empty: () => ({ loanName: "", lender: "", monthlyEmi: "", startDate: "", dueDay: "", endDate: "" }),
         fields: [
@@ -98,15 +98,15 @@ export const ORG_TYPE_CONFIGS = {
     incomeLabel: "Payments Received",
     incomeEntryLabel: "Payment",
     incomeActionLabel: "Add Payment",
-    expensesLabel: "Business Expenses",
+    expensesLabel: "Expenses",
     expensesEntryLabel: "Expense",
     expensesActionLabel: "Add Expense",
-    invoicesLabel: "Client Invoices",
+    invoicesLabel: "Bills / Invoices",
     customerLabel: "Clients",
     customerEntryLabel: "Client",
     customerNameLabel: "Client Name",
     customerNamePlaceholder: "Client or studio name",
-    profileNameLabel: "Freelancer / Brand Name",
+    profileNameLabel: "Your Name / Business Name",
     profileNamePlaceholder: "E.g. Deepak Design Studio",
     accountIntro: "This profile powers your client invoices, payments, and expense records.",
     incomeFields: [
@@ -133,7 +133,7 @@ export const ORG_TYPE_CONFIGS = {
     expensesLabel: "Expenses",
     expensesEntryLabel: "Expense",
     expensesActionLabel: "Add Expense",
-    invoicesLabel: "Client Invoices",
+    invoicesLabel: "Bills / Invoices",
     hideInvoices: true,
     customerLabel: "Customers",
     customerEntryLabel: "Customer",
