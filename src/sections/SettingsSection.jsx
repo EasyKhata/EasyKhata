@@ -531,7 +531,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     setShowOrgSwitcher(false);
     setScreen("main");
-    showNotice("Organization switched.", "success");
+    showNotice("Khata switched.", "success");
   }
 
   async function handleDeleteOrganization(orgId) {
@@ -542,7 +542,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     setShowOrgSwitcher(false);
     setScreen("main");
-    showNotice("Organization deleted.", "success");
+    showNotice("Khata deleted.", "success");
   }
 
   async function handleCreateOrganizationWorkspace() {
@@ -556,7 +556,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!pendingOrgTypeChange?.nextAccount) return;
     resetForOrgTypeChange(pendingOrgTypeChange.nextAccount);
     setPendingOrgTypeChange(null);
-    showNotice("Organization type changed. Existing records were cleared for this workspace.", "success");
+    showNotice("Khata type changed. Existing records were cleared.", "success");
     setScreen("main");
   }
 
@@ -1811,11 +1811,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <div style={{ padding: "20px 18px", paddingBottom: 100 }}>
           <div className="card" style={{ padding: "20px 18px", marginBottom: 20 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
-              Active Workspace
+              Active Khata
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{account?.name || "Organization"}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{account?.name || "My Khata"}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              {orgConfig.profileNameLabel} profile, customer directory, and organization-specific records live here for every organization type.
+              {orgConfig.profileNameLabel} profile, customer directory, and khata-specific records live here.
             </div>
             {(account?.location || account?.phone || account?.email) && (
               <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7, marginTop: 12 }}>
@@ -1825,9 +1825,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
 
           <div style={{ marginBottom: 10 }}>
-            <div className="section-label">Organization</div>
+            <div className="section-label">Khata</div>
             <div className="card">
-              <MenuRow icon="B" label="Organization Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon="B" label="Khata Profile" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
               {isApartmentOrg && (
@@ -2158,10 +2158,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return null;
     }
     return withNotice(
-      <Modal title="Single Workspace" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
+      <Modal title="Single Khata" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
         <div className="card" style={{ padding: 14 }}>
           <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Multi-organization workspaces are disabled for this app. Update your current organization profile instead.
+            Multiple Khatas are disabled for this app. Update your current Khata profile instead.
           </div>
         </div>
       </Modal>

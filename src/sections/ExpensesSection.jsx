@@ -452,7 +452,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               {!hasHouseholdPeople ? (
                 <EmptyState
                   title="Add a person before tracking spendings"
-                  message="Household spending must be tagged to at least one person. Add your first person in Org to continue."
+                  message="Household spending must be tagged to at least one person. Add your first person in Khata to continue."
                   actionLabel="Open People"
                   onAction={openPeopleManager}
                   accentColor="var(--danger)"
@@ -555,7 +555,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 {!hasFreelancerClients ? (
                   <EmptyState
                     title="Add a client before tracking expenses"
-                    message="Freelancer expenses must be linked to at least one client. Add your first client in Org to continue."
+                    message="Freelancer expenses must be linked to at least one client. Add your first client in Khata to continue."
                     actionLabel="Open Clients"
                     onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
                     accentColor="var(--danger)"
@@ -619,7 +619,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 {active.length === 0 ? (
                   <EmptyState
                     title="Add flats before tracking society expenses"
-                    message="Society expenses stay locked until you create at least one flat record in Org."
+                    message="Society expenses stay locked until you create at least one flat record in Khata."
                     actionLabel="Open Flats"
                     onAction={openFlatManager}
                     accentColor="var(--danger)"

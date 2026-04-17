@@ -142,7 +142,7 @@ export default function KhataSection({ orgType }) {
 
         <div className="card">
           {customers.length === 0 ? (
-            <EmptyState title="No customers added yet" message="Add customers in Org to start tracking khata history and balances." accentColor="var(--gold)" />
+            <EmptyState title="No customers added yet" message="Add customers in Khata to start tracking khata history and balances." accentColor="var(--gold)" />
           ) : filteredCustomers.length === 0 ? (
             <EmptyState title="No matching customers" message="Try a different search term to find the customer you need." accentColor="var(--gold)" />
           ) : (

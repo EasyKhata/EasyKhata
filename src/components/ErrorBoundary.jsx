@@ -1,6 +1,65 @@
 import React from "react";
 
-function DefaultFallback({ error, onRetry }) {
+// Chunk-load failures happen when the browser has a cached reference to an old
+// JS bundle that no longer exists after a new deployment. The only fix is a
+// hard reload to fetch the new chunks.
+function isChunkLoadError(error) {
+  const msg = error?.message || "";
+  return (
+    msg.includes("Failed to fetch dynamically imported module") ||
+    msg.includes("Importing a module script failed") ||
+    msg.includes("Loading chunk") ||
+    msg.includes("Loading CSS chunk") ||
+    /\.js\)$/.test(msg)
+  );
+}
+
+function ChunkErrorFallback() {
+  React.useEffect(() => {
+    const t = setTimeout(() => window.location.reload(), 3000);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg, #fff)",
+        padding: 24
+      }}
+    >
+      <div style={{ textAlign: "center", maxWidth: 360 }}>
+        <div style={{ fontSize: 32, marginBottom: 16 }}>⚡</div>
+        <h2 style={{ color: "var(--text, #111)", fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+          New version available
+        </h2>
+        <p style={{ color: "var(--text-sec, #555)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+          EasyKhata was updated. Reloading to get the latest version…
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          style={{
+            background: "var(--accent, #4f46e5)",
+            color: "#fff",
+            border: "none",
+            borderRadius: 10,
+            padding: "10px 24px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer"
+          }}
+        >
+          Reload now
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DefaultFallback({ onRetry }) {
   return (
     <div
       style={{
@@ -18,8 +77,7 @@ function DefaultFallback({ error, onRetry }) {
           Something went wrong
         </h2>
         <p style={{ color: "var(--text-sec, #555)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-          An unexpected error occurred. Refreshing usually fixes this.
-          {error?.message ? ` (${error.message})` : ""}
+          An unexpected error occurred. Try again or reload the page if the problem persists.
         </p>
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button
@@ -70,9 +128,7 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    if (import.meta.env.DEV) {
-      console.error("[ErrorBoundary] Uncaught React error:", error, info);
-    }
+    console.error("[EasyKhata] Uncaught error:", error, info);
   }
 
   handleRetry() {
@@ -84,7 +140,10 @@ export default class ErrorBoundary extends React.Component {
       if (this.props.fallback) {
         return this.props.fallback;
       }
-      return <DefaultFallback error={this.state.error} onRetry={this.handleRetry} />;
+      if (isChunkLoadError(this.state.error)) {
+        return <ChunkErrorFallback />;
+      }
+      return <DefaultFallback onRetry={this.handleRetry} />;
     }
     return this.props.children;
   }
