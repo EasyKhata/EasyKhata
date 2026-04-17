@@ -87,6 +87,10 @@ export const orgsApi = {
   syncOrgRecords: (userId, orgId, orgRecordsMap) =>
     api.post(`/users/${userId}/orgs/${orgId}/org-records/sync`, orgRecordsMap),
 
+  // Delete all orgRecords for an org (called on org type change to avoid stale data)
+  clearOrgRecords: (userId, orgId) =>
+    api.delete(`/users/${userId}/orgs/${orgId}/org-records`),
+
   // Pre-computed dashboard summary (month totals, YTD, overdue, budget alerts)
   getSummary: (userId, orgId) =>
     api.get(`/users/${userId}/orgs/${orgId}/summary`),
