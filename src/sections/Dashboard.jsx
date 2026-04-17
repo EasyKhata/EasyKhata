@@ -3,20 +3,11 @@ import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, EmptyState } from "../components/UI";
 import { logError } from "../utils/logger";
 import {
-  calculateApartmentDashboard,
-  calculateApartmentYearlyDashboard,
-  calculateDashboard,
-  calculateFreelancerDashboard,
-  calculateFreelancerYearlyDashboard,
-  calculatePersonalDashboard,
-  calculatePersonalYearlyDashboard,
-  calculateSmallBusinessDashboard,
-  calculateSmallBusinessYearlyDashboard,
-  calculateYearlyDashboard,
   getPersonalEmiDueDay,
   getInvoiceStatusColor,
   getInvoiceStatusLabel
 } from "../utils/analytics";
+import { orgsApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan, isReviewAccessEnabled } from "../utils/subscription";
 import OnboardingGuide from "../components/OnboardingGuide";
@@ -294,25 +285,19 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const orgConfig = getOrgConfig(orgType);
-  const stats = useMemo(() => {
-    if (!data.loaded) {
-      return {
-        profit: 0,
-        netAfterEmi: 0,
-        cashFlow: [],
-        monthlyBreakdown: []
-      };
-    }
-    return isApartmentOrg
-      ? (viewMode === "month" ? calculateApartmentDashboard(data, year, month) : calculateApartmentYearlyDashboard(data, year))
-      : isFreelancerOrg
-        ? (viewMode === "month" ? calculateFreelancerDashboard(data, year, month) : calculateFreelancerYearlyDashboard(data, year))
-        : isSmallBusinessOrg
-          ? (viewMode === "month" ? calculateSmallBusinessDashboard(data, year, month) : calculateSmallBusinessYearlyDashboard(data, year))
-          : isPersonalOrg
-            ? (viewMode === "month" ? calculatePersonalDashboard(data, year, month) : calculatePersonalYearlyDashboard(data, year))
-            : (viewMode === "month" ? calculateDashboard(data, year, month) : calculateYearlyDashboard(data, year));
-  }, [data, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg, month, viewMode, year]);
+  const [stats, setStats] = useState({ profit: 0, netAfterEmi: 0, cashFlow: [], monthlyBreakdown: [] });
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!data.loaded || !user?.id || !data.activeOrgId) return;
+    let cancelled = false;
+    setStatsLoading(true);
+    orgsApi.getDashboard(user.id, data.activeOrgId, year, month, viewMode)
+      .then(result => { if (!cancelled) setStats(result); })
+      .catch(err => logError("dashboard fetch", err))
+      .finally(() => { if (!cancelled) setStatsLoading(false); });
+    return () => { cancelled = true; };
+  }, [data.loaded, data.activeOrgId, user?.id, year, month, viewMode]);
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
   const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const currentPlan = getUserPlan(user);
@@ -368,6 +353,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   if (!data.loaded) {
     return <DashboardSkeleton />;
   }
+
+  // Overlay a subtle pulsing opacity while analytics are being fetched from the server
+  const statsStyle = statsLoading ? { opacity: 0.55, pointerEvents: "none", transition: "opacity 0.2s" } : {};
 
   const Tile = ({ label, value, color, sub, onClick }) => (
     <div onClick={onClick} style={{ background: "var(--surface)", border: `1px solid ${color}33`, borderRadius: 18, padding: "18px 16px", cursor: onClick ? "pointer" : "default", boxShadow: "var(--card-shadow)" }}>
@@ -431,7 +419,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     return (
       <div style={{ paddingBottom: 20 }}>
         <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, ...statsStyle }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
               Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
             </div>

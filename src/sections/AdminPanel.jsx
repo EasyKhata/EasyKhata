@@ -1,14 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter } from "firebase/firestore";
-import { db } from "../firebase";
+import { adminApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 import { EmptyState, ProgressBar, SectionSkeleton, fmtMoney } from "../components/UI";
 import { logError } from "../utils/logger";
-import { callAuthedFunction } from "../utils/functionsClient";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import { PAYMENT_REQUEST_STATUS, PLANS, SUBSCRIPTION_STATUS, formatSubscriptionDate } from "../utils/subscription";
 import { downloadAdminMonthlyReport, downloadAdminUsersCsv, downloadAdminRequestsCsv } from "../utils/reportGen";
-import { ORG_COLLECTION_KEYS, buildOrgSummary, hydrateUserOrgCollections, migrateUserOrgCollections, sortOrgCollectionRecords, syncOrgCollection } from "../utils/firestoreOrgCollections";
 import { ORG_TYPE_OPTIONS, getOrgType } from "../utils/orgTypes";
 
 const ORG_TYPE_LABELS = ORG_TYPE_OPTIONS.reduce((acc, option) => {
@@ -195,110 +192,41 @@ function TopWorkspacesCard({ items }) {
 }
 
 export default function AdminPanel({ year, month }) {
-  const ADMIN_USERS_SAMPLE_LIMIT = 1200;
-  const ADMIN_REQUESTS_SAMPLE_LIMIT = 1000;
-  const ADMIN_TICKETS_SAMPLE_LIMIT = 1000;
-  const MIGRATION_BATCH_SIZE = 300;
   const { user } = useAuth();
   const [users, setUsers] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
-  const [paymentRequestsEnabled, setPaymentRequestsEnabled] = useState(true);
-  const [supportTicketsEnabled, setSupportTicketsEnabled] = useState(true);
   const [globalSnapshot, setGlobalSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshingAggregates, setRefreshingAggregates] = useState(false);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
-  const [migrationInfo, setMigrationInfo] = useState({ running: false, message: "", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
 
   async function fetchAdminData() {
     setLoading(true);
     setAdminError("");
     try {
-      const usersSnapshot = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"), limit(ADMIN_USERS_SAMPLE_LIMIT)));
-      const rawUsers = usersSnapshot.docs.map(item => ({
-        id: item.id,
-        ...item.data()
-      }));
+      const [usersResult, requests, tickets] = await Promise.all([
+        adminApi.listUsers(1, 500),
+        adminApi.listPaymentRequests().catch(() => []),
+        adminApi.listSupportTickets().catch(() => [])
+      ]);
 
-      const hydratedUsers = await Promise.all(
-        rawUsers.map(async item => {
-          if (!item?.id || !item?.orgs || typeof item.orgs !== "object" || !Object.keys(item.orgs).length) {
-            return item;
-          }
-
-          try {
-            const { orgs } = await hydrateUserOrgCollections({
-              db,
-              userId: item.id,
-              orgs: item.orgs,
-              collectionKeys: ORG_COLLECTION_KEYS
-            });
-            return { ...item, orgs };
-          } catch (err) {
-            logError(`Admin invoice hydration failed for ${item.id}`, err);
-            return item;
-          }
-        })
+      setUsers(usersResult.users || []);
+      setPaymentRequests(
+        (requests || []).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
-
-      setUsers(hydratedUsers);
-
-      try {
-        const snapshotRef = doc(db, "admin_metrics", "global");
-        const snapshotDoc = await getDoc(snapshotRef);
-        setGlobalSnapshot(snapshotDoc.exists() ? snapshotDoc.data() : null);
-      } catch (err) {
-        logError("Admin metrics snapshot load error", err);
-        setGlobalSnapshot(null);
-      }
-
-      try {
-        const requestsSnapshot = await getDocs(query(collection(db, "payment_requests"), orderBy("createdAt", "desc"), limit(ADMIN_REQUESTS_SAMPLE_LIMIT)));
-        const nextRequests = requestsSnapshot.docs
-          .map(item => ({
-            id: item.id,
-            ...item.data()
-          }))
-          .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
-        setPaymentRequests(nextRequests);
-        setPaymentRequestsEnabled(true);
-      } catch (err) {
-        logError("Payment request load error", err);
-        setPaymentRequests([]);
-        setPaymentRequestsEnabled(false);
-      }
-
-      try {
-        const ticketsSnapshot = await getDocs(query(collection(db, "support_tickets"), orderBy("createdAt", "desc"), limit(ADMIN_TICKETS_SAMPLE_LIMIT)));
-        setSupportTickets(
-          ticketsSnapshot.docs
-            .map(item => {
-              const payload = { id: item.id, ...item.data() };
-              const messages = Array.isArray(payload.messages)
-                ? payload.messages
-                : (payload.message ? [{
-                    id: `${payload.id}-initial`,
-                    senderRole: "user",
-                    senderId: payload.userId || "",
-                    senderName: payload.userName || "User",
-                    message: payload.message,
-                    createdAt: payload.createdAt || ""
-                  }] : []);
-              return { ...payload, messages };
-            })
-            .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
-        );
-        setSupportTicketsEnabled(true);
-      } catch (err) {
-        logError("Support ticket load error", err);
-        setSupportTickets([]);
-        setSupportTicketsEnabled(false);
-      }
+      setSupportTickets(
+        (tickets || []).map(t => ({
+          ...t,
+          messages: Array.isArray(t.messages) ? t.messages : (t.message ? [{
+            id: `${t.id}-initial`, senderRole: "user", senderId: t.userId || "",
+            senderName: t.userName || "User", message: t.message, createdAt: t.createdAt || ""
+          }] : [])
+        })).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+      );
     } catch (err) {
       logError("Admin panel load error", err);
-      setAdminError("Failed to load admin data. Please check your Firestore permissions and try again.");
+      setAdminError("Failed to load admin data. Please try again.");
       setUsers([]);
     } finally {
       setLoading(false);
@@ -313,128 +241,6 @@ export default function AdminPanel({ year, month }) {
     fetchAdminData();
   }, [user?.role]);
 
-  async function fetchAllUsersForMigration() {
-    const usersRef = collection(db, "users");
-    let cursor = null;
-    let hasMore = true;
-    const allUsers = [];
-
-    while (hasMore) {
-      const pageQuery = cursor
-        ? query(usersRef, orderBy(documentId()), startAfter(cursor), limit(MIGRATION_BATCH_SIZE))
-        : query(usersRef, orderBy(documentId()), limit(MIGRATION_BATCH_SIZE));
-      const snap = await getDocs(pageQuery);
-      if (!snap.docs.length) break;
-      allUsers.push(...snap.docs.map(item => ({ id: item.id, ...item.data() })));
-      cursor = snap.docs[snap.docs.length - 1].id;
-      hasMore = snap.docs.length === MIGRATION_BATCH_SIZE;
-    }
-
-    return allUsers;
-  }
-
-  async function runHistoricalOrgMigration() {
-    setMigrationInfo({ running: true, message: "Backfilling invoices, income, and expenses into org subcollections...", migratedUsers: 0, migratedOrgs: 0, migratedRecords: 0 });
-    setAdminError("");
-
-    try {
-      let migratedUsers = 0;
-      let migratedOrgs = 0;
-      let migratedRecords = 0;
-      let migratedLedgers = 0;
-
-      const usersForMigration = await fetchAllUsersForMigration();
-      for (const member of usersForMigration) {
-        if (!member?.id || !member?.orgs || typeof member.orgs !== "object" || !Object.keys(member.orgs).length) {
-          continue;
-        }
-
-        const result = await migrateUserOrgCollections({
-          db,
-          userId: member.id,
-          orgs: member.orgs,
-          collectionKeys: ORG_COLLECTION_KEYS
-        });
-
-        const nextOrgs = Object.entries(member.orgs || {}).reduce((acc, [orgId, orgValue]) => {
-          acc[orgId] = { ...orgValue, summary: buildOrgSummary(orgValue) };
-          return acc;
-        }, {});
-        await setDoc(doc(db, "users", member.id), { orgs: nextOrgs }, { merge: true });
-
-        if (result.migratedOrgCount > 0 || result.migratedRecordCount > 0) {
-          migratedUsers += 1;
-          migratedOrgs += result.migratedOrgCount;
-          migratedRecords += result.migratedRecordCount;
-          setMigrationInfo({
-            running: true,
-            message: `Migrated ${migratedUsers} user${migratedUsers === 1 ? "" : "s"} so far...`,
-            migratedUsers,
-            migratedOrgs,
-            migratedRecords
-          });
-        }
-      }
-
-      const ledgersSnapshot = await getDocs(collection(db, "shared_ledgers"));
-      for (const ledgerItem of ledgersSnapshot.docs) {
-        const ledgerData = ledgerItem.data();
-        let touched = false;
-
-        for (const collectionKey of ORG_COLLECTION_KEYS) {
-          const records = sortOrgCollectionRecords(collectionKey, ledgerData?.[collectionKey] || []);
-          if (!records.length) continue;
-
-          await syncOrgCollection({
-            db,
-            userId: `shared-ledger-${ledgerItem.id}`,
-            orgId: "org_primary",
-            collectionKey,
-            records,
-            force: true,
-            deleteMissing: false,
-            pathSegments: ["shared_ledgers", ledgerItem.id],
-            scopeKey: `shared-ledger:${ledgerItem.id}`
-          });
-          migratedRecords += records.length;
-          touched = true;
-        }
-
-        await setDoc(doc(db, "shared_ledgers", ledgerItem.id), { summary: buildOrgSummary(ledgerData) }, { merge: true });
-        if (touched) {
-          migratedLedgers += 1;
-        }
-      }
-
-      setMigrationInfo({
-        running: false,
-        message: `Migration finished. ${migratedUsers} user${migratedUsers === 1 ? "" : "s"}, ${migratedOrgs} org${migratedOrgs === 1 ? "" : "s"}, ${migratedLedgers} shared ledger${migratedLedgers === 1 ? "" : "s"}, ${migratedRecords} record${migratedRecords === 1 ? "" : "s"} synced.`,
-        migratedUsers,
-        migratedOrgs,
-        migratedRecords
-      });
-      await fetchAdminData();
-    } catch (err) {
-      logError("Historical org migration error", err);
-      setMigrationInfo(current => ({ ...current, running: false, message: "Migration failed before completion." }));
-      setAdminError(err?.message || "Unable to backfill org subcollections right now.");
-    }
-  }
-
-  async function refreshAggregatesNow() {
-    setRefreshingAggregates(true);
-    setAdminError("");
-
-    try {
-      await callAuthedFunction("refreshAdminMetricsNow", {});
-      await fetchAdminData();
-    } catch (err) {
-      logError("Admin aggregate refresh error", err);
-      setAdminError(err?.message || "Unable to refresh executive aggregates right now.");
-    } finally {
-      setRefreshingAggregates(false);
-    }
-  }
 
   const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
   const selectedPeriodLabel = new Date(year, month, 1).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
@@ -457,60 +263,57 @@ export default function AdminPanel({ year, month }) {
           country: item.country || parsedProfileLocation.country
         })
       );
-      const sessionAnalytics = item.analytics || {};
-      const orgSessionMap = sessionAnalytics.byOrg || {};
-      const orgSource = item?.orgs && typeof item.orgs === "object" && Object.keys(item.orgs).length > 0
-        ? item.orgs
-        : {
-            [item.activeOrgId || "org_primary"]: {
-              income: [],
-              expenses: [],
-              invoices: [],
-              customers: [],
-              orgRecords: {},
-              account: {
-                name: "",
-                address: "",
-                organizationType: item.organizationType || "small_business"
-              }
-            }
-          };
-
-      const organizations = Object.entries(orgSource).map(([orgId, orgValue]) => {
-        const summary = orgValue?.summary || {};
-        const incomeCount = Number(summary.incomeCount ?? (Array.isArray(orgValue?.income) ? orgValue.income.length : 0));
-        const expenseCount = Number(summary.expenseCount ?? (Array.isArray(orgValue?.expenses) ? orgValue.expenses.length : 0));
-        const invoiceCount = Number(summary.invoiceCount ?? (Array.isArray(orgValue?.invoices) ? orgValue.invoices.length : 0));
-        const customerCount = Number(summary.customerCount ?? (Array.isArray(orgValue?.customers) ? orgValue.customers.length : 0));
-        const orgRecordCount = Number(summary.orgRecordCount ?? countOrgRecords(orgValue?.orgRecords));
-        const orgType = getOrgType(orgValue?.account?.organizationType || item.organizationType);
-        const parsedOrgLocation = parseLocationFields(orgValue?.account?.location || orgValue?.account?.address || "");
-        return {
-          id: orgId,
-          name: String(orgValue?.account?.name || "").trim() || ORG_TYPE_LABELS[orgType] || "Organization",
-          orgType,
-          orgTypeLabel: ORG_TYPE_LABELS[orgType] || orgType,
-          location: normalizeLocationLabel(
-            buildLocationLabel({
-              city: orgValue?.account?.city || parsedOrgLocation.city,
-              state: orgValue?.account?.state || parsedOrgLocation.state,
-              country: orgValue?.account?.country || parsedOrgLocation.country
-            })
-          ),
-          sessionMs: Number(orgSessionMap?.[orgId]?.totalSessionMs || 0),
-          incomeCount,
-          expenseCount,
-          invoiceCount,
-          customerCount,
-          orgRecordCount,
-          totalEntries: Number(summary.totalEntries ?? (incomeCount + expenseCount + invoiceCount + customerCount + orgRecordCount))
-        };
-      });
+      // organizations is an array from the new backend (with _count)
+      const orgList = Array.isArray(item.organizations) ? item.organizations : [];
+      const organizations = orgList.length > 0
+        ? orgList.map(org => {
+            const incomeCount = Number(org._count?.income || 0);
+            const expenseCount = Number(org._count?.expenses || 0);
+            const invoiceCount = Number(org._count?.invoices || 0);
+            const customerCount = Number(org._count?.customers || 0);
+            const orgRecordCount = Number(org._count?.orgRecords || 0);
+            const orgType = getOrgType(org.organizationType || item.organizationType);
+            const parsedOrgLocation = parseLocationFields(org.location || org.address || "");
+            return {
+              id: org.id,
+              name: String(org.name || "").trim() || ORG_TYPE_LABELS[orgType] || "Organization",
+              orgType,
+              orgTypeLabel: ORG_TYPE_LABELS[orgType] || orgType,
+              location: normalizeLocationLabel(
+                buildLocationLabel({
+                  city: org.city || parsedOrgLocation.city,
+                  state: org.state || parsedOrgLocation.state,
+                  country: org.country || parsedOrgLocation.country
+                })
+              ),
+              sessionMs: 0,
+              incomeCount,
+              expenseCount,
+              invoiceCount,
+              customerCount,
+              orgRecordCount,
+              totalEntries: incomeCount + expenseCount + invoiceCount + customerCount + orgRecordCount
+            };
+          })
+        : [{
+            id: item.activeOrgId || "org_primary",
+            name: ORG_TYPE_LABELS[getOrgType(item.organizationType)] || "Organization",
+            orgType: getOrgType(item.organizationType),
+            orgTypeLabel: ORG_TYPE_LABELS[getOrgType(item.organizationType)] || item.organizationType,
+            location: "",
+            sessionMs: 0,
+            incomeCount: 0,
+            expenseCount: 0,
+            invoiceCount: 0,
+            customerCount: 0,
+            orgRecordCount: 0,
+            totalEntries: 0
+          }];
 
       const activityAt = item.lastActivityAt || item.updatedAt || item.onboardingSeenAt || item.createdAt || "";
       const daysSinceActivity = getDaysSince(activityAt, now);
       const totalEntries = organizations.reduce((sum, org) => sum + org.totalEntries, 0);
-      const totalSessionMs = Number(sessionAnalytics.totalSessionMs || 0);
+      const totalSessionMs = 0; // session analytics not yet tracked in new backend
       const activityScore = Math.round(totalSessionMs / 60000) + totalEntries + organizations.length * 4 + (daysSinceActivity === null ? 0 : Math.max(0, 30 - Math.min(daysSinceActivity, 30)));
       const primaryOrg = organizations[0] || null;
 
@@ -860,15 +663,6 @@ export default function AdminPanel({ year, month }) {
             >
               {loading ? "Refreshing…" : "Refresh data"}
             </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12, minWidth: 180 }}
-              onClick={refreshAggregatesNow}
-              disabled={loading || refreshingAggregates}
-            >
-              {refreshingAggregates ? "Refreshing aggregates..." : "Refresh aggregates now"}
-            </button>
           </div>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
@@ -932,11 +726,6 @@ export default function AdminPanel({ year, month }) {
               ? `Executive totals${areOrgDerivationsReady ? ", workspace counts, and audience distributions," : ""}${isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey ? " plus current-month billing cards" : ""} are sourced from precomputed aggregates (updated ${snapshotGeneratedAt.toLocaleString("en-IN")}).`
               : "Executive totals currently use sampled live data until the admin aggregate snapshot is generated."}
           </div>
-          {!!migrationInfo.message && (
-            <div style={{ fontSize: 12, color: migrationInfo.running ? "var(--gold)" : "var(--text-sec)", marginTop: 10, lineHeight: 1.6 }}>
-              {migrationInfo.message}
-            </div>
-          )}
         </div>
 
         <div className="card" style={{ padding: 18 }}>
@@ -993,16 +782,12 @@ export default function AdminPanel({ year, month }) {
 
         <div className="card" style={{ padding: 18, marginBottom: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Billing Pulse</div>
-          {!paymentRequestsEnabled ? (
-            <EmptyState title="Payment requests are locked by rules" message="User data is loading, but payment_requests is not readable yet. Add rules for payment_requests to unlock billing analytics." accentColor="var(--gold)" />
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
               <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} submissions awaiting review`} color="var(--gold)" />
               <MetricTile label="Rejected Requests" value={analytics.stats.rejectedRequests} sub="Needs manual follow-up" color="var(--danger)" />
               <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk in paid users" color="var(--danger)" />
               <MetricTile label="Resident Portals" value={collaborationStats.residentPortalUsers} sub="Apartment portal adoption signal" color="var(--purple)" />
             </div>
-          )}
         </div>
       </div>
 

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, onSnapshot, setDoc, updateDoc } from "firebase/firestore";
-import { db } from "../../firebase";
+import { membersApi } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Input, Field } from "../../components/UI";
@@ -12,22 +11,6 @@ const ROLES = [
 
 function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || "").trim());
-}
-
-function getMembersDocRef(ownerId, orgId) {
-  return doc(db, "users", ownerId, "orgs", orgId, "settings", "members");
-}
-
-function getInvitationsCollectionRef(ownerId, orgId) {
-  return collection(db, "users", ownerId, "orgs", orgId, "invitations");
-}
-
-function getPendingInviteRef(ownerId, orgId, sanitizedEmail) {
-  return doc(db, "pendingInvites", `${ownerId}_${orgId}_${sanitizedEmail}`);
-}
-
-function getOrgMemberRef(ownerId, orgId, memberUid) {
-  return doc(db, "users", ownerId, "orgMembers", `${orgId}_${memberUid}`);
 }
 
 export default function OrgMembersScreen({ onBack }) {
@@ -44,17 +27,17 @@ export default function OrgMembersScreen({ onBack }) {
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Load members from Firestore in real-time
   useEffect(() => {
     if (!user?.id || !orgId) return;
-    const ref = getInvitationsCollectionRef(user.id, orgId);
-    const unsub = onSnapshot(ref, snap => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      list.sort((a, b) => String(b.invitedAt || "").localeCompare(String(a.invitedAt || "")));
-      setMembers(list);
-      setLoading(false);
-    }, () => setLoading(false));
-    return unsub;
+    membersApi.list(user.id, orgId)
+      .then(list => {
+        const sorted = [...list].sort((a, b) =>
+          String(b.invitedAt || "").localeCompare(String(a.invitedAt || ""))
+        );
+        setMembers(sorted);
+      })
+      .catch(err => setError(err.message || "Failed to load members."))
+      .finally(() => setLoading(false));
   }, [user?.id, orgId]);
 
   useEffect(() => {
@@ -80,44 +63,28 @@ export default function OrgMembersScreen({ onBack }) {
     setError("");
     setSaving(true);
     try {
-      const sanitized = email.replace(/[^a-z0-9]/gi, "_");
-      const invitedAt = new Date().toISOString();
-      const payload = {
+      const invitation = await membersApi.invite(user.id, orgId, {
         email,
         role: inviteRole,
-        status: "invited",
-        orgId,
         orgName,
-        organizationType: data.account?.organizationType || "small_business",
-        ownerId: user.id,
-        ownerName: user.name || user.email || "",
-        invitedAt
-      };
-      // Write to owner's invitations list (for member management UI)
-      await setDoc(doc(getInvitationsCollectionRef(user.id, orgId), sanitized), payload);
-      // Write to root pendingInvites so the invitee can discover it on login
-      await setDoc(getPendingInviteRef(user.id, orgId, sanitized), payload);
+        orgType: data.account?.organizationType || "small_business"
+      });
+      // Append to local list as a pending entry
+      setMembers(prev => [{ ...invitation, status: "pending" }, ...prev]);
       setInviteEmail("");
       setSuccessMsg(`Invite sent to ${email}`);
-    } catch {
-      setError("Failed to send invite. Please try again.");
+    } catch (err) {
+      setError(err.message || "Failed to send invite. Please try again.");
     } finally {
       setSaving(false);
     }
-  }, [inviteEmail, inviteRole, members, orgId, orgName, user?.email, user?.id, user?.name]);
+  }, [inviteEmail, inviteRole, members, orgId, orgName, user?.email, user?.id, data.account?.organizationType]);
 
   const handleRoleChange = useCallback(async (member, newRole) => {
     if (!user?.id) return;
     try {
-      await setDoc(
-        doc(getInvitationsCollectionRef(user.id, orgId), member.id),
-        { ...member, role: newRole },
-        { merge: true }
-      );
-      // Also update orgMembers doc so Firestore rules + the member's live role listener reflect the change
-      if (member.memberUid) {
-        await setDoc(getOrgMemberRef(user.id, orgId, member.memberUid), { role: newRole }, { merge: true });
-      }
+      await membersApi.changeRole(user.id, orgId, member.id, newRole);
+      setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
     } catch {
       setError("Failed to update role.");
     }
@@ -127,22 +94,8 @@ export default function OrgMembersScreen({ onBack }) {
     if (!window.confirm(`Remove ${member.email} from this organization?`)) return;
     if (!user?.id) return;
     try {
-      const sanitized = (member.email || "").replace(/[^a-z0-9]/gi, "_");
-
-      // 1. Revoke org access via orgMembers doc.
-      //    Set status "removed" FIRST so the member's live onSnapshot fires while the
-      //    doc still exists (Firestore can evaluate resource.data.memberUid == member's uid).
-      //    Then delete the doc so isMemberOf() permanently denies access.
-      if (member.memberUid) {
-        const memberRef = getOrgMemberRef(user.id, orgId, member.memberUid);
-        await updateDoc(memberRef, { status: "removed" }).catch(() => {});
-        await deleteDoc(memberRef).catch(() => {});
-      }
-
-      // 2. Remove from owner's invitations list (removes from member management UI)
-      await deleteDoc(doc(getInvitationsCollectionRef(user.id, orgId), member.id));
-      // 3. Remove from pendingInvites (stops showing banner if not yet accepted)
-      await deleteDoc(getPendingInviteRef(user.id, orgId, sanitized)).catch(() => {});
+      await membersApi.remove(user.id, orgId, member.id);
+      setMembers(prev => prev.filter(m => m.id !== member.id));
     } catch {
       setError("Failed to remove member.");
     }
@@ -254,7 +207,9 @@ export default function OrgMembersScreen({ onBack }) {
           {members.map(member => (
             <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 10 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", wordBreak: "break-all" }}>{member.email}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)", wordBreak: "break-all" }}>
+                  {member.email}
+                </div>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
                   Invited {member.invitedAt ? new Date(member.invitedAt).toLocaleDateString("en-IN") : ""}
                 </div>

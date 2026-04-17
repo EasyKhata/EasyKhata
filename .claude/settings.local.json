@@ -9,7 +9,22 @@
       "Bash(taskkill /PID 7208 /F)",
       "Bash(cmd.exe /c \"taskkill /PID 7208 /F\")",
       "Bash(cmd.exe /c \"netstat -ano | findstr :3001\")",
-      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")"
+      "Bash(cmd.exe /c \"netstat -ano | findstr :3000\")",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(echo DATABASE_URL=\"postgresql://placeholder:placeholder@localhost:5432/easykhata\")",
+      "Bash(rm .env)",
+      "Bash(railway --version)",
+      "Bash(git --version)",
+      "Bash(railway login *)",
+      "Bash(grep -n \"TODO Step 12\" /c/Users/SushmaReddy/Desktop/EasyKhata/EasyKhata/src/sections/*.jsx)",
+      "Bash(grep -n \"requireAuth\" /c/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/*.js)",
+      "Bash(node --input-type=module --eval ' *)",
+      "Bash(node -e \"const fs = require\\('fs'\\); fs.readFileSync\\('c:/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/support.js', 'utf8'\\)\")",
+      "Bash(node -e \"const fs = require\\('fs'\\); fs.readFileSync\\('c:/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/admin.js', 'utf8'\\)\")",
+      "Bash(wc -l /c/Users/SushmaReddy/Desktop/EasyKhata/EasyKhata/src/sections/*.jsx)",
+      "Bash(grep -n \"pagination\\\\|limit\\\\|take\\\\|skip\" /c/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/*.js)",
+      "Bash(find /c/Users/SushmaReddy/Desktop/EasyKhata/server -name \".env*\" -exec cat {} \\\\;)"
     ]
   }
 }

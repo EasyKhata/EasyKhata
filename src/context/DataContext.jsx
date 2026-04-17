@@ -1,16 +1,104 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { collection, deleteDoc, deleteField, doc, getDoc, getDocs, increment, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations, isFreeReadOnlyMode } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
-import { ORG_COLLECTION_KEYS, buildOrgSummary, deleteOrgCollectionDocs, sortOrgCollectionRecords, syncOrgCollection, hydrateUserOrgCollections } from "../utils/firestoreOrgCollections";
+import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
+import { orgsApi, usersApi, membersApi } from "../lib/api";
+
+const EMPTY_SUMMARY = {
+  currentMonth: "",
+  currentYear: 0,
+  monthIncomeTotal: 0,
+  monthExpenseTotal: 0,
+  monthNet: 0,
+  ytdIncomeTotal: 0,
+  ytdExpenseTotal: 0,
+  ytdNet: 0,
+  overdueCount: 0,
+  overdueAmount: 0,
+  budgetAlerts: [],
+  computedAt: ""
+};
 import { useAuth } from "./AuthContext";
 import { logError } from "../utils/logger";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
+
+// ── API shape ↔ DataContext shape mappers ─────────────────────────────────────
+
+// Flat API response → nested DataContext org object
+function fromApiOrg(apiOrg, collections = {}) {
+  return {
+    account: {
+      name: apiOrg.name || "",
+      email: apiOrg.email || "",
+      phone: apiOrg.phone || "",
+      addressLine: apiOrg.addressLine || "",
+      city: apiOrg.city || "",
+      state: apiOrg.state || "",
+      country: apiOrg.country || "",
+      location: apiOrg.location || "",
+      address: apiOrg.address || "",
+      gstin: apiOrg.gstin || "",
+      showHSN: apiOrg.showHsn || false,
+      organizationType: apiOrg.organizationType || "small_business"
+    },
+    currency: {
+      code: apiOrg.currencyCode || "INR",
+      symbol: apiOrg.currencySymbol || "Rs",
+      name: apiOrg.currencyName || "Indian Rupee",
+      flag: apiOrg.currencyFlag || "IN"
+    },
+    goals: {
+      monthlySavings: apiOrg.goalsMonthlySavings || 0,
+      targetAmount: apiOrg.goalsTargetAmount || 0,
+      targetDate: apiOrg.goalsTargetDate || "",
+      savedAmount: apiOrg.goalsSavedAmount || 0,
+      note: apiOrg.goalsNote || ""
+    },
+    budgets: apiOrg.budgets || {},
+    notificationPrefs: { ...EMPTY_ORG_DATA.notificationPrefs, ...(apiOrg.notificationPrefs || {}) },
+    income: collections.income || apiOrg.income || [],
+    expenses: collections.expenses || apiOrg.expenses || [],
+    invoices: collections.invoices || apiOrg.invoices || [],
+    customers: collections.customers || apiOrg.customers || [],
+    orgRecords: collections.orgRecords || apiOrg.orgRecords || {}
+  };
+}
+
+// Nested DataContext org → flat API update payload
+function toApiOrgUpdate(orgData) {
+  const acc = orgData.account || {};
+  const cur = orgData.currency || {};
+  const goals = orgData.goals || {};
+  return {
+    name: acc.name || "",
+    email: acc.email || "",
+    phone: acc.phone || "",
+    addressLine: acc.addressLine || "",
+    city: acc.city || "",
+    state: acc.state || "",
+    country: acc.country || "",
+    location: acc.location || "",
+    address: acc.address || "",
+    gstin: acc.gstin || "",
+    showHsn: Boolean(acc.showHSN),
+    organizationType: acc.organizationType || "small_business",
+    currencyCode: cur.code || "INR",
+    currencySymbol: cur.symbol || "Rs",
+    currencyName: cur.name || "Indian Rupee",
+    currencyFlag: cur.flag || "IN",
+    goalsMonthlySavings: Number(goals.monthlySavings) || 0,
+    goalsTargetAmount: Number(goals.targetAmount) || 0,
+    goalsTargetDate: goals.targetDate || "",
+    goalsSavedAmount: Number(goals.savedAmount) || 0,
+    goalsNote: goals.note || "",
+    budgets: orgData.budgets || {},
+    notificationPrefs: orgData.notificationPrefs || {}
+  };
+}
 const SESSION_STORAGE_PREFIX = "ledger-session-analytics:";
 const SESSION_FLUSH_INTERVAL_MS = 30000;
 const SESSION_MIN_FLUSH_MS = 1000;
@@ -275,28 +363,6 @@ function buildResetData(currentData, nextAccount) {
   };
 }
 
-function sanitizeForFirestore(value) {
-  if (value === undefined) {
-    return null;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map(item => sanitizeForFirestore(item)).filter(item => item !== undefined);
-  }
-
-  if (value && typeof value === "object") {
-    return Object.entries(value).reduce((acc, [key, entry]) => {
-      const cleaned = sanitizeForFirestore(entry);
-      if (cleaned !== undefined) {
-        acc[key] = cleaned;
-      }
-      return acc;
-    }, {});
-  }
-
-  return value;
-}
-
 function getSessionStorageKey(userId) {
   return `${SESSION_STORAGE_PREFIX}${userId}`;
 }
@@ -321,33 +387,11 @@ function clearSessionDraft(userId) {
   window.localStorage.removeItem(getSessionStorageKey(userId));
 }
 
-function getOrgInvoicesCollection(userId, orgId) {
-  return collection(db, "users", userId, "orgs", orgId, "invoices");
-}
-
-function getOrgInvoiceDoc(userId, orgId, invoiceId) {
-  return doc(db, "users", userId, "orgs", orgId, "invoices", invoiceId);
-}
-
-function sortInvoices(invoices = []) {
-  return [...(invoices || [])].sort((left, right) => {
-    const dateCompare = String(right?.date || "").localeCompare(String(left?.date || ""));
-    if (dateCompare !== 0) return dateCompare;
-
-    const updatedCompare = String(right?.updatedAt || right?.createdAt || "").localeCompare(String(left?.updatedAt || left?.createdAt || ""));
-    if (updatedCompare !== 0) return updatedCompare;
-
-    return String(right?.id || "").localeCompare(String(left?.id || ""));
-  });
-}
-
-function buildInvoiceSyncSignature(invoices = []) {
-  return JSON.stringify(sortInvoices(invoices).map(invoice => sanitizeForFirestore(invoice)));
-}
 
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
+  const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
   const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
@@ -358,7 +402,6 @@ export function DataProvider({ children }) {
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
-  const invoiceSyncRef = useRef({});
 
   // Derived: shared orgs list and viewer-mode flag
   const sharedOrgs = useMemo(() =>
@@ -366,7 +409,8 @@ export function DataProvider({ children }) {
     [user?.sharedOrgs]
   );
 
-  // Live role listener — updates when the owner changes the member's role in real-time
+  // Poll membership status every 30s while viewing a shared org
+  // Replaces the Firestore onSnapshot live-role listener
   useEffect(() => {
     if (!activeSharedOrgKey || !user?.id) {
       setActiveSharedOrgRole(null);
@@ -377,44 +421,43 @@ export function DataProvider({ children }) {
       setActiveSharedOrgRole(null);
       return undefined;
     }
-    const memberKey = `${sharedInfo.orgId}_${user.id}`;
-    const docRef = doc(db, "users", sharedInfo.ownerId, "orgMembers", memberKey);
-    const unsub = onSnapshot(docRef, snap => {
-      // status:"removed" is set before deletion so the event is delivered while
-      // resource.data.memberUid can still be evaluated by Firestore security rules.
-      const isRemoved = !snap.exists() || snap.data()?.status === "removed";
-      if (!isRemoved) {
-        const liveRole = snap.data().role || "viewer";
+
+    async function checkMembership() {
+      try {
+        const memberships = await orgsApi.getMemberships(user.id);
+        const match = memberships.find(
+          m => m.ownerId === sharedInfo.ownerId && m.orgId === sharedInfo.orgId
+        );
+        if (!match) {
+          // Removed — revoke access
+          const staleKey = `${sharedInfo.ownerId}_${sharedInfo.orgId}`;
+          setUser(prev => {
+            if (!prev) return prev;
+            const next = { ...(prev.sharedOrgs || {}) };
+            delete next[staleKey];
+            return { ...prev, sharedOrgs: next };
+          });
+          activeSharedOrgRef.current = null;
+          setActiveSharedOrgKey(null);
+          setActiveSharedOrgRole(null);
+          setOwnDataReloadKey(k => k + 1);
+          return;
+        }
+        // Role may have changed
+        const liveRole = match.role || "viewer";
         setActiveSharedOrgRole(liveRole);
-        // Keep the ref in sync so update() guard stays current
         if (activeSharedOrgRef.current) {
           activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: liveRole, isViewer: liveRole === "viewer" };
         }
+      } catch (err) {
+        logError("membership poll failed", err);
       }
-      if (isRemoved && activeSharedOrgRef.current) {
-        // Owner removed this member while they were viewing — revoke immediately
-        const removedInfo = activeSharedOrgRef.current;
-        const staleKey = `${removedInfo.ownerId}_${removedInfo.orgId}`;
-        // Remove stale sharedOrgs entry from member's own user doc (uid is stable, no stale-closure risk)
-        if (user?.id) {
-          updateDoc(doc(db, "users", user.id), {
-            [`sharedOrgs.${staleKey}`]: deleteField()
-          }).catch(() => {});
-        }
-        setUser(prev => {
-          if (!prev) return prev;
-          const next = { ...(prev.sharedOrgs || {}) };
-          delete next[staleKey];
-          return { ...prev, sharedOrgs: next };
-        });
-        activeSharedOrgRef.current = null;
-        setActiveSharedOrgKey(null);
-        setActiveSharedOrgRole(null);
-        setOwnDataReloadKey(k => k + 1);
-      }
-    }, err => logError("orgMembers onSnapshot failed", err));
-    return unsub;
-  }, [activeSharedOrgKey, user?.id, user?.sharedOrgs]);
+    }
+
+    checkMembership();
+    const intervalId = setInterval(checkMembership, 30000);
+    return () => clearInterval(intervalId);
+  }, [activeSharedOrgKey, user?.id, user?.sharedOrgs, setUser]);
 
   const isViewerMode = useMemo(() => {
     if (!activeSharedOrgKey) return false;
@@ -422,181 +465,26 @@ export function DataProvider({ children }) {
     return role === "viewer";
   }, [activeSharedOrgKey, activeSharedOrgRole, user?.sharedOrgs]);
 
-  const syncActiveOrgCollections = useCallback(async (nextState, { force = false } = {}) => {
+  const syncActiveOrgCollections = useCallback(async (nextState) => {
     if (!user?.id || !nextState?.activeOrgId) return;
-
-    await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(collectionKey =>
-        syncOrgCollection({
-          db,
-          userId: user.id,
-          orgId: nextState.activeOrgId,
-          collectionKey,
-          records: nextState[collectionKey] || [],
-          signatureStore: collectionSyncRef.current,
-          force
-        })
-      )
-    );
+    const orgId = nextState.activeOrgId;
+    await Promise.allSettled([
+      ...ORG_COLLECTION_KEYS.map(key =>
+        orgsApi.syncCollection(user.id, orgId, key, nextState[key] || [])
+      ),
+      Object.keys(nextState.orgRecords || {}).length > 0
+        ? orgsApi.syncOrgRecords(user.id, orgId, nextState.orgRecords)
+        : Promise.resolve()
+    ]);
   }, [user?.id]);
 
-  // Syncs org collections to the owner's path (used when in shared org admin mode)
-  const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo, { force = false } = {}) => {
+  const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo) => {
     if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
     await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(collectionKey =>
-        syncOrgCollection({
-          db,
-          userId: sharedInfo.ownerId,
-          orgId: sharedInfo.orgId,
-          collectionKey,
-          records: nextState[collectionKey] || [],
-          signatureStore: collectionSyncRef.current,
-          force
-        })
+      ORG_COLLECTION_KEYS.map(key =>
+        orgsApi.syncCollection(sharedInfo.ownerId, sharedInfo.orgId, key, nextState[key] || [])
       )
     );
-  }, []);
-
-  const deleteOrgCollectionsForOrg = useCallback(async (userId, orgId) => {
-    if (!userId || !orgId) return;
-
-    await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(collectionKey =>
-        deleteOrgCollectionDocs({
-          db,
-          userId,
-          orgId,
-          collectionKey,
-          signatureStore: collectionSyncRef.current
-        })
-      )
-    );
-  }, []);
-
-  const syncOrgInvoices = useCallback(async (userId, orgId, invoices = [], { force = false } = {}) => {
-    if (!userId || !orgId) return;
-
-    const syncKey = `${userId}:${orgId}`;
-    const normalizedInvoices = sortInvoices((invoices || []).map(invoice => ({ ...invoice, id: invoice.id || uid() })));
-    const nextSignature = buildInvoiceSyncSignature(normalizedInvoices);
-
-    if (!force && invoiceSyncRef.current[syncKey] === nextSignature) {
-      return;
-    }
-
-    try {
-      const invoicesCollection = getOrgInvoicesCollection(userId, orgId);
-      const snapshot = await getDocs(invoicesCollection);
-      const existingDocs = new Map(snapshot.docs.map(item => [item.id, item.data()]));
-      const nextIds = new Set();
-      const batch = writeBatch(db);
-      const nowIso = new Date().toISOString();
-
-      normalizedInvoices.forEach(invoice => {
-        const invoiceId = invoice.id || uid();
-        const existingInvoice = existingDocs.get(invoiceId) || {};
-        nextIds.add(invoiceId);
-        batch.set(
-          getOrgInvoiceDoc(userId, orgId, invoiceId),
-          sanitizeForFirestore({
-            ...invoice,
-            id: invoiceId,
-            orgId,
-            createdAt: invoice.createdAt || existingInvoice.createdAt || nowIso,
-            updatedAt: nowIso
-          })
-        );
-      });
-
-      snapshot.docs.forEach(item => {
-        if (!nextIds.has(item.id)) {
-          batch.delete(item.ref);
-        }
-      });
-
-      await batch.commit();
-      invoiceSyncRef.current[syncKey] = nextSignature;
-    } catch (err) {
-      logError(`Invoice subcollection sync failed for ${orgId}`, err);
-    }
-  }, []);
-
-  const deleteOrgInvoiceCollection = useCallback(async (userId, orgId) => {
-    if (!userId || !orgId) return;
-
-    try {
-      const snapshot = await getDocs(getOrgInvoicesCollection(userId, orgId));
-      if (snapshot.empty) {
-        delete invoiceSyncRef.current[`${userId}:${orgId}`];
-        return;
-      }
-
-      const batch = writeBatch(db);
-      snapshot.docs.forEach(item => batch.delete(item.ref));
-      await batch.commit();
-      delete invoiceSyncRef.current[`${userId}:${orgId}`];
-    } catch (err) {
-      logError(`Invoice subcollection cleanup failed for ${orgId}`, err);
-    }
-  }, []);
-
-  const hydrateOrgInvoices = useCallback(async (userId, orgs = {}) => {
-    const orgEntries = Object.entries(orgs || {});
-    if (!userId || !orgEntries.length) {
-      return { orgs, orgIdsToBackfill: [] };
-    }
-
-    const results = await Promise.all(
-      orgEntries.map(async ([orgId, orgValue]) => {
-        try {
-          const snapshot = await getDocs(getOrgInvoicesCollection(userId, orgId));
-          if (snapshot.empty) {
-            const embeddedInvoices = sortInvoices(orgValue?.invoices || []);
-            invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(embeddedInvoices);
-            return {
-              orgId,
-              orgValue: { ...orgValue, invoices: embeddedInvoices },
-              shouldBackfill: embeddedInvoices.length > 0
-            };
-          }
-
-          const subcollectionInvoices = sortInvoices(
-            snapshot.docs.map(item => ({
-              id: item.id,
-              ...item.data()
-            }))
-          );
-          invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(subcollectionInvoices);
-          return {
-            orgId,
-            orgValue: { ...orgValue, invoices: subcollectionInvoices },
-            shouldBackfill: false
-          };
-        } catch (err) {
-          logError(`Invoice subcollection load failed for ${orgId}`, err);
-          const embeddedInvoices = sortInvoices(orgValue?.invoices || []);
-          invoiceSyncRef.current[`${userId}:${orgId}`] = buildInvoiceSyncSignature(embeddedInvoices);
-          return {
-            orgId,
-            orgValue: { ...orgValue, invoices: embeddedInvoices },
-            shouldBackfill: false
-          };
-        }
-      })
-    );
-
-    const nextOrgs = {};
-    const orgIdsToBackfill = [];
-
-    results.forEach(result => {
-      nextOrgs[result.orgId] = result.orgValue;
-      if (result.shouldBackfill) {
-        orgIdsToBackfill.push(result.orgId);
-      }
-    });
-
-    return { orgs: nextOrgs, orgIdsToBackfill };
   }, []);
 
   const persistSessionDraft = useCallback(() => {
@@ -658,12 +546,12 @@ export function DataProvider({ children }) {
       };
 
       if (!sessionRef.current.sessionRegistered) {
-        updates["analytics.sessionCount"] = increment(1);
+        updates["analytics.sessionCount"] = (updates["analytics.sessionCount"] || 0) + 1;
         sessionRef.current.sessionRegistered = true;
       }
 
       if (!sessionRef.current.orgVisits?.[nextOrgId]) {
-        updates[`analytics.byOrg.${nextOrgId}.sessionCount`] = increment(1);
+        updates[`analytics.byOrg.${nextOrgId}.sessionCount`] = 1;
         sessionRef.current.orgVisits = { ...(sessionRef.current.orgVisits || {}), [nextOrgId]: true };
       }
 
@@ -675,7 +563,7 @@ export function DataProvider({ children }) {
         }
       };
       persistSessionDraft();
-      await updateDoc(doc(db, "users", user.id), updates);
+      await usersApi.update(user.id, updates).catch(err => logError("Session org change flush failed", err));
     },
     [data.orgs, persistSessionDraft, user?.id, user?.organizationType]
   );
@@ -698,27 +586,15 @@ export function DataProvider({ children }) {
       persistSessionDraft();
 
       const nowIso = new Date().toISOString();
+      // analytics.* fields are not in server PROFILE_FIELDS — only update activity timestamp
       const updates = {
         updatedAt: nowIso,
-        lastActivityAt: nowIso,
-        "analytics.totalSessionMs": increment(totalMs),
-        "analytics.lastSessionAt": nowIso,
-        "analytics.lastSessionDurationMs": totalMs
+        lastActivityAt: nowIso
       };
-
-      Object.entries(byOrg).forEach(([orgId, orgMs]) => {
-        const rounded = Math.round(orgMs || 0);
-        if (rounded < SESSION_MIN_FLUSH_MS) return;
-        const meta = sessionRef.current.orgMeta?.[orgId] || {};
-        updates[`analytics.byOrg.${orgId}.totalSessionMs`] = increment(rounded);
-        updates[`analytics.byOrg.${orgId}.lastActivityAt`] = nowIso;
-        if (meta.name) updates[`analytics.byOrg.${orgId}.name`] = meta.name;
-        if (meta.organizationType) updates[`analytics.byOrg.${orgId}.organizationType`] = meta.organizationType;
-      });
 
       flushInFlightRef.current = true;
       try {
-        await updateDoc(doc(db, "users", user.id), updates);
+        await usersApi.update(user.id, updates);
         setUser(prev => (prev ? { ...prev, lastActivityAt: nowIso } : prev));
       } catch (err) {
         sessionRef.current.pendingTotalMs = (sessionRef.current.pendingTotalMs || 0) + totalMs;
@@ -738,7 +614,7 @@ export function DataProvider({ children }) {
     nextState => {
       if (!user?.id) return;
 
-      // In shared org mode: only sync collections to owner's path; don't touch member's own doc
+      // In shared org (admin) mode: sync collections to owner's path only
       const sharedInfo = activeSharedOrgRef.current;
       if (sharedInfo) {
         if (!sharedInfo.isViewer) {
@@ -747,65 +623,37 @@ export function DataProvider({ children }) {
         return;
       }
 
-      const activityAt = new Date().toISOString();
-
+      // Optimistic local cache
       setUserData(user.id, "appData", nextState);
 
-      setDoc(
-        doc(db, "users", user.id),
-        sanitizeForFirestore({
-          updatedAt: activityAt,
-          lastActivityAt: activityAt,
-          activeOrgId: nextState.activeOrgId,
-          organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
-          // Keep only lightweight org metadata in user root document.
-          // High-volume records stay in org subcollections.
-          orgs: buildMetadataOrgMap({
-            ...nextState.orgs,
-            [nextState.activeOrgId]: extractOrgMetadataOnly(nextState)
-          })
-        }),
-        { merge: true }
-      );
-
-      syncActiveOrgCollections(nextState);
-
-      // Write a readable org profile into the org's own subcollection.
-      // Members can read this via the existing orgs/{orgId}/{document=**} Firestore rule.
-      // This is how members get the correct org name + type when switching to a shared org.
-      setDoc(
-        doc(db, "users", user.id, "orgs", nextState.activeOrgId, "meta", "profile"),
-        {
-          name: nextState.account?.name || "",
-          organizationType: nextState.account?.organizationType || "small_business",
-          currency: sanitizeForFirestore(nextState.currency || EMPTY_ORG_DATA.currency),
-          updatedAt: new Date().toISOString()
-        },
-        { merge: true }
-      ).catch(err => logError("meta/profile write failed", err));
+      // Fire-and-forget API writes (non-blocking)
+      const orgId = nextState.activeOrgId;
+      orgsApi.update(user.id, orgId, toApiOrgUpdate(nextState)).catch(err => logError("org update failed", err));
+      syncActiveOrgCollections(nextState).catch(err => logError("collection sync failed", err));
+      usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || "small_business" })
+        .catch(err => logError("user update failed", err));
 
       setUser(prev =>
         prev
           ? {
               ...prev,
-              activeOrgId: nextState.activeOrgId,
+              activeOrgId: orgId,
               organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
             }
           : prev
       );
     },
-    [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id, user?.organizationType]
+    [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id]
   );
 
   useEffect(() => {
     async function loadData() {
-      // Skip own-data load if currently viewing a shared org
       if (activeSharedOrgRef.current) return;
 
       if (!user?.id) {
         collectionSyncRef.current = {};
-        invoiceSyncRef.current = {};
         setData(EMPTY_DATA);
+        setOrgSummary(EMPTY_SUMMARY);
         setLoaded(true);
         return;
       }
@@ -813,132 +661,64 @@ export function DataProvider({ children }) {
       setLoaded(false);
 
       try {
-        const userSnap = await getDoc(doc(db, "users", user.id));
-        const userDoc = userSnap.exists() ? userSnap.data() : {};
+        // Load all org metadata + active org's full collections + summary in parallel
+        const activeOrgId = user.activeOrgId || DEFAULT_ORG_ID;
+        const [allOrgs, activeOrgFull, summary] = await Promise.all([
+          orgsApi.list(user.id),
+          orgsApi.getFull(user.id, activeOrgId),
+          orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
+        ]);
 
-        const fallback = {
-          account: {
-            email: userDoc.email || user.email || "",
-            phone: userDoc.phone || user.phone || "",
-            organizationType: userDoc.organizationType || user.organizationType
-          }
-        };
-        const normalizedOrgs = normalizeOrgCollection(userDoc, fallback);
-        const localData = getUserData(user.id, "appData") || EMPTY_DATA;
-        const localOrgs = normalizeOrgCollection(localData, fallback);
-        const { orgs, backfillTargets } = await hydrateUserOrgCollections({
-          db,
-          userId: user.id,
-          orgs: normalizedOrgs,
-          collectionKeys: ORG_COLLECTION_KEYS,
-          signatureStore: collectionSyncRef.current
+        // Build orgs map: all orgs with metadata only, active org with full data
+        const orgsMap = {};
+        (allOrgs || []).forEach(apiOrg => {
+          orgsMap[apiOrg.id] = normalizeOrgData(fromApiOrg(apiOrg));
         });
-        const mergedFromLocal = mergeOrgCollectionsFromLocal(orgs, localOrgs, ORG_COLLECTION_KEYS);
-        const mergedOrgs = mergedFromLocal.orgs;
-        const mergedBackfillTargets = [...backfillTargets, ...mergedFromLocal.backfillTargets];
+        if (activeOrgFull) {
+          orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull));
+        }
+
+        if (!orgsMap[activeOrgId]) {
+          orgsMap[DEFAULT_ORG_ID] = normalizeOrgData({});
+        }
+
         const nextState = buildStateFromOrganizations({
-          orgs: mergedOrgs,
-          activeOrgId: userDoc.activeOrgId || Object.keys(mergedOrgs)[0] || DEFAULT_ORG_ID,
+          orgs: orgsMap,
+          activeOrgId: activeOrgFull?.id || activeOrgId,
           sharedLedger: null
         });
 
         setData(nextState);
+        setOrgSummary(summary || EMPTY_SUMMARY);
+        setUserData(user.id, "appData", nextState);
         setUser(prev =>
-          prev
-            ? {
-                ...prev,
-                activeOrgId: nextState.activeOrgId,
-                organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
-              }
-            : prev
+          prev ? {
+            ...prev,
+            activeOrgId: nextState.activeOrgId,
+            organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
+          } : prev
         );
 
-        // Write meta/profile for every org so invited members always get the correct
-        // org name + organizationType when they switch to this shared org.
-        const profileWriteAt = new Date().toISOString();
-        Object.entries(nextState.orgs || {}).forEach(([orgId, orgValue]) => {
-          setDoc(
-            doc(db, "users", user.id, "orgs", orgId, "meta", "profile"),
-            {
-              name: orgValue.account?.name || "",
-              organizationType: orgValue.account?.organizationType || "small_business",
-              currency: sanitizeForFirestore(orgValue.currency || EMPTY_ORG_DATA.currency),
-              updatedAt: profileWriteAt
-            },
-            { merge: true }
-          ).catch(err => logError("meta/profile write failed", err));
-        });
-
-        if (!userDoc.orgs || !userDoc.activeOrgId) {
-          setDoc(
-            doc(db, "users", user.id),
-            sanitizeForFirestore({
-              activeOrgId: nextState.activeOrgId,
-              organizationType: nextState.account?.organizationType || userDoc.organizationType || "small_business",
-              orgs: buildMetadataOrgMap(nextState.orgs)
-            }),
-            { merge: true }
-          );
-        }
-
-        if (mergedBackfillTargets.length) {
-          Promise.allSettled(
-            mergedBackfillTargets.map(target =>
-              syncOrgCollection({
-                db,
-                userId: user.id,
-                orgId: target.orgId,
-                collectionKey: target.collectionKey,
-                records: target.records,
-                signatureStore: collectionSyncRef.current,
-                force: true,
-                deleteMissing: false
-              })
-            )
-          );
-        }
-
-        // Validate sharedOrgs: prune entries whose orgMembers doc is gone or has status "removed".
-        // This handles removal while the member was on their own org (onSnapshot not running).
-        const sharedOrgsToCheck = Object.entries(user?.sharedOrgs || {});
-        if (sharedOrgsToCheck.length > 0) {
-          const snapResults = await Promise.allSettled(
-            sharedOrgsToCheck.map(([, info]) =>
-              info?.ownerId && info?.orgId
-                ? getDoc(doc(db, "users", info.ownerId, "orgMembers", `${info.orgId}_${user.id}`))
-                : Promise.resolve(null)
-            )
-          );
-          const invalidKeys = sharedOrgsToCheck
-            .filter((_, i) => {
-              const r = snapResults[i];
-              if (r.status === "rejected") return false; // assume valid on error
-              const snap = r.value;
-              if (!snap) return true;
-              return !snap.exists() || snap.data()?.status === "removed";
-            })
-            .map(([key]) => key);
+        // Validate sharedOrgs — prune any memberships that were revoked
+        if (Object.keys(user?.sharedOrgs || {}).length > 0) {
+          const memberships = await orgsApi.getMemberships(user.id).catch(() => []);
+          const validKeys = new Set(memberships.map(m => `${m.ownerId}_${m.orgId}`));
+          const invalidKeys = Object.keys(user.sharedOrgs || {}).filter(k => !validKeys.has(k));
           if (invalidKeys.length > 0) {
-            const fieldUpdates = Object.fromEntries(invalidKeys.map(key => [`sharedOrgs.${key}`, deleteField()]));
-            updateDoc(doc(db, "users", user.id), fieldUpdates).catch(() => {});
             setUser(prev => {
               if (!prev) return prev;
               const next = { ...(prev.sharedOrgs || {}) };
-              invalidKeys.forEach(key => delete next[key]);
+              invalidKeys.forEach(k => delete next[k]);
               return { ...prev, sharedOrgs: next };
             });
           }
         }
       } catch (err) {
-        console.log("Firebase error, using local:", err);
+        logError("loadData failed, using local cache", err);
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
         const nextState = buildStateFromOrganizations({
           orgs: normalizeOrgCollection(localData, {
-            account: {
-              email: user?.email || "",
-              phone: user?.phone || "",
-              organizationType: user?.organizationType
-            }
+            account: { email: user?.email || "", phone: user?.phone || "", organizationType: user?.organizationType }
           }),
           activeOrgId: localData.activeOrgId || DEFAULT_ORG_ID,
           sharedLedger: null
@@ -1187,11 +967,18 @@ export function DataProvider({ children }) {
       }
     );
 
+    try {
+      await orgsApi.create(user.id, nextOrgId, {
+        organizationType: getOrgType(accountInput.organizationType || user.organizationType),
+        email: accountInput.email || user.email || "",
+        phone: accountInput.phone || user.phone || ""
+      });
+    } catch (err) {
+      return { error: err.message || "Could not create organization." };
+    }
+
     const nextState = buildStateFromOrganizations({
-      orgs: {
-        ...data.orgs,
-        [nextOrgId]: nextOrg
-      },
+      orgs: { ...data.orgs, [nextOrgId]: nextOrg },
       activeOrgId: nextOrgId,
       sharedLedger: null
     });
@@ -1211,32 +998,25 @@ export function DataProvider({ children }) {
       return { error: "At least one organization workspace must remain." };
     }
 
-    const nextOrgs = { ...data.orgs };
-    delete nextOrgs[orgId];
-
-    const nextActiveOrgId = data.activeOrgId === orgId ? Object.keys(nextOrgs)[0] : data.activeOrgId;
-    const nextState = buildStateFromOrganizations({
-      orgs: nextOrgs,
-      activeOrgId: nextActiveOrgId,
-      sharedLedger: null
-    });
-
-    setData(nextState);
-    persistState(nextState);
-    deleteOrgCollectionsForOrg(user.id, orgId);
-    deleteDoc(doc(db, "users", user.id, "orgs", orgId));
-
     try {
-      await updateDoc(doc(db, "users", user.id), {
+      const result = await orgsApi.delete(user.id, orgId);
+      const nextActiveOrgId = result.newActiveOrgId || (orgIds.find(id => id !== orgId)) || DEFAULT_ORG_ID;
+
+      const nextOrgs = { ...data.orgs };
+      delete nextOrgs[orgId];
+
+      const nextState = buildStateFromOrganizations({
+        orgs: nextOrgs,
         activeOrgId: nextActiveOrgId,
-        organizationType: nextState.account?.organizationType || user?.organizationType || "small_business",
-        orgs: sanitizeForFirestore(buildMetadataOrgMap(nextState.orgs))
+        sharedLedger: null
       });
+
+      setData(nextState);
+      setUserData(user.id, "appData", nextState);
+      return { success: true, activeOrgId: nextActiveOrgId };
     } catch (err) {
       return { error: err.message || "We couldn't finish deleting that organization right now." };
     }
-
-    return { success: true, activeOrgId: nextActiveOrgId };
   }
 
   const organizations = Object.entries(data.orgs || {}).map(([orgId, orgValue]) => ({
@@ -1259,34 +1039,24 @@ export function DataProvider({ children }) {
 
     const { ownerId, orgId } = sharedInfo;
     setLoaded(false);
-    setActiveSharedOrgRole(null); // will be set by onSnapshot once effect fires
+    setActiveSharedOrgRole(null);
     activeSharedOrgRef.current = { ...sharedInfo, isViewer: sharedInfo.role === "viewer" };
     setActiveSharedOrgKey(key);
 
     try {
-      // Load the owner's org data from Firestore (collections) + orgMembers doc (role) + meta/profile (name + type)
-      const [{ orgs }, memberSnap, profileSnap] = await Promise.all([
-        hydrateUserOrgCollections({
-          db,
-          userId: ownerId,
-          orgs: { [orgId]: EMPTY_ORG_DATA },
-          collectionKeys: ORG_COLLECTION_KEYS,
-          signatureStore: collectionSyncRef.current
-        }),
-        // orgMembers doc — holds current role; missing means member was removed
-        getDoc(doc(db, "users", ownerId, "orgMembers", `${orgId}_${user.id}`)),
-        // meta/profile — authoritative org name + organizationType written by the owner's app on every load/save
-        getDoc(doc(db, "users", ownerId, "orgs", orgId, "meta", "profile"))
+      // Verify membership is still active + get live role
+      const [memberships, orgFull] = await Promise.all([
+        orgsApi.getMemberships(user.id),
+        orgsApi.getFull(ownerId, orgId)
       ]);
 
-      // orgMembers doc missing or status:"removed" = owner removed this member — revoke access and clean up
-      if (!memberSnap.exists() || memberSnap.data()?.status === "removed") {
+      const membership = memberships.find(m => m.ownerId === ownerId && m.orgId === orgId);
+
+      if (!membership) {
+        // Removed — revoke access
         activeSharedOrgRef.current = null;
         setActiveSharedOrgKey(null);
         setActiveSharedOrgRole(null);
-        updateDoc(doc(db, "users", user.id), {
-          [`sharedOrgs.${ownerId}_${orgId}`]: deleteField()
-        }).catch(() => {});
         setUser(prev => {
           if (!prev) return prev;
           const next = { ...(prev.sharedOrgs || {}) };
@@ -1296,37 +1066,12 @@ export function DataProvider({ children }) {
         return;
       }
 
-      const memberDocData = memberSnap.data();
-      const profileData = profileSnap.exists() ? profileSnap.data() : {};
-      // meta/profile is the authoritative source; fall back to orgMembers then sharedOrgs cache
-      const effectiveOrgName = profileData.name || memberDocData.orgName || sharedInfo.orgName || "";
-      const effectiveOrgType = profileData.organizationType || memberDocData.organizationType || sharedInfo.organizationType || "small_business";
-      // Use the live role from Firestore — owner may have changed it since the invite was accepted
-      const effectiveRole = memberDocData.role || sharedInfo.role || "viewer";
-      // Update the ref and state with accurate current role before setData
+      const effectiveRole = membership.role || sharedInfo.role || "viewer";
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
-      // Take only the live collections from hydrateUserOrgCollections.
-      // Do NOT spread the whole orgs[orgId] object — it carries EMPTY_ORG_DATA.account
-      // (organizationType:"small_business") which would overwrite effectiveOrgType.
-      const hydratedOrg = orgs[orgId] || {};
       const nextState = buildStateFromOrganizations({
-        orgs: {
-          [orgId]: {
-            ...EMPTY_ORG_DATA,
-            income: hydratedOrg.income || [],
-            expenses: hydratedOrg.expenses || [],
-            invoices: hydratedOrg.invoices || [],
-            customers: hydratedOrg.customers || [],
-            orgRecords: hydratedOrg.orgRecords || {},
-            account: {
-              ...EMPTY_ORG_DATA.account,
-              name: effectiveOrgName,
-              organizationType: effectiveOrgType
-            }
-          }
-        },
+        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgFull)) },
         activeOrgId: orgId
       });
 
@@ -1368,6 +1113,7 @@ export function DataProvider({ children }) {
   const contextValue = useMemo(() => ({
     ...data,
     loaded,
+    orgSummary,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
     activeSharedOrgRole,
@@ -1426,6 +1172,7 @@ export function DataProvider({ children }) {
     createOrganization,
     createSharedLedger,
     data,
+    orgSummary,
     deleteOrganization,
     joinSharedLedger,
     leaveSharedLedger,

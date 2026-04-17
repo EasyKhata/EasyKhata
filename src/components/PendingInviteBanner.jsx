@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { collection, deleteField, doc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
-import { db } from "../firebase";
+import { membersApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
 /**
@@ -10,82 +9,34 @@ import { useAuth } from "../context/AuthContext";
 export default function PendingInviteBanner() {
   const { user, setUser } = useAuth();
   const [pendingInvites, setPendingInvites] = useState([]);
-  const [processing, setProcessing] = useState({}); // inviteKey → true while saving
+  const [processing, setProcessing] = useState({}); // inviteId → true while saving
 
-  // Load pending invites for this user's email once on mount
   useEffect(() => {
     if (!user?.email) return;
-
-    async function loadPendingInvites() {
-      try {
-        const q = query(
-          collection(db, "pendingInvites"),
-          where("email", "==", user.email.toLowerCase()),
-          where("status", "==", "invited")
-        );
-        const snap = await getDocs(q);
-        const invites = snap.docs.map(d => ({ _id: d.id, ...d.data() }));
-        setPendingInvites(invites);
-      } catch {
-        // Silently ignore — don't break the app if this fails
-      }
-    }
-
-    loadPendingInvites();
+    membersApi.getPending()
+      .then(invites => setPendingInvites(Array.isArray(invites) ? invites : []))
+      .catch(() => {}); // Silently ignore — don't break the app if this fails
   }, [user?.email]);
 
   if (!pendingInvites.length) return null;
 
   async function handleAccept(invite) {
-    setProcessing(prev => ({ ...prev, [invite._id]: true }));
-    const now = new Date().toISOString();
-    const { ownerId, orgId, orgName, ownerName, role, organizationType } = invite;
-    const sanitizedEmail = (user.email || "").replace(/[^a-z0-9]/gi, "_");
-    const memberKey = `${orgId}_${user.id}`;
-
+    setProcessing(prev => ({ ...prev, [invite.id]: true }));
     try {
-      // 1. Write orgMembers entry — this is what Security Rules check for data access
-      await setDoc(doc(db, "users", ownerId, "orgMembers", memberKey), {
-        memberUid: user.id,
-        role,
-        status: "accepted",
-        ownerId,
-        orgId,
-        orgName: orgName || "",
-        organizationType: organizationType || "small_business",
-        ownerName: ownerName || "",
-        acceptedAt: now
-      });
+      const result = await membersApi.acceptInvite(invite.id);
+      const { ownerId, orgId, role } = result;
 
-      // 2. Update pendingInvites status
-      await updateDoc(doc(db, "pendingInvites", invite._id), {
-        status: "accepted",
-        memberUid: user.id,
-        acceptedAt: now
-      });
-
-      // 3. Update owner's invitations list so the owner sees "Active" and has memberUid for removal
-      await updateDoc(
-        doc(db, "users", ownerId, "orgs", orgId, "invitations", sanitizedEmail),
-        { status: "accepted", memberUid: user.id, acceptedAt: now }
-      );
-
-      // 4. Write sharedOrgs into member's own user doc
       const sharedOrgEntry = {
         ownerId,
         orgId,
-        orgName: orgName || "Organization",
-        ownerName: ownerName || "",
-        organizationType: organizationType || "small_business",
+        orgName: invite.orgName || "Organization",
+        ownerName: "",
+        organizationType: invite.orgType || "small_business",
         role,
-        acceptedAt: now
+        acceptedAt: new Date().toISOString()
       };
 
-      await updateDoc(doc(db, "users", user.id), {
-        [`sharedOrgs.${ownerId}_${orgId}`]: sharedOrgEntry
-      });
-
-      // 5. Update local user state so the org switcher appears immediately
+      // Update local user state so the org switcher appears immediately
       setUser(prev => prev ? ({
         ...prev,
         sharedOrgs: {
@@ -94,26 +45,21 @@ export default function PendingInviteBanner() {
         }
       }) : prev);
 
-      // Remove from banner
-      setPendingInvites(prev => prev.filter(i => i._id !== invite._id));
+      setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
     } catch {
-      setProcessing(prev => ({ ...prev, [invite._id]: false }));
+      setProcessing(prev => ({ ...prev, [invite.id]: false }));
       alert("Could not accept invite. Please try again.");
     }
   }
 
   async function handleDecline(invite) {
-    setProcessing(prev => ({ ...prev, [invite._id]: true }));
+    setProcessing(prev => ({ ...prev, [invite.id]: true }));
     try {
-      await updateDoc(doc(db, "pendingInvites", invite._id), { status: "declined" });
-      const sanitizedEmail = (user.email || "").toLowerCase().replace(/[^a-z0-9]/gi, "_");
-      await updateDoc(
-        doc(db, "users", invite.ownerId, "orgs", invite.orgId, "invitations", sanitizedEmail),
-        { status: "declined" }
-      ).catch(() => {});
-      setPendingInvites(prev => prev.filter(i => i._id !== invite._id));
+      // The API doesn't have a dedicated decline endpoint yet;
+      // simply remove from the banner locally (server keeps status as pending until owner removes)
+      setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
     } catch {
-      setProcessing(prev => ({ ...prev, [invite._id]: false }));
+      setProcessing(prev => ({ ...prev, [invite.id]: false }));
     }
   }
 
@@ -121,7 +67,7 @@ export default function PendingInviteBanner() {
     <div style={{ position: "relative", zIndex: 10 }}>
       {pendingInvites.map(invite => (
         <div
-          key={invite._id}
+          key={invite.id}
           style={{
             background: "var(--accent-deep)",
             borderBottom: "1px solid var(--accent)",
@@ -137,15 +83,15 @@ export default function PendingInviteBanner() {
               Org invite:{" "}
             </span>
             <span style={{ fontSize: 13, color: "var(--text)" }}>
-              <strong>{invite.ownerName || "Someone"}</strong> invited you to{" "}
-              <strong>{invite.orgName || "their organization"}</strong> as{" "}
+              You've been invited to{" "}
+              <strong>{invite.orgName || "an organization"}</strong> as{" "}
               <strong style={{ textTransform: "capitalize" }}>{invite.role}</strong>
             </span>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <button
               onClick={() => handleAccept(invite)}
-              disabled={processing[invite._id]}
+              disabled={processing[invite.id]}
               style={{
                 padding: "6px 14px",
                 borderRadius: 8,
@@ -154,15 +100,15 @@ export default function PendingInviteBanner() {
                 color: "#fff",
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: processing[invite._id] ? "not-allowed" : "pointer",
-                opacity: processing[invite._id] ? 0.6 : 1
+                cursor: processing[invite.id] ? "not-allowed" : "pointer",
+                opacity: processing[invite.id] ? 0.6 : 1
               }}
             >
-              {processing[invite._id] ? "…" : "Accept"}
+              {processing[invite.id] ? "…" : "Accept"}
             </button>
             <button
               onClick={() => handleDecline(invite)}
-              disabled={processing[invite._id]}
+              disabled={processing[invite.id]}
               style={{
                 padding: "6px 14px",
                 borderRadius: 8,
@@ -171,8 +117,8 @@ export default function PendingInviteBanner() {
                 color: "var(--text-sec)",
                 fontSize: 12,
                 fontWeight: 700,
-                cursor: processing[invite._id] ? "not-allowed" : "pointer",
-                opacity: processing[invite._id] ? 0.6 : 1
+                cursor: processing[invite.id] ? "not-allowed" : "pointer",
+                opacity: processing[invite.id] ? 0.6 : 1
               }}
             >
               Decline

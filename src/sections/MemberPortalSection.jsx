@@ -1,15 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { societyApi } from "../lib/api";
 import { EmptyState, fmtMoney, MONTHS } from "../components/UI";
 import { logError } from "../utils/logger";
 
 function toPeriodKey(year, month) {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
-}
-
-function flatDocId(flatNumber = "") {
-  return String(flatNumber || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "-");
 }
 
 export default function MemberPortalSection({ user, year, month, headerDatePicker }) {
@@ -32,26 +27,10 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
       setLoading(true);
       setError("");
       try {
-        const portalSnap = await getDoc(doc(db, "society_portals", user.societyPortalId));
-        if (!portalSnap.exists()) {
-          setPortal(null);
-          setCommonRecord(null);
-          setFlatDue(null);
-          setLoading(false);
-          return;
-        }
-        const portalData = { id: portalSnap.id, ...portalSnap.data() };
-        setPortal(portalData);
-
-        const commonSnap = await getDoc(doc(db, "society_portals", user.societyPortalId, "common_records", periodKey));
-        setCommonRecord(commonSnap.exists() ? commonSnap.data() : null);
-
-        if (user?.societyFlatNumber) {
-          const dueSnap = await getDoc(doc(db, "society_portals", user.societyPortalId, "flat_dues", flatDocId(user.societyFlatNumber)));
-          setFlatDue(dueSnap.exists() ? dueSnap.data() : null);
-        } else {
-          setFlatDue(null);
-        }
+        const data = await societyApi.getMemberView(periodKey);
+        setPortal(data.portal || null);
+        setCommonRecord(data.commonRecord || null);
+        setFlatDue(data.flatDue || null);
       } catch (err) {
         logError("Member portal load error", err);
         setError("Unable to load resident view right now.");

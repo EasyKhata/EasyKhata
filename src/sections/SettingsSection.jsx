@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { arrayUnion, collection, deleteField, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
-import { db } from "../firebase";
-import { auth } from "../firebase";
+import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
 import NotificationsModal from "./settings/NotificationsModal";
@@ -17,7 +15,6 @@ import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
-import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
@@ -419,10 +416,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(accForm.organizationType || orgType), [accForm.organizationType, orgType]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
-  const customerInsights = useMemo(
-    () => calculateCustomerInsights({ customers, invoices }),
-    [customers, invoices]
-  );
+  const [customerInsights, setCustomerInsights] = useState(customers);
+  useEffect(() => {
+    if (!orgConfig.showCustomerFinancials || !user?.id || !activeOrgId) return;
+    let cancelled = false;
+    orgsApi.getCustomerInsights(user.id, activeOrgId)
+      .then(result => { if (!cancelled) setCustomerInsights(result); })
+      .catch(err => logError("customer insights", err));
+    return () => { cancelled = true; };
+  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers.length]);
+
   const customerDirectory = useMemo(
     () => (orgConfig.showCustomerFinancials === false ? customers : customerInsights),
     [customers, customerInsights, orgConfig.showCustomerFinancials]
@@ -496,18 +499,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     setSocietyPortalLoading(true);
     try {
-      const portalSnap = await getDoc(doc(db, "society_portals", societyPortalId));
-      if (!portalSnap.exists()) {
+      const portal = await societyApi.getPortal(activeOrgId);
+      if (!portal) {
         setSocietyPortalMeta(null);
+        setSocietyPortalInvites([]);
         return;
       }
-      const payload = { id: portalSnap.id, ...portalSnap.data() };
-      setSocietyPortalMeta(payload);
-      const inviteSnapshot = await getDocs(query(collection(db, "society_invites"), where("portalId", "==", societyPortalId)));
-      const invites = inviteSnapshot.docs
-        .map(item => ({ id: item.id, ...item.data() }))
-        .filter(item => item.ownerId === user?.id)
-        .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+      setSocietyPortalMeta(portal);
+      const invites = Array.isArray(portal.invites) ? portal.invites : [];
       setSocietyPortalInvites(invites);
     } catch (err) {
       logError("Society portal load error", err);
@@ -515,7 +514,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     } finally {
       setSocietyPortalLoading(false);
     }
-  }, [canManageSocietyPortal, societyPortalId, user?.id]);
+  }, [canManageSocietyPortal, activeOrgId]);
 
   useEffect(() => {
     loadSocietyPortalMeta();
@@ -1092,13 +1091,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setGeneratingReport(true);
     if (user?.role === "admin") {
       try {
-        const usersSnapshot = await getDocs(collection(db, "users"));
-        const paymentsSnapshot = await getDocs(collection(db, "payment_requests"));
-
-        const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        const paymentRequests = paymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, currency?.symbol || "Rs");
+        const [usersResult, paymentRequests] = await Promise.all([
+          adminApi.listUsers(1, 500),
+          adminApi.listPaymentRequests()
+        ]);
+        await downloadAdminMonthlyReport({ users: usersResult.users || [], paymentRequests: paymentRequests || [] }, year, month, currency?.symbol || "Rs");
         showNotice("Admin report downloaded.", "success");
         setShowReportPicker(false);
       } catch (err) {
@@ -1169,25 +1166,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function saveSocietyPortal() {
     if (!canManageSocietyPortal) return;
-    const nowIso = new Date().toISOString();
-    const payload = {
-      ownerId: user.id,
-      orgId: activeOrgId,
-      name: account?.name || "Society",
-      isActive: true,
-      updatedAt: nowIso,
-      createdAt: societyPortalMeta?.createdAt || nowIso
-    };
     try {
-      await setDoc(doc(db, "society_portals", societyPortalId), payload, { merge: true });
-      await updateDoc(doc(db, "users", user.id), {
-        [`apartmentPortalRoles.${societyPortalId}`]: "admin",
-        updatedAt: nowIso
-      });
-      setUser(prev => prev ? ({
-        ...prev,
-        apartmentPortalRoles: { ...(prev.apartmentPortalRoles || {}), [societyPortalId]: "admin" }
-      }) : prev);
+      await societyApi.savePortal(activeOrgId, account?.name || "Society");
       await loadSocietyPortalMeta();
       showNotice("Resident read-only access is saved.", "success");
     } catch (err) {
@@ -1208,24 +1188,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
     try {
-      await saveSocietyPortal();
-      const inviteCode = createInviteCode();
-      const nowIso = new Date().toISOString();
-      await setDoc(doc(db, "society_invites", inviteCode), {
-        portalId: societyPortalId,
-        ownerId: user.id,
-        orgId: activeOrgId,
-        flatNumber,
-        allowedEmail: inviteEmail,
-        isActive: true,
-        claimedBy: "",
-        claimedAt: "",
-        updatedAt: nowIso,
-        createdAt: nowIso
-      }, { merge: true });
+      const invite = await societyApi.createInvite(activeOrgId, flatNumber, inviteEmail);
       setMemberInviteForm({ email: "", flatNumber: "" });
       await loadSocietyPortalMeta();
-      showNotice(`Invite created for ${flatNumber}. Share code: ${inviteCode}`, "success");
+      showNotice(`Invite created for ${flatNumber}. Share code: ${invite.id}`, "success");
     } catch (err) {
       logError("Create member invite error", err);
       showNotice("Could not create resident invite.");
@@ -1234,10 +1200,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function deactivateMemberInvite(inviteCode) {
     try {
-      await setDoc(doc(db, "society_invites", inviteCode), {
-        isActive: false,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      await societyApi.deactivateInvite(inviteCode);
       await loadSocietyPortalMeta();
       showNotice("Invite deactivated.", "success");
     } catch (err) {
@@ -1288,9 +1251,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const pendingAmount = Math.max(0, expectedAmount - collectedAmount);
     const notice = String(societyPortalForm.notice || "").trim();
     try {
-      await saveSocietyPortal();
-      await setDoc(doc(db, "society_portals", societyPortalId, "common_records", period), {
-        period,
+      await societyApi.publish(activeOrgId, period, {
         expectedAmount,
         collectedAmount,
         pendingAmount,
@@ -1298,13 +1259,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         totalFlats: flatRows.length,
         paidFlats: flatRows.filter(row => row.status === "paid").length,
         pendingFlats: flatRows.filter(row => row.status !== "paid").length,
+        notice,
         notices: notice ? [notice] : [],
-        currencySymbol: symbol,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
-      await Promise.all(flatRows.map(row =>
-        setDoc(doc(db, "society_portals", societyPortalId, "flat_dues", flatDueDocId(row.flatNumber)), row, { merge: true })
-      ));
+        currencySymbol: symbol
+      }, flatRows);
       showNotice(`Published resident records for ${period}.`, "success");
     } catch (err) {
       logError("Society publish error", err);
@@ -1319,82 +1277,34 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
     try {
-      const inviteSnap = await getDoc(doc(db, "society_invites", inviteCode));
-      if (!inviteSnap.exists() || inviteSnap.data()?.isActive !== true) {
-        showNotice("Invite code is invalid or expired.");
-        return;
-      }
-      const invite = inviteSnap.data();
-      const portalSnap = await getDoc(doc(db, "society_portals", invite.portalId));
-      if (!portalSnap.exists() || portalSnap.data()?.isActive !== true) {
-        showNotice("This resident portal is not active.");
-        return;
-      }
-      if (String(invite.allowedEmail || "").trim().toLowerCase() !== String(user?.email || "").trim().toLowerCase()) {
-        showNotice("This invite is mapped to a different email. Contact your apartment admin.");
-        return;
-      }
-      if (!String(invite.flatNumber || "").trim()) {
-        showNotice("Invite is missing flat mapping. Ask admin to regenerate invite.");
-        return;
-      }
-      const mappedFlatNumber = String(invite.flatNumber || "").trim().toUpperCase();
-      const nowIso = new Date().toISOString();
-      await updateDoc(doc(db, "users", user.id), {
-        societyPortalId: invite.portalId,
-        societyPortalRole: "member",
-        societyFlatNumber: mappedFlatNumber,
-        societyInviteCode: inviteCode,
-        [`apartmentPortalRoles.${invite.portalId}`]: "resident",
-        updatedAt: nowIso
-      });
-      await setDoc(doc(db, "society_invites", inviteCode), {
-        isActive: false,
-        claimedBy: user.id,
-        claimedAt: nowIso,
-        updatedAt: nowIso
-      }, { merge: true });
+      const result = await societyApi.join(inviteCode);
       setUser(prev => prev ? ({
         ...prev,
-        societyPortalId: invite.portalId,
-        societyPortalRole: "member",
-        societyFlatNumber: mappedFlatNumber,
-        societyInviteCode: inviteCode,
-        apartmentPortalRoles: { ...(prev.apartmentPortalRoles || {}), [invite.portalId]: "resident" }
+        societyPortalId:   result.societyPortalId,
+        societyPortalRole: result.societyPortalRole,
+        societyFlatNumber: result.societyFlatNumber,
+        societyInviteCode: result.societyInviteCode
       }) : prev);
       setSocietyJoinForm({ inviteCode: "" });
       showNotice("Resident access joined successfully.", "success");
       setScreen("main");
     } catch (err) {
       logError("Join portal error", err);
-      showNotice("Could not join resident access with this code.");
+      showNotice(err.message || "Could not join resident access with this code.");
     }
   }
 
   async function leaveSocietyPortalAccess() {
     if (!user?.societyPortalId) return;
     try {
-      await updateDoc(doc(db, "users", user.id), {
-        [`apartmentPortalRoles.${user.societyPortalId}`]: deleteField(),
-        societyPortalId: "",
+      await societyApi.leave();
+      setUser(prev => prev ? ({
+        ...prev,
+        societyPortalId:   "",
         societyPortalRole: "",
         societyFlatNumber: "",
-        societyInviteCode: "",
-        updatedAt: new Date().toISOString()
-      });
-      setUser(prev => {
-        if (!prev) return prev;
-        const nextRoles = { ...(prev.apartmentPortalRoles || {}) };
-        delete nextRoles[user.societyPortalId];
-        return {
-          ...prev,
-          societyPortalId: "",
-          societyPortalRole: "",
-          societyFlatNumber: "",
-          societyInviteCode: "",
-          apartmentPortalRoles: nextRoles
-        };
-      });
+        societyInviteCode: ""
+      }) : prev);
       showNotice("You left resident access.", "success");
       setScreen("main");
     } catch (err) {
@@ -1585,17 +1495,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!user?.id || user?.role === "admin") return;
     setSupportLoading(true);
     try {
-      const ticketsQuery = query(collection(db, "support_tickets"), where("userId", "==", user.id));
-      const ticketsSnapshot = await getDocs(ticketsQuery);
+      const tickets = await supportApi.list();
       setSupportTickets(
-        ticketsSnapshot.docs
-          .map(item => {
-            const payload = { id: item.id, ...item.data() };
-            return {
-              ...payload,
-              messages: normalizeSupportMessages(payload)
-            };
-          })
+        tickets
+          .map(t => ({ ...t, messages: normalizeSupportMessages(t) }))
           .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
     } catch (err) {
@@ -1619,47 +1522,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
     setSubmittingSupport(true);
     try {
-      const ticketRef = doc(collection(db, "support_tickets"));
-      const nowIso = new Date().toISOString();
-      const payload = {
-        userId: user.id,
-        userName: user?.name || "",
-        userEmail: user?.email || "",
-        topic,
+      await supportApi.create({
         subject,
         message,
-        messages: [
-          {
-            id: `msg-${Date.now()}`,
-            senderRole: "user",
-            senderId: user.id,
-            senderName: user?.name || "User",
-            message,
-            createdAt: nowIso
-          }
-        ],
-        status: "open",
-        activeOrgId: activeOrgId || "",
+        topic,
+        userName: user?.name || "",
+        userEmail: user?.email || "",
         organizationName: account?.name || "",
-        organizationType: account?.organizationType || user?.organizationType || "",
-        supportContext: buildSupportContext(),
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        lastUserReplyAt: nowIso,
-        resolvedAt: "",
-        adminNote: ""
-      };
-      await setDoc(ticketRef, payload);
+        activeOrgId: activeOrgId || "",
+        supportContext: buildSupportContext()
+      });
       showNotice("Support ticket submitted.", "success");
       setSupportForm({ topic: "account", subject: "", message: "" });
       await loadSupportTickets();
     } catch (err) {
       logError("Support ticket submit error", err);
-      if (err?.code === "permission-denied") {
-        showNotice("Support tickets are blocked by Firestore rules right now. Please allow support_tickets first.");
-      } else {
-        showNotice(err?.message || "We couldn't submit your support ticket right now.");
-      }
+      showNotice(err?.message || "We couldn't submit your support ticket right now.");
     } finally {
       setSubmittingSupport(false);
     }
@@ -1673,20 +1551,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     setReplyingTicketId(ticket.id);
     try {
-      const nowIso = new Date().toISOString();
-      await updateDoc(doc(db, "support_tickets", ticket.id), {
-        messages: arrayUnion({
-          id: `msg-${Date.now()}`,
-          senderRole: "user",
-          senderId: user.id,
-          senderName: user?.name || "User",
-          message: draft,
-          createdAt: nowIso
-        }),
-        status: "open",
-        updatedAt: nowIso,
-        lastUserReplyAt: nowIso
-      });
+      await supportApi.reply(ticket.id, draft);
       setSupportReplyDrafts(current => ({ ...current, [ticket.id]: "" }));
       await loadSupportTickets();
       showNotice("Reply sent to support.", "success");

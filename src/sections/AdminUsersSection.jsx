@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, limit, orderBy, query, setDoc, startAfter, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
 import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
@@ -20,7 +19,7 @@ export default function AdminUsersSection() {
   const [userFilter, setUserFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [lastUserDoc, setLastUserDoc] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const [hasMoreUsers, setHasMoreUsers] = useState(true);
   const [adminError, setAdminError] = useState("");
   const USERS_PAGE_SIZE = 60;
@@ -39,34 +38,20 @@ export default function AdminUsersSection() {
 
     setAdminError("");
     try {
-      const usersRef = collection(db, "users");
-      const usersQuery = append && lastUserDoc
-        ? query(usersRef, orderBy("createdAt", "desc"), startAfter(lastUserDoc), limit(USERS_PAGE_SIZE))
-        : query(usersRef, orderBy("createdAt", "desc"), limit(USERS_PAGE_SIZE));
-
-      const usersSnapshot = await getDocs(usersQuery);
-      const fetchedUsers = usersSnapshot.docs.map(item => ({
-        id: item.id,
-        ...item.data()
-      }));
+      const page = append ? currentPage + 1 : 1;
+      const { users: fetchedUsers, hasMore } = await adminApi.listUsers(page, USERS_PAGE_SIZE);
 
       setUsers(prev => (append ? sortUsersByCreatedAt([...prev, ...fetchedUsers]) : sortUsersByCreatedAt(fetchedUsers)));
-      setLastUserDoc(usersSnapshot.docs.length ? usersSnapshot.docs[usersSnapshot.docs.length - 1] : (append ? lastUserDoc : null));
-      setHasMoreUsers(usersSnapshot.docs.length === USERS_PAGE_SIZE);
+      setHasMoreUsers(hasMore);
+      if (append) setCurrentPage(page);
+      else setCurrentPage(1);
     } catch (err) {
       logError("Admin users load error", err);
-      setAdminError("Failed to load admin user activity. Please check your Firestore permissions and try again.");
-      if (!append) {
-        setUsers([]);
-        setLastUserDoc(null);
-        setHasMoreUsers(false);
-      }
+      setAdminError("Failed to load users. Please try again.");
+      if (!append) setUsers([]);
     } finally {
-      if (append) {
-        setLoadingMore(false);
-      } else {
-        setLoading(false);
-      }
+      if (append) setLoadingMore(false);
+      else setLoading(false);
     }
   }
 
@@ -112,15 +97,13 @@ export default function AdminUsersSection() {
       alert("You cannot block your own account.");
       return;
     }
-
     setAdminError("");
     try {
-      await updateDoc(doc(db, "users", id), { blocked: !blocked });
+      await adminApi.updateUser(id, { blocked: !blocked });
       fetchAdminData();
     } catch (err) {
       logError("Block/unblock error", err);
       setAdminError("Unable to update the user's block status. Please try again.");
-      alert(err?.message || "Unable to update the user's block status. Please try again.");
     }
   }
 
@@ -129,51 +112,29 @@ export default function AdminUsersSection() {
       alert("You cannot delete your own admin account.");
       return;
     }
-
-    const confirmed = window.confirm("This will remove the user's Firestore profile and queue an Authentication cleanup request. Continue?");
+    const confirmed = window.confirm(`Delete ${member.name || member.email}? This will permanently remove their account and all data.`);
     if (!confirmed) return;
 
     setAdminError("");
     try {
-      await setDoc(doc(db, "admin_cleanup_queue", member.id), {
-        uid: member.id,
-        email: member.email || "",
-        name: member.name || "",
-        requestedBy: user.id,
-        requestedAt: new Date().toISOString(),
-        status: "pending_auth_cleanup",
-        note: "Client app cannot delete Firebase Authentication users directly. Complete this request with Admin SDK or Cloud Functions."
-      });
-
-      await deleteDoc(doc(db, "payment_requests", member.id));
-      await deleteDoc(doc(db, "users", member.id));
+      await adminApi.deleteUser(member.id);
       fetchAdminData();
-      alert("User profile removed from Firestore and auth cleanup has been queued.");
     } catch (err) {
       logError("Delete user error", err);
       setAdminError("Unable to delete the user profile right now. Please try again.");
-      alert(err?.message || "Unable to delete the user profile right now. Please try again.");
     }
   }
 
   async function updateUserPlan(member, plan) {
     setAdminError("");
     try {
-      const updates = {
-        plan,
-        subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE
-      };
-
-      if (plan === PLANS.FREE) {
-        updates.subscriptionEndsAt = "";
-      }
-
-      await updateDoc(doc(db, "users", member.id), updates);
+      const updates = { plan, subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE };
+      if (plan === PLANS.FREE) updates.subscriptionEndsAt = "";
+      await adminApi.updateUser(member.id, updates);
       fetchAdminData();
     } catch (err) {
       logError("Update plan error", err);
       setAdminError("Unable to update the user's plan. Please try again.");
-      alert(err?.message || "Unable to update the user's plan. Please try again.");
     }
   }
 
@@ -181,50 +142,13 @@ export default function AdminUsersSection() {
     setAdminError("");
     try {
       const updates = { subscriptionStatus };
-      if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) {
-        updates.subscriptionEndsAt = getTrialEndDate();
-      }
-      if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) {
-        updates.subscriptionEndsAt = "";
-      }
-      await updateDoc(doc(db, "users", member.id), updates);
+      if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = getTrialEndDate();
+      if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = "";
+      await adminApi.updateUser(member.id, updates);
       fetchAdminData();
     } catch (err) {
       logError("Update subscription status error", err);
       setAdminError("Unable to update the user's subscription status. Please try again.");
-      alert(err?.message || "Unable to update the user's subscription status. Please try again.");
-    }
-  }
-
-  async function updatePaymentRequestStatus(request, status) {
-    setAdminError("");
-    try {
-      const requestRef = doc(db, "payment_requests", request.id);
-      const updates = {
-        status,
-        reviewedBy: user.id,
-        reviewedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      if (status === PAYMENT_REQUEST_STATUS.APPROVED) {
-        await updateDoc(doc(db, "users", request.userId), {
-          plan: request.requestedPlan || PLANS.PRO,
-          subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE,
-          subscriptionEndsAt: getSubscriptionEndDate(getBillingDuration(request.billingCycle || BILLING_CYCLES.MONTHLY))
-        });
-      }
-
-      if (status === PAYMENT_REQUEST_STATUS.REJECTED) {
-        updates.rejectionReason = "Payment proof not approved";
-      }
-
-      await setDoc(requestRef, updates, { merge: true });
-      fetchAdminData();
-    } catch (err) {
-      logError("Payment request status update error", err);
-      setAdminError("Unable to update the payment request. Please try again.");
-      alert(err?.message || "Unable to update the payment request. Please try again.");
     }
   }
 
