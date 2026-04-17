@@ -1856,6 +1856,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
 
+          {isApartmentOrg && (
+            <div style={{ marginBottom: 10, marginTop: 20 }}>
+              <div className="section-label">Team &amp; Access</div>
+              <div className="card">
+                <MenuRow icon="T" label="Team Members" sub="Invite members and manage their roles" onClick={() => setScreen("org-members")} />
+                <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
+              </div>
+            </div>
+          )}
+
           {showReportPicker && (
             <Modal
               title="Download Report"
@@ -1996,16 +2006,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
           </div>
         </div>
-
-        {user?.role !== "admin" && (
-          <div style={{ marginBottom: 10, marginTop: 20 }}>
-            <div className="section-label">Team &amp; Access</div>
-            <div className="card">
-              <MenuRow icon="T" label="Team Members" sub="Invite members and manage their roles" onClick={() => setScreen("org-members")} />
-              <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
-            </div>
-          </div>
-        )}
 
         <div style={{ marginBottom: 10, marginTop: 20 }}>
           <div className="section-label">Preferences</div>

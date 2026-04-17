@@ -699,16 +699,34 @@ export function DataProvider({ children }) {
           } : prev
         );
 
-        // Validate sharedOrgs — prune any memberships that were revoked
-        if (Object.keys(user?.sharedOrgs || {}).length > 0) {
-          const memberships = await orgsApi.getMemberships(user.id).catch(() => []);
+        // Reconcile sharedOrgs with server OrgMember rows:
+        // • Prune revoked memberships
+        // • Add any accepted memberships not yet in sharedOrgs (e.g. after page refresh)
+        const memberships = await orgsApi.getMemberships(user.id).catch(() => null);
+        if (memberships !== null) {
+          const currentSharedOrgs = user?.sharedOrgs || {};
           const validKeys = new Set(memberships.map(m => `${m.ownerId}_${m.orgId}`));
-          const invalidKeys = Object.keys(user.sharedOrgs || {}).filter(k => !validKeys.has(k));
-          if (invalidKeys.length > 0) {
+          const invalidKeys = Object.keys(currentSharedOrgs).filter(k => !validKeys.has(k));
+          const newEntries = memberships
+            .filter(m => !currentSharedOrgs[`${m.ownerId}_${m.orgId}`])
+            .reduce((acc, m) => {
+              acc[`${m.ownerId}_${m.orgId}`] = {
+                ownerId: m.ownerId,
+                orgId: m.orgId,
+                orgName: m.orgName || "",
+                ownerName: m.owner?.name || "",
+                organizationType: m.organizationType || "small_business",
+                role: m.role || "viewer",
+                acceptedAt: m.acceptedAt || ""
+              };
+              return acc;
+            }, {});
+          if (invalidKeys.length > 0 || Object.keys(newEntries).length > 0) {
             setUser(prev => {
               if (!prev) return prev;
               const next = { ...(prev.sharedOrgs || {}) };
               invalidKeys.forEach(k => delete next[k]);
+              Object.assign(next, newEntries);
               return { ...prev, sharedOrgs: next };
             });
           }
