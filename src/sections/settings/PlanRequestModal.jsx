@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Field, Textarea } from "../../components/UI";
 import { BILLING_CYCLES, UPI_CONFIG } from "../../utils/subscription";
+import { isNative } from "../../utils/native";
 
 /**
  * Subscription upgrade modal — handles Pro plan billing cycle selection
@@ -23,7 +24,7 @@ export default function PlanRequestModal({ form, onFormChange, onSubmit, submitt
       title="Upgrade Subscription"
       onClose={onClose}
       onSave={onSubmit}
-      saveLabel={submitting ? "Starting..." : "Pay Securely"}
+      saveLabel={submitting ? "Starting..." : isNative ? "Upgrade on Website" : "Pay Securely"}
       canSave={!submitting}
     >
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>

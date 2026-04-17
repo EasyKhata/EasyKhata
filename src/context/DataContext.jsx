@@ -1115,6 +1115,9 @@ export function DataProvider({ children }) {
 
   function switchToOwnOrg() {
     activeSharedOrgRef.current = null;
+    // Mark as loading immediately so components don't render with stale shared-org data
+    setLoaded(false);
+    setData(EMPTY_DATA);
     setActiveSharedOrgKey(null);
     setActiveSharedOrgRole(null);
     // Increment reload key to force the own-data useEffect to re-run

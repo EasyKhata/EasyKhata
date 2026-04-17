@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { isNative } from "../utils/native";
 import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
@@ -14,7 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
-import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice, SectionSkeleton } from "../components/UI";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
@@ -268,6 +269,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
 export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
   const { user, logout, updateProfile, changePassword, setUser } = useAuth();
   const {
+    loaded,
     account,
     currency,
     setCurrency,
@@ -421,23 +423,26 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!orgConfig.showCustomerFinancials || !user?.id || !activeOrgId) return;
     let cancelled = false;
     orgsApi.getCustomerInsights(user.id, activeOrgId)
-      .then(result => { if (!cancelled) setCustomerInsights(result); })
+      .then(result => { if (!cancelled) setCustomerInsights(Array.isArray(result) ? result : []); })
       .catch(err => logError("customer insights", err));
     return () => { cancelled = true; };
-  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers.length]);
+  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers?.length]);
 
   const customerDirectory = useMemo(() => {
-    if (orgConfig.showCustomerFinancials === false) return customers;
+    const safeInsights = customerInsights || [];
+    const safeCustomers = customers || [];
+    if (orgConfig.showCustomerFinancials === false) return safeCustomers;
     // Show any customer that was just added locally but isn't yet in the fetched insights
-    const insightIds = new Set(customerInsights.map(c => c.id));
-    const pending = customers.filter(c => c.id && !insightIds.has(c.id));
-    return [...customerInsights, ...pending];
+    const insightIds = new Set(safeInsights.map(c => c.id));
+    const pending = safeCustomers.filter(c => c.id && !insightIds.has(c.id));
+    return [...safeInsights, ...pending];
   }, [customers, customerInsights, orgConfig.showCustomerFinancials]);
   const filteredCustomerDirectory = useMemo(() => {
+    const safeDirectory = customerDirectory || [];
     const needle = customerSearch.trim().toLowerCase();
-    if (!needle) return customerDirectory;
+    if (!needle) return safeDirectory;
 
-    return customerDirectory.filter(customer => {
+    return safeDirectory.filter(customer => {
       const fields = [
         customer.name,
         customer.ownerName,
@@ -701,6 +706,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       setOrgRecordForm(null);
       setEditOrgRecord(null);
       setScreen("org-records");
+      return;
+    }
+
+    if (navigationTarget.screen === "plan-request") {
+      setScreen("plan-request");
       return;
     }
 
@@ -1343,6 +1353,18 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   async function submitPlanRequest() {
+    // On Android, in-app payments are not allowed (Play Store policy).
+    // Send users to the website to complete the upgrade there.
+    if (isNative) {
+      import("@capacitor/browser").then(({ Browser }) => {
+        Browser.open({ url: "https://www.easykhata.net/#upgrade" });
+      }).catch(() => {
+        window.open("https://www.easykhata.net/#upgrade", "_blank");
+      });
+      setScreen("main");
+      return;
+    }
+
     const targetPlan = PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
     const cleanNote = planRequestForm.note.trim();
@@ -1785,9 +1807,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }, [selectedSupportTicketId, supportTickets]);
 
   useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(filteredCustomerDirectory.length / customerPageSize));
+    const totalPages = Math.max(1, Math.ceil((filteredCustomerDirectory || []).length / customerPageSize));
     if (customerPage > totalPages) setCustomerPage(totalPages);
-  }, [customerPage, customerPageSize, filteredCustomerDirectory.length]);
+  }, [customerPage, customerPageSize, filteredCustomerDirectory]);
 
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
@@ -1804,6 +1826,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       {!danger && !disabled && <span style={{ color: "var(--text-dim)", fontSize: 18 }}>{">"}</span>}
     </div>
   );
+
+  if (!loaded) {
+    return <SectionSkeleton rows={5} showHero={false} />;
+  }
 
   if (screen === "main") {
     if (isOrgMode && user?.role !== "admin") {

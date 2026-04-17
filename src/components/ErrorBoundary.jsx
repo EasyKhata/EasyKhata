@@ -128,7 +128,8 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[EasyKhata] Uncaught error:", error, info);
+    console.error("[EasyKhata] Uncaught error:", error.message);
+    console.error("[EasyKhata] Component stack:", info?.componentStack || "unknown");
   }
 
   handleRetry() {

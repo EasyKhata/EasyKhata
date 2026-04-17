@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isNative } from "../utils/native";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import useIdleTimeout from "../hooks/useIdleTimeout";
@@ -450,6 +451,16 @@ export default function MainApp() {
     setSettingsNavigation(null);
   }, []);
 
+  // Handle #upgrade deep link — open the plan-request screen automatically
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.location.hash === "#upgrade") {
+      window.history.replaceState({}, "", window.location.pathname);
+      setTab("org");
+      setSettingsNavigation({ screen: "plan-request", token: Date.now() });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Sync tab → browser history so back/forward work
   useEffect(() => {
     if (isPopStateRef.current) {
@@ -549,6 +560,22 @@ export default function MainApp() {
     return () => window.clearTimeout(timeout);
   }, [readOnlyNotice]);
 
+  // Android hardware back button — go back within app instead of exiting
+  useEffect(() => {
+    if (!isNative) return undefined;
+    let cleanup = () => {};
+    import("@capacitor/app").then(({ App: CapApp }) => {
+      const listener = CapApp.addListener("backButton", () => {
+        if (tab !== "dashboard") {
+          setTab("dashboard");
+        }
+        // If already on dashboard, do nothing (don't exit)
+      });
+      cleanup = () => listener.then(h => h.remove()).catch(() => {});
+    }).catch(() => {});
+    return () => cleanup();
+  }, [tab]);
+
   useEffect(() => {
     if (!successNotice) return undefined;
     const timeout = window.setTimeout(() => setSuccessNotice(null), 6200);
@@ -597,7 +624,7 @@ export default function MainApp() {
   const trialActive = isTrialActive(user);
   const trialEndLabel = formatSubscriptionDate(user?.subscriptionEndsAt);
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
-  const orgConfig = getOrgConfig(currentOrgType);
+  const orgConfig = getOrgConfig(currentOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
@@ -625,6 +652,16 @@ export default function MainApp() {
     setQuickstartIntent(null);
   }, []);
   const openUpgradeFlow = useCallback(() => {
+    // On Android we cannot use in-app payments (Play Store policy).
+    // Send users to the website to upgrade there.
+    if (isNative) {
+      import("@capacitor/browser").then(({ Browser }) => {
+        Browser.open({ url: "https://www.easykhata.net/#upgrade" });
+      }).catch(() => {
+        window.open("https://www.easykhata.net/#upgrade", "_blank");
+      });
+      return;
+    }
     handleNavigate({ tab: "settings", screen: reviewAccessEnabled ? "main" : "plan-request" });
   }, [handleNavigate, reviewAccessEnabled]);
   const datePickerNode = useMemo(() => (
