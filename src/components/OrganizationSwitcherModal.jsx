@@ -14,7 +14,7 @@ export default function OrganizationSwitcherModal({
   const canDelete = organizations.length > 1;
 
   return (
-    <Modal title="Switch Organization" onClose={onClose} onSave={onClose} saveLabel="Close" canSave>
+    <Modal title="Switch Khata" onClose={onClose} onSave={onClose} saveLabel="Close" canSave>
       <div className="card">
         {organizations.map(org => {
           const isActiveOrg = org.id === activeOrgId;
@@ -47,7 +47,7 @@ export default function OrganizationSwitcherModal({
                   disabled={!canDelete}
                   onClick={() => {
                     if (!canDelete) return;
-                    if (window.confirm(`Delete ${org.name}? This will remove that organization workspace and its data.`)) {
+                    if (window.confirm(`Delete ${org.name}? This will remove that Khata and its data.`)) {
                       onDelete?.(org.id);
                     }
                   }}
@@ -62,7 +62,7 @@ export default function OrganizationSwitcherModal({
 
       {!canDelete && (
         <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-          You need at least one organization workspace, so the last org cannot be deleted.
+          You need at least one Khata, so the last one cannot be deleted.
         </div>
       )}
     </Modal>

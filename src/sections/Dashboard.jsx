@@ -492,7 +492,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--gold)" sub={viewMode === "month" ? `${stats.activeLoansCount || 0} active loan(s)` : `Avg ${fmtMoney(stats.avgMonthlyEmi, sym)}/month`} onClick={() => onNav("emi")} />
             <Tile label={viewMode === "month" ? "Net After EMI" : "Yearly Net After EMI"} value={fmtMoney(stats.netAfterEmi || 0, sym)} color={(stats.netAfterEmi || 0) >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? "Cash left after spending and EMI" : "Yearly cash left after spending and EMI"} />
-            <Tile label="People" value={String(stats.peopleCount || 0)} color="var(--purple)" sub="From Org and tagged household entries" onClick={() => onNav({ tab: "org", screen: "customers" })} />
+            <Tile label="People" value={String(stats.peopleCount || 0)} color="var(--purple)" sub="From Khata and tagged household entries" onClick={() => onNav({ tab: "org", screen: "customers" })} />
             <Tile label="Spending Ratio" value={`${Math.round(stats.spendingRatio || 0)}%`} color={(stats.spendingRatio || 0) >= 100 ? "var(--danger)" : "var(--gold)"} sub="Spending as a share of earnings" />
           </div>
 

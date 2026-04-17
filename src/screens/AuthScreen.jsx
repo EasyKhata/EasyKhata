@@ -141,7 +141,7 @@ export default function AuthScreen() {
       return;
     }
 
-    setInfo((res?.message || "Account created successfully.") + " Next: verify email -> sign in -> open Organization Profile to confirm business details.");
+    setInfo((res?.message || "Account created successfully.") + " Next: verify email → sign in → open Khata Profile to confirm your details.");
     setPassword("");
     setConfirmPassword("");
     setPhoneNumber("");
@@ -203,20 +203,17 @@ export default function AuthScreen() {
       <div style={{ position: "absolute", bottom: 120, left: -80, width: 220, height: 220, borderRadius: 110, background: "radial-gradient(circle, var(--blue-deep) 0%, transparent 70%)", pointerEvents: "none" }} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "40px 20px 28px", position: "relative", zIndex: 1, maxWidth: 560, width: "100%", margin: "0 auto" }}>
-        <div style={{ marginBottom: 44 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>Welcome to</div>
-          <BrandLogo showTagline center={false} />
-          <div style={{ fontSize: 15, color: "var(--text-sec)", lineHeight: 1.6 }}>
-            {screen === "login"
-              ? `Sign in to ${APP_NAME} and keep ${APP_TAGLINE.toLowerCase()}.`
-              : screen === "register"
-                ? "Create your account, verify your email, and start using the full app during the review period."
-                : "Reset your password from your inbox."}
+        <div style={{ marginBottom: 36 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>
+            {screen === "login" ? "Welcome back" : screen === "register" ? "Get started" : "Account recovery"}
           </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <span className="auth-flow-chip">Secure Email Login</span>
-            <span className="auth-flow-chip">Org-specific Workspace</span>
-            <span className="auth-flow-chip">Mobile-first</span>
+          <BrandLogo showTagline center={false} />
+          <div style={{ marginTop: 14, fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6 }}>
+            {screen === "login"
+              ? "Sign in to continue to your account."
+              : screen === "register"
+                ? "Create your free account in 2 minutes."
+                : "We'll send a reset link to your inbox."}
           </div>
         </div>
 

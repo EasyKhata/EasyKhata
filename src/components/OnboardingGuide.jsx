@@ -35,7 +35,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
 
   const stepTitles = [
     `Set Your ${orgConfig.profileNameLabel}`,
-    `Review Your ${orgConfig.orgLabel || "Org"} Setup`,
+    `Review Your ${orgConfig.orgLabel || "Khata"} Setup`,
     orgType === ORG_TYPES.APARTMENT ? "Create First Dues Entry" : orgConfig.hideInvoices ? `Create First ${orgConfig.incomeEntryLabel}` : `Create First ${orgConfig.invoiceEntryLabel}`
   ];
 
@@ -72,7 +72,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Choose how you want to use EasyKhata and set the name you want shown across the app. You can fill the remaining details later from Org.
+              Choose how you want to use EasyKhata and set the name you want shown across the app. You can fill the remaining details later from Khata.
             </div>
             <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EasyKhata.">
               <Select value={orgType} onChange={e => setAccountForm(current => ({ ...current, organizationType: e.target.value }))}>

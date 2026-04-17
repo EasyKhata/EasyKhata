@@ -235,7 +235,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
         </div>
         <div className="card">
           {!hasHouseholdPeople ? (
-            <EmptyState title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Org." actionLabel="Open People" onAction={openPeopleManager} accentColor="var(--gold)" />
+            <EmptyState title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} accentColor="var(--gold)" />
           ) : loans.length === 0 ? (
             <EmptyState title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
           ) : activeLoans.length === 0 ? (

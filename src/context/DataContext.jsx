@@ -969,7 +969,7 @@ export function DataProvider({ children }) {
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
     if (orgCount >= maxOrganizations) {
-      return { error: `Your account can use up to ${maxOrganizations} organization workspace${maxOrganizations > 1 ? "s" : ""}.` };
+      return { error: `Your account can use up to ${maxOrganizations} Khata${maxOrganizations > 1 ? "s" : ""}.` };
     }
 
     const nextOrgId = `org_${uid()}${uid()}`;

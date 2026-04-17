@@ -589,7 +589,7 @@ export default function MainApp() {
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
-  const currentOrgLabel = account?.name?.trim() || "Organization";
+  const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
     ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }] : []),
@@ -766,41 +766,73 @@ export default function MainApp() {
           </div>
         )}
         {!isAdmin && user?.subscriptionStatus === "trial" && trialActive && showTrialBanner && (
-          <div style={{
-            margin: '0 auto',
-            marginTop: 12,
-            width: "min(calc(100% - 16px), 760px)",
-            padding: '10px 12px',
-            borderRadius: 12,
-            border: '1px solid var(--accent)',
-            background: 'var(--accent-deep)',
-            color: 'var(--accent)',
-            fontSize: 12,
-            fontWeight: 700,
-            lineHeight: 1.5,
-            position: 'relative',
-            boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
-            pointerEvents: 'auto'
-          }}>
-            <span style={{ fontWeight: 800 }}>
-              Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
-            </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
-            {!reviewAccessEnabled && (
+          isMobile ? (
+            <div style={{
+              margin: '8px 12px 0',
+              padding: '6px 10px',
+              borderRadius: 20,
+              border: '1px solid var(--accent)',
+              background: 'var(--accent-deep)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8
+            }}>
+              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Trial active{trialEndLabel ? ` · ends ${trialEndLabel}` : ""}
+              </span>
+              {!reviewAccessEnabled && (
+                <button
+                  type="button"
+                  onClick={openUpgradeFlow}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)', whiteSpace: 'nowrap', flexShrink: 0 }}
+                >
+                  Upgrade
+                </button>
+              )}
               <button
-                className="btn-secondary"
-                type="button"
-                onClick={openUpgradeFlow}
-                style={{ marginTop: 8, padding: "7px 10px", fontSize: 11, color: "var(--accent)", borderColor: "var(--accent)" }}
-              >
-                Manage Subscription
-              </button>
-            )}
-            <button
-              style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
-              aria-label="Dismiss"
-              onClick={() => setShowTrialBanner(false)}
-            >×</button>
-          </div>
+                style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, cursor: 'pointer', fontWeight: 900, lineHeight: 1, flexShrink: 0, padding: '0 2px' }}
+                aria-label="Dismiss"
+                onClick={() => setShowTrialBanner(false)}
+              >×</button>
+            </div>
+          ) : (
+            <div style={{
+              margin: '0 auto',
+              marginTop: 12,
+              width: "min(calc(100% - 16px), 760px)",
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: '1px solid var(--accent)',
+              background: 'var(--accent-deep)',
+              color: 'var(--accent)',
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: 1.5,
+              position: 'relative',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+              pointerEvents: 'auto'
+            }}>
+              <span style={{ fontWeight: 800 }}>
+                Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
+              </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+              {!reviewAccessEnabled && (
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={openUpgradeFlow}
+                  style={{ marginTop: 8, padding: "7px 10px", fontSize: 11, color: "var(--accent)", borderColor: "var(--accent)" }}
+                >
+                  Manage Subscription
+                </button>
+              )}
+              <button
+                style={{ position: 'absolute', top: 8, right: 12, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 18, cursor: 'pointer', fontWeight: 900 }}
+                aria-label="Dismiss"
+                onClick={() => setShowTrialBanner(false)}
+              >×</button>
+            </div>
+          )
         )}
       </div>
       {/* Main content area */}
@@ -830,7 +862,7 @@ export default function MainApp() {
               </button>
               <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
                 <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {isAdmin ? "Admin Workspace" : (account?.name || currentOrgLabel || "Organization")}
+                  {isAdmin ? "Admin" : (account?.name || currentOrgLabel || "My Khata")}
                 </div>
                 <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 16 : 24, color: "var(--text)", lineHeight: 1.15, marginTop: isMobile ? 2 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {TABS.find(item => item.id === tab)?.label}
@@ -843,12 +875,12 @@ export default function MainApp() {
                 <div style={{ position: "relative" }} ref={orgSwitcherRef}>
                   <button
                     onClick={() => setShowOrgSwitcher(v => !v)}
-                    title="Switch organization"
+                    title="Switch Khata"
                     style={{ height: isMobile ? 34 : 36, borderRadius: 10, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "var(--border)"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "var(--surface-high)", color: activeSharedOrgKey ? "var(--accent)" : "var(--text-sec)", cursor: "pointer", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: "0 10px", flexShrink: 0 }}
                   >
                     {activeSharedOrgKey
-                      ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared Org")
-                      : "My Org"} ▾
+                      ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared Khata")
+                      : "My Khata"} ▾
                   </button>
                   {showOrgSwitcher && (
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 200, overflow: "hidden" }}>

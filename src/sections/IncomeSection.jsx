@@ -1008,7 +1008,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             {!hasApartmentFlats ? (
               <EmptyState
                 title="Add flats first"
-                message="Create flat records in Org before recording maintenance collections."
+                message="Create flat records in Khata before recording maintenance collections."
                 actionLabel="Open Flats"
                 onAction={openFlatManager}
                 accentColor="var(--accent)"
@@ -1170,7 +1170,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           {isApartmentOrg && !hasApartmentFlats && manualIncome.length === 0 ? (
             <EmptyState
               title="Add flats before tracking collections"
-              message="Maintenance collections need at least one flat record in Org."
+              message="Maintenance collections need at least one flat record in Khata."
               actionLabel="Open Flats"
               onAction={openFlatManager}
               accentColor="var(--accent)"
@@ -1178,7 +1178,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           ) : !hasHouseholdPeople ? (
             <EmptyState
               title="Add a person before tracking earnings"
-              message="Household earnings must be tagged to at least one person. Add your first person in Org to continue."
+              message="Household earnings must be tagged to at least one person. Add your first person in Khata to continue."
               actionLabel="Open People"
               onAction={openPeopleManager}
               accentColor="var(--accent)"
@@ -1186,7 +1186,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           ) : isFreelancerOrg && !hasFreelancerClients ? (
             <EmptyState
               title="Add a client before tracking payments"
-              message="Freelancer payments must be linked to at least one client. Add your first client in Org to continue."
+              message="Freelancer payments must be linked to at least one client. Add your first client in Khata to continue."
               actionLabel="Open Clients"
               onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
               accentColor="var(--accent)"
