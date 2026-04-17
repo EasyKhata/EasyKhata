@@ -285,7 +285,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const orgConfig = getOrgConfig(orgType);
-  const [stats, setStats] = useState({ profit: 0, netAfterEmi: 0, cashFlow: [], monthlyBreakdown: [] });
+  const [stats, setStats] = useState({
+    profit: 0, netAfterEmi: 0, totalIncome: 0, totalExpense: 0,
+    cashFlow: [], monthlyBreakdown: [],
+    pendingInvoices: [], overdueInvoices: [], dueSoonInvoices: [],
+    topExpenseCategories: [], topCustomers: [], highRiskCustomers: [],
+    alertItems: [], upcomingEmis: [], actionTips: [],
+    unpaidFlats: [], pendingCustomers: [], partnersWithBalance: [],
+    lowStockProducts: []
+  });
   const [statsLoading, setStatsLoading] = useState(false);
 
   useEffect(() => {
@@ -346,8 +354,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   
   const maxCashFlow = useMemo(() => (
     viewMode === "month"
-      ? Math.max(1, ...stats.cashFlow.map(item => Math.max(item.income, item.expenses)))
-      : Math.max(1, ...stats.monthlyBreakdown.map(item => Math.max(item.income, item.expenses)))
+      ? Math.max(1, ...(stats.cashFlow || []).map(item => Math.max(item.income, item.expenses)))
+      : Math.max(1, ...(stats.monthlyBreakdown || []).map(item => Math.max(item.income, item.expenses)))
   ), [stats.cashFlow, stats.monthlyBreakdown, viewMode]);
 
   if (!data.loaded) {
@@ -552,7 +560,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         : stats.profit >= 0
           ? "Your freelance work stayed cash-positive this year."
           : "Expenses are ahead of collected work this year.");
-    const freelancerCashFlow = viewMode === "month" ? stats.cashFlow : stats.monthlyBreakdown;
+    const freelancerCashFlow = viewMode === "month" ? (stats.cashFlow || []) : (stats.monthlyBreakdown || []);
     const freelancerMaxCashFlow = Math.max(1, ...freelancerCashFlow.map(item => Math.max(item.income, item.expenses)));
 
     return (
