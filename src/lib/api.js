@@ -87,6 +87,18 @@ export const orgsApi = {
   syncOrgRecords: (userId, orgId, orgRecordsMap) =>
     api.post(`/users/${userId}/orgs/${orgId}/org-records/sync`, orgRecordsMap),
 
+  // Pre-computed dashboard summary (month totals, YTD, overdue, budget alerts)
+  getSummary: (userId, orgId) =>
+    api.get(`/users/${userId}/orgs/${orgId}/summary`),
+
+  // Full dashboard analytics (all stats for the requested year/month/viewMode)
+  getDashboard: (userId, orgId, year, month, viewMode) =>
+    api.get(`/users/${userId}/orgs/${orgId}/dashboard?year=${year}&month=${month}&viewMode=${viewMode}`),
+
+  // Customer directory enriched with invoice revenue, outstanding, risk
+  getCustomerInsights: (userId, orgId) =>
+    api.get(`/users/${userId}/orgs/${orgId}/customer-insights`),
+
   // Get all orgs this user is a member of (shared access)
   getMemberships: (userId) =>
     api.get(`/users/${userId}/orgs/memberships`)
@@ -172,9 +184,9 @@ export const adminApi = {
   deleteUser: (userId) =>
     api.delete(`/admin/users/${userId}`),
 
-  // Support tickets
-  listSupportTickets: () =>
-    api.get("/admin/support-tickets"),
+  // Support tickets (paginated: { tickets, total, page, hasMore })
+  listSupportTickets: (page = 1, limit = 50, status) =>
+    api.get(`/admin/support-tickets?page=${page}&limit=${limit}${status ? `&status=${status}` : ""}`),
 
   updateSupportTicket: (ticketId, updates) =>
     api.put(`/admin/support-tickets/${ticketId}`, updates),

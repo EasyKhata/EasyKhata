@@ -5,6 +5,21 @@ import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
 import { orgsApi, usersApi, membersApi } from "../lib/api";
+
+const EMPTY_SUMMARY = {
+  currentMonth: "",
+  currentYear: 0,
+  monthIncomeTotal: 0,
+  monthExpenseTotal: 0,
+  monthNet: 0,
+  ytdIncomeTotal: 0,
+  ytdExpenseTotal: 0,
+  ytdNet: 0,
+  overdueCount: 0,
+  overdueAmount: 0,
+  budgetAlerts: [],
+  computedAt: ""
+};
 import { useAuth } from "./AuthContext";
 import { logError } from "../utils/logger";
 
@@ -421,6 +436,7 @@ function buildInvoiceSyncSignature(invoices = []) {
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
+  const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
   const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
@@ -808,6 +824,7 @@ export function DataProvider({ children }) {
       if (!user?.id) {
         collectionSyncRef.current = {};
         setData(EMPTY_DATA);
+        setOrgSummary(EMPTY_SUMMARY);
         setLoaded(true);
         return;
       }
@@ -815,11 +832,12 @@ export function DataProvider({ children }) {
       setLoaded(false);
 
       try {
-        // Load all org metadata + active org's full collections in parallel
+        // Load all org metadata + active org's full collections + summary in parallel
         const activeOrgId = user.activeOrgId || DEFAULT_ORG_ID;
-        const [allOrgs, activeOrgFull] = await Promise.all([
+        const [allOrgs, activeOrgFull, summary] = await Promise.all([
           orgsApi.list(user.id),
-          orgsApi.getFull(user.id, activeOrgId)
+          orgsApi.getFull(user.id, activeOrgId),
+          orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
         ]);
 
         // Build orgs map: all orgs with metadata only, active org with full data
@@ -842,6 +860,7 @@ export function DataProvider({ children }) {
         });
 
         setData(nextState);
+        setOrgSummary(summary || EMPTY_SUMMARY);
         setUserData(user.id, "appData", nextState);
         setUser(prev =>
           prev ? {
@@ -1265,6 +1284,7 @@ export function DataProvider({ children }) {
   const contextValue = useMemo(() => ({
     ...data,
     loaded,
+    orgSummary,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
     activeSharedOrgRole,
@@ -1323,6 +1343,7 @@ export function DataProvider({ children }) {
     createOrganization,
     createSharedLedger,
     data,
+    orgSummary,
     deleteOrganization,
     joinSharedLedger,
     leaveSharedLedger,

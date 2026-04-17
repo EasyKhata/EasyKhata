@@ -19,7 +19,7 @@ import {
   UpgradeModal
 } from "../components/UI";
 import Collapsible from "../components/Collapsible";
-import { calculateDashboard, getPersonalMemberOptions } from "../utils/analytics";
+import { getPersonalMemberOptions } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { useAuth } from "../context/AuthContext";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
@@ -155,9 +155,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const supplierPaymentExpenses = useMemo(() => active.filter(expense => String(expense.purchaseType || "").trim() === "Supplier Payment"), [active]);
   const otherExpenses = useMemo(() => active.filter(expense => !["Team Payout", "Partner Payment"].includes(String(expense.expenseType || "").trim())), [active]);
   const retailOtherExpenses = useMemo(() => active.filter(expense => !["Stock Purchase", "Supplier Payment"].includes(String(expense.purchaseType || "").trim())), [active]);
-  const stats = useMemo(() => (
-    d.loaded ? calculateDashboard(d, year, month) : { budgetStatus: [] }
-  ), [d, month, year]);
   const filteredExpenses = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
     const sorted = active.slice().sort((left, right) => String(right.date || "").localeCompare(String(left.date || "")));
@@ -180,14 +177,24 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     });
   }, [active, searchQuery]);
 
-  const budgetCards = useMemo(
-    () =>
-      stats.budgetStatus.map(item => ({
-        ...item,
-        tone: item.progress >= 100 ? "var(--danger)" : item.progress >= 80 ? "var(--gold)" : "var(--accent)"
-      })),
-    [stats.budgetStatus]
-  );
+  // Compute budget progress directly from already-loaded expenses — no full dashboard calculation needed.
+  const budgetCards = useMemo(() => {
+    const budgets = d.budgets && typeof d.budgets === "object" ? d.budgets : {};
+    if (!Object.keys(budgets).length) return [];
+    const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const spent = {};
+    (d.expenses || []).forEach(e => {
+      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+      if (em === mk && e.category) spent[e.category] = (spent[e.category] || 0) + Number(e.amount || 0);
+    });
+    return Object.entries(budgets).map(([category, budget]) => {
+      const s = spent[category] || 0;
+      const limit = Number(budget) || 0;
+      const progress = limit > 0 ? (s / limit) * 100 : 0;
+      const tone = progress >= 100 ? "var(--danger)" : progress >= 80 ? "var(--gold)" : "var(--accent)";
+      return { category, budget: limit, spent: s, remaining: Math.max(0, limit - s), progress, tone };
+    });
+  }, [d.budgets, d.expenses, year, month]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

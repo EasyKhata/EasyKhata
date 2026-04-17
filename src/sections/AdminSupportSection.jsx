@@ -57,7 +57,9 @@ export default function AdminSupportSection() {
     setLoading(true);
     setError("");
     try {
-      const list = await adminApi.listSupportTickets();
+      const res = await adminApi.listSupportTickets();
+      // API now returns { tickets, total, page, hasMore } — handle both shapes for safety
+      const list = Array.isArray(res) ? res : (res.tickets || []);
       setTickets(list.map(t => ({ ...t, messages: normalizeSupportMessages(t) })));
     } catch (err) {
       logError("Admin support load error", err);

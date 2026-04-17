@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { supportApi, adminApi, societyApi } from "../lib/api";
+import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
 import NotificationsModal from "./settings/NotificationsModal";
@@ -15,7 +15,6 @@ import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice } from "../components/UI";
-import { calculateCustomerInsights } from "../utils/analytics";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
@@ -417,10 +416,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(accForm.organizationType || orgType), [accForm.organizationType, orgType]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
-  const customerInsights = useMemo(
-    () => calculateCustomerInsights({ customers, invoices }),
-    [customers, invoices]
-  );
+  const [customerInsights, setCustomerInsights] = useState(customers);
+  useEffect(() => {
+    if (!orgConfig.showCustomerFinancials || !user?.id || !activeOrgId) return;
+    let cancelled = false;
+    orgsApi.getCustomerInsights(user.id, activeOrgId)
+      .then(result => { if (!cancelled) setCustomerInsights(result); })
+      .catch(err => logError("customer insights", err));
+    return () => { cancelled = true; };
+  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers.length]);
+
   const customerDirectory = useMemo(
     () => (orgConfig.showCustomerFinancials === false ? customers : customerInsights),
     [customers, customerInsights, orgConfig.showCustomerFinancials]
