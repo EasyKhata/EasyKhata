@@ -950,6 +950,7 @@ export function DataProvider({ children }) {
 
     setData(nextState);
     persistState(nextState);
+    setOwnDataReloadKey(k => k + 1);
     return { success: true };
   }
 
