@@ -59,6 +59,23 @@ function ensureSpace(doc, y, needed) {
   return PAGE.top;
 }
 
+// Draws the standard dark-band report header.
+// orgName is shown as the main headline; reportType is the sub-label.
+function drawReportHeader(doc, y, orgName, reportType) {
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 26, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(safeText(orgName || "Organization"), PAGE.left + 4, y + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(180, 188, 200);
+  doc.text(safeText(reportType), PAGE.left + 4, y + 19);
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 8, "light");
+  return y + 34;
+}
+
 function sectionTitle(doc, y, title) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
@@ -934,17 +951,7 @@ export async function downloadAdminMonthlyReport(data, year, month, sym) {
   const removedUsersNote = "Removed users are not tracked in this report.";
 
   let y = PAGE.top;
-  doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(title, PAGE.left + 4, y + 10);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
-  doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-  y += 32;
+  y = drawReportHeader(doc, y, "EasyKhata Admin", title);
 
   y = sectionTitle(doc, y, "Admin Summary");
   y = drawMetricGrid(doc, y, [
@@ -1009,17 +1016,7 @@ export async function downloadFinancialYearReport(data, startYear, sym) {
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
 
   let y = PAGE.top;
-  doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(title, PAGE.left + 4, y + 10);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
-  doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-  y += 32;
+  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
 
   if (isApartmentOrgData(data)) {
     y = sectionTitle(doc, y, "Apartment");
@@ -1107,17 +1104,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     const title = `Household Report - ${MONTHS[month]} ${year}`;
 
     let y = PAGE.top;
-    doc.setFillColor(22, 22, 28);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text(title, PAGE.left + 4, y + 10);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-    y += 32;
+    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
 
     y = sectionTitle(doc, y, "Household Summary");
     y = drawMetricGrid(doc, y, [
@@ -1193,17 +1180,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     const title = `Freelancer Report - ${MONTHS[month]} ${year}`;
 
     let y = PAGE.top;
-    doc.setFillColor(22, 22, 28);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text(title, PAGE.left + 4, y + 10);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-    y += 32;
+    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
 
     y = sectionTitle(doc, y, "Freelancer Summary");
     y = drawMetricGrid(doc, y, [
@@ -1271,17 +1248,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     const title = `Small Business Report - ${MONTHS[month]} ${year}`;
 
     let y = PAGE.top;
-    doc.setFillColor(22, 22, 28);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text(title, PAGE.left + 4, y + 10);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-    drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-    y += 32;
+    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
 
     y = sectionTitle(doc, y, "Business Summary");
     y = drawMetricGrid(doc, y, [
@@ -1386,17 +1353,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
   );
 
   let y = PAGE.top;
-  doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 24, 6, 6, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(title, PAGE.left + 4, y + 10);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
-  doc.text(`Generated on ${new Date().toLocaleDateString("en-IN")}`, PAGE.left + 4, y + 18);
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 6, "light");
-  y += 32;
+  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
 
   y = sectionTitle(doc, y, "Financial Summary");
   y = drawMetricGrid(doc, y, [

@@ -426,10 +426,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     return () => { cancelled = true; };
   }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers.length]);
 
-  const customerDirectory = useMemo(
-    () => (orgConfig.showCustomerFinancials === false ? customers : customerInsights),
-    [customers, customerInsights, orgConfig.showCustomerFinancials]
-  );
+  const customerDirectory = useMemo(() => {
+    if (orgConfig.showCustomerFinancials === false) return customers;
+    // Show any customer that was just added locally but isn't yet in the fetched insights
+    const insightIds = new Set(customerInsights.map(c => c.id));
+    const pending = customers.filter(c => c.id && !insightIds.has(c.id));
+    return [...customerInsights, ...pending];
+  }, [customers, customerInsights, orgConfig.showCustomerFinancials]);
   const filteredCustomerDirectory = useMemo(() => {
     const needle = customerSearch.trim().toLowerCase();
     if (!needle) return customerDirectory;
