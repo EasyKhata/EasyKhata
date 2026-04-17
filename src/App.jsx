@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
@@ -6,7 +6,20 @@ import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { APP_SUPPORT_LABEL } from "./utils/brand";
+import { isNative, isAndroid } from "./utils/native";
 import "./index.css";
+
+// Initialise native Android integrations once on startup
+if (isNative && isAndroid) {
+  Promise.all([
+    import("@capacitor/status-bar").then(({ StatusBar, Style }) =>
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {})
+    ),
+    import("@capacitor/status-bar").then(({ StatusBar }) =>
+      StatusBar.setBackgroundColor({ color: "#0C0C10" }).catch(() => {})
+    )
+  ]).catch(() => {});
+}
 
 const AuthScreen = lazy(() => import("./screens/AuthScreen"));
 const MainApp = lazy(() => import("./screens/MainApp"));

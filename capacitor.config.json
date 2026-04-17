@@ -1,5 +1,28 @@
 {
   "appId": "net.easykhata.app",
   "appName": "EasyKhata",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#0C0C10"
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1800,
+      "launchAutoHide": true,
+      "backgroundColor": "#0C0C10",
+      "androidSplashResourceName": "splash",
+      "showSpinner": false
+    },
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  }
 }

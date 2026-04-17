@@ -44,13 +44,20 @@
         document.documentElement.style.background = "#0C0C10";
       }
     </script>
-    <script type="module" crossorigin src="/assets/index-DjhtwCBN.js"></script>
+    <script type="module" crossorigin src="/assets/index-DbWwHRUc.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-KfUPlHYY.js">
-    <link rel="modulepreload" crossorigin href="/assets/firebase-vendor-BGjZP_3V.js">
+    <link rel="modulepreload" crossorigin href="/assets/firebase-vendor-CMqq4W-x.js">
     <link rel="stylesheet" crossorigin href="/assets/index-ld5Tkhwf.css">
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script>
+      // Only load Razorpay on web — not inside the Android/iOS app
+      if (!window.Capacitor) {
+        var s = document.createElement('script');
+        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        document.head.appendChild(s);
+      }
+    </script>
   </body>
 </html>

@@ -285,7 +285,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const orgConfig = getOrgConfig(orgType);
-  const [stats, setStats] = useState({
+  const EMPTY_STATS = {
     profit: 0, netAfterEmi: 0, totalIncome: 0, totalExpense: 0,
     cashFlow: [], monthlyBreakdown: [],
     pendingInvoices: [], overdueInvoices: [], dueSoonInvoices: [],
@@ -293,17 +293,39 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     alertItems: [], upcomingEmis: [], actionTips: [],
     unpaidFlats: [], pendingCustomers: [], partnersWithBalance: [],
     lowStockProducts: []
+  };
+  const normalizeStats = (result) => ({
+    ...EMPTY_STATS,
+    ...result,
+    cashFlow: Array.isArray(result?.cashFlow) ? result.cashFlow : [],
+    monthlyBreakdown: Array.isArray(result?.monthlyBreakdown) ? result.monthlyBreakdown : [],
+    pendingInvoices: Array.isArray(result?.pendingInvoices) ? result.pendingInvoices : [],
+    overdueInvoices: Array.isArray(result?.overdueInvoices) ? result.overdueInvoices : [],
+    dueSoonInvoices: Array.isArray(result?.dueSoonInvoices) ? result.dueSoonInvoices : [],
+    topExpenseCategories: Array.isArray(result?.topExpenseCategories) ? result.topExpenseCategories : [],
+    topCustomers: Array.isArray(result?.topCustomers) ? result.topCustomers : [],
+    highRiskCustomers: Array.isArray(result?.highRiskCustomers) ? result.highRiskCustomers : [],
+    alertItems: Array.isArray(result?.alertItems) ? result.alertItems : [],
+    upcomingEmis: Array.isArray(result?.upcomingEmis) ? result.upcomingEmis : [],
+    actionTips: Array.isArray(result?.actionTips) ? result.actionTips : [],
+    unpaidFlats: Array.isArray(result?.unpaidFlats) ? result.unpaidFlats : [],
+    pendingCustomers: Array.isArray(result?.pendingCustomers) ? result.pendingCustomers : [],
+    partnersWithBalance: Array.isArray(result?.partnersWithBalance) ? result.partnersWithBalance : [],
+    lowStockProducts: Array.isArray(result?.lowStockProducts) ? result.lowStockProducts : []
   });
+  const [stats, setStats] = useState(EMPTY_STATS);
   const [statsLoading, setStatsLoading] = useState(false);
 
   useEffect(() => {
-    if (!data.loaded || !user?.id || !data.activeOrgId) return;
+    // Reset stale stats when loading starts so old shared-org data doesn't render
+    if (!data.loaded) { setStats(EMPTY_STATS); return; }
+    if (!user?.id || !data.activeOrgId) return;
     let cancelled = false;
     setStatsLoading(true);
     const sharedInfo = data.activeSharedOrgKey ? user?.sharedOrgs?.[data.activeSharedOrgKey] : null;
     const dashboardUserId = sharedInfo?.ownerId || user?.id;
     orgsApi.getDashboard(dashboardUserId, data.activeOrgId, year, month, viewMode)
-      .then(result => { if (!cancelled) setStats(result); })
+      .then(result => { if (!cancelled) setStats(normalizeStats(result)); })
       .catch(err => logError("dashboard fetch", err))
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };

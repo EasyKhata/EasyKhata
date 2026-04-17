@@ -47,7 +47,14 @@
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <script>
+      // Only load Razorpay on web — not inside the Android/iOS app
+      if (!window.Capacitor) {
+        var s = document.createElement('script');
+        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        document.head.appendChild(s);
+      }
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
