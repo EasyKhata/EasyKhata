@@ -129,6 +129,36 @@ export const supportApi = {
     api.post(`/support-tickets/${ticketId}/reply`, { message })
 };
 
+// ── Society Portal ────────────────────────────────────────────────────────────
+
+export const societyApi = {
+  // Admin
+  getPortal: (orgId) =>
+    api.get(`/society/portal?orgId=${encodeURIComponent(orgId)}`),
+
+  savePortal: (orgId, name) =>
+    api.put("/society/portal", { orgId, name }),
+
+  createInvite: (orgId, flatNumber, allowedEmail) =>
+    api.post("/society/portal/invites", { orgId, flatNumber, allowedEmail }),
+
+  deactivateInvite: (code) =>
+    api.put(`/society/portal/invites/${code}`, {}),
+
+  publish: (orgId, period, commonRecord, flatRows) =>
+    api.post("/society/portal/publish", { orgId, period, commonRecord, flatRows }),
+
+  // Member
+  join: (inviteCode) =>
+    api.post("/society/join", { inviteCode }),
+
+  leave: () =>
+    api.post("/society/leave", {}),
+
+  getMemberView: (period) =>
+    api.get(`/society/member?period=${encodeURIComponent(period)}`)
+};
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const adminApi = {
