@@ -896,7 +896,15 @@ export function DataProvider({ children }) {
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
   const saveAccount = acc => update(d => ({ ...d, account: acc }));
-  const resetForOrgTypeChange = nextAccount => update(d => buildResetData(d, nextAccount));
+  const resetForOrgTypeChange = (nextAccount) => {
+    update(d => buildResetData(d, nextAccount));
+    // Clear server-side orgRecords — the sync endpoint only upserts so empty orgRecords
+    // in client state would never delete stale server records (e.g. EMI loans).
+    const orgId = data.activeOrgId;
+    if (user?.id && orgId) {
+      orgsApi.clearOrgRecords(user.id, orgId).catch(err => logError("clearOrgRecords failed", err));
+    }
+  };
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));
