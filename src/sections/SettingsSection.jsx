@@ -419,14 +419,18 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const [customerInsights, setCustomerInsights] = useState(customers);
+  const CUSTOMER_SCREENS = new Set(["customers", "customer-detail", "customer-form"]);
   useEffect(() => {
+    // Only fetch when the user actually opens a customer screen — not on settings mount.
+    // This prevents triggering a heavy analytics endpoint just by opening settings.
     if (!orgConfig.showCustomerFinancials || !user?.id || !activeOrgId) return;
+    if (!CUSTOMER_SCREENS.has(screen)) return;
     let cancelled = false;
     orgsApi.getCustomerInsights(user.id, activeOrgId)
       .then(result => { if (!cancelled) setCustomerInsights(Array.isArray(result) ? result : []); })
       .catch(err => logError("customer insights", err));
     return () => { cancelled = true; };
-  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, customers?.length]);
+  }, [activeOrgId, user?.id, orgConfig.showCustomerFinancials, screen]);
 
   const customerDirectory = useMemo(() => {
     const safeInsights = customerInsights || [];
