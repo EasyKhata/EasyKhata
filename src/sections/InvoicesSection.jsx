@@ -338,8 +338,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openNew() {
-    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: getFinancialInvoices(d.invoices).length })) {
-      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+    if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
     }
     if (isFreelancerOrg && !(d.customers || []).some(c => String(c?.name || "").trim())) {
@@ -375,8 +375,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openDuplicate(invoice) {
-    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: getFinancialInvoices(d.invoices).length })) {
-      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+    if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
     }
 
@@ -574,6 +574,17 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     if (invalidItem) {
       setFormError(showTaxFields ? "Each line item needs a description, quantity, rate, and a valid GST rate." : "Each line item needs a description, quantity, and rate.");
       return;
+    }
+
+    if (!editInv && isFreelancerOrg && form.customerId) {
+      const invoiceMonth = (form.date || "").slice(0, 7);
+      const invoiceCountForCustomer = (d.invoices || []).filter(
+        inv => inv.customerId === form.customerId && (inv.date || "").slice(0, 7) === invoiceMonth
+      ).length;
+      if (!canUseFeature(user, "invoiceCreate", { invoiceCountForCustomer }, effectiveOrgType)) {
+        setFormError(getUpgradeCopy("invoiceCreate", effectiveOrgType).message);
+        return;
+      }
     }
 
     const invoice = buildInvoicePayload(form);

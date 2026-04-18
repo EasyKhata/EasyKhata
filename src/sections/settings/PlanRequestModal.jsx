@@ -1,23 +1,14 @@
 import React from "react";
 import { Modal, Field, Textarea } from "../../components/UI";
-import { BILLING_CYCLES, UPI_CONFIG } from "../../utils/subscription";
+import { BILLING_CYCLES, PLANS, UPI_CONFIG, getBillingAmount } from "../../utils/subscription";
+import { ORG_TYPES } from "../../utils/orgTypes";
 import { isNative } from "../../utils/native";
 
-/**
- * Subscription upgrade modal — handles Pro plan billing cycle selection
- * and initiates Razorpay checkout.
- *
- * Props:
- *   form         { billingCycle, note }
- *   onFormChange (updater: prev => next) — same signature as setState updater
- *   onSubmit     async () => void
- *   submitting   boolean
- *   onClose      () => void
- */
-export default function PlanRequestModal({ form, onFormChange, onSubmit, submitting, onClose }) {
+export default function PlanRequestModal({ form, onFormChange, onSubmit, submitting, onClose, orgType = ORG_TYPES.SMALL_BUSINESS }) {
   const billingCycle = form.billingCycle || BILLING_CYCLES.MONTHLY;
-  const isMonthly = billingCycle === BILLING_CYCLES.MONTHLY;
-  const amount = isMonthly ? UPI_CONFIG.monthlyAmount : UPI_CONFIG.yearlyAmount;
+  const monthlyAmount = getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
+  const yearlyAmount  = getBillingAmount(BILLING_CYCLES.YEARLY,  PLANS.PRO, orgType);
+  const amount = billingCycle === BILLING_CYCLES.MONTHLY ? monthlyAmount : yearlyAmount;
 
   return (
     <Modal
@@ -35,8 +26,8 @@ export default function PlanRequestModal({ form, onFormChange, onSubmit, submitt
         <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {[
-              [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${UPI_CONFIG.monthlyAmount}`],
-              [BILLING_CYCLES.YEARLY, `Yearly - Rs ${UPI_CONFIG.yearlyAmount}`]
+              [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${monthlyAmount}`],
+              [BILLING_CYCLES.YEARLY,  `Yearly - Rs ${yearlyAmount}`]
             ].map(([value, label]) => (
               <button
                 key={value}

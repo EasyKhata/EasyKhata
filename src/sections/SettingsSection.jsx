@@ -934,12 +934,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!editCust) {
       if (isApartmentOrg) {
         const flatCount = (customers || []).filter(item => String(item?.name || "").trim()).length;
-        if (!canUseFeature(user, "apartmentFlatCreate", { flatCount })) {
-          setUpgradeInfo(getUpgradeCopy("apartmentFlatCreate"));
+        if (!canUseFeature(user, "apartmentFlatCreate", { flatCount }, orgType)) {
+          setUpgradeInfo(getUpgradeCopy("apartmentFlatCreate", orgType));
           return;
         }
-      } else if (!canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
-        setUpgradeInfo(getUpgradeCopy("customerCreate"));
+      } else if (!canUseFeature(user, "customerCreate", { customerCount: customers.length, flatCount: customers.length }, orgType)) {
+        setUpgradeInfo(getUpgradeCopy("customerCreate", orgType));
         return;
       }
     }
@@ -1483,7 +1483,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function emailPaymentProof() {
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO);
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
     const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
     const body = encodeURIComponent(
       `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
@@ -1697,7 +1697,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       let updatedFlats = 0;
       let importedCollections = 0;
       let importedExpenses = 0;
-      const canCreateAnotherFlat = () => canUseFeature(user, "apartmentFlatCreate", { flatCount: initialFlatCount + createdFlats });
+      const canCreateAnotherFlat = () => canUseFeature(user, "apartmentFlatCreate", { flatCount: initialFlatCount + createdFlats }, orgType);
 
       importPreview.validRows.forEach(row => {
         if (row.recordType === "flat") {
@@ -2540,6 +2540,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onSubmit={submitPlanRequest}
         submitting={submittingPayment}
         onClose={() => setScreen("main")}
+        orgType={orgType}
       />
     );
   }
