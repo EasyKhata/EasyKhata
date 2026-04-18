@@ -80,10 +80,13 @@ export function isPaidActive(user) {
   return isSubscriptionActive(user);
 }
 
-// 4 max (1 per type). Creating org 2-4 requires an active paid plan — enforced in createOrganization.
+// Pro: 2 orgs. Business: 4 orgs. Trial/expired: 1 org.
+// Creating beyond the 1st requires an active paid plan — enforced in createOrganization.
 export function getMaxOrganizations(user) {
   if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
-  if (isSubscriptionActive(user)) return 4;
+  const plan = getUserPlan(user);
+  if (isPaidActive(user)) return plan === PLANS.BUSINESS ? 4 : 2;
+  if (isSubscriptionActive(user)) return 2; // trial: see 2-slot UI but pay-gate kicks in at 2nd org
   return 1;
 }
 

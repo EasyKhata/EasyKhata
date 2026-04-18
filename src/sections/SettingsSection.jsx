@@ -2208,26 +2208,29 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const isPaid = isPaidActive(user);
     const hasExistingOrg = organizations.length >= 1;
 
-    // At max (4 orgs, one of each type)
+    // At plan limit
     if (!canCreateOrganization) {
+      const atBusinessMax = maxOrganizations >= 4;
       return withNotice(
-        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
+        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={atBusinessMax ? () => setScreen("main") : () => setScreen("plan-request")} saveLabel={atBusinessMax ? "Back" : "Upgrade to Business"} canSave accentColor="var(--blue)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              You already have one Khata of each type. Maximum of 4 Khatas allowed.
+              {atBusinessMax
+                ? "You have reached the maximum of 4 Khatas (one per type)."
+                : "Pro plan allows up to 2 Khatas. Upgrade to Business to create up to 4 Khatas."}
             </div>
           </div>
         </Modal>
       );
     }
 
-    // Trial user with 1 org: show upgrade prompt
+    // Trial user with 1+ org: show upgrade prompt
     if (!isPaid && hasExistingOrg) {
       return withNotice(
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your trial includes 1 Khata. Upgrade to Pro to create up to 4 Khatas — one for each type (Household, Freelancer, Small Business, Apartment).
+              Your trial includes 1 Khata. Upgrade to Pro for up to 2 Khatas, or Business for up to 4 — one per type (Household, Freelancer, Small Business, Apartment).
             </div>
           </div>
         </Modal>
@@ -2267,7 +2270,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           />
         </Field>
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginTop: 4 }}>
-          You can have one Khata of each type. You currently have {organizations.length} of 4.
+          You currently have {organizations.length} of {maxOrganizations} Khatas.
         </div>
       </Modal>
     );
