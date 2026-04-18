@@ -48,8 +48,7 @@ const PLAN_LIMITS = {
 };
 
 export const UPI_CONFIG = {
-  payeeName: "EasyKhata",
-  upiId: "yourupi@bank"
+  payeeName: "EasyKhata"
 };
 
 export const PLAN_LABELS = {

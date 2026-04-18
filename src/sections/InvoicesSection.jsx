@@ -41,7 +41,6 @@ import {
   PLAN_LABELS,
   PLANS,
   SUBSCRIPTION_STATUS,
-  UPI_CONFIG,
   canUseFeature,
   formatSubscriptionDate,
   getBillingDuration,
@@ -783,10 +782,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
                       <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                        Amount Rs {request.amount || 0} - UPI {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                        Payee {request.upiPayeeName || UPI_CONFIG.payeeName} - UPI ID {request.upiId || UPI_CONFIG.upiId}
+                        Amount Rs {request.amount || 0} - Razorpay ID {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
                       </div>
 
                       {request.note && (
