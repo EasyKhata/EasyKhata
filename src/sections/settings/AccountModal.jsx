@@ -31,6 +31,7 @@ export default function AccountModal({
   orgStateProvinceOptions,
   selectableOrgTypeOptions,
   orgType,
+  canChangeOrgType = true,
   pendingOrgTypeChange,
   onCancelOrgTypeChange,
   onConfirmOrgTypeChange
@@ -43,10 +44,11 @@ export default function AccountModal({
         onSave={onSave}
         canSave={!!form.name?.trim()}
       >
-        <Field label="Usage Type" required>
+        <Field label="Usage Type" required hint={!canChangeOrgType ? "Upgrade to Pro to change your Khata type." : undefined}>
           <Select
             value={form.organizationType || orgType}
-            onChange={e => onFormChange(f => ({ ...f, organizationType: e.target.value }))}
+            onChange={e => canChangeOrgType && onFormChange(f => ({ ...f, organizationType: e.target.value }))}
+            disabled={!canChangeOrgType}
           >
             {selectableOrgTypeOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>

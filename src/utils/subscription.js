@@ -72,10 +72,26 @@ export function hasBusinessPlan(orgType) {
   return !!(PLAN_PRICES[orgType]?.business);
 }
 
-export function getMaxOrganizations(user) {
-  if (isAdminUser(user) || isReviewAccessEnabled()) return 2;
+// True when user is on an active paid plan (not trial, not expired)
+export function isPaidActive(user) {
+  if (isAdminUser(user)) return true;
   const plan = getUserPlan(user);
-  return plan === PLANS.BUSINESS ? 2 : 1;
+  if (plan !== PLANS.PRO && plan !== PLANS.BUSINESS) return false;
+  return isSubscriptionActive(user);
+}
+
+// Paid Pro: 1 of each org type = 4 max. Trial or expired: single org only.
+export function getMaxOrganizations(user) {
+  if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
+  if (isPaidActive(user)) return 4;
+  return 1;
+}
+
+// Org type can be changed during trial (clears data) or on a paid plan.
+// Expired/free users are locked to their current type.
+export function canChangeOrgType(user) {
+  if (isAdminUser(user)) return true;
+  return isSubscriptionActive(user);
 }
 
 export function getUserPlan(user) {
