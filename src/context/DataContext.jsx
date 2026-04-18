@@ -107,6 +107,25 @@ function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+// ── Incremental sync helpers ──────────────────────────────────────────────────
+// Full syncs older than this threshold are re-run to pick up server-side deletions.
+const INCREMENTAL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function getSyncedAt(userId, orgId) {
+  return getUserData(userId, `syncedAt:${orgId}`) || null;
+}
+function setSyncedAt(userId, orgId, ts) {
+  setUserData(userId, `syncedAt:${orgId}`, ts);
+}
+
+// Merge an array of updated/new records into an existing array, keyed by id.
+function mergeRecords(base, delta) {
+  if (!delta || delta.length === 0) return base;
+  const map = new Map((base || []).map(r => [r.id, r]));
+  for (const r of delta) { if (r?.id) map.set(r.id, r); }
+  return Array.from(map.values());
+}
+
 function withId(record = {}) {
   return { ...record, id: record.id || uid() };
 }
@@ -661,11 +680,17 @@ export function DataProvider({ children }) {
       setLoaded(false);
 
       try {
-        // Load all org metadata + active org's full collections + summary in parallel
+        // Load all org metadata + active org's full collections + summary in parallel.
+        // Use incremental sync (since=<lastSyncedAt>) when a recent full sync exists so
+        // we only fetch rows that changed — not the entire collection history.
         const activeOrgId = user.activeOrgId || DEFAULT_ORG_ID;
+        const lastSyncedAt = getSyncedAt(user.id, activeOrgId);
+        const useIncremental = !!lastSyncedAt &&
+          (Date.now() - new Date(lastSyncedAt).getTime() < INCREMENTAL_WINDOW_MS);
+
         const [allOrgs, activeOrgFull, summary] = await Promise.all([
           orgsApi.list(user.id),
-          orgsApi.getFull(user.id, activeOrgId),
+          orgsApi.getFull(user.id, activeOrgId, useIncremental ? lastSyncedAt : null),
           orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
         ]);
 
@@ -675,7 +700,23 @@ export function DataProvider({ children }) {
           orgsMap[apiOrg.id] = normalizeOrgData(fromApiOrg(apiOrg));
         });
         if (activeOrgFull) {
-          orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull));
+          if (activeOrgFull.isPartial) {
+            // Incremental sync: merge delta rows into the locally cached org
+            const localData = getUserData(user.id, "appData") || EMPTY_DATA;
+            const localOrg = localData.orgs?.[activeOrgId] || {};
+            orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull, {
+              income:    mergeRecords(localOrg.income    || [], activeOrgFull.income    || []),
+              expenses:  mergeRecords(localOrg.expenses  || [], activeOrgFull.expenses  || []),
+              invoices:  mergeRecords(localOrg.invoices  || [], activeOrgFull.invoices  || []),
+              customers: mergeRecords(localOrg.customers || [], activeOrgFull.customers || []),
+              orgRecords: { ...(localOrg.orgRecords || {}), ...(activeOrgFull.orgRecords || {}) }
+            }));
+          } else {
+            orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull));
+          }
+          if (activeOrgFull.syncedAt) {
+            setSyncedAt(user.id, activeOrgId, activeOrgFull.syncedAt);
+          }
         }
 
         if (!orgsMap[activeOrgId]) {

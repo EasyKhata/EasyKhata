@@ -62,10 +62,11 @@ export const orgsApi = {
   list: (userId) =>
     api.get(`/users/${userId}/orgs`),
 
-  // Load everything for one org in a single request
-  // Returns: { ...orgSettings, income[], expenses[], invoices[], customers[], orgRecords{} }
-  getFull: (userId, orgId) =>
-    api.get(`/users/${userId}/orgs/${orgId}/full`),
+  // Load everything for one org in a single request.
+  // Pass since (ISO string) to get only rows updated after that timestamp (incremental sync).
+  // Returns: { ...orgSettings, income[], expenses[], invoices[], customers[], orgRecords{}, syncedAt, isPartial }
+  getFull: (userId, orgId, since) =>
+    api.get(`/users/${userId}/orgs/${orgId}/full${since ? `?since=${encodeURIComponent(since)}` : ""}`),
 
   // Create a new org
   create: (userId, orgId, data) =>
