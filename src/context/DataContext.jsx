@@ -1194,10 +1194,11 @@ export function DataProvider({ children }) {
     setActiveSharedOrgKey(key);
 
     try {
-      // Verify membership is still active + get live role
-      const [memberships, orgFull] = await Promise.all([
+      // Step 1: verify membership + fetch org metadata only (fast)
+      const [memberships, orgMeta, customersResult] = await Promise.all([
         orgsApi.getMemberships(user.id),
-        orgsApi.getFull(ownerId, orgId)
+        orgsApi.getFull(ownerId, orgId, null, { metaOnly: true }),
+        orgsApi.getCollection(ownerId, orgId, "customers").catch(() => null)
       ]);
 
       const membership = memberships.find(m => m.ownerId === ownerId && m.orgId === orgId);
@@ -1220,22 +1221,25 @@ export function DataProvider({ children }) {
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
+      const customers = Array.isArray(customersResult?.records) ? customersResult.records
+        : Array.isArray(customersResult) ? customersResult : [];
+
       const nextState = buildStateFromOrganizations({
-        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgFull)) },
+        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, { customers })) },
         activeOrgId: orgId
       });
 
       setData(nextState);
 
-      // Shared org was loaded via /full — all collections are present
-      const allFetched = { income: true, expenses: true, invoices: true, customers: true };
-      collectionFetchedRef.current = allFetched;
-      setCollectionFetched(allFetched);
-      // Establish baselines for shared org collections
+      // Customers are loaded; income/expenses/invoices will lazy-load on section visit.
+      // ensureCollectionLoaded uses activeSharedOrgRef.current.ownerId for the API path.
+      const freshFetched = { income: false, expenses: false, invoices: false, customers: true };
+      collectionFetchedRef.current = freshFetched;
+      setCollectionFetched(freshFetched);
+
+      // Baseline for customers only
       if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
-      ORG_COLLECTION_KEYS.forEach(key => {
-        lastSyncedRef.current[orgId][key] = buildBaseline(nextState[key] || []);
-      });
+      lastSyncedRef.current[orgId].customers = buildBaseline(customers);
     } catch (err) {
       logError("switchToSharedOrg failed", err);
       activeSharedOrgRef.current = null;
@@ -1266,10 +1270,12 @@ export function DataProvider({ children }) {
 
     collectionFetchingRef.current[key] = true;
     const orgId = data.activeOrgId;
+    // For shared orgs the API path uses the org owner's ID, not the current user's ID
+    const apiUserId = activeSharedOrgRef.current?.ownerId || user.id;
 
     try {
       // Page 1 — render the UI as soon as the first page arrives
-      const page1 = await orgsApi.getCollection(user.id, orgId, key);
+      const page1 = await orgsApi.getCollection(apiUserId, orgId, key);
       const firstBatch = Array.isArray(page1?.records) ? page1.records
         : Array.isArray(page1) ? page1  // backward-compat if server returns flat array
         : [];
@@ -1300,7 +1306,7 @@ export function DataProvider({ children }) {
       let allRecords = [...firstBatch];
 
       while (cursor) {
-        const nextPage = await orgsApi.getCollection(user.id, orgId, key, cursor);
+        const nextPage = await orgsApi.getCollection(apiUserId, orgId, key, cursor);
         const batch = Array.isArray(nextPage?.records) ? nextPage.records : [];
         if (batch.length === 0) break;
         allRecords = [...allRecords, ...batch];
