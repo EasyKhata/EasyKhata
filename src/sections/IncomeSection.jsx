@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
-import { canUseFeature } from "../utils/subscription";
+import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import {
   DateSelectInput,
   Modal,
@@ -19,7 +19,8 @@ import {
   EmptyState,
   SectionSkeleton,
   uid,
-  PaginatedListControls
+  PaginatedListControls,
+  UpgradeModal
 } from "../components/UI";
 import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -181,6 +182,7 @@ function renderDynamicField(field, value, onChange) {
 export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
   const d = useData();
   const isViewerMode = d.isViewerMode;
+  const isReadOnlyFreeMode = d.isReadOnlyFreeMode;
   const { user } = useAuth();
 
   // Lazy-load income collection the first time this section mounts
@@ -197,6 +199,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const isCurrentViewedMonth = mk === CURRENT_MONTH;
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
@@ -513,6 +516,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   }, [guidedField]);
 
   function openNew() {
+    if (isReadOnlyFreeMode) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", orgType));
+      return;
+    }
     if (isApartmentOrg && !hasApartmentFlats) {
       openFlatManager();
       return;
@@ -542,6 +549,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   }
 
   function openEdit(income) {
+    if (isReadOnlyFreeMode) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", orgType));
+      return;
+    }
     const next = buildBlankForm(year, month, config);
     next.label = income.label || "";
     next.amount = String(income.amount ?? "");
@@ -1551,6 +1562,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           )}
         </Modal>
       )}
+      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>
   );
 }

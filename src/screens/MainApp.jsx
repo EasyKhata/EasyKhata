@@ -513,7 +513,7 @@ export default function MainApp() {
 
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
-      const msg = event?.detail?.message || "Free plan is read-only. Upgrade to Pro to continue.";
+      const msg = event?.detail?.message || "Your trial has ended. Upgrade to Pro (Rs 69/month) to continue.";
       setReadOnlyNotice({ message: msg, key: Date.now() });
     };
     window.addEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);

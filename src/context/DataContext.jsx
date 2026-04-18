@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive } from "../utils/subscription";
+import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
@@ -449,7 +449,8 @@ export function DataProvider({ children }) {
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
   const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
   const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
-  const readOnlyFreeMode = isFreeReadOnlyMode(user);
+  const activeOrgType = getOrgType(data.account?.organizationType || user?.organizationType);
+  const readOnlyFreeMode = isFreeReadOnlyMode(user, activeOrgType);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
@@ -1010,7 +1011,7 @@ export function DataProvider({ children }) {
               new CustomEvent("ledger:readonly-blocked", {
                 detail: {
                   tone: "warning",
-                  message: "Free plan is read-only. Upgrade to Pro to create, edit, or delete records."
+                  message: "Your trial has ended. Go to Settings → Manage Subscription to upgrade to Pro (Rs 69/month)."
                 }
               })
             );
@@ -1112,7 +1113,7 @@ export function DataProvider({ children }) {
 
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
+    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
 
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
@@ -1120,13 +1121,15 @@ export function DataProvider({ children }) {
       return { error: `Your account can use up to ${maxOrganizations} Khatas (one of each type).` };
     }
 
-    // Creating a 2nd+ org requires an active paid plan — trial gives only 1 org free
-    if (orgCount >= 1 && !isPaidActive(user)) {
+    // Creating a 2nd+ org requires an active paid plan.
+    // Household users are free for their own org but still need Pro to add other types.
+    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
+    const isCreatingFreeOrg = isFreeOrgType(requestedType) && orgCount === 0;
+    if (orgCount >= 1 && !isPaidActive(user) && !isCreatingFreeOrg) {
       return { error: "UPGRADE_REQUIRED" };
     }
 
     // One org per type — no duplicates
-    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
     const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
     if (alreadyHasType) {
       const label = requestedType.replace(/_/g, " ");
@@ -1178,7 +1181,7 @@ export function DataProvider({ children }) {
 
   async function deleteOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
+    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
     const orgIds = Object.keys(data.orgs || {});
@@ -1394,7 +1397,7 @@ export function DataProvider({ children }) {
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
-    canCreateOrganization: organizations.length < maxOrganizations,
+    canCreateOrganization: (isSubscriptionActive(user) || isFreeOrgType(activeOrgType)) && organizations.length < maxOrganizations,
     switchOrganization,
     createOrganization,
     deleteOrganization,

@@ -27,12 +27,12 @@ export const PAYMENT_REQUEST_STATUS = {
   REJECTED: "rejected"
 };
 
-// Prices per org type. Only apartment has a Business tier.
+// Prices per org type. Household (personal) is permanently free — no Pro tier needed.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69,  yearly: 699  }, business: { monthly: 99, yearly: 999 } }
+  [ORG_TYPES.PERSONAL]:       { pro: null },
+  [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69, yearly: 699 } }
 };
 
 // Per-plan limits for org types that aren't fully unlimited on Pro
@@ -42,8 +42,8 @@ const PLAN_LIMITS = {
     invoicesPerCustomerPerMonth: 10
   },
   [ORG_TYPES.APARTMENT]: {
-    pro:      { flats: 40, invites: 40 },
-    business: { flats: 40, invites: 40 }
+    flats: 40,
+    invites: 40
   }
 };
 
@@ -67,24 +67,29 @@ export function isReviewAccessEnabled() {
   return REVIEW_ACCESS_ENABLED;
 }
 
-// Returns true only if the given org type has a Business tier available
+// Household (personal) is permanently free — no subscription required
+export function isFreeOrgType(orgType) {
+  return orgType === ORG_TYPES.PERSONAL;
+}
+
+// Business tier has been removed — always false
 export function hasBusinessPlan(orgType) {
-  return !!(PLAN_PRICES[orgType]?.business);
+  return false;
 }
 
 // True when user is on an active paid plan (not trial, not expired)
 export function isPaidActive(user) {
   if (isAdminUser(user)) return true;
   const plan = getUserPlan(user);
-  if (plan !== PLANS.PRO && plan !== PLANS.BUSINESS) return false;
+  if (plan !== PLANS.PRO) return false;
   return isSubscriptionActive(user);
 }
 
-// 4 max (1 per type). Creating org 2-4 requires an active paid plan — enforced in createOrganization.
+// Pro: 2 orgs. Trial: 2 slots (pay-gate at 2nd). Expired: keep however many they have (creation blocked separately).
 export function getMaxOrganizations(user) {
   if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
-  if (isSubscriptionActive(user)) return 4;
-  return 1;
+  if (isPaidActive(user) || isSubscriptionActive(user)) return 2;
+  return Infinity; // expired: don't force-reduce, creation is blocked via isSubscriptionActive check
 }
 
 // Org type can be changed during trial (clears data) or on a paid plan.
@@ -95,7 +100,7 @@ export function canChangeOrgType(user) {
 }
 
 export function getUserPlan(user) {
-  if (isAdminUser(user)) return PLANS.BUSINESS;
+  if (isAdminUser(user)) return PLANS.PRO;
   return user?.plan || PLANS.FREE;
 }
 
@@ -121,7 +126,7 @@ export function getSubscriptionEndDate(days) {
 // orgType is required to look up the correct price tier
 export function getBillingAmount(cycle, plan = PLANS.PRO, orgType = ORG_TYPES.SMALL_BUSINESS) {
   const prices = PLAN_PRICES[orgType] || PLAN_PRICES[ORG_TYPES.SMALL_BUSINESS];
-  const tier = plan === PLANS.BUSINESS ? prices.business : prices.pro;
+  const tier = prices.pro;
   if (!tier) return 0;
   return cycle === BILLING_CYCLES.YEARLY ? tier.yearly : tier.monthly;
 }
@@ -142,16 +147,18 @@ export function isTrialActive(user) {
 export function isSubscriptionActive(user) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return true;
-  const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
-  if (status === SUBSCRIPTION_STATUS.ACTIVE) return true;
+  const status = user?.subscriptionStatus;
+  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return true;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user);
   return false;
 }
 
-// Read-only mode: trial expired or no active subscription
-export function isFreeReadOnlyMode(user) {
+// Read-only mode: trial expired or no active subscription.
+// Pass orgType to exempt Household users (always free, never read-only).
+export function isFreeReadOnlyMode(user, orgType) {
   if (isAdminUser(user)) return false;
   if (isReviewAccessEnabled()) return false;
+  if (orgType && isFreeOrgType(orgType)) return false;
   return !isSubscriptionActive(user);
 }
 
@@ -163,6 +170,12 @@ export function isFreeReadOnlyMode(user) {
 export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMALL_BUSINESS) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
+
+  // Household is permanently free — all features allowed (except apartment-only ones)
+  if (isFreeOrgType(orgType)) {
+    if (feature === "apartmentFlatCreate" || feature === "societyInvite" || feature === "sharedLedger") return false;
+    return true;
+  }
 
   const plan = getUserPlan(user);
   const active = isSubscriptionActive(user);
@@ -178,10 +191,7 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
         return (usage.customerCount || 0) < PLAN_LIMITS[ORG_TYPES.FREELANCER].customers;
       }
       if (orgType === ORG_TYPES.APARTMENT) {
-        const limit = plan === PLANS.BUSINESS
-          ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.flats
-          : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.flats;
-        return (usage.flatCount || 0) < limit;
+        return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
       }
       return true; // personal, small_business: unlimited
     }
@@ -196,25 +206,19 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
 
     case "apartmentFlatCreate": {
       if (orgType !== ORG_TYPES.APARTMENT) return false;
-      const limit = plan === PLANS.BUSINESS
-        ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.flats
-        : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.flats;
-      return (usage.flatCount || 0) < limit;
+      return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
     }
 
     case "societyInvite": {
       if (orgType !== ORG_TYPES.APARTMENT) return false;
-      const limit = plan === PLANS.BUSINESS
-        ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.invites
-        : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.invites;
-      return (usage.inviteCount || 0) < limit;
+      return (usage.inviteCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].invites;
     }
 
     case "notifications":
     case "advancedAnalytics":
     case "budgets":
     case "advancedInvoice":
-      return plan === PLANS.PRO || plan === PLANS.BUSINESS;
+      return plan === PLANS.PRO;
 
     case "posSystem":
       return false; // not launched
@@ -240,8 +244,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
         };
       }
       return {
-        title: "Subscription required",
-        message: "Your trial has ended. Upgrade to Pro to create invoices."
+        title: "Trial ended",
+        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to create invoices."
       };
 
     case "customerCreate":
@@ -254,24 +258,24 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
       if (orgType === ORG_TYPES.APARTMENT) {
         return {
           title: "Flat limit reached",
-          message: "Pro and Business plans support up to 40 flats."
+          message: "Pro plan supports up to 40 flats."
         };
       }
       return {
-        title: "Subscription required",
-        message: "Your trial has ended. Upgrade to Pro to add customers."
+        title: "Trial ended",
+        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to add customers."
       };
 
     case "apartmentFlatCreate":
       return {
         title: "Flat limit reached",
-        message: "Pro and Business plans support up to 40 flats."
+        message: "Pro plan supports up to 40 flats."
       };
 
     case "societyInvite":
       return {
         title: "Invite limit reached",
-        message: "Pro and Business plans support up to 40 resident invites."
+        message: "Pro plan supports up to 40 resident invites."
       };
 
     case "invoicePdf":
@@ -318,20 +322,27 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
 
     default:
       return {
-        title: "Upgrade required",
-        message: "This feature requires an active Pro subscription."
+        title: "Pro required",
+        message: "This feature requires an active Pro subscription (Rs 69/month or Rs 699/year)."
       };
   }
 }
 
-export function getPlanSummary(user) {
+export function getPlanSummary(user, orgType) {
   const plan = getUserPlan(user);
   const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+
+  if (orgType && isFreeOrgType(orgType)) {
+    return {
+      title: "Household — Free",
+      message: "Household Khata is permanently free. All features are included at no cost."
+    };
+  }
 
   if (isAdminUser(user)) {
     return {
       title: "Owner access",
-      message: "You have full admin access across all plan features."
+      message: "You have full Pro access across all plan features."
     };
   }
 
@@ -353,14 +364,14 @@ export function getPlanSummary(user) {
   if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user)) {
     return {
       title: "Trial ended",
-      message: "Your free trial has ended. Upgrade to continue creating and editing records."
+      message: "Your 30-day free trial has ended. You can still view all your records. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
     };
   }
 
   if (status === SUBSCRIPTION_STATUS.INACTIVE) {
     return {
-      title: `${PLAN_LABELS[plan] || "Plan"} inactive`,
-      message: "Premium features are paused. Contact admin to reactivate."
+      title: "Subscription paused",
+      message: "Your Pro subscription is inactive. Tap Manage Subscription to renew."
     };
   }
 
@@ -368,7 +379,7 @@ export function getPlanSummary(user) {
     title: `${PLAN_LABELS[plan] || "Free"} plan`,
     message:
       plan === PLANS.FREE
-        ? "Your trial has ended. You can view existing records and download reports. Upgrade to Pro to create or edit records."
-        : `${PLAN_LABELS[plan] || "Plan"} access is active.`
+        ? "Your trial has ended. You can view all your records and download reports. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
+        : `${PLAN_LABELS[plan] || "Plan"} is active.`
   };
 }

@@ -253,7 +253,7 @@ function QuickstartChecklistCard({ progressLabel, items }) {
 
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
-  const { activeSharedOrgKey } = data;
+  const { activeSharedOrgKey, collectionFetched, ensureCollectionLoaded } = data;
   const { user, updateProfile } = useAuth();
   const sym = data.currency?.symbol || "Rs";
   const [showSetupGuide, setShowSetupGuide] = useState(false);
@@ -355,7 +355,20 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     }
   ]), [firstValueCompleted, hasCustomerRecord, isApartmentOrg, isPersonalOrg, onNav, orgConfig.hideInvoices]);
   const quickstartDone = useMemo(() => quickstartItems.filter(item => item.completed).length, [quickstartItems]);
-  const showQuickstartChecklist = !activeSharedOrgKey && !showSetupGuide && quickstartDone < quickstartItems.length;
+
+  // Trigger lazy collection loads needed for accurate quickstart state.
+  // Without this, income/invoices are empty until the user visits those sections,
+  // causing false "not done" state on existing orgs.
+  useEffect(() => {
+    if (!data.loaded || activeSharedOrgKey) return;
+    ensureCollectionLoaded?.("income");
+    ensureCollectionLoaded?.("invoices");
+  }, [data.loaded, activeSharedOrgKey, ensureCollectionLoaded]);
+
+  // Wait for relevant collections to load before deciding whether to show the checklist.
+  // Customers are eager (always ready). Income covers personal/apartment; invoices cover the rest.
+  const collectionsReadyForQuickstart = collectionFetched?.customers && collectionFetched?.income && collectionFetched?.invoices;
+  const showQuickstartChecklist = !activeSharedOrgKey && !showSetupGuide && collectionsReadyForQuickstart && quickstartDone < quickstartItems.length;
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = isSmallBusinessOrg
