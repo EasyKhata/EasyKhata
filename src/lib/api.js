@@ -75,9 +75,13 @@ export const orgsApi = {
     return api.get(`/users/${userId}/orgs/${orgId}/full${qs ? `?${qs}` : ""}`);
   },
 
-  // Fetch a single collection array on demand (used for lazy loading).
-  getCollection: (userId, orgId, collectionKey) =>
-    api.get(`/users/${userId}/orgs/${orgId}/${collectionKey}`),
+  // Fetch one page of a collection (paginated).
+  // cursor — ISO string of the last updatedAt seen (omit for first page)
+  // Returns: { records, hasMore, nextCursor }
+  getCollection: (userId, orgId, collectionKey, cursor) => {
+    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return api.get(`/users/${userId}/orgs/${orgId}/${collectionKey}${qs}`);
+  },
 
   // Create a new org
   create: (userId, orgId, data) =>

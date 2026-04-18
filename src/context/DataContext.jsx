@@ -1194,10 +1194,11 @@ export function DataProvider({ children }) {
     setActiveSharedOrgKey(key);
 
     try {
-      // Verify membership is still active + get live role
-      const [memberships, orgFull] = await Promise.all([
+      // Step 1: verify membership + fetch org metadata only (fast)
+      const [memberships, orgMeta, customersResult] = await Promise.all([
         orgsApi.getMemberships(user.id),
-        orgsApi.getFull(ownerId, orgId)
+        orgsApi.getFull(ownerId, orgId, null, { metaOnly: true }),
+        orgsApi.getCollection(ownerId, orgId, "customers").catch(() => null)
       ]);
 
       const membership = memberships.find(m => m.ownerId === ownerId && m.orgId === orgId);
@@ -1220,22 +1221,25 @@ export function DataProvider({ children }) {
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
+      const customers = Array.isArray(customersResult?.records) ? customersResult.records
+        : Array.isArray(customersResult) ? customersResult : [];
+
       const nextState = buildStateFromOrganizations({
-        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgFull)) },
+        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, { customers })) },
         activeOrgId: orgId
       });
 
       setData(nextState);
 
-      // Shared org was loaded via /full — all collections are present
-      const allFetched = { income: true, expenses: true, invoices: true, customers: true };
-      collectionFetchedRef.current = allFetched;
-      setCollectionFetched(allFetched);
-      // Establish baselines for shared org collections
+      // Customers are loaded; income/expenses/invoices will lazy-load on section visit.
+      // ensureCollectionLoaded uses activeSharedOrgRef.current.ownerId for the API path.
+      const freshFetched = { income: false, expenses: false, invoices: false, customers: true };
+      collectionFetchedRef.current = freshFetched;
+      setCollectionFetched(freshFetched);
+
+      // Baseline for customers only
       if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
-      ORG_COLLECTION_KEYS.forEach(key => {
-        lastSyncedRef.current[orgId][key] = buildBaseline(nextState[key] || []);
-      });
+      lastSyncedRef.current[orgId].customers = buildBaseline(customers);
     } catch (err) {
       logError("switchToSharedOrg failed", err);
       activeSharedOrgRef.current = null;
@@ -1265,31 +1269,56 @@ export function DataProvider({ children }) {
     if (!user?.id) return;
 
     collectionFetchingRef.current[key] = true;
+    const orgId = data.activeOrgId;
+    // For shared orgs the API path uses the org owner's ID, not the current user's ID
+    const apiUserId = activeSharedOrgRef.current?.ownerId || user.id;
+
     try {
-      const records = await orgsApi.getCollection(user.id, data.activeOrgId, key);
-      const fetched = Array.isArray(records) ? records : [];
+      // Page 1 — render the UI as soon as the first page arrives
+      const page1 = await orgsApi.getCollection(apiUserId, orgId, key);
+      const firstBatch = Array.isArray(page1?.records) ? page1.records
+        : Array.isArray(page1) ? page1  // backward-compat if server returns flat array
+        : [];
 
-      setData(prev => {
-        const orgId = prev.activeOrgId;
-        const prevOrg = prev.orgs?.[orgId];
-        if (!prevOrg) return prev;
-        const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: fetched });
-        return buildStateFromOrganizations({
-          orgs: { ...prev.orgs, [orgId]: updatedOrg },
-          activeOrgId: orgId,
-          sharedLedger: prev.sharedLedger
+      const mergeIntoState = (incoming, replace = false) => {
+        setData(prev => {
+          const aid = prev.activeOrgId;
+          const prevOrg = prev.orgs?.[aid];
+          if (!prevOrg) return prev;
+          const base = replace ? incoming : mergeRecords(prevOrg[key] || [], incoming);
+          const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: base });
+          return buildStateFromOrganizations({
+            orgs: { ...prev.orgs, [aid]: updatedOrg },
+            activeOrgId: aid,
+            sharedLedger: prev.sharedLedger
+          });
         });
-      });
+      };
 
-      // Update delta baseline with fresh server data for this collection
-      const orgId = data.activeOrgId;
-      if (orgId) {
-        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
-        lastSyncedRef.current[orgId][key] = buildBaseline(fetched);
-      }
+      mergeIntoState(firstBatch, true); // replace on first page
 
+      // Mark as fetched so the section renders and syncs can proceed
       collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: true };
       setCollectionFetched(prev => ({ ...prev, [key]: true }));
+
+      // Fetch remaining pages in the background without blocking the UI
+      let cursor = page1?.nextCursor ?? null;
+      let allRecords = [...firstBatch];
+
+      while (cursor) {
+        const nextPage = await orgsApi.getCollection(apiUserId, orgId, key, cursor);
+        const batch = Array.isArray(nextPage?.records) ? nextPage.records : [];
+        if (batch.length === 0) break;
+        allRecords = [...allRecords, ...batch];
+        mergeIntoState(batch, false); // merge each subsequent page
+        cursor = nextPage?.nextCursor ?? null;
+      }
+
+      // Update delta baseline once all pages are loaded
+      if (orgId) {
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(allRecords);
+      }
     } catch (err) {
       logError(`ensureCollectionLoaded(${key}) failed`, err);
     } finally {
