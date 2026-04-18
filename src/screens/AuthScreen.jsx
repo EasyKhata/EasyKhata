@@ -205,7 +205,7 @@ export default function AuthScreen() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "40px 20px 28px", position: "relative", zIndex: 1, maxWidth: 560, width: "100%", margin: "0 auto" }}>
         <div style={{ marginBottom: 36 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>
-            {screen === "login" ? "Welcome back" : screen === "register" ? "Get started" : "Account recovery"}
+            {screen === "login" ? "Welcome back" : screen === "register" ? "Get started" : "Forgot Password?"}
           </div>
           <BrandLogo showTagline center={false} />
           <div style={{ marginTop: 14, fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6 }}>
@@ -271,7 +271,7 @@ export default function AuthScreen() {
                 phonePlaceholder="9876543210"
               />
             </Field>
-            <Field label="What Are You Using EasyKhata For?" required hint="Pick the one that matches your situation — you can change it later in settings.">
+            <Field label="How will you use EasyKhata?" required hint="Pick the one that matches your situation — you can change it later in settings.">
               {(() => {
                 const ORG_CARD_META = {
                   personal:       { icon: "🏠", bestFor: "Families & individuals tracking household money" },
