@@ -1265,31 +1265,54 @@ export function DataProvider({ children }) {
     if (!user?.id) return;
 
     collectionFetchingRef.current[key] = true;
+    const orgId = data.activeOrgId;
+
     try {
-      const records = await orgsApi.getCollection(user.id, data.activeOrgId, key);
-      const fetched = Array.isArray(records) ? records : [];
+      // Page 1 — render the UI as soon as the first page arrives
+      const page1 = await orgsApi.getCollection(user.id, orgId, key);
+      const firstBatch = Array.isArray(page1?.records) ? page1.records
+        : Array.isArray(page1) ? page1  // backward-compat if server returns flat array
+        : [];
 
-      setData(prev => {
-        const orgId = prev.activeOrgId;
-        const prevOrg = prev.orgs?.[orgId];
-        if (!prevOrg) return prev;
-        const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: fetched });
-        return buildStateFromOrganizations({
-          orgs: { ...prev.orgs, [orgId]: updatedOrg },
-          activeOrgId: orgId,
-          sharedLedger: prev.sharedLedger
+      const mergeIntoState = (incoming, replace = false) => {
+        setData(prev => {
+          const aid = prev.activeOrgId;
+          const prevOrg = prev.orgs?.[aid];
+          if (!prevOrg) return prev;
+          const base = replace ? incoming : mergeRecords(prevOrg[key] || [], incoming);
+          const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: base });
+          return buildStateFromOrganizations({
+            orgs: { ...prev.orgs, [aid]: updatedOrg },
+            activeOrgId: aid,
+            sharedLedger: prev.sharedLedger
+          });
         });
-      });
+      };
 
-      // Update delta baseline with fresh server data for this collection
-      const orgId = data.activeOrgId;
-      if (orgId) {
-        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
-        lastSyncedRef.current[orgId][key] = buildBaseline(fetched);
-      }
+      mergeIntoState(firstBatch, true); // replace on first page
 
+      // Mark as fetched so the section renders and syncs can proceed
       collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: true };
       setCollectionFetched(prev => ({ ...prev, [key]: true }));
+
+      // Fetch remaining pages in the background without blocking the UI
+      let cursor = page1?.nextCursor ?? null;
+      let allRecords = [...firstBatch];
+
+      while (cursor) {
+        const nextPage = await orgsApi.getCollection(user.id, orgId, key, cursor);
+        const batch = Array.isArray(nextPage?.records) ? nextPage.records : [];
+        if (batch.length === 0) break;
+        allRecords = [...allRecords, ...batch];
+        mergeIntoState(batch, false); // merge each subsequent page
+        cursor = nextPage?.nextCursor ?? null;
+      }
+
+      // Update delta baseline once all pages are loaded
+      if (orgId) {
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(allRecords);
+      }
     } catch (err) {
       logError(`ensureCollectionLoaded(${key}) failed`, err);
     } finally {
