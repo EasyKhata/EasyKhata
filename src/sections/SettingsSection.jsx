@@ -2016,7 +2016,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year."}
+                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 69/month or Rs 699/year."}
                   </div>
                 </div>
               </div>

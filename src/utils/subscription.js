@@ -29,7 +29,7 @@ export const PAYMENT_REQUEST_STATUS = {
 
 // Prices per org type. Only apartment has a Business tier.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 49,  yearly: 499  }, business: null },
+  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 69,  yearly: 699  }, business: null },
   [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69,  yearly: 699  }, business: null },
   [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69,  yearly: 699  }, business: null },
   [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69,  yearly: 699  }, business: { monthly: 99, yearly: 999 } }
