@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive } from "../utils/subscription";
+import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
@@ -1121,13 +1121,15 @@ export function DataProvider({ children }) {
       return { error: `Your account can use up to ${maxOrganizations} Khatas (one of each type).` };
     }
 
-    // Creating a 2nd+ org requires an active paid plan — trial gives only 1 org free
-    if (orgCount >= 1 && !isPaidActive(user)) {
+    // Creating a 2nd+ org requires an active paid plan.
+    // Household users are free for their own org but still need Pro to add other types.
+    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
+    const isCreatingFreeOrg = isFreeOrgType(requestedType) && orgCount === 0;
+    if (orgCount >= 1 && !isPaidActive(user) && !isCreatingFreeOrg) {
       return { error: "UPGRADE_REQUIRED" };
     }
 
     // One org per type — no duplicates
-    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
     const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
     if (alreadyHasType) {
       const label = requestedType.replace(/_/g, " ");
@@ -1395,7 +1397,7 @@ export function DataProvider({ children }) {
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
-    canCreateOrganization: isSubscriptionActive(user) && organizations.length < maxOrganizations,
+    canCreateOrganization: (isSubscriptionActive(user) || isFreeOrgType(activeOrgType)) && organizations.length < maxOrganizations,
     switchOrganization,
     createOrganization,
     deleteOrganization,
