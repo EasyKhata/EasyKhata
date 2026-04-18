@@ -765,12 +765,15 @@ export function DataProvider({ children }) {
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
         const localOrg  = localData.orgs?.[activeOrgId] || {};
 
-        const [allOrgs, activeOrgMeta, customers, summary] = await Promise.all([
+        const [allOrgs, activeOrgMeta, customersPage, summary] = await Promise.all([
           orgsApi.list(user.id),
           orgsApi.getFull(user.id, activeOrgId, null, { metaOnly: true }),
           orgsApi.getCollection(user.id, activeOrgId, "customers").catch(() => null),
           orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
         ]);
+
+        // getCollection returns { records, hasMore, nextCursor } — unwrap the first page.
+        const customers = Array.isArray(customersPage?.records) ? customersPage.records : null;
 
         // Build orgs map: metadata-only for non-active orgs; full local cache + fresh
         // customers + server metadata for the active org.
@@ -785,7 +788,7 @@ export function DataProvider({ children }) {
             income:     localOrg.income    || [],
             expenses:   localOrg.expenses  || [],
             invoices:   localOrg.invoices  || [],
-            customers:  customers          || localOrg.customers || [],
+            customers:  customers          ?? localOrg.customers ?? [],
             // orgRecords comes from activeOrgMeta directly (not overridden here)
           }));
         }
@@ -807,9 +810,31 @@ export function DataProvider({ children }) {
         const loadedOrgId = activeOrgMeta?.id || activeOrgId;
         if (!lastSyncedRef.current[loadedOrgId]) lastSyncedRef.current[loadedOrgId] = {};
         if (customers !== null) {
-          lastSyncedRef.current[loadedOrgId].customers = buildBaseline(customers || []);
+          lastSyncedRef.current[loadedOrgId].customers = buildBaseline(customers);
           collectionFetchedRef.current = { ...collectionFetchedRef.current, customers: true };
           setCollectionFetched(prev => ({ ...prev, customers: true }));
+
+          // Stream remaining pages in background if first page was full
+          if (customersPage?.hasMore) {
+            (async () => {
+              let cursor = customersPage.nextCursor;
+              let allRecords = [...customers];
+              while (cursor) {
+                const next = await orgsApi.getCollection(user.id, loadedOrgId, "customers", cursor).catch(() => null);
+                const batch = Array.isArray(next?.records) ? next.records : [];
+                if (batch.length === 0) break;
+                allRecords = [...allRecords, ...batch];
+                setData(prev => {
+                  const prevOrg = prev.orgs?.[loadedOrgId];
+                  if (!prevOrg) return prev;
+                  const merged = normalizeOrgData({ ...prevOrg, customers: mergeRecords(prevOrg.customers || [], batch) });
+                  return buildStateFromOrganizations({ orgs: { ...prev.orgs, [loadedOrgId]: merged }, activeOrgId: prev.activeOrgId, sharedLedger: prev.sharedLedger });
+                });
+                cursor = next?.nextCursor ?? null;
+              }
+              lastSyncedRef.current[loadedOrgId].customers = buildBaseline(allRecords);
+            })();
+          }
         }
 
         setOrgSummary(summary || EMPTY_SUMMARY);
