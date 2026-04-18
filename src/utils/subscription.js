@@ -27,9 +27,9 @@ export const PAYMENT_REQUEST_STATUS = {
   REJECTED: "rejected"
 };
 
-// Prices per org type. Pro plan only — no Business tier.
+// Prices per org type. Household (personal) is permanently free — no Pro tier needed.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.PERSONAL]:       { pro: null },
   [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69, yearly: 699 } },
   [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69, yearly: 699 } },
   [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69, yearly: 699 } }
@@ -65,6 +65,11 @@ export function isAdminUser(user) {
 
 export function isReviewAccessEnabled() {
   return REVIEW_ACCESS_ENABLED;
+}
+
+// Household (personal) is permanently free — no subscription required
+export function isFreeOrgType(orgType) {
+  return orgType === ORG_TYPES.PERSONAL;
 }
 
 // Business tier has been removed — always false
@@ -148,10 +153,12 @@ export function isSubscriptionActive(user) {
   return false;
 }
 
-// Read-only mode: trial expired or no active subscription
-export function isFreeReadOnlyMode(user) {
+// Read-only mode: trial expired or no active subscription.
+// Pass orgType to exempt Household users (always free, never read-only).
+export function isFreeReadOnlyMode(user, orgType) {
   if (isAdminUser(user)) return false;
   if (isReviewAccessEnabled()) return false;
+  if (orgType && isFreeOrgType(orgType)) return false;
   return !isSubscriptionActive(user);
 }
 
@@ -163,6 +170,12 @@ export function isFreeReadOnlyMode(user) {
 export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMALL_BUSINESS) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
+
+  // Household is permanently free — all features allowed (except apartment-only ones)
+  if (isFreeOrgType(orgType)) {
+    if (feature === "apartmentFlatCreate" || feature === "societyInvite" || feature === "sharedLedger") return false;
+    return true;
+  }
 
   const plan = getUserPlan(user);
   const active = isSubscriptionActive(user);
@@ -315,9 +328,16 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
   }
 }
 
-export function getPlanSummary(user) {
+export function getPlanSummary(user, orgType) {
   const plan = getUserPlan(user);
   const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+
+  if (orgType && isFreeOrgType(orgType)) {
+    return {
+      title: "Household — Free",
+      message: "Household Khata is permanently free. All features are included at no cost."
+    };
+  }
 
   if (isAdminUser(user)) {
     return {

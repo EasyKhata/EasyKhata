@@ -449,7 +449,8 @@ export function DataProvider({ children }) {
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
   const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
   const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
-  const readOnlyFreeMode = isFreeReadOnlyMode(user);
+  const activeOrgType = getOrgType(data.account?.organizationType || user?.organizationType);
+  const readOnlyFreeMode = isFreeReadOnlyMode(user, activeOrgType);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);

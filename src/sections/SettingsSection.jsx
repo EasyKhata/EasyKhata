@@ -397,11 +397,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       financialYearStart: getCurrentFinancialYearStart(now)
     };
   });
-  const planSummary = getPlanSummary(user);
   const currentPlan = getUserPlan(user);
   const reviewAccessEnabled = isReviewAccessEnabled();
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
+  const planSummary = getPlanSummary(user, orgType);
   const canChangeOrgType = user?.role === "admin" || canChangeOrgTypeFn(user);
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
@@ -2002,42 +2002,48 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
             <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
-              {reviewAccessEnabled
+              {isPersonalOrg
+                ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
+                : reviewAccessEnabled
                 ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
                 : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                  ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends. Subscription assignment is still handled manually by admin during testing."
-                  : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders. Subscription assignment is currently handled manually by admin during testing."}
+                  ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
+                  : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders."}
             </div>
-            <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
-                    {reviewAccessEnabled ? "Review Access" : "Free"}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                    {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Basic bookkeeping, limited invoices/customers, and no reports."}
+            {!isPersonalOrg && (
+              <>
+                <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                        {reviewAccessEnabled ? "Review Access" : "Free"}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                        {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Basic bookkeeping, limited invoices/customers, and no reports."}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>
+                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 69/month or Rs 699/year."}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>
-                    {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
-                  </div>
-                  <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 69/month or Rs 699/year."}
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              className="btn-secondary"
-              style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
-              onClick={() => {
-                if (!reviewAccessEnabled) setScreen("plan-request");
-              }}
-              disabled={reviewAccessEnabled}
-            >
-              {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
-            </button>
+                <button
+                  className="btn-secondary"
+                  style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
+                  onClick={() => {
+                    if (!reviewAccessEnabled) setScreen("plan-request");
+                  }}
+                  disabled={reviewAccessEnabled}
+                >
+                  {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
+                </button>
+              </>
+            )}
           </div>
         )}
 
