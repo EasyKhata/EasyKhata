@@ -147,8 +147,8 @@ export function isTrialActive(user) {
 export function isSubscriptionActive(user) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return true;
-  const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
-  if (status === SUBSCRIPTION_STATUS.ACTIVE) return true;
+  const status = user?.subscriptionStatus;
+  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return true;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user);
   return false;
 }
@@ -244,8 +244,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
         };
       }
       return {
-        title: "Subscription required",
-        message: "Your trial has ended. Upgrade to Pro to create invoices."
+        title: "Trial ended",
+        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to create invoices."
       };
 
     case "customerCreate":
@@ -262,8 +262,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
         };
       }
       return {
-        title: "Subscription required",
-        message: "Your trial has ended. Upgrade to Pro to add customers."
+        title: "Trial ended",
+        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to add customers."
       };
 
     case "apartmentFlatCreate":
@@ -322,8 +322,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
 
     default:
       return {
-        title: "Upgrade required",
-        message: "This feature requires an active Pro subscription."
+        title: "Pro required",
+        message: "This feature requires an active Pro subscription (Rs 69/month or Rs 699/year)."
       };
   }
 }
@@ -364,14 +364,14 @@ export function getPlanSummary(user, orgType) {
   if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user)) {
     return {
       title: "Trial ended",
-      message: "Your free trial has ended. Upgrade to continue creating and editing records."
+      message: "Your 30-day free trial has ended. You can still view all your records. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
     };
   }
 
   if (status === SUBSCRIPTION_STATUS.INACTIVE) {
     return {
-      title: `${PLAN_LABELS[plan] || "Plan"} inactive`,
-      message: "Premium features are paused. Contact admin to reactivate."
+      title: "Subscription paused",
+      message: "Your Pro subscription is inactive. Tap Manage Subscription to renew."
     };
   }
 
@@ -379,7 +379,7 @@ export function getPlanSummary(user, orgType) {
     title: `${PLAN_LABELS[plan] || "Free"} plan`,
     message:
       plan === PLANS.FREE
-        ? "Your trial has ended. You can view existing records and download reports. Upgrade to Pro to create or edit records."
-        : `${PLAN_LABELS[plan] || "Plan"} access is active.`
+        ? "Your trial has ended. You can view all your records and download reports. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
+        : `${PLAN_LABELS[plan] || "Plan"} is active.`
   };
 }

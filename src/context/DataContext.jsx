@@ -1011,7 +1011,7 @@ export function DataProvider({ children }) {
               new CustomEvent("ledger:readonly-blocked", {
                 detail: {
                   tone: "warning",
-                  message: "Free plan is read-only. Upgrade to Pro to create, edit, or delete records."
+                  message: "Your trial has ended. Go to Settings → Manage Subscription to upgrade to Pro (Rs 69/month)."
                 }
               })
             );
@@ -1113,7 +1113,7 @@ export function DataProvider({ children }) {
 
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
+    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
 
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
@@ -1181,7 +1181,7 @@ export function DataProvider({ children }) {
 
   async function deleteOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Free plan is read-only. Upgrade to edit data." };
+    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
     const orgIds = Object.keys(data.orgs || {});
