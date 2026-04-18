@@ -42,7 +42,7 @@ const PLAN_LIMITS = {
     invoicesPerCustomerPerMonth: 10
   },
   [ORG_TYPES.APARTMENT]: {
-    pro:      { flats: 20, invites: 20 },
+    pro:      { flats: 40, invites: 40 },
     business: { flats: 40, invites: 40 }
   }
 };
@@ -80,10 +80,10 @@ export function isPaidActive(user) {
   return isSubscriptionActive(user);
 }
 
-// Paid Pro: 1 of each org type = 4 max. Trial or expired: single org only.
+// 4 max (1 per type). Creating org 2-4 requires an active paid plan — enforced in createOrganization.
 export function getMaxOrganizations(user) {
   if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
-  if (isPaidActive(user)) return 4;
+  if (isSubscriptionActive(user)) return 4;
   return 1;
 }
 
@@ -254,7 +254,7 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
       if (orgType === ORG_TYPES.APARTMENT) {
         return {
           title: "Flat limit reached",
-          message: "Pro plan supports up to 20 flats. Upgrade to Business for up to 40 flats."
+          message: "Pro and Business plans support up to 40 flats."
         };
       }
       return {
@@ -265,13 +265,13 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
     case "apartmentFlatCreate":
       return {
         title: "Flat limit reached",
-        message: "Pro plan supports up to 20 flats. Upgrade to Business for up to 40 flats."
+        message: "Pro and Business plans support up to 40 flats."
       };
 
     case "societyInvite":
       return {
         title: "Invite limit reached",
-        message: "Pro plan supports up to 20 resident invites. Upgrade to Business for up to 40 invites."
+        message: "Pro and Business plans support up to 40 resident invites."
       };
 
     case "invoicePdf":

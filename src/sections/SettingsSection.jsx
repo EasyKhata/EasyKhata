@@ -2191,23 +2191,35 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (user?.role === "admin") return null;
 
     const isPaid = isPaidActive(user);
+    const hasExistingOrg = organizations.length >= 1;
 
-    // Trial or expired: can't create additional orgs
-    if (!isPaid || !canCreateOrganization) {
+    // At max (4 orgs, one of each type)
+    if (!canCreateOrganization) {
       return withNotice(
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              {!isPaid
-                ? "Upgrade to Pro to create up to 4 Khatas — one for each type (Household, Freelancer, Small Business, Apartment)."
-                : "You already have one Khata of each type. Maximum of 4 Khatas allowed."}
+              You already have one Khata of each type. Maximum of 4 Khatas allowed.
             </div>
           </div>
         </Modal>
       );
     }
 
-    // Paid user: show create form, filtered to types they don't already own
+    // Trial user with 1 org: show upgrade prompt
+    if (!isPaid && hasExistingOrg) {
+      return withNotice(
+        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              Your trial includes 1 Khata. Upgrade to Pro to create up to 4 Khatas — one for each type (Household, Freelancer, Small Business, Apartment).
+            </div>
+          </div>
+        </Modal>
+      );
+    }
+
+    // Paid (or trial with 0 orgs): show create form filtered to unowned types
     const ownedTypes = new Set(organizations.map(o => o.organizationType));
     const availableTypes = ORG_TYPE_OPTIONS.filter(o => !ownedTypes.has(o.value));
 
@@ -2217,6 +2229,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         organizationType: getOrgType(createOrgForm.organizationType),
         name: createOrgForm.name.trim()
       });
+      if (res?.error === "UPGRADE_REQUIRED") { setScreen("plan-request"); return; }
       if (res?.error) { showNotice(res.error); return; }
       setScreen("main");
     }
