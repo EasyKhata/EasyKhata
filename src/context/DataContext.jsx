@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations, isFreeReadOnlyMode } from "../utils/subscription";
+import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
@@ -1117,7 +1117,17 @@ export function DataProvider({ children }) {
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
     if (orgCount >= maxOrganizations) {
-      return { error: `Your account can use up to ${maxOrganizations} Khata${maxOrganizations > 1 ? "s" : ""}.` };
+      return { error: `Your account can use up to ${maxOrganizations} Khata${maxOrganizations > 1 ? "s" : ""}. Upgrade to Pro to create one of each type.` };
+    }
+
+    // Paid users: one org per type — no duplicates
+    if (isPaidActive(user)) {
+      const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
+      const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
+      if (alreadyHasType) {
+        const label = requestedType.replace(/_/g, " ");
+        return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
+      }
     }
 
     const nextOrgId = `org_${uid()}${uid()}`;

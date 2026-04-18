@@ -41,7 +41,6 @@ import {
   PLAN_LABELS,
   PLANS,
   SUBSCRIPTION_STATUS,
-  UPI_CONFIG,
   canUseFeature,
   formatSubscriptionDate,
   getBillingDuration,
@@ -338,8 +337,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openNew() {
-    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: getFinancialInvoices(d.invoices).length })) {
-      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+    if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
     }
     if (isFreelancerOrg && !(d.customers || []).some(c => String(c?.name || "").trim())) {
@@ -375,8 +374,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openDuplicate(invoice) {
-    if (!canUseFeature(user, "invoiceCreate", { invoiceCount: getFinancialInvoices(d.invoices).length })) {
-      setUpgradeInfo(getUpgradeCopy("invoiceCreate"));
+    if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
+      setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
     }
 
@@ -576,6 +575,17 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       return;
     }
 
+    if (!editInv && isFreelancerOrg && form.customerId) {
+      const invoiceMonth = (form.date || "").slice(0, 7);
+      const invoiceCountForCustomer = (d.invoices || []).filter(
+        inv => inv.customerId === form.customerId && (inv.date || "").slice(0, 7) === invoiceMonth
+      ).length;
+      if (!canUseFeature(user, "invoiceCreate", { invoiceCountForCustomer }, effectiveOrgType)) {
+        setFormError(getUpgradeCopy("invoiceCreate", effectiveOrgType).message);
+        return;
+      }
+    }
+
     const invoice = buildInvoicePayload(form);
     if (editInv) {
       d.updateInvoice(invoice);
@@ -772,10 +782,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
                       <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 4 }}>{request.userEmail || "No email"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                        Amount Rs {request.amount || 0} - UPI {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
-                      </div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-                        Payee {request.upiPayeeName || UPI_CONFIG.payeeName} - UPI ID {request.upiId || UPI_CONFIG.upiId}
+                        Amount Rs {request.amount || 0} - Razorpay ID {request.transactionId || "--"} - Submitted {formatSubscriptionDate(request.createdAt) || "--"}
                       </div>
 
                       {request.note && (

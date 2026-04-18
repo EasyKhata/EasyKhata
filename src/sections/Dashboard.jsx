@@ -757,7 +757,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               </div>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
-              {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "Rs 49/mo" : ""}
+              {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "Rs 69/mo" : ""}
             </div>
           </div>
         )}

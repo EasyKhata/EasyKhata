@@ -52,18 +52,20 @@ import {
   PAYMENT_REQUEST_STATUS,
   UPI_CONFIG,
   canUseFeature,
+  canChangeOrgType as canChangeOrgTypeFn,
   formatSubscriptionDate,
   getBillingAmount,
   getUserPlan,
   getPlanSummary,
   getUpgradeCopy,
   isReviewAccessEnabled,
+  isPaidActive,
   PLAN_LABELS,
   PLANS
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
-import { ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
+import { ORG_TYPE_OPTIONS, ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
 function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
@@ -399,6 +401,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const reviewAccessEnabled = isReviewAccessEnabled();
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
+  const canChangeOrgType = user?.role === "admin" || canChangeOrgTypeFn(user);
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const showApartmentWhatsappField = isApartmentOrg;
@@ -934,12 +937,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (!editCust) {
       if (isApartmentOrg) {
         const flatCount = (customers || []).filter(item => String(item?.name || "").trim()).length;
-        if (!canUseFeature(user, "apartmentFlatCreate", { flatCount })) {
-          setUpgradeInfo(getUpgradeCopy("apartmentFlatCreate"));
+        if (!canUseFeature(user, "apartmentFlatCreate", { flatCount }, orgType)) {
+          setUpgradeInfo(getUpgradeCopy("apartmentFlatCreate", orgType));
           return;
         }
-      } else if (!canUseFeature(user, "customerCreate", { customerCount: customers.length })) {
-        setUpgradeInfo(getUpgradeCopy("customerCreate"));
+      } else if (!canUseFeature(user, "customerCreate", { customerCount: customers.length, flatCount: customers.length }, orgType)) {
+        setUpgradeInfo(getUpgradeCopy("customerCreate", orgType));
         return;
       }
     }
@@ -1483,7 +1486,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function emailPaymentProof() {
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO);
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
     const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
     const body = encodeURIComponent(
       `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
@@ -1697,7 +1700,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       let updatedFlats = 0;
       let importedCollections = 0;
       let importedExpenses = 0;
-      const canCreateAnotherFlat = () => canUseFeature(user, "apartmentFlatCreate", { flatCount: initialFlatCount + createdFlats });
+      const canCreateAnotherFlat = () => canUseFeature(user, "apartmentFlatCreate", { flatCount: initialFlatCount + createdFlats }, orgType);
 
       importPreview.validRows.forEach(row => {
         if (row.recordType === "flat") {
@@ -2013,7 +2016,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
                   </div>
                   <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 49/month or Rs 499/year."}
+                    {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 69/month or Rs 699/year."}
                   </div>
                 </div>
               </div>
@@ -2176,6 +2179,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         orgStateProvinceOptions={orgStateProvinceOptions}
         selectableOrgTypeOptions={selectableOrgTypeOptions}
         orgType={orgType}
+        canChangeOrgType={canChangeOrgType}
         pendingOrgTypeChange={pendingOrgTypeChange}
         onCancelOrgTypeChange={() => setPendingOrgTypeChange(null)}
         onConfirmOrgTypeChange={confirmOrgTypeChange}
@@ -2184,15 +2188,58 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "create-org") {
-    if (user?.role === "admin") {
-      return null;
-    }
-    return withNotice(
-      <Modal title="Single Khata" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
-        <div className="card" style={{ padding: 14 }}>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-            Multiple Khatas are disabled for this app. Update your current Khata profile instead.
+    if (user?.role === "admin") return null;
+
+    const isPaid = isPaidActive(user);
+
+    // Trial or expired: can't create additional orgs
+    if (!isPaid || !canCreateOrganization) {
+      return withNotice(
+        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Back" canSave accentColor="var(--blue)">
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              {!isPaid
+                ? "Upgrade to Pro to create up to 4 Khatas — one for each type (Household, Freelancer, Small Business, Apartment)."
+                : "You already have one Khata of each type. Maximum of 4 Khatas allowed."}
+            </div>
           </div>
+        </Modal>
+      );
+    }
+
+    // Paid user: show create form, filtered to types they don't already own
+    const ownedTypes = new Set(organizations.map(o => o.organizationType));
+    const availableTypes = ORG_TYPE_OPTIONS.filter(o => !ownedTypes.has(o.value));
+
+    async function handleCreateOrg() {
+      if (!createOrgForm.name?.trim()) { showNotice("Please enter a name for the new Khata."); return; }
+      const res = await createOrganization({
+        organizationType: getOrgType(createOrgForm.organizationType),
+        name: createOrgForm.name.trim()
+      });
+      if (res?.error) { showNotice(res.error); return; }
+      setScreen("main");
+    }
+
+    return withNotice(
+      <Modal title="New Khata" onClose={() => setScreen("main")} onSave={handleCreateOrg} saveLabel="Create" canSave={!!createOrgForm.name?.trim()}>
+        <Field label="Khata Type" required>
+          <Select
+            value={createOrgForm.organizationType}
+            onChange={e => setCreateOrgForm(f => ({ ...f, organizationType: e.target.value }))}
+          >
+            {availableTypes.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        </Field>
+        <Field label="Name" required>
+          <Input
+            placeholder="e.g. Reddy Freelance, Lake View Society"
+            value={createOrgForm.name || ""}
+            onChange={e => setCreateOrgForm(f => ({ ...f, name: e.target.value }))}
+          />
+        </Field>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginTop: 4 }}>
+          You can have one Khata of each type. You currently have {organizations.length} of 4.
         </div>
       </Modal>
     );
@@ -2540,6 +2587,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onSubmit={submitPlanRequest}
         submitting={submittingPayment}
         onClose={() => setScreen("main")}
+        orgType={orgType}
       />
     );
   }
