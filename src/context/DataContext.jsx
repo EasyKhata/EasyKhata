@@ -1394,7 +1394,7 @@ export function DataProvider({ children }) {
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
-    canCreateOrganization: organizations.length < maxOrganizations,
+    canCreateOrganization: isSubscriptionActive(user) && organizations.length < maxOrganizations,
     switchOrganization,
     createOrganization,
     deleteOrganization,

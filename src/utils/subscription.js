@@ -27,12 +27,12 @@ export const PAYMENT_REQUEST_STATUS = {
   REJECTED: "rejected"
 };
 
-// Prices per org type. Only apartment has a Business tier.
+// Prices per org type. Pro plan only — no Business tier.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69,  yearly: 699  }, business: null },
-  [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69,  yearly: 699  }, business: { monthly: 99, yearly: 999 } }
+  [ORG_TYPES.PERSONAL]:       { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69, yearly: 699 } }
 };
 
 // Per-plan limits for org types that aren't fully unlimited on Pro
@@ -42,8 +42,8 @@ const PLAN_LIMITS = {
     invoicesPerCustomerPerMonth: 10
   },
   [ORG_TYPES.APARTMENT]: {
-    pro:      { flats: 40, invites: 40 },
-    business: { flats: 40, invites: 40 }
+    flats: 40,
+    invites: 40
   }
 };
 
@@ -67,27 +67,24 @@ export function isReviewAccessEnabled() {
   return REVIEW_ACCESS_ENABLED;
 }
 
-// Returns true only if the given org type has a Business tier available
+// Business tier has been removed — always false
 export function hasBusinessPlan(orgType) {
-  return !!(PLAN_PRICES[orgType]?.business);
+  return false;
 }
 
 // True when user is on an active paid plan (not trial, not expired)
 export function isPaidActive(user) {
   if (isAdminUser(user)) return true;
   const plan = getUserPlan(user);
-  if (plan !== PLANS.PRO && plan !== PLANS.BUSINESS) return false;
+  if (plan !== PLANS.PRO) return false;
   return isSubscriptionActive(user);
 }
 
-// Pro: 2 orgs. Business: 4 orgs. Trial/expired: 1 org.
-// Creating beyond the 1st requires an active paid plan — enforced in createOrganization.
+// Pro: 2 orgs. Trial: 2 slots (pay-gate at 2nd). Expired: keep however many they have (creation blocked separately).
 export function getMaxOrganizations(user) {
   if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
-  const plan = getUserPlan(user);
-  if (isPaidActive(user)) return plan === PLANS.BUSINESS ? 4 : 2;
-  if (isSubscriptionActive(user)) return 2; // trial: see 2-slot UI but pay-gate kicks in at 2nd org
-  return 1;
+  if (isPaidActive(user) || isSubscriptionActive(user)) return 2;
+  return Infinity; // expired: don't force-reduce, creation is blocked via isSubscriptionActive check
 }
 
 // Org type can be changed during trial (clears data) or on a paid plan.
@@ -98,7 +95,7 @@ export function canChangeOrgType(user) {
 }
 
 export function getUserPlan(user) {
-  if (isAdminUser(user)) return PLANS.BUSINESS;
+  if (isAdminUser(user)) return PLANS.PRO;
   return user?.plan || PLANS.FREE;
 }
 
@@ -124,7 +121,7 @@ export function getSubscriptionEndDate(days) {
 // orgType is required to look up the correct price tier
 export function getBillingAmount(cycle, plan = PLANS.PRO, orgType = ORG_TYPES.SMALL_BUSINESS) {
   const prices = PLAN_PRICES[orgType] || PLAN_PRICES[ORG_TYPES.SMALL_BUSINESS];
-  const tier = plan === PLANS.BUSINESS ? prices.business : prices.pro;
+  const tier = prices.pro;
   if (!tier) return 0;
   return cycle === BILLING_CYCLES.YEARLY ? tier.yearly : tier.monthly;
 }
@@ -181,10 +178,7 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
         return (usage.customerCount || 0) < PLAN_LIMITS[ORG_TYPES.FREELANCER].customers;
       }
       if (orgType === ORG_TYPES.APARTMENT) {
-        const limit = plan === PLANS.BUSINESS
-          ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.flats
-          : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.flats;
-        return (usage.flatCount || 0) < limit;
+        return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
       }
       return true; // personal, small_business: unlimited
     }
@@ -199,25 +193,19 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
 
     case "apartmentFlatCreate": {
       if (orgType !== ORG_TYPES.APARTMENT) return false;
-      const limit = plan === PLANS.BUSINESS
-        ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.flats
-        : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.flats;
-      return (usage.flatCount || 0) < limit;
+      return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
     }
 
     case "societyInvite": {
       if (orgType !== ORG_TYPES.APARTMENT) return false;
-      const limit = plan === PLANS.BUSINESS
-        ? PLAN_LIMITS[ORG_TYPES.APARTMENT].business.invites
-        : PLAN_LIMITS[ORG_TYPES.APARTMENT].pro.invites;
-      return (usage.inviteCount || 0) < limit;
+      return (usage.inviteCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].invites;
     }
 
     case "notifications":
     case "advancedAnalytics":
     case "budgets":
     case "advancedInvoice":
-      return plan === PLANS.PRO || plan === PLANS.BUSINESS;
+      return plan === PLANS.PRO;
 
     case "posSystem":
       return false; // not launched
@@ -257,7 +245,7 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
       if (orgType === ORG_TYPES.APARTMENT) {
         return {
           title: "Flat limit reached",
-          message: "Pro and Business plans support up to 40 flats."
+          message: "Pro plan supports up to 40 flats."
         };
       }
       return {
@@ -268,13 +256,13 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
     case "apartmentFlatCreate":
       return {
         title: "Flat limit reached",
-        message: "Pro and Business plans support up to 40 flats."
+        message: "Pro plan supports up to 40 flats."
       };
 
     case "societyInvite":
       return {
         title: "Invite limit reached",
-        message: "Pro and Business plans support up to 40 resident invites."
+        message: "Pro plan supports up to 40 resident invites."
       };
 
     case "invoicePdf":
@@ -334,7 +322,7 @@ export function getPlanSummary(user) {
   if (isAdminUser(user)) {
     return {
       title: "Owner access",
-      message: "You have full admin access across all plan features."
+      message: "You have full Pro access across all plan features."
     };
   }
 

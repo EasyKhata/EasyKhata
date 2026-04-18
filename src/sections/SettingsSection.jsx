@@ -2208,16 +2208,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const isPaid = isPaidActive(user);
     const hasExistingOrg = organizations.length >= 1;
 
-    // At plan limit
+    // At plan limit (Pro: 2 Khatas max)
     if (!canCreateOrganization) {
-      const atBusinessMax = maxOrganizations >= 4;
+      const atProMax = isPaid && organizations.length >= 2;
       return withNotice(
-        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={atBusinessMax ? () => setScreen("main") : () => setScreen("plan-request")} saveLabel={atBusinessMax ? "Back" : "Upgrade to Business"} canSave accentColor="var(--blue)">
+        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={atProMax ? () => setScreen("main") : () => setScreen("plan-request")} saveLabel={atProMax ? "Back" : "Upgrade to Pro — Rs 69/mo"} canSave accentColor="var(--blue)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              {atBusinessMax
-                ? "You have reached the maximum of 4 Khatas (one per type)."
-                : "Pro plan allows up to 2 Khatas. Upgrade to Business to create up to 4 Khatas."}
+              {atProMax
+                ? "You have reached the maximum of 2 Khatas on the Pro plan (one per type)."
+                : "Your subscription has ended. Upgrade to Pro to create or manage Khatas."}
             </div>
           </div>
         </Modal>
@@ -2230,7 +2230,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your trial includes 1 Khata. Upgrade to Pro for up to 2 Khatas, or Business for up to 4 — one per type (Household, Freelancer, Small Business, Apartment).
+              Your trial includes 1 Khata. Upgrade to Pro for up to 2 Khatas — one per type (Household, Freelancer, Small Business, Apartment).
             </div>
           </div>
         </Modal>
