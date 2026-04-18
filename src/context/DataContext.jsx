@@ -1117,17 +1117,20 @@ export function DataProvider({ children }) {
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
     if (orgCount >= maxOrganizations) {
-      return { error: `Your account can use up to ${maxOrganizations} Khata${maxOrganizations > 1 ? "s" : ""}. Upgrade to Pro to create one of each type.` };
+      return { error: `Your account can use up to ${maxOrganizations} Khatas (one of each type).` };
     }
 
-    // Paid users: one org per type — no duplicates
-    if (isPaidActive(user)) {
-      const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
-      const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
-      if (alreadyHasType) {
-        const label = requestedType.replace(/_/g, " ");
-        return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
-      }
+    // Creating a 2nd+ org requires an active paid plan — trial gives only 1 org free
+    if (orgCount >= 1 && !isPaidActive(user)) {
+      return { error: "UPGRADE_REQUIRED" };
+    }
+
+    // One org per type — no duplicates
+    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
+    const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
+    if (alreadyHasType) {
+      const label = requestedType.replace(/_/g, " ");
+      return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
     }
 
     const nextOrgId = `org_${uid()}${uid()}`;
