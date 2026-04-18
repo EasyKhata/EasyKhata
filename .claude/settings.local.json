@@ -25,7 +25,9 @@
       "Bash(wc -l /c/Users/SushmaReddy/Desktop/EasyKhata/EasyKhata/src/sections/*.jsx)",
       "Bash(grep -n \"pagination\\\\|limit\\\\|take\\\\|skip\" /c/Users/SushmaReddy/Desktop/EasyKhata/server/src/routes/*.js)",
       "Bash(find /c/Users/SushmaReddy/Desktop/EasyKhata/server -name \".env*\" -exec cat {} \\\\;)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
