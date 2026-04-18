@@ -182,6 +182,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const d = useData();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
+
+  // Lazy-load income collection the first time this section mounts
+  useEffect(() => { d.ensureCollectionLoaded?.("income"); }, [d.ensureCollectionLoaded]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;

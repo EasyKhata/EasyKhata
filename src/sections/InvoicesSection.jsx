@@ -149,6 +149,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const d = useData();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
+
+  // Lazy-load invoices collection the first time this section mounts
+  useEffect(() => { d.ensureCollectionLoaded?.("invoices"); }, [d.ensureCollectionLoaded]);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
   const effectiveOrgType = getOrgType(orgType || user?.organizationType);

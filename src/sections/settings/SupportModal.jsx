@@ -74,7 +74,7 @@ export default function SupportModal({
       accentColor="var(--blue)"
     >
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Support Center</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Need Help?</div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
           Track ongoing conversations and create new tickets separately for a cleaner support workflow.
         </div>
@@ -103,7 +103,7 @@ export default function SupportModal({
 
       {isNew ? (
         <>
-          <Field label="Topic" required hint="Pick the closest category so your request is easier to route.">
+          <Field label="What's the issue?" required hint="Pick the closest category so your request is easier to route.">
             <Select value={form.topic} onChange={event => onFormChange(current => ({ ...current, topic: event.target.value }))}>
               {SUPPORT_TOPIC_OPTIONS.map(([value, label]) => (
                 <option key={value} value={value}>{label}</option>
@@ -111,7 +111,7 @@ export default function SupportModal({
             </Select>
           </Field>
 
-          <Field label="Subject" hint="Optional. We will generate one if you leave this blank.">
+          <Field label="Short summary" hint="Optional. We will generate one if you leave this blank.">
             <Input
               placeholder="Example: Invoice PDF is not downloading"
               value={form.subject || ""}

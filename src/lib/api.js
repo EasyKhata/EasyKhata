@@ -36,6 +36,7 @@ const api = {
   get:    (path)        => request("GET",    path),
   post:   (path, body)  => request("POST",   path, body),
   put:    (path, body)  => request("PUT",    path, body),
+  patch:  (path, body)  => request("PATCH",  path, body),
   delete: (path)        => request("DELETE", path)
 };
 
@@ -62,11 +63,21 @@ export const orgsApi = {
   list: (userId) =>
     api.get(`/users/${userId}/orgs`),
 
-  // Load everything for one org in a single request.
-  // Pass since (ISO string) to get only rows updated after that timestamp (incremental sync).
-  // Returns: { ...orgSettings, income[], expenses[], invoices[], customers[], orgRecords{}, syncedAt, isPartial }
-  getFull: (userId, orgId, since) =>
-    api.get(`/users/${userId}/orgs/${orgId}/full${since ? `?since=${encodeURIComponent(since)}` : ""}`),
+  // Load everything (or just metadata) for one org.
+  // since    — ISO string: only return rows updated after this timestamp (incremental).
+  // metaOnly — true: skip income/expenses/invoices/customers; return org settings + orgRecords only.
+  // Returns: { ...orgSettings, income[], expenses[], invoices[], customers[], orgRecords{}, syncedAt, isPartial, isMetaOnly }
+  getFull: (userId, orgId, since, { metaOnly = false } = {}) => {
+    const params = new URLSearchParams();
+    if (since)    params.set("since", since);
+    if (metaOnly) params.set("meta",  "1");
+    const qs = params.toString();
+    return api.get(`/users/${userId}/orgs/${orgId}/full${qs ? `?${qs}` : ""}`);
+  },
+
+  // Fetch a single collection array on demand (used for lazy loading).
+  getCollection: (userId, orgId, collectionKey) =>
+    api.get(`/users/${userId}/orgs/${orgId}/${collectionKey}`),
 
   // Create a new org
   create: (userId, orgId, data) =>
@@ -83,6 +94,11 @@ export const orgsApi = {
   // Sync a collection — sends the full array, server does upsert + delete-missing
   syncCollection: (userId, orgId, collectionKey, records) =>
     api.post(`/users/${userId}/orgs/${orgId}/${collectionKey}/sync`, records),
+
+  // Delta sync — send only changed/new records to upsert and IDs to delete.
+  // Much cheaper than syncCollection for incremental saves.
+  syncDelta: (userId, orgId, collectionKey, delta) =>
+    api.patch(`/users/${userId}/orgs/${orgId}/${collectionKey}/sync-delta`, delta),
 
   // Sync orgRecords map { "YYYY-MM": [...] }
   syncOrgRecords: (userId, orgId, orgRecordsMap) =>

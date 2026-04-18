@@ -81,6 +81,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const d = useData();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
+
+  // Lazy-load expenses collection the first time this section mounts
+  useEffect(() => { d.ensureCollectionLoaded?.("expenses"); }, [d.ensureCollectionLoaded]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;

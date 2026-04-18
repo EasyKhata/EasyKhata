@@ -107,7 +107,7 @@ function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-// ── Incremental sync helpers ──────────────────────────────────────────────────
+// ── Incremental load helpers ──────────────────────────────────────────────────
 // Full syncs older than this threshold are re-run to pick up server-side deletions.
 const INCREMENTAL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
@@ -124,6 +124,34 @@ function mergeRecords(base, delta) {
   const map = new Map((base || []).map(r => [r.id, r]));
   for (const r of delta) { if (r?.id) map.set(r.id, r); }
   return Array.from(map.values());
+}
+
+// ── Delta write helpers ───────────────────────────────────────────────────────
+// Build a baseline Map<id, serialized> for a collection so we can diff later.
+function buildBaseline(records) {
+  return new Map(
+    (records || []).filter(r => r?.id).map(r => [r.id, JSON.stringify(r)])
+  );
+}
+
+// Compare current records against a baseline and return { upsert, deleteIds }.
+// Returns null if no baseline exists (caller should fall back to full sync).
+function computeSyncDelta(baselineMap, current) {
+  if (!baselineMap) return null;
+  const upsert = [];
+  const deleteIds = [];
+  const currentMap = new Map();
+  for (const record of (current || [])) {
+    if (!record?.id) continue;
+    currentMap.set(record.id, record);
+    if (baselineMap.get(record.id) !== JSON.stringify(record)) {
+      upsert.push(record); // new or changed
+    }
+  }
+  for (const id of baselineMap.keys()) {
+    if (!currentMap.has(id)) deleteIds.push(id);
+  }
+  return { upsert, deleteIds };
 }
 
 function withId(record = {}) {
@@ -412,6 +440,11 @@ export function DataProvider({ children }) {
   const [data, setData] = useState(EMPTY_DATA);
   const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
+  // Tracks which collections have been fetched from the server this session.
+  // Customers are loaded eagerly; income/expenses/invoices are loaded on demand.
+  const [collectionFetched, setCollectionFetched] = useState({ income: false, expenses: false, invoices: false, customers: false });
+  const collectionFetchedRef = useRef({ income: false, expenses: false, invoices: false, customers: false });
+  const collectionFetchingRef = useRef({});
   const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
   const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
@@ -421,6 +454,9 @@ export function DataProvider({ children }) {
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
+  // Delta write baseline: { [orgId]: { income: Map<id,serialized>, expenses: ..., ... } }
+  // Initialized after each full load; updated after each successful delta sync.
+  const lastSyncedRef = useRef({});
 
   // Derived: shared orgs list and viewer-mode flag
   const sharedOrgs = useMemo(() =>
@@ -488,9 +524,31 @@ export function DataProvider({ children }) {
     if (!user?.id || !nextState?.activeOrgId) return;
     const orgId = nextState.activeOrgId;
     await Promise.allSettled([
-      ...ORG_COLLECTION_KEYS.map(key =>
-        orgsApi.syncCollection(user.id, orgId, key, nextState[key] || [])
-      ),
+      ...ORG_COLLECTION_KEYS.map(async key => {
+        const current = nextState[key] || [];
+        const fetched  = collectionFetchedRef.current[key];
+        const baseline = lastSyncedRef.current[orgId]?.[key] ?? null;
+        const delta    = computeSyncDelta(baseline, current);
+
+        if (!fetched && !baseline) {
+          // Collection not yet loaded from server — upsert local records only, never delete.
+          // A full sync here would wipe server rows we haven't loaded yet.
+          if (current.length > 0) {
+            await orgsApi.syncDelta(user.id, orgId, key, { upsert: current, delete: [] });
+          }
+          return; // Don't update baseline until we know the full server state
+        }
+
+        if (!delta) {
+          // Baseline exists in fetched state but computeSyncDelta returned null (shouldn't happen)
+          await orgsApi.syncCollection(user.id, orgId, key, current);
+        } else if (delta.upsert.length > 0 || delta.deleteIds.length > 0) {
+          await orgsApi.syncDelta(user.id, orgId, key, { upsert: delta.upsert, delete: delta.deleteIds });
+        }
+        // Update baseline after successful write
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(current);
+      }),
       Object.keys(nextState.orgRecords || {}).length > 0
         ? orgsApi.syncOrgRecords(user.id, orgId, nextState.orgRecords)
         : Promise.resolve()
@@ -499,10 +557,21 @@ export function DataProvider({ children }) {
 
   const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo) => {
     if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
+    const orgId = sharedInfo.orgId;
     await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(key =>
-        orgsApi.syncCollection(sharedInfo.ownerId, sharedInfo.orgId, key, nextState[key] || [])
-      )
+      ORG_COLLECTION_KEYS.map(async key => {
+        const current = nextState[key] || [];
+        const baseline = lastSyncedRef.current[orgId]?.[key] ?? null;
+        const delta = computeSyncDelta(baseline, current);
+
+        if (!delta) {
+          await orgsApi.syncCollection(sharedInfo.ownerId, orgId, key, current);
+        } else if (delta.upsert.length > 0 || delta.deleteIds.length > 0) {
+          await orgsApi.syncDelta(sharedInfo.ownerId, orgId, key, { upsert: delta.upsert, delete: delta.deleteIds });
+        }
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(current);
+      })
     );
   }, []);
 
@@ -671,6 +740,7 @@ export function DataProvider({ children }) {
 
       if (!user?.id) {
         collectionSyncRef.current = {};
+        lastSyncedRef.current = {};
         setData(EMPTY_DATA);
         setOrgSummary(EMPTY_SUMMARY);
         setLoaded(true);
@@ -680,43 +750,44 @@ export function DataProvider({ children }) {
       setLoaded(false);
 
       try {
-        // Load all org metadata + active org's full collections + summary in parallel.
-        // Use incremental sync (since=<lastSyncedAt>) when a recent full sync exists so
-        // we only fetch rows that changed — not the entire collection history.
+        // Cold-start strategy: fetch org metadata + customers eagerly; defer the large
+        // collections (income, expenses, invoices) until the user navigates to them.
+        // This cuts the initial payload from potentially thousands of rows down to just
+        // org settings + orgRecords + customers.
         const activeOrgId = user.activeOrgId || DEFAULT_ORG_ID;
-        const lastSyncedAt = getSyncedAt(user.id, activeOrgId);
-        const useIncremental = !!lastSyncedAt &&
-          (Date.now() - new Date(lastSyncedAt).getTime() < INCREMENTAL_WINDOW_MS);
 
-        const [allOrgs, activeOrgFull, summary] = await Promise.all([
+        // Reset per-session collection fetch flags for this load
+        const freshFetched = { income: false, expenses: false, invoices: false, customers: false };
+        collectionFetchedRef.current = freshFetched;
+        setCollectionFetched(freshFetched);
+
+        // Read local cache — income/expenses/invoices come from here until lazily refreshed
+        const localData = getUserData(user.id, "appData") || EMPTY_DATA;
+        const localOrg  = localData.orgs?.[activeOrgId] || {};
+
+        const [allOrgs, activeOrgMeta, customers, summary] = await Promise.all([
           orgsApi.list(user.id),
-          orgsApi.getFull(user.id, activeOrgId, useIncremental ? lastSyncedAt : null),
+          orgsApi.getFull(user.id, activeOrgId, null, { metaOnly: true }),
+          orgsApi.getCollection(user.id, activeOrgId, "customers").catch(() => null),
           orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
         ]);
 
-        // Build orgs map: all orgs with metadata only, active org with full data
+        // Build orgs map: metadata-only for non-active orgs; full local cache + fresh
+        // customers + server metadata for the active org.
         const orgsMap = {};
         (allOrgs || []).forEach(apiOrg => {
           orgsMap[apiOrg.id] = normalizeOrgData(fromApiOrg(apiOrg));
         });
-        if (activeOrgFull) {
-          if (activeOrgFull.isPartial) {
-            // Incremental sync: merge delta rows into the locally cached org
-            const localData = getUserData(user.id, "appData") || EMPTY_DATA;
-            const localOrg = localData.orgs?.[activeOrgId] || {};
-            orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull, {
-              income:    mergeRecords(localOrg.income    || [], activeOrgFull.income    || []),
-              expenses:  mergeRecords(localOrg.expenses  || [], activeOrgFull.expenses  || []),
-              invoices:  mergeRecords(localOrg.invoices  || [], activeOrgFull.invoices  || []),
-              customers: mergeRecords(localOrg.customers || [], activeOrgFull.customers || []),
-              orgRecords: { ...(localOrg.orgRecords || {}), ...(activeOrgFull.orgRecords || {}) }
-            }));
-          } else {
-            orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgFull));
-          }
-          if (activeOrgFull.syncedAt) {
-            setSyncedAt(user.id, activeOrgId, activeOrgFull.syncedAt);
-          }
+        if (activeOrgMeta) {
+          // Org settings + orgRecords come from server; large collections from local cache.
+          // Customers are fresh from server (usually small, always needed for dropdowns).
+          orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgMeta, {
+            income:     localOrg.income    || [],
+            expenses:   localOrg.expenses  || [],
+            invoices:   localOrg.invoices  || [],
+            customers:  customers          || localOrg.customers || [],
+            // orgRecords comes from activeOrgMeta directly (not overridden here)
+          }));
         }
 
         if (!orgsMap[activeOrgId]) {
@@ -725,11 +796,22 @@ export function DataProvider({ children }) {
 
         const nextState = buildStateFromOrganizations({
           orgs: orgsMap,
-          activeOrgId: activeOrgFull?.id || activeOrgId,
+          activeOrgId: activeOrgMeta?.id || activeOrgId,
           sharedLedger: null
         });
 
         setData(nextState);
+
+        // Establish delta-write baseline for customers (fetched fresh above).
+        // income/expenses/invoices baselines are set when lazily loaded.
+        const loadedOrgId = activeOrgMeta?.id || activeOrgId;
+        if (!lastSyncedRef.current[loadedOrgId]) lastSyncedRef.current[loadedOrgId] = {};
+        if (customers !== null) {
+          lastSyncedRef.current[loadedOrgId].customers = buildBaseline(customers || []);
+          collectionFetchedRef.current = { ...collectionFetchedRef.current, customers: true };
+          setCollectionFetched(prev => ({ ...prev, customers: true }));
+        }
+
         setOrgSummary(summary || EMPTY_SUMMARY);
         setUserData(user.id, "appData", nextState);
         setUser(prev =>
@@ -1144,6 +1226,16 @@ export function DataProvider({ children }) {
       });
 
       setData(nextState);
+
+      // Shared org was loaded via /full — all collections are present
+      const allFetched = { income: true, expenses: true, invoices: true, customers: true };
+      collectionFetchedRef.current = allFetched;
+      setCollectionFetched(allFetched);
+      // Establish baselines for shared org collections
+      if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+      ORG_COLLECTION_KEYS.forEach(key => {
+        lastSyncedRef.current[orgId][key] = buildBaseline(nextState[key] || []);
+      });
     } catch (err) {
       logError("switchToSharedOrg failed", err);
       activeSharedOrgRef.current = null;
@@ -1164,6 +1256,46 @@ export function DataProvider({ children }) {
     // Increment reload key to force the own-data useEffect to re-run
     setOwnDataReloadKey(k => k + 1);
   }
+
+  // Fetch a collection from the server if it hasn't been loaded this session yet.
+  // Safe to call multiple times — subsequent calls are no-ops once the collection is fetched.
+  const ensureCollectionLoaded = useCallback(async (key) => {
+    if (collectionFetchedRef.current[key]) return;
+    if (collectionFetchingRef.current[key]) return; // already in-flight
+    if (!user?.id) return;
+
+    collectionFetchingRef.current[key] = true;
+    try {
+      const records = await orgsApi.getCollection(user.id, data.activeOrgId, key);
+      const fetched = Array.isArray(records) ? records : [];
+
+      setData(prev => {
+        const orgId = prev.activeOrgId;
+        const prevOrg = prev.orgs?.[orgId];
+        if (!prevOrg) return prev;
+        const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: fetched });
+        return buildStateFromOrganizations({
+          orgs: { ...prev.orgs, [orgId]: updatedOrg },
+          activeOrgId: orgId,
+          sharedLedger: prev.sharedLedger
+        });
+      });
+
+      // Update delta baseline with fresh server data for this collection
+      const orgId = data.activeOrgId;
+      if (orgId) {
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(fetched);
+      }
+
+      collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: true };
+      setCollectionFetched(prev => ({ ...prev, [key]: true }));
+    } catch (err) {
+      logError(`ensureCollectionLoaded(${key}) failed`, err);
+    } finally {
+      collectionFetchingRef.current[key] = false;
+    }
+  }, [user?.id, data.activeOrgId]);
 
   async function createSharedLedger(name) {
     return { error: "Shared ledger has been retired from the app." };
@@ -1233,7 +1365,9 @@ export function DataProvider({ children }) {
     invoices: data.invoices,
     addInvoice,
     updateInvoice,
-    removeInvoice
+    removeInvoice,
+    collectionFetched,
+    ensureCollectionLoaded
   }), [
     addCustomer,
     addExpense,
@@ -1275,7 +1409,9 @@ export function DataProvider({ children }) {
     isViewerMode,
     sharedOrgs,
     activeSharedOrgKey,
-    activeSharedOrgRole
+    activeSharedOrgRole,
+    collectionFetched,
+    ensureCollectionLoaded
   ]);
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
