@@ -7,6 +7,7 @@ import NotificationsModal from "./settings/NotificationsModal";
 import SupportModal, { SUPPORT_TOPIC_OPTIONS } from "./settings/SupportModal";
 import ProfileModal from "./settings/ProfileModal";
 import AccountModal from "./settings/AccountModal";
+import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
 import CustomersScreen from "./settings/CustomersScreen";
 import SocietyPortalScreen from "./settings/SocietyPortalScreen";
 import AuditLogScreen from "./settings/AuditLogScreen";
@@ -1861,6 +1862,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="section-label">Khata</div>
             <div className="card">
               <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              {organizations.length > 1 && (
+                <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
+              )}
+              {canCreateOrganization && (
+                <MenuRow icon="+" label="New Khata" sub="Add another Khata for a different use type" onClick={() => setScreen("create-org")} />
+              )}
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
               {isApartmentOrg && (
@@ -2082,6 +2089,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
         </div>
         {showCurrPicker && <CurrencyPicker value={currency} onSelect={cur => { setCurrency(cur); setShowCurrPicker(false); }} onClose={() => setShowCurrPicker(false)} />}
+        <OrganizationSwitcherModal
+          open={showOrgSwitcher}
+          onClose={() => setShowOrgSwitcher(false)}
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+          onSwitch={handleSwitchOrganization}
+          onDelete={async (orgId) => { await deleteOrganization(orgId); setShowOrgSwitcher(false); }}
+        />
         {showReportPicker && (
           <Modal
             title="Download Report"
