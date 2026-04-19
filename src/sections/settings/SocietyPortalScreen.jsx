@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal, Field, Input, Select, Textarea, MonthSelectInput } from "../../components/UI";
+import { Modal, Field, Input, Select, Textarea, MonthSelectInput, LoadingButton } from "../../components/UI";
 
 /**
  * Society portal screens (admin view + member access view).
@@ -78,7 +78,7 @@ export default function SocietyPortalScreen({
                 <option key={flat.id} value={String(flat.name || "").trim().toUpperCase()}>{flat.name}</option>
               ))}
             </Select>
-            <button type="button" className="btn-secondary" onClick={onCreateMemberInvite}>Create Invite</button>
+            <LoadingButton className="btn-secondary" onClick={onCreateMemberInvite} loadingLabel="Creating…">Create Invite</LoadingButton>
           </div>
         </Field>
 
@@ -95,14 +95,14 @@ export default function SocietyPortalScreen({
                   </div>
                 </div>
                 {invite.isActive && (
-                  <button
-                    type="button"
+                  <LoadingButton
                     className="btn-secondary"
                     style={{ padding: "7px 10px", fontSize: 12 }}
                     onClick={() => onDeactivateMemberInvite(invite.id)}
+                    loadingLabel="…"
                   >
                     Deactivate
-                  </button>
+                  </LoadingButton>
                 )}
               </div>
             ))
