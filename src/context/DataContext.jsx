@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType } from "../utils/subscription";
+import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType, isSubscriptionActive } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
