@@ -27,7 +27,8 @@
       "Bash(find /c/Users/SushmaReddy/Desktop/EasyKhata/server -name \".env*\" -exec cat {} \\\\;)",
       "Bash(git push *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(./gradlew signingReport)"
     ]
   }
 }

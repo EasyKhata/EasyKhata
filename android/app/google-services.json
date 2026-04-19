@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "374078093945",
+    "firebase_url": "https://ledger-app-599cc-default-rtdb.firebaseio.com",
+    "project_id": "ledger-app-599cc",
+    "storage_bucket": "ledger-app-599cc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:374078093945:android:e22374762a35c859a5f2a8",
+        "android_client_info": {
+          "package_name": "net.easykhata.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "374078093945-8ccvjubmak2rvdg1no2idf9osf88p6up.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "net.easykhata.app",
+            "certificate_hash": "a0d94444d773a187501903eeef0881aeea22a0cb"
+          }
+        },
+        {
+          "client_id": "374078093945-vefipq8749stlhbmcuduml2f6adjigf7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCKZbSqrXTPyMtst4pKvO3VpBOyq0u8x0c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "374078093945-vefipq8749stlhbmcuduml2f6adjigf7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
