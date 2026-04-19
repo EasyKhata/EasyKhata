@@ -177,6 +177,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const [editInv, setEditInv] = useState(null);
   const [detail, setDetail] = useState(null);
   const [formError, setFormError] = useState("");
+  const [errors, setErrors] = useState({});
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [users, setUsers] = useState([]);
@@ -348,7 +349,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     setForm(blankForm());
     setEditInv(null);
     setDetail(null);
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -369,7 +370,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     });
     setEditInv(invoice);
     setDetail(null);
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -400,7 +401,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     });
     setEditInv(null);
     setDetail(null);
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -416,7 +417,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     setShowForm(false);
     setForm(null);
     setEditInv(null);
-    setFormError("");
+    setFormError(""); setErrors({});;
   }
 
   function buildInvoicePayload(currentForm) {
@@ -493,45 +494,45 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     if (!form) return;
 
     if (!hasMinLength(form.number, 3)) {
-      setFormError(`Use a valid ${documentLabel.toLowerCase()} number.`);
+      setErrors(prev => ({ ...prev, number: `Use a valid ${documentLabel.toLowerCase()} number (min 3 characters).` }));
       return;
     }
     const normalizedNumber = String(form.number || "").trim();
     const duplicateNumber = d.invoices.find(invoice => String(invoice.number || "").trim() === normalizedNumber && invoice.id !== editInv?.id);
     if (duplicateNumber) {
-      setFormError(`This ${documentLabel.toLowerCase()} number is already in use. Please use a unique number.`);
+      setErrors(prev => ({ ...prev, number: `This number is already in use. Please use a unique ${documentLabel.toLowerCase()} number.` }));
       return;
     }
     if (!isValidDateValue(form.date)) {
-      setFormError("Choose a valid invoice date.");
+      setErrors(prev => ({ ...prev, date: "Choose a valid invoice date." }));
       return;
     }
     if (isFutureDateValue(form.date)) {
-      setFormError("Future dates are not allowed for records.");
+      setErrors(prev => ({ ...prev, date: "Future dates are not allowed for records." }));
       return;
     }
     if (!isApartmentOrg && form.dueDate && !isValidDateValue(form.dueDate)) {
-      setFormError("Choose a valid due date or leave it empty.");
+      setErrors(prev => ({ ...prev, dueDate: "Choose a valid due date or leave it empty." }));
       return;
     }
     if (!isApartmentOrg && form.dueDate && form.dueDate < form.date) {
-      setFormError("Due date must be on or after the invoice date.");
+      setErrors(prev => ({ ...prev, dueDate: "Due date must be on or after the invoice date." }));
       return;
     }
     if (!isApartmentOrg && !isQuote && form.status === "paid" && form.paidDate && !isValidDateValue(form.paidDate)) {
-      setFormError("Choose a valid paid date.");
+      setErrors(prev => ({ ...prev, paidDate: "Choose a valid paid date." }));
       return;
     }
     if (!isApartmentOrg && !isQuote && form.status === "paid" && form.paidDate && isFutureDateValue(form.paidDate)) {
-      setFormError("Future dates are not allowed for records.");
+      setErrors(prev => ({ ...prev, paidDate: "Future dates are not allowed." }));
       return;
     }
     if (!isApartmentOrg && !isQuote && form.status === "paid" && form.paidDate && form.paidDate < form.date) {
-      setFormError("Paid date must be on or after the invoice date.");
+      setErrors(prev => ({ ...prev, paidDate: "Paid date must be on or after the invoice date." }));
       return;
     }
     if (sanitizePhoneDigits(form.billTo?.phoneNumber || "") && !isValidUserPhoneNumber(sanitizePhoneDigits(form.billTo?.phoneNumber || ""))) {
-      setFormError("Enter a valid bill-to phone number or leave it empty.");
+      setErrors(prev => ({ ...prev, billToPhone: "Enter a valid phone number or leave it empty." }));
       return;
     }
     if (!isApartmentOrg && !form.shipSameAsBill && sanitizePhoneDigits(form.shipTo?.phoneNumber || "") && !isValidUserPhoneNumber(sanitizePhoneDigits(form.shipTo?.phoneNumber || ""))) {
@@ -539,11 +540,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       return;
     }
     if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
-      setFormError(`Select a ${config.customerEntryLabel.toLowerCase()} or enter the bill-to name.`);
+      setErrors(prev => ({ ...prev, billToName: `Select a ${config.customerEntryLabel.toLowerCase()} or enter the bill-to name.` }));
       return;
     }
     if (showTaxFields && !isValidGstin(form.billTo?.gstin)) {
-      setFormError("Enter a valid bill-to GSTIN or leave it empty.");
+      setErrors(prev => ({ ...prev, billToGstin: "Enter a valid GSTIN or leave it empty." }));
       return;
     }
     if (!isApartmentOrg && !form.customerId && (!String(form.billTo?.city || "").trim() || !String(form.billTo?.state || "").trim() || !String(form.billTo?.country || "").trim())) {
@@ -1002,8 +1003,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </div>
             )}
 
-            <Field label={`${documentLabel} Number`}>
-              <Input value={form.number} onChange={event => setForm(current => ({ ...current, number: event.target.value }))} />
+            <Field label={`${documentLabel} Number`} error={errors.number}>
+              <Input error={errors.number} value={form.number} onChange={event => { setForm(current => ({ ...current, number: event.target.value })); if (errors.number) setErrors(prev => ({ ...prev, number: "" })); }} />
             </Field>
 
             <Field label={isAdmin ? "User" : config.customerEntryLabel} hint={isAdmin ? "Select a user who made the payment." : isApartmentOrg ? "Optional. Pick a flat record to auto-fill the name, or leave it empty and type the recipient manually." : `Select an existing ${config.customerEntryLabel.toLowerCase()} to auto-fill billing and shipping details.`}>
@@ -1022,12 +1023,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
             {!form.customerId && (
               <>
-                <Field label={isApartmentOrg ? "Recipient Name" : "Bill To Name"} required>
-                  <Input placeholder={config.customerNamePlaceholder} value={form.billTo?.name || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } }))} />
+                <Field label={isApartmentOrg ? "Recipient Name" : "Bill To Name"} required error={errors.billToName}>
+                  <Input error={errors.billToName} placeholder={config.customerNamePlaceholder} value={form.billTo?.name || ""} onChange={event => { setForm(current => ({ ...current, billTo: { ...current.billTo, name: event.target.value } })); if (errors.billToName) setErrors(prev => ({ ...prev, billToName: "" })); }} />
                 </Field>
                 {!isApartmentOrg && (
                   <>
-                    <Field label="Bill To Phone">
+                    <Field label="Bill To Phone" error={errors.billToPhone}>
                       <PhoneNumberInput
                         countryCode={form.billTo?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
                         phoneNumber={form.billTo?.phoneNumber || ""}
@@ -1049,8 +1050,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     />
                   </>
                 )}
-                {showTaxFields && <Field label="Bill To GSTIN">
-                  <Input placeholder="GSTIN (optional)" value={form.billTo?.gstin || ""} onChange={event => setForm(current => ({ ...current, billTo: { ...current.billTo, gstin: event.target.value } }))} />
+                {showTaxFields && <Field label="Bill To GSTIN" error={errors.billToGstin}>
+                  <Input error={errors.billToGstin} placeholder="GSTIN (optional)" value={form.billTo?.gstin || ""} onChange={event => { setForm(current => ({ ...current, billTo: { ...current.billTo, gstin: event.target.value } })); if (errors.billToGstin) setErrors(prev => ({ ...prev, billToGstin: "" })); }} />
                 </Field>}
               </>
             )}
@@ -1094,12 +1095,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : (isApartmentOrg ? "1fr" : "1fr 1fr"), gap: 10 }}>
-              <Field label="Invoice Date" required>
-                <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
+              <Field label="Invoice Date" required error={errors.date}>
+                <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
               </Field>
               {!isApartmentOrg && (
-                <Field label={isQuote ? "Valid Until" : "Due Date"}>
-                  <DateSelectInput value={form.dueDate || ""} onChange={value => setForm(current => ({ ...current, dueDate: value }))} min={form.date} max={TODAY} />
+                <Field label={isQuote ? "Valid Until" : "Due Date"} error={errors.dueDate}>
+                  <DateSelectInput value={form.dueDate || ""} onChange={value => { setForm(current => ({ ...current, dueDate: value })); if (errors.dueDate) setErrors(prev => ({ ...prev, dueDate: "" })); }} min={form.date} max={TODAY} />
                 </Field>
               )}
             </div>
@@ -1133,8 +1134,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             )}
 
             {!isApartmentOrg && !isQuote && form.status === "paid" && (
-              <Field label="Paid Date">
-                <DateSelectInput value={form.paidDate || ""} onChange={value => setForm(current => ({ ...current, paidDate: value }))} min={form.date} max={TODAY} />
+              <Field label="Paid Date" error={errors.paidDate}>
+                <DateSelectInput value={form.paidDate || ""} onChange={value => { setForm(current => ({ ...current, paidDate: value })); if (errors.paidDate) setErrors(prev => ({ ...prev, paidDate: "" })); }} min={form.date} max={TODAY} />
               </Field>
             )}
 

@@ -103,6 +103,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [errors, setErrors] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
@@ -226,7 +227,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     }
     setEditId(null);
     setForm(buildBlankForm(year, month, config, categoryOptions));
-    setFormError("");
+    setFormError(""); setErrors({});
     setShowForm(true);
   }
 
@@ -255,14 +256,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     });
     setEditId(expense.id);
     setForm(next);
-    setFormError("");
+    setFormError(""); setErrors({});
     setShowForm(true);
   }
 
   function closeForm() {
     setEditId(null);
     setShowForm(false);
-    setFormError("");
+    setFormError(""); setErrors({});
     setForm(buildBlankForm(year, month, config, categoryOptions));
   }
 
@@ -289,37 +290,34 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function validateForm() {
+    const nextErrors = {};
     if (isApartmentOrg && !hasApartmentFlats) {
-      return "Add at least one flat record before saving society expenses.";
+      return { _form: "Add at least one flat record before saving society expenses." };
     }
-    if (!hasMinLength(form.label, 2)) {
-      return `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
-    }
-    if (!isPositiveAmount(form.amount)) {
-      return "Enter an amount greater than 0.";
-    }
-    if (isPersonalOrg && !String(form.personName || "").trim()) {
-      return "Select a household person before saving this spending entry.";
-    }
+    if (!hasMinLength(form.label, 2)) nextErrors.label = `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
+    if (!isPositiveAmount(form.amount)) nextErrors.amount = "Enter an amount greater than 0.";
+    if (isPersonalOrg && !String(form.personName || "").trim()) nextErrors.personName = "Select a household person before saving.";
     if (!isValidDateValue(form.date)) {
-      return `Choose the ${config.expensesEntryLabel.toLowerCase()} date.`;
-    }
-    if (isFutureDateValue(form.date)) {
-      return "Future dates are not allowed for records.";
+      nextErrors.date = `Choose the ${config.expensesEntryLabel.toLowerCase()} date.`;
+    } else if (isFutureDateValue(form.date)) {
+      nextErrors.date = "Future dates are not allowed for records.";
     }
     if (!isPersonalOrg && form.recurring && form.endDate && !isValidDateValue(form.endDate)) {
-      return "Choose a valid recurring end date or leave it empty.";
+      nextErrors.endDate = "Choose a valid recurring end date or leave it empty.";
+    } else if (!isPersonalOrg && form.recurring && form.endDate && form.endDate < form.date) {
+      nextErrors.endDate = "Recurring end date must be on or after the start date.";
     }
-    if (!isPersonalOrg && form.recurring && form.endDate && form.endDate < form.date) {
-      return "Recurring end date must be on or after the start date.";
-    }
-    return "";
+    return nextErrors;
   }
 
   function save() {
-    const error = validateForm();
-    if (error) {
-      setFormError(error);
+    const nextErrors = validateForm();
+    if (nextErrors._form) {
+      setFormError(nextErrors._form);
+      return;
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
       return;
     }
 
@@ -654,25 +652,25 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
           )}
 
           <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
-            <Field label="Description" required>
-              <Input placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => setForm(current => ({ ...current, label: e.target.value }))} />
+            <Field label="Description" required error={errors.label}>
+              <Input error={errors.label} placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }} />
             </Field>
-            <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`}>
-              <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
+            <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`} error={errors.amount}>
+              <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
             </Field>
             <Field label="Category">
               <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>
                 {categoryOptions.map(category => <option key={category}>{category}</option>)}
               </Select>
             </Field>
-            <Field label="Expense Date" required>
-              <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
+            <Field label="Expense Date" required error={errors.date}>
+              <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
             </Field>
             {(config.expenseFields || []).map(field => (
-              <Field key={field.key} label={field.label}>
+              <Field key={field.key} label={field.label} error={field.key === "personName" ? errors.personName : undefined}>
                 {isPersonalOrg && field.key === "personName"
                   ? (
-                    <Select value={form.personName || ""} onChange={e => setForm(current => ({ ...current, personName: e.target.value, label: current.label || `${e.target.value} ${config.expensesEntryLabel}` }))}>
+                    <Select error={errors.personName} value={form.personName || ""} onChange={e => { setForm(current => ({ ...current, personName: e.target.value, label: current.label || `${e.target.value} ${config.expensesEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
                       <option value="">{peopleOptions.length ? "Select person" : "Add people in Settings first"}</option>
                       {peopleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
@@ -726,8 +724,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     <div style={{ background: "var(--blue-deep)", border: "1px solid var(--blue)33", borderRadius: 12, padding: "12px 14px", fontSize: 13, color: "var(--blue)", marginBottom: 16 }}>
                       This {config.expensesEntryLabel.toLowerCase()} will repeat every month starting from {fmtDate(form.date)}.
                     </div>
-                    <Field label="Recurring End Date" hint="Optional. Leave empty if this should continue until you stop it manually.">
-                      <DateSelectInput value={form.endDate} onChange={value => setForm(current => ({ ...current, endDate: value }))} min={form.date} />
+                    <Field label="Recurring End Date" hint="Optional. Leave empty if this should continue until you stop it manually." error={errors.endDate}>
+                      <DateSelectInput value={form.endDate} onChange={value => { setForm(current => ({ ...current, endDate: value })); if (errors.endDate) setErrors(prev => ({ ...prev, endDate: "" })); }} min={form.date} />
                     </Field>
                   </>
                 )}
