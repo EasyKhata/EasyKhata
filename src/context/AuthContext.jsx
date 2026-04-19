@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   GoogleAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
-  signInWithCredential,
   signInWithPopup,
+  signInWithRedirect,
   signOut
 } from "firebase/auth";
-import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import { auth } from "../firebase";
 import { usersApi } from "../lib/api";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
@@ -18,12 +18,6 @@ import { isNative } from "../utils/native";
 
 const AuthContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
-const WEB_CLIENT_ID = "374078093945-vefipq8749stlhbmcuduml2f6adjigf7.apps.googleusercontent.com";
-
-// Initialize GoogleAuth plugin on web (native init is automatic)
-if (!isNative) {
-  GoogleAuth.initialize({ clientId: WEB_CLIENT_ID, scopes: ["profile", "email"], grantOfflineAccess: false });
-}
 
 function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.SMALL_BUSINESS } = {}) {
   const cleanOrganizationType = getOrgType(organizationType);
@@ -194,6 +188,13 @@ export function AuthProvider({ children }) {
     };
   }
 
+  // On Android, after signInWithRedirect the app reloads — pick up the result here
+  useEffect(() => {
+    if (isNative) {
+      getRedirectResult(auth).catch(err => logError("Redirect result error", err));
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
@@ -248,23 +249,18 @@ export function AuthProvider({ children }) {
 
   async function signInWithGoogle() {
     try {
-      let firebaseUser;
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
 
       if (isNative) {
-        // Native Android: use Capacitor plugin to get Google credential
-        const googleUser = await GoogleAuth.signIn();
-        const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
-        const result = await signInWithCredential(auth, credential);
-        firebaseUser = result.user;
+        // Android WebView: redirect flow works without a popup window
+        await signInWithRedirect(auth, provider);
+        return { success: true }; // page will reload after redirect
       } else {
-        // Web: use Firebase popup
-        const provider = new GoogleAuthProvider();
-        provider.setCustomParameters({ prompt: "select_account" });
-        const result = await signInWithPopup(auth, provider);
-        firebaseUser = result.user;
+        // Web: popup is instant and doesn't require a page reload
+        await signInWithPopup(auth, provider);
+        return { success: true };
       }
-
-      return { success: true };
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
         return { error: null }; // user dismissed, not an error
@@ -345,7 +341,6 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     const userId = auth.currentUser?.uid;
-    try { if (isNative) await GoogleAuth.signOut(); } catch {}
     await signOut(auth);
     clearCurrentUser();
     if (userId) {
