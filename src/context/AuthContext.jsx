@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   GoogleAuthProvider,
+  browserPopupRedirectResolver,
   getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
@@ -188,10 +189,11 @@ export function AuthProvider({ children }) {
     };
   }
 
-  // On Android, after signInWithRedirect the app reloads — pick up the result here
+  // On Android, after the Chrome Custom Tab redirect the app resumes —
+  // getRedirectResult picks up the signed-in credential automatically.
   useEffect(() => {
     if (isNative) {
-      getRedirectResult(auth).catch(err => logError("Redirect result error", err));
+      getRedirectResult(auth, browserPopupRedirectResolver).catch(err => logError("Redirect result error", err));
     }
   }, []);
 
@@ -253,17 +255,19 @@ export function AuthProvider({ children }) {
       provider.setCustomParameters({ prompt: "select_account" });
 
       if (isNative) {
-        // Android WebView: redirect flow works without a popup window
-        await signInWithRedirect(auth, provider);
-        return { success: true }; // page will reload after redirect
+        // Android: use redirect with browserPopupRedirectResolver so Firebase
+        // opens the OAuth flow in a Chrome Custom Tab instead of the WebView.
+        // The indexedDB persistence in firebase.js ensures the result survives
+        // the round-trip back into the app.
+        await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
+        return { success: true };
       } else {
-        // Web: popup is instant and doesn't require a page reload
         await signInWithPopup(auth, provider);
         return { success: true };
       }
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
-        return { error: null }; // user dismissed, not an error
+        return { error: null };
       }
       if (err.code === "auth/network-request-failed") {
         return { error: "No internet connection. Please check your network and try again." };
