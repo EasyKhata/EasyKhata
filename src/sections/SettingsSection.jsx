@@ -22,8 +22,6 @@ import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollection
 import {
   isOptionalEmail,
   isOptionalPhone,
-  isStrongPassword,
-  passwordStrengthMessage,
   isValidDateValue,
   isValidEmail,
   isValidGstin,
@@ -270,7 +268,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
 }
 
 export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
-  const { user, logout, updateProfile, changePassword, setUser } = useAuth();
+  const { user, logout, updateProfile, setUser } = useAuth();
   const {
     loaded,
     account,
@@ -339,7 +337,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     billingCycle: BILLING_CYCLES.MONTHLY,
     note: ""
   });
-  const [passForm, setPassForm] = useState({ current: "", next: "", confirm: "" });
   const [supportForm, setSupportForm] = useState({
     topic: "account",
     subject: "",
@@ -352,7 +349,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [replyingTicketId, setReplyingTicketId] = useState("");
   const [supportView, setSupportView] = useState("inbox");
   const [selectedSupportTicketId, setSelectedSupportTicketId] = useState("");
-  const [passError, setPassError] = useState("");
   const [showCurrPicker, setShowCurrPicker] = useState(false);
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [createOrgForm, setCreateOrgForm] = useState({
@@ -1029,33 +1025,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setScreen("org-records");
     setOrgRecordForm(null);
     setEditOrgRecord(null);
-  }
-
-  async function handleChangePassword() {
-    setPassError("");
-
-    if (!passForm.current) {
-      setPassError("Please enter your current password.");
-      return;
-    }
-    if (!isStrongPassword(passForm.next)) {
-      setPassError(passwordStrengthMessage(passForm.next) || "Password does not meet requirements.");
-      return;
-    }
-    if (passForm.next !== passForm.confirm) {
-      setPassError("Your new password and confirmation do not match.");
-      return;
-    }
-
-    const res = await changePassword(passForm.current, passForm.next);
-    if (res?.error) {
-      setPassError(res.error);
-      return;
-    }
-
-    setPassForm({ current: "", next: "", confirm: "" });
-    showNotice("Your password has been updated.", "success");
-    setScreen("main");
   }
 
   function saveGoalSettings() {
@@ -2066,15 +2035,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </div>
               <button className="theme-toggle" onClick={toggle} />
             </div>
-            <MenuRow
-              icon="P"
-              label="Change Password"
-              onClick={() => {
-                setPassForm({ current: "", next: "", confirm: "" });
-                setPassError("");
-                setScreen("passcode");
-              }}
-            />
             <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
             {user?.role === "admin" ? (
               <MenuRow
@@ -2630,20 +2590,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   return withNotice(
-    <>
-      <Modal title="Change Password" onClose={() => setScreen("main")} onSave={handleChangePassword} canSave={true}>
-        <Field label="Current Password">
-          <Input type="password" autoComplete="current-password" placeholder="Enter your current password" value={passForm.current} onChange={e => setPassForm(f => ({ ...f, current: e.target.value }))} />
-        </Field>
-        <Field label="New Password" hint="8+ characters with uppercase, lowercase, and a number.">
-          <Input type="password" autoComplete="new-password" placeholder="Create a new password" value={passForm.next} onChange={e => setPassForm(f => ({ ...f, next: e.target.value }))} />
-        </Field>
-        <Field label="Confirm New Password">
-          <Input type="password" autoComplete="new-password" placeholder="Re-enter the new password" value={passForm.confirm} onChange={e => setPassForm(f => ({ ...f, confirm: e.target.value }))} />
-        </Field>
-        {passError && <p style={{ color: "var(--danger)", fontSize: 14, marginTop: 8, textAlign: "center" }}>{passError}</p>}
-      </Modal>
-      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
-    </>
+    <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
   );
 }

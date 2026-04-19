@@ -1,402 +1,170 @@
 import React, { useMemo, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Field, Input, PhoneNumberInput, Select } from "../components/UI";
-import { isStrongPassword, passwordStrengthMessage, isValidEmail, isValidName, normalizeEmail } from "../utils/validator";
+import { Field, Input, PhoneNumberInput, Select, Modal } from "../components/UI";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
-import { LEGAL_PATHS, LEGAL_VERSION } from "../utils/legal";
+import { LEGAL_PATHS } from "../utils/legal";
 import {
-  buildPhoneNumber,
   DEFAULT_PHONE_COUNTRY_CODE,
   isValidUserPhoneNumber,
   PHONE_COUNTRY_OPTIONS,
   sanitizePhoneDigits
 } from "../utils/profile";
 
+// Google "G" logo SVG
+function GoogleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 48 48" style={{ display: "block" }}>
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      <path fill="none" d="M0 0h48v48H0z"/>
+    </svg>
+  );
+}
+
 export default function AuthScreen() {
-  const { login, register, forgotPassword, resendVerification } = useAuth();
-  const [screen, setScreen] = useState("login");
+  const { signInWithGoogle, completeSetup, pendingSetup } = useAuth();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // First-time setup form state
+  const [orgType, setOrgType] = useState(ORG_TYPES.SMALL_BUSINESS);
   const [phoneCountryCode, setPhoneCountryCode] = useState(DEFAULT_PHONE_COUNTRY_CODE);
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [name, setName] = useState("");
-  const [organizationType, setOrganizationType] = useState(ORG_TYPES.SMALL_BUSINESS);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [legalAccepted, setLegalAccepted] = useState(false);
-  const [error, setError] = useState("");
-  const [info, setInfo] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
-  const [showPasswordHint, setShowPasswordHint] = useState(false);
-  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(organizationType), [organizationType]);
-  const selectedOrgTypeDescription = useMemo(
-    () => selectableOrgTypeOptions.find(option => option.value === organizationType)?.description || "",
-    [organizationType, selectableOrgTypeOptions]
+  const [setupError, setSetupError] = useState("");
+  const [setupLoading, setSetupLoading] = useState(false);
+
+  const orgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(orgType), [orgType]);
+  const selectedOrgDesc = useMemo(
+    () => orgTypeOptions.find(o => o.value === orgType)?.description || "",
+    [orgType, orgTypeOptions]
   );
 
-  // Password strength indicator
-  const passStrength = password ? {
-    length: isStrongPassword(password) ? "strong" : password.length >= 6 ? "medium" : "weak",
-    hasNumber: /\d/.test(password),
-    hasSpecial: /[!@#$%^&*]/.test(password),
-  } : null;
-
-  function resetMessages() {
+  async function handleGoogleSignIn() {
     setError("");
-    setInfo("");
-  }
-
-  function switchScreen(nextScreen) {
-    setScreen(nextScreen);
-    resetMessages();
-  }
-
-  async function handleLogin() {
-    resetMessages();
-    const cleanEmail = normalizeEmail(email);
-
-    if (!isValidEmail(cleanEmail)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-
-    if (!password) {
-      setError("Please enter your password.");
-      return;
-    }
-
     setLoading(true);
-    const res = await login(cleanEmail, password);
-    setLoading(false);
-
-    if (res?.error) {
-      setError(res.error);
-      if (res.error.toLowerCase().includes("verify")) {
-        setInfo("If the verification email hasn't arrived yet, you can resend it below.");
-      }
+    try {
+      const res = await signInWithGoogle();
+      if (res?.error) setError(res.error);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function handleRegister() {
-    resetMessages();
-    const cleanName = name.trim();
-    const cleanEmail = normalizeEmail(email);
-    const cleanPhoneNumber = sanitizePhoneDigits(phoneNumber);
-    const cleanPhone = buildPhoneNumber(phoneCountryCode, cleanPhoneNumber);
-
-    if (!isValidName(cleanName)) {
-      setError("Please enter your full name.");
+  async function handleCompleteSetup() {
+    setSetupError("");
+    const cleanPhone = sanitizePhoneDigits(phoneNumber);
+    if (!isValidUserPhoneNumber(cleanPhone)) {
+      setSetupError("Enter a valid 10-digit phone number.");
       return;
     }
-
-    if (!isValidEmail(cleanEmail)) {
-      setError("Please enter a valid email address.");
-      return;
+    setSetupLoading(true);
+    try {
+      const res = await completeSetup({ organizationType: orgType, phone: cleanPhone, phoneCountryCode });
+      if (res?.error) setSetupError(res.error);
+    } finally {
+      setSetupLoading(false);
     }
+  }
 
-    if (!isValidUserPhoneNumber(cleanPhoneNumber)) {
-      setError("Please enter a valid phone number.");
-      return;
-    }
+  // First-time setup modal
+  if (pendingSetup) {
+    return (
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 20 }}>
+        <Modal
+          title="Welcome to EasyKhata"
+          onClose={null}
+          onSave={handleCompleteSetup}
+          saveLabel={setupLoading ? "Setting up..." : "Get Started"}
+          canSave={!setupLoading}
+        >
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
+            Signed in as <b>{pendingSetup.email}</b>. Tell us how you'll use EasyKhata.
+          </div>
 
-    if (!isStrongPassword(password)) {
-      setError(passwordStrengthMessage(password) || "Password does not meet requirements.");
-      return;
-    }
+          <Field label="How will you use EasyKhata?" required hint={selectedOrgDesc}>
+            <Select value={orgType} onChange={e => setOrgType(e.target.value)}>
+              {orgTypeOptions.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          </Field>
 
-    if (password !== confirmPassword) {
-      setError("Your password and confirmation do not match.");
-      return;
-    }
+          <Field label="Phone Number" required hint="Used for payment receipts and support.">
+            <PhoneNumberInput
+              countryCode={phoneCountryCode}
+              phoneNumber={phoneNumber}
+              onCountryCodeChange={setPhoneCountryCode}
+              onPhoneNumberChange={setPhoneNumber}
+              countryOptions={PHONE_COUNTRY_OPTIONS}
+              phonePlaceholder="9876543210"
+            />
+          </Field>
 
-    if (!legalAccepted) {
-      setError("Please accept the Terms and Privacy Policy to continue.");
-      return;
-    }
+          {setupError && (
+            <div style={{ fontSize: 13, color: "var(--danger)", marginTop: 8 }}>{setupError}</div>
+          )}
 
-    const nowIso = new Date().toISOString();
-
-    setLoading(true);
-    const res = await register(
-      {
-        name: cleanName,
-        email: cleanEmail,
-        phone: cleanPhone,
-        phoneCountryCode,
-        organizationType,
-        legalAccepted: true,
-        termsVersion: LEGAL_VERSION,
-        termsAcceptedAt: nowIso,
-        privacyAcceptedAt: nowIso,
-        refundsPolicyAcceptedAt: nowIso
-      },
-      password
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 16, lineHeight: 1.6 }}>
+            By continuing you agree to our{" "}
+            <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>Terms</a>
+            {" "}and{" "}
+            <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>Privacy Policy</a>.
+          </div>
+        </Modal>
+      </div>
     );
-    setLoading(false);
-
-    if (res?.error) {
-      setError(res.error);
-      return;
-    }
-
-    setInfo((res?.message || "Account created successfully.") + " Next: verify email → sign in → open Your Khata to confirm your details.");
-    setPassword("");
-    setConfirmPassword("");
-    setPhoneNumber("");
-    setScreen("login");
   }
 
-  async function handleForgot() {
-    resetMessages();
-    const cleanEmail = normalizeEmail(email);
-
-    if (!isValidEmail(cleanEmail)) {
-      setError("Please enter the email address linked to your account.");
-      return;
-    }
-
-    setLoading(true);
-    const res = await forgotPassword(cleanEmail);
-    setLoading(false);
-
-    if (res?.error) {
-      setError(res.error);
-      return;
-    }
-
-    setInfo((res?.message || "Please check your inbox for the reset email.") + " If you don't see the email, please check your spam folder.");
-  }
-
-  async function handleResendVerification() {
-    resetMessages();
-    const cleanEmail = normalizeEmail(email);
-
-    if (!isValidEmail(cleanEmail)) {
-      setError("Enter the same email address you used to create your account.");
-      return;
-    }
-
-    if (!password) {
-      setError("Enter your password so we can resend the verification email securely.");
-      return;
-    }
-
-    setResending(true);
-    const res = await resendVerification(cleanEmail, password);
-    setResending(false);
-
-    if (res?.error) {
-      setError(res.error);
-      return;
-    }
-
-    setInfo(res?.message || "Verification email sent.");
-  }
-
-  const showResend = screen === "login" && info.toLowerCase().includes("resend");
-
+  // Main sign-in screen
   return (
-    <div className="auth-shell" style={{ minHeight: "100vh", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", top: -80, right: -80, width: 260, height: 260, borderRadius: 130, background: "radial-gradient(circle, var(--accent-deep) 0%, transparent 70%)", pointerEvents: "none", opacity: 0.8 }} />
-      <div style={{ position: "absolute", bottom: 120, left: -80, width: 220, height: 220, borderRadius: 110, background: "radial-gradient(circle, var(--blue-deep) 0%, transparent 70%)", pointerEvents: "none" }} />
-
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "40px 20px 28px", position: "relative", zIndex: 1, maxWidth: 560, width: "100%", margin: "0 auto" }}>
-        <div style={{ marginBottom: 36 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>
-            {screen === "login" ? "Welcome back" : screen === "register" ? "Get started" : "Forgot Password?"}
-          </div>
-          <BrandLogo showTagline center={false} />
-          <div style={{ marginTop: 14, fontSize: 14, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            {screen === "login"
-              ? "Sign in to continue to your account."
-              : screen === "register"
-                ? "Create your free account in 2 minutes."
-                : "We'll send a reset link to your inbox."}
-          </div>
+    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 24 }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 40 }}>
+          <BrandLogo size={56} style={{ marginBottom: 16 }} />
+          <div style={{ fontSize: 26, fontWeight: 800, color: "var(--text)", letterSpacing: -0.5 }}>{APP_NAME}</div>
+          <div style={{ fontSize: 14, color: "var(--text-sec)", marginTop: 6 }}>{APP_TAGLINE}</div>
         </div>
 
-        <div className="auth-panel menu-glass">
-          {(error || info) && (
-            <div style={{ background: error ? "var(--danger-deep)" : "var(--accent-deep)", border: `1px solid ${error ? "var(--danger)" : "var(--accent)"}44`, borderRadius: 14, padding: "14px 16px", marginBottom: 18, color: error ? "var(--danger)" : "var(--accent-text)", fontSize: 14, lineHeight: 1.5 }}>
-              {error || info}
-            </div>
-          )}
+        <button
+          onClick={handleGoogleSignIn}
+          disabled={loading}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 12,
+            padding: "14px 20px",
+            background: "var(--surface-high)",
+            border: "1.5px solid var(--border)",
+            borderRadius: 14,
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--text)",
+            cursor: loading ? "not-allowed" : "pointer",
+            opacity: loading ? 0.7 : 1,
+            transition: "background 0.15s"
+          }}
+        >
+          <GoogleIcon />
+          {loading ? "Signing in..." : "Continue with Google"}
+        </button>
 
-          {screen === "login" && (
-            <div className="fade-in">
-            <form onSubmit={event => { event.preventDefault(); handleLogin(); }}>
-            <Field label="Email Address" required>
-              <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-            </Field>
-            <Field label="Password" required hint="Use the password you created during registration.">
-              <Input type="password" autoComplete="current-password" placeholder="Enter your password" value={password} onChange={e => setPassword(e.target.value)} />
-            </Field>
-            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleLogin} disabled={loading}>
-              {loading ? "Signing you in..." : "Sign In"}
-            </button>
-            {showResend && (
-              <button className="btn-secondary" style={{ width: "100%", marginBottom: 14 }} onClick={handleResendVerification} disabled={resending}>
-                {resending ? "Sending verification email..." : "Resend Verification Email"}
-              </button>
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <button onClick={() => switchScreen("register")} style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font)" }}>Create account</button>
-              <button onClick={() => switchScreen("forgot")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)" }}>Forgot password?</button>
-            </div>
-            <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              By using EasyKhata, you accept our <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> and <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy Policy</a>.
-            </div>
-            </form>
+        {error && (
+          <div style={{ marginTop: 16, fontSize: 13, color: "var(--danger)", textAlign: "center", lineHeight: 1.5 }}>
+            {error}
           </div>
-          )}
+        )}
 
-          {screen === "register" && (
-            <div className="fade-in">
-            <form onSubmit={event => { event.preventDefault(); handleRegister(); }}>
-            <Field label="Full Name" required>
-              <Input placeholder="Your full name" value={name} onChange={e => setName(e.target.value)} autoComplete="name" />
-            </Field>
-            <Field label="Email Address" required>
-              <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-            </Field>
-            <Field label="Phone Number" required hint="Used for account recovery and business profile.">
-              <PhoneNumberInput
-                countryCode={phoneCountryCode}
-                phoneNumber={phoneNumber}
-                onCountryCodeChange={setPhoneCountryCode}
-                onPhoneNumberChange={setPhoneNumber}
-                countryOptions={PHONE_COUNTRY_OPTIONS}
-                phonePlaceholder="9876543210"
-              />
-            </Field>
-            <Field label="How will you use EasyKhata?" required hint="Pick the one that matches your situation — you can change it later in settings.">
-              {(() => {
-                const ORG_CARD_META = {
-                  personal:       { icon: "🏠", bestFor: "Families & individuals tracking household money" },
-                  freelancer:     { icon: "💼", bestFor: "Designers, developers, consultants tracking client work" },
-                  small_business: { icon: "🏪", bestFor: "Shops, clinics, service businesses with customers" },
-                  apartment:      { icon: "🏢", bestFor: "RWA, housing societies collecting maintenance" }
-                };
-                return (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
-                    {selectableOrgTypeOptions.map(option => {
-                      const meta = ORG_CARD_META[option.value] || {};
-                      const selected = organizationType === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => setOrganizationType(option.value)}
-                          style={{
-                            padding: "12px 10px",
-                            borderRadius: 12,
-                            border: `2px solid ${selected ? "var(--accent)" : "var(--border)"}`,
-                            background: selected ? "var(--accent-deep)" : "var(--surface)",
-                            cursor: "pointer",
-                            textAlign: "left"
-                          }}
-                        >
-                          <div style={{ fontSize: 22, marginBottom: 6 }}>{meta.icon}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: selected ? "var(--accent)" : "var(--text)", marginBottom: 4, lineHeight: 1.3 }}>{option.label}</div>
-                          <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.45 }}>{meta.bestFor}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-              {selectedOrgTypeDescription && (
-                <div style={{ marginTop: 10, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, padding: "8px 10px", background: "var(--surface)", borderRadius: 8, borderLeft: "3px solid var(--accent)" }}>
-                  {selectedOrgTypeDescription}
-                </div>
-              )}
-            </Field>
-            
-            <Field label="Password" required hint={showPasswordHint ? "8+ characters with uppercase, lowercase, and a number." :
-              <button onClick={() => setShowPasswordHint(true)} style={{ background: "none", border: "none", color: "var(--accent-text)", cursor: "pointer", textDecoration: "underline", fontFamily: "var(--font)", fontSize: "inherit" }}>
-                View password tips
-              </button>
-            }>
-              <Input 
-                type="password" 
-                autoComplete="new-password" 
-                placeholder="Create a strong password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-              />
-              {password && (
-                <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-                  <div style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, background: passStrength?.length === "weak" ? "var(--danger-deep)" : passStrength?.length === "medium" ? "var(--gold-deep)" : "var(--accent-deep)", color: passStrength?.length === "weak" ? "var(--danger)" : passStrength?.length === "medium" ? "var(--gold)" : "var(--accent)", fontWeight: 600 }}>
-                    {passStrength.length === "weak" ? "Weak" : passStrength.length === "medium" ? "Medium" : "Strong"}
-                  </div>
-                  {(passStrength.hasNumber || passStrength.hasSpecial) && (
-                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                      {passStrength.hasNumber && "✓ Number "}
-                      {passStrength.hasSpecial && "✓ Symbol"}
-                    </div>
-                  )}
-                </div>
-              )}
-            </Field>
-
-            <Field label="Confirm Password" required>
-              <Input 
-                type="password" 
-                autoComplete="new-password" 
-                placeholder="Re-enter your password" 
-                value={confirmPassword} 
-                onChange={e => setConfirmPassword(e.target.value)} 
-              />
-              {password && confirmPassword && password === confirmPassword && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>✓ Passwords match</div>
-              )}
-              {password && confirmPassword && password !== confirmPassword && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "var(--danger)", fontWeight: 600 }}>✗ Passwords don't match</div>
-              )}
-            </Field>
-
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 14 }}>
-              <input
-                id="legal-consent"
-                type="checkbox"
-                checked={legalAccepted}
-                onChange={e => setLegalAccepted(e.target.checked)}
-                style={{ marginTop: 3 }}
-              />
-              <label htmlFor="legal-consent" style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                I agree to the <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms and Conditions</a>, <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy Policy</a>, and <a href={LEGAL_PATHS.refunds} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Refund Policy</a>.
-              </label>
-            </div>
-
-            <div style={{ marginBottom: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.55 }}>
-              2-minute setup: create account, verify email, sign in. You can add profile details later from Personal Profile.
-            </div>
-            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleRegister} disabled={loading}>
-              {loading ? "Creating your account..." : "Create Account"}
-            </button>
-            <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--accent-text)", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Already have an account? Sign in</button>
-            </form>
-          </div>
-          )}
-
-          {screen === "forgot" && (
-            <div className="fade-in">
-            <form onSubmit={event => { event.preventDefault(); handleForgot(); }}>
-            <Field label="Registered Email" required hint="We'll send a password reset link to this address.">
-              <Input type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={e => setEmail(e.target.value)} />
-            </Field>
-            <button type="submit" className="btn-primary" style={{ width: "100%", marginBottom: 14 }} onClick={handleForgot} disabled={loading}>
-              {loading ? "Sending reset email..." : "Send Reset Link"}
-            </button>
-            <button onClick={() => switchScreen("login")} style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 14, cursor: "pointer", fontFamily: "var(--font)", width: "100%", textAlign: "center" }}>Back to Sign In</button>
-            <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, textAlign: "center" }}>
-              Legal: <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Terms</a> · <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)" }}>Privacy</a>
-            </div>
-            </form>
-          </div>
-          )}
+        <div style={{ marginTop: 32, fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.7 }}>
+          By signing in you agree to our{" "}
+          <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>Terms of Service</a>
+          {" "}and{" "}
+          <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>Privacy Policy</a>.
         </div>
       </div>
     </div>

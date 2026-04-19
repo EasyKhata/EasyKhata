@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, browserSessionPersistence, setPersistence } from "firebase/auth";
+import { getAuth, browserSessionPersistence, indexedDBLocalPersistence, initializeAuth, setPersistence } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
+import { Capacitor } from "@capacitor/core";
 
 const firebaseConfig = {
   apiKey: "AIzaSyA3YbJ0f7haJ3rQj9ZDV4XKHixurJ6VPN4",
@@ -14,9 +15,15 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// On Android, use indexedDB persistence so auth survives the redirect round-trip.
+// On web, use session persistence (signing out when browser tab closes).
+export const auth = Capacitor.isNativePlatform()
+  ? initializeAuth(app, { persistence: indexedDBLocalPersistence })
+  : getAuth(app);
+
+if (!Capacitor.isNativePlatform()) {
+  setPersistence(auth, browserSessionPersistence).catch(() => {});
+}
+
 export const storage = getStorage(app);
 export const functions = getFunctions(app, "asia-south1");
-
-// Session-only persistence: closing the browser/tab signs the user out
-setPersistence(auth, browserSessionPersistence).catch(() => {});
