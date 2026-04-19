@@ -23,9 +23,11 @@ if (isNative && isAndroid) {
 
 const AuthScreen = lazy(() => import("./screens/AuthScreen"));
 const MainApp = lazy(() => import("./screens/MainApp"));
+const LandingScreen = lazy(() => import("./screens/LandingScreen"));
 
 function AppRouter() {
   const { user, loading, logout } = useAuth();
+  const [showLanding, setShowLanding] = React.useState(true);
 
   if (loading) {
     return (
@@ -36,6 +38,13 @@ function AppRouter() {
   }
 
   if (!user) {
+    if (showLanding) {
+      return (
+        <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
+          <LandingScreen onGetStarted={() => setShowLanding(false)} />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={<DashboardSkeleton />}>
         <AuthScreen />
