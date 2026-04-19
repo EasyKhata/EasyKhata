@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
   HeadphonesIcon, LayoutDashboard, LogOut, Settings,
@@ -1017,7 +1018,17 @@ export default function MainApp() {
         })()}
 
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)" : "14px 18px 104px" }}>
-          {renderTabContent()}
+          <AnimatePresence mode="popLayout" initial={false}>
+            <motion.div
+              key={tab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.16, ease: "easeOut" }}
+            >
+              {renderTabContent()}
+            </motion.div>
+          </AnimatePresence>
         </div>
       </div>
 

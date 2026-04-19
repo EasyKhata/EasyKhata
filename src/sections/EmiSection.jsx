@@ -38,7 +38,7 @@ function buildBlankForm(section) {
   return base;
 }
 
-function renderField(field, value, onChange, options = {}) {
+function renderField(field, value, onChange, options = {}, error = undefined) {
   const commonProps = {
     value: value || "",
     onChange: event => onChange(event.target.value),
@@ -47,7 +47,7 @@ function renderField(field, value, onChange, options = {}) {
 
   if (field.type === "select") {
     return (
-      <Select {...commonProps}>
+      <Select error={error} {...commonProps}>
         {(field.options || []).map(option => (
           <option key={option} value={option}>
             {option}
@@ -61,7 +61,7 @@ function renderField(field, value, onChange, options = {}) {
     return <DateSelectInput value={value || ""} onChange={onChange} min={options.min} max={options.max} yearOrder={field.key === "startDate" || field.key === "endDate" ? "asc" : "desc"} />;
   }
 
-  return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
+  return <Input error={error} {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
 }
 
 export default function EmiSection({ year, month, orgType, headerDatePicker }) {
@@ -74,7 +74,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(buildBlankForm(emiSection));
-  const [formError, setFormError] = useState("");
+  const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const openPeopleManager = () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
 
@@ -128,7 +128,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     }
     setEditId(null);
     setForm(buildBlankForm(emiSection));
-    setFormError("");
+    setErrors({});
     setShowForm(true);
   }
 
@@ -142,55 +142,42 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
       dueDay: String(getPersonalEmiDueDay(record) || ""),
       endDate: record.endDate || ""
     });
-    setFormError("");
+    setErrors({});
     setShowForm(true);
   }
 
   function closeForm() {
     setEditId(null);
     setForm(buildBlankForm(emiSection));
-    setFormError("");
+    setErrors({});
     setShowForm(false);
   }
 
   function save() {
-    if (!hasMinLength(form.loanName, 2)) {
-      setFormError("Enter the EMI or loan name.");
-      return;
-    }
-    if (!hasMinLength(form.lender, 2)) {
-      setFormError("Enter the lender name.");
-      return;
-    }
-    if (!isPositiveAmount(form.monthlyEmi)) {
-      setFormError("Enter a monthly EMI amount greater than 0.");
-      return;
-    }
+    const nextErrors = {};
+    if (!hasMinLength(form.loanName, 2)) nextErrors.loanName = "Enter the EMI or loan name.";
+    if (!hasMinLength(form.lender, 2)) nextErrors.lender = "Enter the lender name.";
+    if (!isPositiveAmount(form.monthlyEmi)) nextErrors.monthlyEmi = "Enter an amount greater than 0.";
     const dueDay = Number(form.dueDay);
-    if (!Number.isFinite(dueDay) || dueDay < 1 || dueDay > 31) {
-      setFormError("Choose a valid EMI due date between 1 and 31.");
-      return;
-    }
-    if (!form.endDate || !isValidDateValue(form.endDate)) {
-      setFormError("Choose a valid EMI end date.");
-      return;
-    }
+    if (!Number.isFinite(dueDay) || dueDay < 1 || dueDay > 31) nextErrors.dueDay = "Enter a day between 1 and 31.";
+    if (!form.endDate || !isValidDateValue(form.endDate)) nextErrors.endDate = "Choose a valid end date.";
     if (form.startDate && !isValidDateValue(form.startDate)) {
-      setFormError("Choose a valid EMI start date or leave it empty.");
-      return;
+      nextErrors.startDate = "Choose a valid start date or leave it empty.";
+    } else if (form.startDate && form.startDate > TODAY) {
+      nextErrors.startDate = "Start date cannot be in the future.";
     }
-    if (form.startDate && form.startDate > TODAY) {
-      setFormError("EMI start date cannot be in the future.");
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
       return;
     }
     const effectiveStartDate = form.startDate || CURRENT_MONTH_START;
     const minimumEndDate = nextMonthStart(effectiveStartDate);
     if (form.endDate < minimumEndDate) {
-      setFormError("EMI end date should start from the next month after the start date.");
+      setErrors({ endDate: "End date must start from the month after the start date." });
       return;
     }
     if (form.endDate < effectiveStartDate) {
-      setFormError("End date should be on or after the EMI start date.");
+      setErrors({ endDate: "End date must be on or after the start date." });
       return;
     }
 
@@ -274,22 +261,21 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
       {showForm && (
         <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">
-          {formError && (
-            <div style={{ background: "var(--danger-deep)", border: "1px solid var(--danger)44", borderRadius: 12, padding: "12px 14px", color: "var(--danger)", fontSize: 13, marginBottom: 16 }}>
-              {formError}
-            </div>
-          )}
           {emiSection.fields.map(field => (
-            <Field key={field.key} label={field.label} required={Boolean(field.required)}>
+            <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
               {renderField(
                 field,
                 form[field.key],
-                value => setForm(current => ({ ...current, [field.key]: value })),
+                value => {
+                  setForm(current => ({ ...current, [field.key]: value }));
+                  if (errors[field.key]) setErrors(prev => ({ ...prev, [field.key]: "" }));
+                },
                 field.key === "startDate"
                   ? { max: TODAY }
                   : field.key === "endDate"
                     ? { min: nextMonthStart(form.startDate || CURRENT_MONTH_START), max: EMI_END_DATE_MAX }
-                    : {}
+                    : {},
+                errors[field.key]
               )}
             </Field>
           ))}

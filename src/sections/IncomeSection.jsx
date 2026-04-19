@@ -202,6 +202,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [form, setForm] = useState(buildBlankForm(year, month, config));
   const [formError, setFormError] = useState("");
+  const [errors, setErrors] = useState({});
   const [searchTerm, setSearchTerm] = useState("");
   const [bulkMaintenanceAmount, setBulkMaintenanceAmount] = useState("");
   const [maintenanceAmountHydrated, setMaintenanceAmountHydrated] = useState(false);
@@ -483,7 +484,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
         collectionMonth: mk
       });
       setGuidedField("flatNumber");
-      setFormError("");
+      setFormError(""); setErrors({});;
       setShowForm(true);
       onQuickstartHandled?.();
       return;
@@ -544,7 +545,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     setSaleItems([newSaleItem()]);
     setSaleDiscount("");
     setSalePhone("");
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -588,7 +589,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     }
     setEditId(income.id);
     setForm(next);
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -599,7 +600,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     setSaleItems([newSaleItem()]);
     setSaleDiscount("");
     setSalePhone("");
-    setFormError("");
+    setFormError(""); setErrors({});;
   }
 
   function addSaleItem() {
@@ -726,17 +727,17 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       return;
     }
     if (!isSmallBusinessOrg && !hasMinLength(nextForm.label, 2)) {
-      setFormError(`Add a clear ${config.incomeEntryLabel.toLowerCase()} description so you can recognize it later.`);
+      setErrors(prev => ({ ...prev, label: `Add a clear ${config.incomeEntryLabel.toLowerCase()} description so you can recognize it later.` }));
       return;
     }
     if (isSmallBusinessOrg && !hasPosSystem && !hasMinLength(nextForm.label, 2)) {
-      setFormError("Describe what was sold so you can find this record later.");
+      setErrors(prev => ({ ...prev, label: "Describe what was sold so you can find this record later." }));
       return;
     }
     const normalizedItems = (isSmallBusinessOrg && hasPosSystem) ? normalizeSaleItems(saleItems) : [];
     const computedSaleTotals = (isSmallBusinessOrg && hasPosSystem) ? getSaleTotals(normalizedItems, saleDiscount) : null;
     if (isSmallBusinessOrg && hasPosSystem && !String(nextForm.customerName || "").trim()) {
-      setFormError("Select or type a customer name.");
+      setErrors(prev => ({ ...prev, customerName: "Select or type a customer name." }));
       return;
     }
     if (isSmallBusinessOrg && hasPosSystem && !normalizedItems.length) {
@@ -768,27 +769,27 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       }
     }
     if (!isSmallBusinessOrg && !isPositiveAmount(nextForm.amount)) {
-      setFormError("Enter an amount greater than 0.");
+      setErrors(prev => ({ ...prev, amount: "Enter an amount greater than 0." }));
       return;
     }
     if (!isValidDateValue(nextForm.date)) {
-      setFormError(`Choose the date when this ${config.incomeEntryLabel.toLowerCase()} was received.`);
+      setErrors(prev => ({ ...prev, date: `Choose the date when this ${config.incomeEntryLabel.toLowerCase()} was received.` }));
       return;
     }
     if (isFutureDateValue(nextForm.date)) {
-      setFormError("Future dates are not allowed for records.");
+      setErrors(prev => ({ ...prev, date: "Future dates are not allowed for records." }));
       return;
     }
     if (isApartmentOrg && !String(nextForm.flatNumber || "").trim()) {
-      setFormError("Select a flat from Settings before saving this maintenance collection.");
+      setErrors(prev => ({ ...prev, flatNumber: "Select a flat before saving." }));
       return;
     }
     if (isPersonalOrg && !String(nextForm.personName || "").trim()) {
-      setFormError("Select a household person before saving this earning.");
+      setErrors(prev => ({ ...prev, personName: "Select a household person before saving." }));
       return;
     }
     if (isApartmentOrg && !String(nextForm.residentName || "").trim()) {
-      setFormError("Select the flat record from Settings before saving this maintenance collection.");
+      setErrors(prev => ({ ...prev, residentName: "Select the flat record before saving." }));
       return;
     }
 
@@ -952,7 +953,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
       collectionType: "Monthly Maintenance",
       collectionMonth: mk
     });
-    setFormError("");
+    setFormError(""); setErrors({});;
     setShowForm(true);
   }
 
@@ -1351,7 +1352,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       onChange={e => setSalePhone(e.target.value)}
                     />
                   </Field>
-                  <Field label={saleIsNewCustomer ? "New Customer Name" : "Customer"} required>
+                  <Field label={saleIsNewCustomer ? "New Customer Name" : "Customer"} required error={errors.customerName}>
                     {salePhoneLookup ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 10, background: "var(--accent-deep)", border: "1px solid var(--accent)44" }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)", flex: 1 }}>{salePhoneLookup.name}</span>
@@ -1359,12 +1360,13 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       </div>
                     ) : saleIsNewCustomer ? (
                       <Input
+                        error={errors.customerName}
                         placeholder="Enter new customer name"
                         value={form.customerName || ""}
-                        onChange={e => setForm(current => ({ ...current, customerName: e.target.value }))}
+                        onChange={e => { setForm(current => ({ ...current, customerName: e.target.value })); if (errors.customerName) setErrors(prev => ({ ...prev, customerName: "" })); }}
                       />
                     ) : (
-                      <Select value={form.customerName || ""} onChange={event => setForm(current => ({ ...current, customerName: event.target.value, label: current.label || `${event.target.value} Sale` }))}>
+                      <Select error={errors.customerName} value={form.customerName || ""} onChange={event => { setForm(current => ({ ...current, customerName: event.target.value, label: current.label || `${event.target.value} Sale` })); if (errors.customerName) setErrors(prev => ({ ...prev, customerName: "" })); }}>
                         <option value="">{clientOptions.length ? "Select customer" : "No customers yet"}</option>
                         {clientOptions.map(option => (
                           <option key={option.value} value={option.value}>{option.label}</option>
@@ -1476,25 +1478,26 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             </div>
           ) : (
             <>
-              <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required>
+              <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required error={errors.label}>
                 <Input
+                  error={errors.label}
                   placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`}
                   value={form.label}
-                  onChange={e => setForm(current => ({ ...current, label: e.target.value }))}
+                  onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }}
                   autoFocus={guidedField === "label"}
                   style={guidedField === "label" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
                 />
               </Field>
-              <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`}>
-                <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => setForm(current => ({ ...current, amount: e.target.value }))} />
+              <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`} error={errors.amount}>
+                <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
               </Field>
-              <Field label="Date Received" required>
-                <DateSelectInput value={form.date} onChange={value => setForm(current => ({ ...current, date: value }))} max={TODAY} />
+              <Field label="Date Received" required error={errors.date}>
+                <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
               </Field>
               {(config.incomeFields || []).map(field => (
-                <Field key={field.key} label={field.label}>
+                <Field key={field.key} label={field.label} error={errors[field.key]}>
                   {isPersonalOrg && field.key === "personName" ? (
-                    <Select value={form.personName || ""} onChange={event => setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` }))}>
+                    <Select error={errors.personName} value={form.personName || ""} onChange={event => { setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
                       <option value="">{peopleOptions.length ? "Select person" : "Add people in Settings first"}</option>
                       {peopleOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { membersApi } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
-import { Input, Field } from "../../components/UI";
+import { Input, Field, LoadingButton } from "../../components/UI";
 
 const ROLES = [
   { value: "admin",  label: "Admin",  desc: "Can add, edit, and delete records" },
@@ -22,7 +22,6 @@ export default function OrgMembersScreen({ onBack }) {
   const [members, setMembers] = useState([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("viewer");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(true);
@@ -61,7 +60,6 @@ export default function OrgMembersScreen({ onBack }) {
       return;
     }
     setError("");
-    setSaving(true);
     try {
       const invitation = await membersApi.invite(user.id, orgId, {
         email,
@@ -69,14 +67,11 @@ export default function OrgMembersScreen({ onBack }) {
         orgName,
         orgType: data.account?.organizationType || "small_business"
       });
-      // Append to local list as a pending entry
       setMembers(prev => [{ ...invitation, status: "pending" }, ...prev]);
       setInviteEmail("");
       setSuccessMsg(`Invite sent to ${email}`);
     } catch (err) {
       setError(err.message || "Failed to send invite. Please try again.");
-    } finally {
-      setSaving(false);
     }
   }, [inviteEmail, inviteRole, members, orgId, orgName, user?.email, user?.id, data.account?.organizationType]);
 
@@ -165,14 +160,15 @@ export default function OrgMembersScreen({ onBack }) {
           {successMsg && (
             <div style={{ fontSize: 12, color: "var(--accent)", marginBottom: 10, fontWeight: 600 }}>✓ {successMsg}</div>
           )}
-          <button
+          <LoadingButton
             className="btn-secondary"
             onClick={handleInvite}
-            disabled={saving || !inviteEmail.trim()}
+            disabled={!inviteEmail.trim()}
+            loadingLabel="Sending…"
             style={{ color: "var(--accent)", fontWeight: 700, width: "100%" }}
           >
-            {saving ? "Sending…" : "Send Invite"}
-          </button>
+            Send Invite
+          </LoadingButton>
         </div>
 
         {/* Members list */}

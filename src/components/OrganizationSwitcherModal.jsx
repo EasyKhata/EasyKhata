@@ -1,5 +1,5 @@
 import React from "react";
-import { Modal } from "./UI";
+import { Modal, LoadingButton } from "./UI";
 
 export default function OrganizationSwitcherModal({
   open,
@@ -30,12 +30,12 @@ export default function OrganizationSwitcherModal({
                 {isActiveOrg ? (
                   <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Active</span>
                 ) : (
-                  <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => onSwitch?.(org.id)}>
+                  <LoadingButton className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => onSwitch?.(org.id)} loadingLabel="Switching…">
                     Switch
-                  </button>
+                  </LoadingButton>
                 )}
 
-                <button
+                <LoadingButton
                   className="btn-secondary"
                   style={{
                     padding: "8px 12px",
@@ -45,15 +45,16 @@ export default function OrganizationSwitcherModal({
                     color: canDelete ? "var(--danger)" : "var(--text-dim)"
                   }}
                   disabled={!canDelete}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!canDelete) return;
                     if (window.confirm(`Delete ${org.name}? This will remove that Khata and its data.`)) {
-                      onDelete?.(org.id);
+                      await onDelete?.(org.id);
                     }
                   }}
+                  loadingLabel="Deleting…"
                 >
                   Delete
-                </button>
+                </LoadingButton>
               </div>
             </div>
           );
