@@ -1,15 +1,12 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
-  EmailAuthProvider,
-  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
   onAuthStateChanged,
-  reauthenticateWithCredential,
-  sendEmailVerification,
-  sendPasswordResetEmail,
-  signInWithEmailAndPassword,
-  signOut,
-  updatePassword
+  signInWithCredential,
+  signInWithPopup,
+  signOut
 } from "firebase/auth";
+import { GoogleAuth } from "@codetrix-studio/capacitor-google-auth";
 import { auth } from "../firebase";
 import { usersApi } from "../lib/api";
 import { clearCurrentUser, setCurrentUser } from "../utils/storage";
@@ -17,33 +14,15 @@ import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, sp
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
+import { isNative } from "../utils/native";
 
 const AuthContext = createContext();
-const PENDING_PROFILE_KEY = "pending-profile:";
 const DEFAULT_ORG_ID = "org_primary";
+const WEB_CLIENT_ID = "374078093945-vefipq8749stlhbmcuduml2f6adjigf7.apps.googleusercontent.com";
 
-function getPendingProfileKey(email) {
-  return `${PENDING_PROFILE_KEY}${String(email || "").trim().toLowerCase()}`;
-}
-
-function savePendingProfile(email, profile) {
-  if (typeof window === "undefined" || !email) return;
-  localStorage.setItem(getPendingProfileKey(email), JSON.stringify(profile));
-}
-
-function readPendingProfile(email) {
-  if (typeof window === "undefined" || !email) return null;
-  try {
-    const raw = localStorage.getItem(getPendingProfileKey(email));
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function clearPendingProfile(email) {
-  if (typeof window === "undefined" || !email) return;
-  localStorage.removeItem(getPendingProfileKey(email));
+// Initialize GoogleAuth plugin on web (native init is automatic)
+if (!isNative) {
+  GoogleAuth.initialize({ clientId: WEB_CLIENT_ID, scopes: ["profile", "email"], grantOfflineAccess: false });
 }
 
 function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.SMALL_BUSINESS } = {}) {
@@ -65,12 +44,7 @@ function createDefaultOrgProfile({ email = "", phone = "", organizationType = OR
       lowBalance: true,
       spendingSpike: true
     },
-    currency: {
-      code: "INR",
-      symbol: "Rs",
-      name: "Indian Rupee",
-      flag: "IN"
-    },
+    currency: { code: "INR", symbol: "Rs", name: "Indian Rupee", flag: "IN" },
     account: {
       name: "",
       email,
@@ -106,7 +80,10 @@ function getActiveOrgProfile(profile = {}) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const registrationInProgressRef = useRef(false);
+  // When a Google user signs in for the first time they need to pick org type + phone.
+  // We keep the firebaseUser in a ref and expose a pendingSetup flag until they complete it.
+  const [pendingSetup, setPendingSetup] = useState(null); // { firebaseUser, name, email }
+  const setupInProgressRef = useRef(false);
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
     const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
@@ -114,7 +91,7 @@ export function AuthProvider({ children }) {
     try {
       existing = await usersApi.get(firebaseUser.uid);
     } catch {
-      // user doesn't exist yet — will be created below
+      // new user
     }
     const baseName = normalizedOverrides.name || existing?.name || firebaseUser.displayName || "";
     const baseEmail = normalizedOverrides.email || existing?.email || firebaseUser.email || "";
@@ -131,14 +108,8 @@ export function AuthProvider({ children }) {
     const baseAgeGroup = getAgeGroupFromDateOfBirth(baseDateOfBirth) || normalizedOverrides.ageGroup || existing?.ageGroup || "";
     const baseGender = normalizedOverrides.gender || existing?.gender || "";
     const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
-    const baseTermsVersion = normalizedOverrides.termsVersion || existing?.termsVersion || "";
-    const baseTermsAcceptedAt = normalizedOverrides.termsAcceptedAt || existing?.termsAcceptedAt || "";
-    const basePrivacyAcceptedAt = normalizedOverrides.privacyAcceptedAt || existing?.privacyAcceptedAt || "";
-    const baseRefundsPolicyAcceptedAt = normalizedOverrides.refundsPolicyAcceptedAt || existing?.refundsPolicyAcceptedAt || "";
-    const baseLegalAccepted = Boolean(normalizedOverrides.legalAccepted || existing?.legalAccepted);
 
     if (!existing?.id) {
-      // New user — create via API (server also auto-starts a 14-day trial)
       const created = await usersApi.create({
         name: baseName,
         phone: basePhone,
@@ -153,13 +124,10 @@ export function AuthProvider({ children }) {
         location: baseLocation,
         address: baseAddress,
         organizationType: baseOrganizationType,
-        legalAccepted: baseLegalAccepted,
-        termsVersion: baseTermsVersion,
-        termsAcceptedAt: baseTermsAcceptedAt,
-        privacyAcceptedAt: basePrivacyAcceptedAt,
-        refundsPolicyAcceptedAt: baseRefundsPolicyAcceptedAt
+        legalAccepted: true,
+        termsVersion: "1.0",
+        termsAcceptedAt: new Date().toISOString()
       });
-      clearPendingProfile(baseEmail);
       return created;
     }
 
@@ -178,22 +146,14 @@ export function AuthProvider({ children }) {
     if (!existing?.country && baseCountry) updates.country = baseCountry;
     if (!existing?.location && baseLocation) updates.location = baseLocation;
     if (!existing?.address && baseAddress) updates.address = baseAddress;
-    if (!existing?.legalAccepted && baseLegalAccepted) updates.legalAccepted = true;
-    if (!existing?.termsVersion && baseTermsVersion) updates.termsVersion = baseTermsVersion;
-    if (!existing?.termsAcceptedAt && baseTermsAcceptedAt) updates.termsAcceptedAt = baseTermsAcceptedAt;
-    if (!existing?.privacyAcceptedAt && basePrivacyAcceptedAt) updates.privacyAcceptedAt = basePrivacyAcceptedAt;
-    if (!existing?.refundsPolicyAcceptedAt && baseRefundsPolicyAcceptedAt) updates.refundsPolicyAcceptedAt = baseRefundsPolicyAcceptedAt;
     if (!existing?.updatedAt && existing?.createdAt) updates.updatedAt = existing.createdAt;
     if (!existing?.lastActivityAt && (existing?.updatedAt || existing?.createdAt)) {
       updates.lastActivityAt = existing?.updatedAt || existing?.createdAt;
     }
 
     if (Object.keys(updates).length > 0) {
-      const updated = await usersApi.update(firebaseUser.uid, updates);
-      clearPendingProfile(baseEmail);
-      return updated;
+      return await usersApi.update(firebaseUser.uid, updates);
     }
-    clearPendingProfile(baseEmail);
     return existing;
   }
 
@@ -201,7 +161,7 @@ export function AuthProvider({ children }) {
     const { activeOrgId, activeOrg } = getActiveOrgProfile(profile);
     return {
       id: firebaseUser.uid,
-      name: profile?.name || "",
+      name: profile?.name || firebaseUser.displayName || "",
       email: profile?.email || firebaseUser.email || "",
       phone: profile?.phone || "",
       phoneCountryCode: profile?.phoneCountryCode || splitPhoneNumber(profile?.phone || "").phoneCountryCode,
@@ -238,16 +198,32 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
         clearCurrentUser();
+        setPendingSetup(null);
         setUser(null);
         setLoading(false);
         return;
       }
 
+      // If setup is in progress (completing org type selection), don't re-process
+      if (setupInProgressRef.current) return;
+
       try {
-        if (!firebaseUser.emailVerified) {
-          if (registrationInProgressRef.current) {
-            return;
-          }
+        let existing = {};
+        try { existing = await usersApi.get(firebaseUser.uid); } catch {}
+
+        if (!existing?.id) {
+          // First-time Google user — need org type + phone before creating profile
+          setPendingSetup({
+            firebaseUser,
+            name: firebaseUser.displayName || "",
+            email: firebaseUser.email || ""
+          });
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (existing?.blocked) {
           await signOut(auth);
           clearCurrentUser();
           setUser(null);
@@ -255,9 +231,10 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        const profile = await ensureUserProfile(firebaseUser, readPendingProfile(firebaseUser.email));
+        const profile = await ensureUserProfile(firebaseUser);
         setUser(buildSessionUser(firebaseUser, profile || {}));
         setCurrentUser(firebaseUser.uid);
+        setPendingSetup(null);
       } catch (err) {
         logError("Profile load error", err);
         setUser(null);
@@ -269,170 +246,72 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  async function login(email, password) {
+  async function signInWithGoogle() {
     try {
-      const normalizedEmail = String(email || "").trim().toLowerCase();
-      const userCred = await signInWithEmailAndPassword(auth, normalizedEmail, password);
+      let firebaseUser;
 
-      if (!userCred.user.emailVerified) {
-        await signOut(auth);
-        clearCurrentUser();
-        return { error: "Please verify your email before logging in." };
+      if (isNative) {
+        // Native Android: use Capacitor plugin to get Google credential
+        const googleUser = await GoogleAuth.signIn();
+        const credential = GoogleAuthProvider.credential(googleUser.authentication.idToken);
+        const result = await signInWithCredential(auth, credential);
+        firebaseUser = result.user;
+      } else {
+        // Web: use Firebase popup
+        const provider = new GoogleAuthProvider();
+        provider.setCustomParameters({ prompt: "select_account" });
+        const result = await signInWithPopup(auth, provider);
+        firebaseUser = result.user;
       }
 
-      const profile = await ensureUserProfile(userCred.user, readPendingProfile(userCred.user.email));
+      return { success: true };
+    } catch (err) {
+      if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
+        return { error: null }; // user dismissed, not an error
+      }
+      if (err.code === "auth/network-request-failed") {
+        return { error: "No internet connection. Please check your network and try again." };
+      }
+      logError("Google sign-in error", err);
+      return { error: "Sign-in failed. Please try again." };
+    }
+  }
+
+  // Called from the first-time setup modal after org type + phone are collected
+  async function completeSetup({ organizationType, phone, phoneCountryCode }) {
+    if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
+    setupInProgressRef.current = true;
+    try {
+      const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
+        name: pendingSetup.name,
+        email: pendingSetup.email,
+        organizationType,
+        phone,
+        phoneCountryCode
+      });
 
       if (profile?.blocked) {
         await signOut(auth);
         clearCurrentUser();
+        setPendingSetup(null);
         return { error: "Your account has been blocked. Contact admin." };
       }
 
-      const nextUser = buildSessionUser(userCred.user, profile);
-
-      setUser(nextUser);
-      setCurrentUser(nextUser.id);
-      return { success: true, user: nextUser };
+      const sessionUser = buildSessionUser(pendingSetup.firebaseUser, profile);
+      setUser(sessionUser);
+      setCurrentUser(sessionUser.id);
+      setPendingSetup(null);
+      return { success: true };
     } catch (err) {
-      if (err.code === "auth/user-not-found") return { error: "No account exists with this email address." };
-      if (err.code === "auth/wrong-password") return { error: "Incorrect password." };
-      if (err.code === "auth/invalid-credential") {
-        return { error: "Invalid email or password." };
-      }
-      if (err.code === "auth/invalid-email") return { error: "Invalid email format." };
-      return { error: err.message };
-    }
-  }
-
-  async function register(profileInput, password) {
-    registrationInProgressRef.current = true;
-    try {
-      const profile = profileInput && typeof profileInput === "object"
-        ? profileInput
-        : {
-            name: "",
-            email: "",
-            phone: "",
-            organizationType: ORG_TYPES.SMALL_BUSINESS
-          };
-      const normalizedProfile = {
-        ...profile,
-        email: String(profile.email || "").trim().toLowerCase(),
-        ageGroup: getAgeGroupFromDateOfBirth(profile.dateOfBirth)
-      };
-      const userCred = await createUserWithEmailAndPassword(auth, normalizedProfile.email, password);
-      await ensureUserProfile(userCred.user, normalizedProfile);
-      await sendEmailVerification(userCred.user);
-      savePendingProfile(normalizedProfile.email, normalizedProfile);
-      await signOut(auth);
-      clearCurrentUser();
-
-      return {
-        success: true,
-        message: "Your account is ready. Please verify your email before signing in. Full review access will be available after your first verified login."
-      };
-    } catch (err) {
-      if (err.code === "auth/email-already-in-use") {
-        try {
-          const fallbackProfile = profileInput && typeof profileInput === "object"
-            ? {
-                ...profileInput,
-                email: String(profileInput.email || "").trim().toLowerCase(),
-                ageGroup: getAgeGroupFromDateOfBirth(profileInput.dateOfBirth)
-              }
-            : null;
-          const existingEmail = fallbackProfile?.email || "";
-          const existingCred = await signInWithEmailAndPassword(auth, existingEmail, password);
-          if (!existingCred.user.emailVerified) {
-            await ensureUserProfile(existingCred.user, fallbackProfile || readPendingProfile(existingCred.user.email));
-            await sendEmailVerification(existingCred.user);
-            if (fallbackProfile) {
-              savePendingProfile(existingEmail, fallbackProfile);
-            }
-            await signOut(auth);
-            clearCurrentUser();
-            return {
-              success: true,
-              message: "This email is already registered but still unverified. We've sent a fresh verification email. Please verify it before signing in."
-            };
-          }
-
-          await signOut(auth);
-          clearCurrentUser();
-          return { error: "An account with this email already exists. Please sign in instead." };
-        } catch (existingErr) {
-          if (existingErr.code === "auth/wrong-password" || existingErr.code === "auth/invalid-credential") {
-            return { error: "This email is already registered. Use your existing password from Sign In to resend the verification email if needed." };
-          }
-          return { error: "This email is already registered. Please sign in instead." };
-        }
-      }
-      if (err.code === "auth/invalid-email") {
-        return { error: "Please enter a valid email address." };
-      }
-      if (err.code === "auth/weak-password") {
-        return { error: "Password must be at least 8 characters and include uppercase, lowercase, and a number." };
-      }
-      if (err.code === "auth/too-many-requests") {
-        return { error: "Too many attempts were made. Please wait a little and try again." };
-      }
-      if (err.code === "permission-denied") {
-        return { error: "Your verification email was sent, but we could not finish setting up the account. Please update Firestore rules and try signing in again after verification." };
-      }
-      return { error: err.message || "We couldn't create your account right now. Please try again." };
+      logError("Setup error", err);
+      return { error: err.message || "Could not complete setup. Please try again." };
     } finally {
-      registrationInProgressRef.current = false;
-    }
-  }
-
-  async function forgotPassword(email) {
-    try {
-      await sendPasswordResetEmail(auth, email);
-      return { success: true, message: "Password reset instructions have been sent to your email." };
-    } catch (err) {
-      if (err.code === "auth/user-not-found" || err.code === "auth/invalid-email") {
-        return { error: "We couldn't find an account with that email address." };
-      }
-      return { error: "We couldn't send the reset email right now. Please try again shortly." };
-    }
-  }
-
-  async function resendVerification(email, password) {
-    try {
-      let verificationUser = auth.currentUser;
-
-      if (!verificationUser) {
-        if (!email || !password) {
-          return { error: "Enter your email and password to resend the verification email." };
-        }
-        const userCred = await signInWithEmailAndPassword(auth, email, password);
-        verificationUser = userCred.user;
-      }
-
-      if (verificationUser.emailVerified) {
-        return { error: "This email address is already verified. Please sign in." };
-      }
-
-      await sendEmailVerification(verificationUser);
-      await signOut(auth);
-      clearCurrentUser();
-      return { success: true, message: "We've sent a fresh verification email. Please check your inbox and spam folder." };
-    } catch (err) {
-      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") {
-        return { error: "Your password didn't match our records. Please try again." };
-      }
-      if (err.code === "auth/too-many-requests") {
-        return { error: "Too many attempts were made. Please wait a little and try again." };
-      }
-      return { error: "We couldn't resend the verification email right now. Please try again shortly." };
+      setupInProgressRef.current = false;
     }
   }
 
   async function updateProfile(updates) {
-    if (!auth.currentUser) {
-      return { error: "No user logged in." };
-    }
-
+    if (!auth.currentUser) return { error: "No user logged in." };
     try {
       const timestamp = new Date().toISOString();
       const nextUpdates = { ...updates, updatedAt: timestamp, lastActivityAt: timestamp };
@@ -464,35 +343,16 @@ export function AuthProvider({ children }) {
     }
   }
 
-  async function changePassword(currentPassword, nextPassword) {
-    if (!auth.currentUser || !auth.currentUser.email) {
-      return { error: "No authenticated user found." };
-    }
-
-    try {
-      const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      await updatePassword(auth.currentUser, nextPassword);
-      return { success: true };
-    } catch (err) {
-      if (err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
-        return { error: "Your current password is incorrect." };
-      }
-      if (err.code === "auth/weak-password") {
-        return { error: "Password must be at least 8 characters and include uppercase, lowercase, and a number." };
-      }
-      return { error: err.message || "We couldn't update your password right now. Please try again." };
-    }
-  }
-
   async function logout() {
     const userId = auth.currentUser?.uid;
+    try { if (isNative) await GoogleAuth.signOut(); } catch {}
     await signOut(auth);
     clearCurrentUser();
     if (userId) {
       try { localStorage.removeItem(`ledger-session-analytics:${userId}`); } catch {}
     }
     setUser(null);
+    setPendingSetup(null);
   }
 
   return (
@@ -500,14 +360,12 @@ export function AuthProvider({ children }) {
       value={{
         user,
         loading,
-        login,
-        register,
+        pendingSetup,
+        signInWithGoogle,
+        completeSetup,
         logout,
         setUser,
-        updateProfile,
-        changePassword,
-        forgotPassword,
-        resendVerification
+        updateProfile
       }}
     >
       {children}

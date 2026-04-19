@@ -3,6 +3,11 @@
   "appName": "EasyKhata",
   "webDir": "dist",
   "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "374078093945-vefipq8749stlhbmcuduml2f6adjigf7.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    },
     "StatusBar": {
       "overlaysWebView": false,
       "style": "DARK",
