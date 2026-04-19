@@ -3,6 +3,35 @@
 :root {
   --font: 'Sora', sans-serif;
   --serif: 'DM Serif Display', serif;
+
+  /* Spacing scale (8px base unit) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Border radius scale */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 9999px;
+
+  /* Viewport breakpoints as custom properties (reference only) */
+  --bp-sm: 480px;
+  --bp-md: 768px;
+  --bp-lg: 900px;
+
+  /* Transition speeds */
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.25s ease;
+  --transition-slow: 0.4s ease;
 }
 
 [data-theme="dark"] {
@@ -59,6 +88,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+html {
+  /* Smooth theme switching */
+  transition: background-color var(--transition-base), color var(--transition-base);
+}
+
 html, body {
   height: 100%;
   min-height: 100%;
@@ -74,6 +108,7 @@ body {
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: auto;
   overflow-x: hidden;
+  transition: background var(--transition-base), color var(--transition-base);
 }
 
 #root {
@@ -203,6 +238,9 @@ input, select, textarea, button {
   border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
 }
 
+/* Framer Motion handles animation — disable CSS keyframe */
+.modal-surface.modal-fm { animation: none; }
+
 @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 .modal-header {
@@ -284,6 +322,37 @@ select.input-field {
   border-color: var(--accent);
   background: var(--surface);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.input-field.input-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 15%, transparent) !important;
+}
+
+.input-field.input-success {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent) !important;
+}
+
+.field-error {
+  font-size: 11px;
+  color: var(--danger);
+  margin-top: 5px;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.4;
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0,0,0,0.2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
 .btn-primary {

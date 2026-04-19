@@ -1,4 +1,9 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bell, BookOpen, Building2, CreditCard, FileText,
+  HeadphonesIcon, LayoutDashboard, LogOut, Settings,
+  TrendingDown, TrendingUp, Users
+} from "lucide-react";
 import { isNative } from "../utils/native";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
@@ -43,17 +48,18 @@ const TAB_COLOR = {
   adminDashboard: "var(--gold)",
   adminSupport: "var(--blue)"
 };
-const TAB_ICON_GLYPHS = {
-  dashboard: "◉",
-  users: "◎",
-  income: "↑",
-  expenses: "↓",
-  emi: "◌",
-  khata: "¤",
-  invoices: "▣",
-  org: "◍",
-  settings: "◈",
-  adminSupport: "?"
+const TAB_ICONS = {
+  dashboard: LayoutDashboard,
+  users: Users,
+  income: TrendingUp,
+  expenses: TrendingDown,
+  emi: CreditCard,
+  khata: BookOpen,
+  invoices: FileText,
+  org: Building2,
+  settings: Settings,
+  adminSupport: HeadphonesIcon,
+  adminDashboard: LayoutDashboard
 };
 
 function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
@@ -964,30 +970,16 @@ export default function MainApp() {
               <button
                 onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
                 title="Open profile settings"
-                style={{
-                  width: isMobile ? 34 : 36,
-                  height: isMobile ? 34 : 36,
-                  borderRadius: 10,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface-high)",
-                  color: "var(--text-sec)",
-                  cursor: "pointer",
-                  fontSize: isMobile ? 14 : 16,
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0
-                }}
+                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                ⚙
+                <Settings size={isMobile ? 15 : 16} strokeWidth={2} />
               </button>
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", fontSize: isMobile ? 14 : 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                🔔
+                <Bell size={isMobile ? 15 : 16} strokeWidth={2} />
                 {inboxReminders.length > 0 && (
                   <span style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
                     {inboxReminders.length}
@@ -997,9 +989,9 @@ export default function MainApp() {
               <button
                 onClick={() => { if (window.confirm("Sign out of EasyKhata?")) logout(); }}
                 title="Sign out"
-                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", fontSize: isMobile ? 14 : 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                ⏻
+                <LogOut size={isMobile ? 15 : 16} strokeWidth={2} />
               </button>
             </div>
           </div>
@@ -1035,14 +1027,19 @@ export default function MainApp() {
       >
           {footerTabs.map(tabItem => {
             const active = tab === tabItem.id;
+            const activeColor = TAB_COLOR[tabItem.id] || "var(--accent)";
+            const IconComponent = TAB_ICONS[tabItem.id];
             return (
               <button
                 key={tabItem.id}
                 type="button"
                 className={`app-bottom-nav-btn${active ? " active" : ""}`}
                 onClick={() => setTab(tabItem.id)}
+                style={active ? { color: activeColor } : undefined}
               >
-                <span className="app-bottom-nav-icon">{TAB_ICON_GLYPHS[tabItem.id] || "•"}</span>
+                <span className="app-bottom-nav-icon" style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 40%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 12%, var(--surface-high))` } : undefined}>
+                  {IconComponent ? <IconComponent size={14} strokeWidth={active ? 2.5 : 2} /> : "•"}
+                </span>
                 <span className="app-bottom-nav-label">{tabItem.label}</span>
               </button>
             );
