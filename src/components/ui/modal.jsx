@@ -15,14 +15,18 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
 
-  // Focus trap + Escape key handler
+  // Auto-focus first focusable element once on open
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+    const firstFocusable = surface.querySelector(FOCUSABLE);
+    firstFocusable?.focus();
+  }, []);
+
+  // Escape key + Tab cycling — keyboard handler only, never steals focus
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return undefined;
-
-    // Move focus into modal on open
-    const firstFocusable = surface.querySelector(FOCUSABLE);
-    firstFocusable?.focus();
 
     function handleKeyDown(e) {
       if (e.key === "Escape") {
