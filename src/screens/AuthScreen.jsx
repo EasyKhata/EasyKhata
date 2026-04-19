@@ -125,8 +125,6 @@ export default function AuthScreen() {
       <div style={{ width: "100%", maxWidth: 360 }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 40 }}>
           <BrandLogo size={56} style={{ marginBottom: 16 }} />
-          <div style={{ fontSize: 26, fontWeight: 800, color: "var(--text)", letterSpacing: -0.5 }}>{APP_NAME}</div>
-          <div style={{ fontSize: 14, color: "var(--text-sec)", marginTop: 6 }}>{APP_TAGLINE}</div>
         </div>
 
         <button
