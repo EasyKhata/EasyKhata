@@ -444,6 +444,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       : Math.max(1, ...(stats.monthlyBreakdown || []).map(item => Math.max(item.income, item.expenses)))
   ), [stats.cashFlow, stats.monthlyBreakdown, viewMode]);
 
+  const top5Expenses = useMemo(() => {
+    const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    return (data.expenses || [])
+      .filter(e => {
+        if (viewMode === "month") {
+          const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+          return em === mk;
+        }
+        const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
+        return ey === String(year);
+      })
+      .slice()
+      .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
+      .slice(0, 5);
+  }, [data.expenses, month, year, viewMode]);
+
   if (!data.loaded) {
     return <DashboardSkeleton />;
   }
@@ -544,6 +560,26 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
+          <div style={{ padding: "0 18px" }}>
+            <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+              <div className="card">
+                {top5Expenses.length === 0 ? (
+                  <EmptyState title="No expenses this period" message="Add society expense entries to see the biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+                ) : (
+                  top5Expenses.map((expense, index) => (
+                    <div key={expense.id || index} className="card-row">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Collapsible>
+          </div>
+
         </div>
 
         {onboardingGuide}
@@ -581,6 +617,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <PersonalUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
           <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
+
+          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+            <div className="card">
+              {top5Expenses.length === 0 ? (
+                <EmptyState title="No expenses this period" message="Add spending entries to see your biggest expenses here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+              ) : (
+                top5Expenses.map((expense, index) => (
+                  <div key={expense.id || index} className="card-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
 
           <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
             <div className="card">
@@ -782,6 +836,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+            <div className="card">
+              {top5Expenses.length === 0 ? (
+                <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+              ) : (
+                top5Expenses.map((expense, index) => (
+                  <div key={expense.id || index} className="card-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  </div>
+                ))
               )}
             </div>
           </Collapsible>
@@ -1104,6 +1176,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
         </Collapsible>
         )}
+
+        <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+          <div className="card">
+            {top5Expenses.length === 0 ? (
+              <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+            ) : (
+              top5Expenses.map((expense, index) => (
+                <div key={expense.id || index} className="card-row">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Collapsible>
       </div>
 
       {onboardingGuide}

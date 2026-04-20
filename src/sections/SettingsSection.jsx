@@ -1895,9 +1895,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
           {isApartmentOrg && (
             <div style={{ marginBottom: 10, marginTop: 20 }}>
-              <div className="section-label">Team &amp; Access</div>
+              <div className="section-label">Residents &amp; Access</div>
               <div className="card">
-                <MenuRow icon="T" label="Team Members" sub="Invite members and manage their roles" onClick={() => setScreen("org-members")} />
+                <MenuRow icon="T" label="Resident Members" sub="Invite residents and manage their roles" onClick={() => setScreen("org-members")} />
                 <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
               </div>
             </div>

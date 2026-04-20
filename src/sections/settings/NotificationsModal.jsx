@@ -59,6 +59,14 @@ export default function NotificationsModal({ form, onFormChange, onSave, onClose
           checked={Boolean(form?.browserEnabled)}
           onChange={() => onFormChange(current => ({ ...current, browserEnabled: !current.browserEnabled }))}
         />
+        {orgConfig.showCustomerFinancials === false && (
+          <ToggleRow
+            label="Pending Collections"
+            sub="Alert when flats have not paid maintenance for the current month."
+            checked={form?.pendingCollections !== false}
+            onChange={() => onFormChange(current => ({ ...current, pendingCollections: current.pendingCollections === false ? true : false }))}
+          />
+        )}
         {orgConfig.hideInvoices !== true && (
           <>
             <ToggleRow
@@ -89,12 +97,14 @@ export default function NotificationsModal({ form, onFormChange, onSave, onClose
           checked={Boolean(form?.lowBalance)}
           onChange={() => onFormChange(current => ({ ...current, lowBalance: !current.lowBalance }))}
         />
-        <ToggleRow
-          label="High Spending"
-          sub="Alert when this month is sharply above your recent spending average."
-          checked={Boolean(form?.spendingSpike)}
-          onChange={() => onFormChange(current => ({ ...current, spendingSpike: !current.spendingSpike }))}
-        />
+        {orgConfig.showCustomerFinancials !== false && (
+          <ToggleRow
+            label="High Spending"
+            sub="Alert when this month is sharply above your recent spending average."
+            checked={Boolean(form?.spendingSpike)}
+            onChange={() => onFormChange(current => ({ ...current, spendingSpike: !current.spendingSpike }))}
+          />
+        )}
       </div>
     </Modal>
   );
