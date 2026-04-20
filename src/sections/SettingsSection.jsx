@@ -16,6 +16,7 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
+import { loadRazorpay } from "../utils/razorpay";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice, SectionSkeleton } from "../components/UI";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
@@ -1348,7 +1349,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
     setSubmittingPayment(true);
     try {
-      if (typeof window === "undefined" || !window.Razorpay) {
+      const RazorpayClass = await loadRazorpay().catch(() => null);
+      if (!RazorpayClass) {
         showNotice("Secure checkout is not available right now. Please refresh and try again.");
         return;
       }
@@ -1365,7 +1367,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         return;
       }
 
-      const checkout = new window.Razorpay({
+      const checkout = new RazorpayClass({
         key: orderData.keyId,
         amount: orderData.amount,
         currency: orderData.currency || "INR",
