@@ -221,7 +221,7 @@ export default function LandingScreen({ onGetStarted }) {
         </button>
       </nav>
 
-      <div style={{ position: "relative", zIndex: 1 }}>
+      <main style={{ position: "relative", zIndex: 1 }}>
         {/* HERO */}
         <section style={{
           maxWidth: 680, margin: "0 auto",
@@ -295,7 +295,7 @@ export default function LandingScreen({ onGetStarted }) {
             </a>
           </div>
 
-          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          <div style={{ fontSize: 12, color: "var(--text-sec)" }}>
             No credit card · Household plan is free forever
           </div>
         </section>
@@ -479,7 +479,7 @@ export default function LandingScreen({ onGetStarted }) {
             >
               Get Started Free →
             </button>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 14 }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
               Sign in with Google · Takes 2 minutes
             </div>
           </div>
@@ -493,7 +493,7 @@ export default function LandingScreen({ onGetStarted }) {
           display: "flex", flexWrap: "wrap", alignItems: "center",
           justifyContent: "space-between", gap: 16
         }}>
-          <div style={{ fontSize: 13, color: "var(--text-dim)" }}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)" }}>
             © {new Date().getFullYear()} {APP_NAME}. All rights reserved.
           </div>
           <div style={{ display: "flex", gap: 20 }}>
@@ -502,16 +502,16 @@ export default function LandingScreen({ onGetStarted }) {
               { label: "Privacy", href: LEGAL_PATHS.privacy }
             ].map(l => (
               <a key={l.label} href={l.href} target="_blank" rel="noreferrer"
-                style={{ fontSize: 13, color: "var(--text-dim)", textDecoration: "none" }}
-                onMouseEnter={e => e.currentTarget.style.color = "var(--text-sec)"}
-                onMouseLeave={e => e.currentTarget.style.color = "var(--text-dim)"}
+                style={{ fontSize: 13, color: "var(--text-sec)", textDecoration: "none" }}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--text)"}
+                onMouseLeave={e => e.currentTarget.style.color = "var(--text-sec)"}
               >
                 {l.label}
               </a>
             ))}
           </div>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }
