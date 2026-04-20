@@ -294,16 +294,14 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
             if (field.key === "personName") {
               return (
                 <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
-                  <Input
-                    list="emi-person-list"
+                  <Select
                     value={form.personName || ""}
                     onChange={e => onChange(e.target.value)}
-                    placeholder={field.placeholder || "Select family member"}
                     error={errors.personName}
-                  />
-                  <datalist id="emi-person-list">
-                    {peopleOptions.map(name => <option key={name} value={name} />)}
-                  </datalist>
+                  >
+                    <option value="">— Select family member —</option>
+                    {peopleOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                  </Select>
                 </Field>
               );
             }

@@ -267,7 +267,7 @@ function SavingsGoalCard({ goals, sym, onNav }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Savings Goal</div>
           {note && <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{note}</div>}
         </div>
-        <button className="btn-secondary" type="button" style={{ padding: "6px 10px", fontSize: 11 }} onClick={() => onNav({ tab: "org", screen: "main" })}>
+        <button className="btn-secondary" type="button" style={{ padding: "6px 10px", fontSize: 11 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
           Edit Goal
         </button>
       </div>
@@ -291,7 +291,7 @@ function SavingsGoalCard({ goals, sym, onNav }) {
       ) : (
         <div style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", padding: "8px 0" }}>
           No savings goal set.{" "}
-          <button type="button" style={{ background: "none", border: "none", color: "var(--gold)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }} onClick={() => onNav({ tab: "org", screen: "main" })}>
+          <button type="button" style={{ background: "none", border: "none", color: "var(--gold)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
             Set a goal
           </button>
         </div>

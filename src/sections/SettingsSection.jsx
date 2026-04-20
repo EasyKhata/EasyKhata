@@ -719,6 +719,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
 
+    if (navigationTarget.screen === "savings-goal") {
+      setScreen("savings-goal");
+      return;
+    }
+
     setScreen("main");
   }, [navigationTarget, user?.role]);
 
@@ -1870,6 +1875,24 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
           </div>
 
+          {isPersonalOrg && (
+            <div style={{ marginBottom: 10, marginTop: 20 }}>
+              <div className="section-label">Savings Goal</div>
+              <div className="card">
+                <MenuRow
+                  icon="G"
+                  label="Savings Goal"
+                  sub={
+                    Number(goals?.targetAmount || 0) > 0
+                      ? `Target: ${fmtMoney(Number(goals.targetAmount), currency?.symbol || "Rs")} · Saved: ${fmtMoney(Number(goals.savedAmount || 0), currency?.symbol || "Rs")}`
+                      : "Set a savings target, track progress, and add a note"
+                  }
+                  onClick={() => setScreen("savings-goal")}
+                />
+              </div>
+            </div>
+          )}
+
           {isApartmentOrg && (
             <div style={{ marginBottom: 10, marginTop: 20 }}>
               <div className="section-label">Team &amp; Access</div>
@@ -2575,6 +2598,65 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onClose={() => setScreen("main")}
         orgConfig={orgConfig}
       />
+    );
+  }
+
+  if (screen === "savings-goal" && isPersonalOrg) {
+    const sym = currency?.symbol || "Rs";
+    return withNotice(
+      <Modal
+        title="Savings Goal"
+        onClose={() => setScreen("main")}
+        onSave={saveGoalSettings}
+        saveLabel="Save Goal"
+        canSave={true}
+        accentColor="var(--gold)"
+      >
+        <Field label="Target Amount" hint={`Set how much ${sym} you want to save in total`}>
+          <Input
+            type="number"
+            min="0"
+            placeholder="0.00"
+            value={goalForm.targetAmount}
+            onChange={e => setGoalForm(f => ({ ...f, targetAmount: e.target.value }))}
+          />
+        </Field>
+        <Field label="Amount Already Saved" hint="How much have you saved so far towards this goal">
+          <Input
+            type="number"
+            min="0"
+            placeholder="0.00"
+            value={goalForm.savedAmount}
+            onChange={e => setGoalForm(f => ({ ...f, savedAmount: e.target.value }))}
+          />
+        </Field>
+        <Field label="Target Date" hint="Optional — when do you want to reach this goal">
+          <DateSelectInput
+            value={goalForm.targetDate}
+            onChange={v => setGoalForm(f => ({ ...f, targetDate: v }))}
+            min={new Date().toISOString().slice(0, 10)}
+            yearOrder="asc"
+          />
+        </Field>
+        <Field label="Goal Note" hint="Optional — what are you saving for?">
+          <Input
+            placeholder="New car, house deposit, emergency fund..."
+            value={goalForm.note}
+            onChange={e => setGoalForm(f => ({ ...f, note: e.target.value }))}
+          />
+        </Field>
+        {Number(goalForm.targetAmount || 0) > 0 && (
+          <div style={{ marginTop: 4, padding: "12px 14px", background: "var(--surface-high)", borderRadius: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 6 }}>Progress preview</div>
+            <div className="progress-bar-track">
+              <div style={{ width: `${Math.min(100, Math.round((Number(goalForm.savedAmount || 0) / Number(goalForm.targetAmount)) * 100))}%`, height: "100%", background: "var(--gold)", borderRadius: 999 }} />
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>
+              {Math.min(100, Math.round((Number(goalForm.savedAmount || 0) / Number(goalForm.targetAmount)) * 100))}% complete
+            </div>
+          </div>
+        )}
+      </Modal>
     );
   }
 
