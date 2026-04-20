@@ -5,6 +5,18 @@ import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 
+const INDIAN_BANKS = [
+  "State Bank of India (SBI)", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank",
+  "Punjab National Bank (PNB)", "Bank of Baroda", "Canara Bank", "Union Bank of India",
+  "Bank of India", "IndusInd Bank", "Yes Bank", "IDFC First Bank", "Federal Bank",
+  "South Indian Bank", "Karnataka Bank", "Karur Vysya Bank", "City Union Bank",
+  "Tamilnad Mercantile Bank", "Dhanlaxmi Bank", "Bandhan Bank", "RBL Bank",
+  "UCO Bank", "Indian Bank", "Central Bank of India", "Bank of Maharashtra",
+  "Punjab & Sind Bank", "Indian Overseas Bank", "Bajaj Finserv", "Tata Capital",
+  "Mahindra Finance", "Muthoot Finance", "LIC Housing Finance", "PNB Housing Finance",
+  "HDFC Ltd", "Aditya Birla Finance", "L&T Finance", "Shriram Finance"
+];
+
 const TODAY = new Date().toISOString().slice(0, 10);
 const EMI_END_DATE_MAX = `${new Date().getFullYear() + 50}-12-31`;
 const CURRENT_MONTH_START = `${TODAY.slice(0, 7)}-01`;
@@ -36,6 +48,10 @@ function buildBlankForm(section) {
     }
   });
   return base;
+}
+
+function getPeopleOptions(customers) {
+  return (customers || []).filter(c => String(c?.name || "").trim()).map(c => String(c.name).trim());
 }
 
 function renderField(field, value, onChange, options = {}, error = undefined) {
@@ -86,6 +102,15 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (!showForm || !form.startDate || !form.endDate) return;
+    const minEnd = nextMonthStart(form.startDate);
+    if (form.endDate < minEnd) {
+      setForm(current => ({ ...current, endDate: "" }));
+    }
+  }, [form.startDate, showForm]);
+
+  const peopleOptions = useMemo(() => getPeopleOptions(d.customers), [d.customers]);
   const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => getPersonalEmiDueDay(a) - getPersonalEmiDueDay(b));
   const peopleCount = (d.customers || []).filter(person => String(person?.name || "").trim()).length;
   const hasHouseholdPeople = peopleCount > 0;
@@ -139,7 +164,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
       ...record,
       monthlyEmi: String(record.monthlyEmi ?? record.emiAmount ?? ""),
       startDate: record.startDate || "",
-      dueDay: String(getPersonalEmiDueDay(record) || ""),
+      dueDay: String(getPersonalEmiDueDay(record) || "1"),
       endDate: record.endDate || ""
     });
     setErrors({});
@@ -261,24 +286,59 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
       {showForm && (
         <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">
-          {emiSection.fields.map(field => (
-            <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
-              {renderField(
-                field,
-                form[field.key],
-                value => {
-                  setForm(current => ({ ...current, [field.key]: value }));
-                  if (errors[field.key]) setErrors(prev => ({ ...prev, [field.key]: "" }));
-                },
-                field.key === "startDate"
-                  ? { max: TODAY }
-                  : field.key === "endDate"
-                    ? { min: nextMonthStart(form.startDate || CURRENT_MONTH_START), max: EMI_END_DATE_MAX }
-                    : {},
-                errors[field.key]
-              )}
-            </Field>
-          ))}
+          {emiSection.fields.map(field => {
+            const onChange = value => {
+              setForm(current => ({ ...current, [field.key]: value }));
+              if (errors[field.key]) setErrors(prev => ({ ...prev, [field.key]: "" }));
+            };
+            if (field.key === "personName") {
+              return (
+                <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
+                  <Input
+                    list="emi-person-list"
+                    value={form.personName || ""}
+                    onChange={e => onChange(e.target.value)}
+                    placeholder={field.placeholder || "Select family member"}
+                    error={errors.personName}
+                  />
+                  <datalist id="emi-person-list">
+                    {peopleOptions.map(name => <option key={name} value={name} />)}
+                  </datalist>
+                </Field>
+              );
+            }
+            if (field.key === "lender") {
+              return (
+                <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
+                  <Input
+                    list="emi-lender-banks"
+                    value={form.lender || ""}
+                    onChange={e => onChange(e.target.value)}
+                    placeholder={field.placeholder || "Bank or person name"}
+                    error={errors.lender}
+                  />
+                  <datalist id="emi-lender-banks">
+                    {INDIAN_BANKS.map(bank => <option key={bank} value={bank} />)}
+                  </datalist>
+                </Field>
+              );
+            }
+            return (
+              <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
+                {renderField(
+                  field,
+                  form[field.key],
+                  onChange,
+                  field.key === "startDate"
+                    ? { max: TODAY }
+                    : field.key === "endDate"
+                      ? { min: nextMonthStart(form.startDate || CURRENT_MONTH_START), max: EMI_END_DATE_MAX }
+                      : {},
+                  errors[field.key]
+                )}
+              </Field>
+            );
+          })}
         </Modal>
       )}
     </div>

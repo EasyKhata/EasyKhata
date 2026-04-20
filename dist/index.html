@@ -21,6 +21,16 @@
     <meta name="twitter:image" content="https://www.easykhata.net/favicon.svg" />
     <meta name="theme-color" content="#0C0C10" media="(prefers-color-scheme: dark)" />
     <meta name="theme-color" content="#F4F4F8" media="(prefers-color-scheme: light)" />
+    <!-- Preconnect to critical origins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://ledger-app-599cc.firebaseapp.com" crossorigin />
+    <link rel="preconnect" href="https://apis.google.com" crossorigin />
+    <link rel="preconnect" href="https://www.googleapis.com" crossorigin />
+    <!-- Non-blocking font load -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" /></noscript>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>EasyKhata | Smart Khata for Apartments and Businesses</title>
     <script type="application/ld+json">
@@ -44,20 +54,12 @@
         document.documentElement.style.background = "#0C0C10";
       }
     </script>
-    <script type="module" crossorigin src="/assets/index-B1Pc9Qej.js"></script>
+    <script type="module" crossorigin src="/assets/index-DGfujMkx.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/react-vendor-KfUPlHYY.js">
     <link rel="modulepreload" crossorigin href="/assets/firebase-vendor-B3YfE_TL.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-Mzgz5O4D.css">
+    <link rel="stylesheet" crossorigin href="/assets/index-DkN6cmtu.css">
   </head>
   <body>
-    <div id="root"></div>
-    <script>
-      // Only load Razorpay on web — not inside the Android/iOS app
-      if (!window.Capacitor) {
-        var s = document.createElement('script');
-        s.src = 'https://checkout.razorpay.com/v1/checkout.js';
-        document.head.appendChild(s);
-      }
-    </script>
+    <div id="root"></div>
   </body>
 </html>

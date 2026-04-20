@@ -1045,7 +1045,7 @@ export default function MainApp() {
                 key={tabItem.id}
                 type="button"
                 className={`app-bottom-nav-btn${active ? " active" : ""}`}
-                onClick={() => setTab(tabItem.id)}
+                onClick={() => (tabItem.id === "org" || tabItem.id === "settings") ? handleNavigate({ tab: tabItem.id, screen: "main" }) : setTab(tabItem.id)}
                 style={active ? { color: activeColor } : undefined}
               >
                 <span className="app-bottom-nav-icon" style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 40%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 12%, var(--surface-high))` } : undefined}>
