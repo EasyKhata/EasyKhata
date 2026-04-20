@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, lazy, useEffect, useRef } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
@@ -7,6 +7,7 @@ import BrandLogo from "./components/BrandLogo";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { APP_SUPPORT_LABEL } from "./utils/brand";
 import { isNative, isAndroid } from "./utils/native";
+import { getCurrentUser } from "./utils/storage";
 import "./index.css";
 
 // Initialise native Android integrations once on startup
@@ -27,9 +28,18 @@ const LandingScreen = lazy(() => import("./screens/LandingScreen"));
 
 function AppRouter() {
   const { user, loading, logout } = useAuth();
-  const [showLanding, setShowLanding] = React.useState(true);
+  // Track at mount whether a user was previously signed in (before Firebase resolves).
+  // This lets returning users skip the landing page and see the app skeleton instead.
+  const wasSignedIn = useRef(!!getCurrentUser());
+  const [showLanding, setShowLanding] = React.useState(!wasSignedIn.current);
 
-  if (loading) {
+  // Once Firebase resolves a logged-in user, never show landing again this session.
+  useEffect(() => {
+    if (user) setShowLanding(false);
+  }, [user]);
+
+  // Returning user: Firebase is still loading — show skeleton, not landing
+  if (loading && wasSignedIn.current) {
     return (
       <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
         <DashboardSkeleton />
@@ -38,11 +48,20 @@ function AppRouter() {
   }
 
   if (!user) {
+    // Show landing immediately — Firebase loads in background, doesn't block render
     if (showLanding) {
       return (
         <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
           <LandingScreen onGetStarted={() => setShowLanding(false)} />
         </Suspense>
+      );
+    }
+    // After "Get Started" — show skeleton while Firebase finishes, then auth screen
+    if (loading) {
+      return (
+        <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+          <DashboardSkeleton />
+        </div>
       );
     }
     return (
