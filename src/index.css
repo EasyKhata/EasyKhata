@@ -251,11 +251,11 @@ input, select, textarea, button {
   gap: 10px;
 }
 
-.modal-header > span { flex: 1; }
+.modal-header > span { flex: 1; font-size: 17px; }
 
 .modal-body {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
-  padding: 18px 18px 44px; background: transparent;
+  padding: 18px 18px 20px; background: transparent;
 }
 
 .card {

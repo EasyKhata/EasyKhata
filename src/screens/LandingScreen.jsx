@@ -46,7 +46,7 @@ const PERSONAS = [
   },
   {
     id: "business", label: "Small Biz", color: "var(--gold)",
-    orgName: "Karim Stores", badge: "Rs 69/month",
+    orgName: "Karim Stores", badge: "Coming Soon", comingSoon: true,
     income: 342000, expense: 189000, net: 153000,
     chart: [220, 280, 310, 260, 340, 295, 380, 342, 360, 310, 342, 320],
     transactions: [
@@ -314,17 +314,27 @@ function FeatureCard({ icon, color, title, desc }) {
 function PersonaTab({ persona, active, onClick }) {
   return (
     <button
-      onClick={onClick}
+      onClick={persona.comingSoon ? undefined : onClick}
       style={{
         background: active ? `color-mix(in srgb, ${persona.color} 18%, transparent)` : "var(--surface)",
         border: `1px solid ${active ? `color-mix(in srgb, ${persona.color} 50%, transparent)` : "var(--border)"}`,
         borderRadius: 10, padding: "9px 20px",
         fontSize: 13, fontWeight: 600,
-        color: active ? persona.color : "var(--text-sec)",
-        cursor: "pointer", transition: "all 0.18s",
+        color: active ? persona.color : persona.comingSoon ? "var(--text-dim)" : "var(--text-sec)",
+        cursor: persona.comingSoon ? "default" : "pointer",
+        transition: "all 0.18s",
         fontFamily: "var(--font)",
+        opacity: persona.comingSoon ? 0.6 : 1,
+        position: "relative",
       }}
-    >{persona.label}</button>
+    >
+      {persona.label}
+      {persona.comingSoon && (
+        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--gold)", background: "color-mix(in srgb, var(--gold) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--gold) 40%, transparent)", borderRadius: 4, padding: "1px 5px", marginLeft: 6, letterSpacing: 0.5, verticalAlign: "middle" }}>
+          SOON
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -445,7 +455,7 @@ export default function LandingScreen({ onGetStarted }) {
               </h1>
 
               <p style={{ fontSize: 15, color: "var(--text-sec)", lineHeight: 1.75, marginBottom: 28, maxWidth: 440 }}>
-                Track income, expenses, invoices, and loans — for your family, freelance work, small business, or apartment society. All in one beautiful app.
+                Track income, expenses, invoices, and loans — for your family, freelance work, or apartment society. All in one beautiful app.
               </p>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
@@ -639,7 +649,7 @@ export default function LandingScreen({ onGetStarted }) {
             </div>
             {[
               { n: "1", title: "Sign in with Google", desc: "No passwords, no hassle. One tap and you're in — secure and instant." },
-              { n: "2", title: "Pick your Khata type", desc: "Choose from Household, Freelancer, Small Business, or Apartment Society." },
+              { n: "2", title: "Pick your Khata type", desc: "Choose from Household, Freelancer, or Apartment Society. Small Business coming soon." },
               { n: "3", title: "Start tracking", desc: "Add your first income or expense. Your dashboard updates instantly." },
             ].map((step, i, arr) => (
               <div key={i} className="ekReveal" style={{ display: "flex", gap: 20 }}>
@@ -668,7 +678,7 @@ export default function LandingScreen({ onGetStarted }) {
                 Start Free. Upgrade When Ready.
               </h2>
               <p className="ekReveal" style={{ fontSize: 15, color: "var(--text-sec)", maxWidth: 420, margin: "0 auto" }}>
-                Household accounts are free forever. Freelancers, businesses, and apartment societies get a 30-day trial, then Rs 69/month.
+                Household accounts are free forever. Freelancers and apartment societies get a 30-day trial, then Rs 69/month.
               </p>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
@@ -725,7 +735,7 @@ export default function LandingScreen({ onGetStarted }) {
                 Your finances,<br />finally under control.
               </h2>
               <p style={{ fontSize: 15, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 400, margin: "0 auto 30px" }}>
-                Join thousands of households, freelancers, and businesses who trust {APP_NAME} to keep their khata clean.
+                Join thousands of households, freelancers, and apartment societies who trust {APP_NAME} to keep their khata clean.
               </p>
               <button
                 onClick={onGetStarted}

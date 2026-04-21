@@ -31,7 +31,7 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
 
   // First-time setup form state
-  const [orgType, setOrgType] = useState(ORG_TYPES.SMALL_BUSINESS);
+  const [orgType, setOrgType] = useState(ORG_TYPES.PERSONAL);
   const [phoneCountryCode, setPhoneCountryCode] = useState(DEFAULT_PHONE_COUNTRY_CODE);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [setupError, setSetupError] = useState("");

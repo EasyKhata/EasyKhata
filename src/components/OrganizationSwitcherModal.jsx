@@ -14,7 +14,7 @@ export default function OrganizationSwitcherModal({
   const canDelete = organizations.length > 1;
 
   return (
-    <Modal title="Switch Khata" onClose={onClose} onSave={onClose} saveLabel="Close" canSave>
+    <Modal title="Switch Khata" onClose={onClose}>
       <div className="card">
         {organizations.map(org => {
           const isActiveOrg = org.id === activeOrgId;
