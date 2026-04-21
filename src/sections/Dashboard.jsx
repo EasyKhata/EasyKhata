@@ -251,6 +251,55 @@ function QuickstartChecklistCard({ progressLabel, items }) {
   );
 }
 
+function SavingsGoalCard({ goals, sym, onNav }) {
+  const target = Number(goals?.targetAmount || 0);
+  const saved = Number(goals?.savedAmount || 0);
+  const targetDate = String(goals?.targetDate || "");
+  const note = String(goals?.note || "");
+  const hasGoal = target > 0;
+  const progress = hasGoal ? Math.min(100, Math.round((saved / target) * 100)) : 0;
+  const remaining = Math.max(0, target - saved);
+
+  return (
+    <div className="card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Savings Goal</div>
+          {note && <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{note}</div>}
+        </div>
+        <button className="btn-secondary" type="button" style={{ padding: "6px 10px", fontSize: 11 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
+          Edit Goal
+        </button>
+      </div>
+      {hasGoal ? (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+            <span style={{ fontSize: 13, color: "var(--text-sec)" }}>Saved: <strong style={{ color: "var(--accent)" }}>{fmtMoney(saved, sym)}</strong></span>
+            <span style={{ fontSize: 13, color: "var(--text-sec)" }}>Target: <strong style={{ color: "var(--gold)" }}>{fmtMoney(target, sym)}</strong></span>
+          </div>
+          <div className="progress-bar-track" style={{ marginBottom: 8 }}>
+            <div style={{ width: `${progress}%`, height: "100%", background: progress >= 100 ? "var(--accent)" : "var(--gold)", borderRadius: 999, transition: "width 0.5s ease" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{progress}% complete</span>
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              {remaining > 0 ? `${fmtMoney(remaining, sym)} to go` : "Goal reached!"}
+              {targetDate ? ` · By ${targetDate}` : ""}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", padding: "8px 0" }}>
+          No savings goal set.{" "}
+          <button type="button" style={{ background: "none", border: "none", color: "var(--gold)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
+            Set a goal
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
   const { activeSharedOrgKey, collectionFetched, ensureCollectionLoaded } = data;
@@ -395,6 +444,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       : Math.max(1, ...(stats.monthlyBreakdown || []).map(item => Math.max(item.income, item.expenses)))
   ), [stats.cashFlow, stats.monthlyBreakdown, viewMode]);
 
+  const top5Expenses = useMemo(() => {
+    const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    return (data.expenses || [])
+      .filter(e => {
+        if (viewMode === "month") {
+          const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+          return em === mk;
+        }
+        const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
+        return ey === String(year);
+      })
+      .slice()
+      .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
+      .slice(0, 5);
+  }, [data.expenses, month, year, viewMode]);
+
   if (!data.loaded) {
     return <DashboardSkeleton />;
   }
@@ -495,6 +560,26 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
 
+          <div style={{ padding: "0 18px" }}>
+            <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+              <div className="card">
+                {top5Expenses.length === 0 ? (
+                  <EmptyState title="No expenses this period" message="Add society expense entries to see the biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+                ) : (
+                  top5Expenses.map((expense, index) => (
+                    <div key={expense.id || index} className="card-row">
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                      </div>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Collapsible>
+          </div>
+
         </div>
 
         {onboardingGuide}
@@ -526,12 +611,30 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <Tile label={viewMode === "month" ? "Earnings" : "Total Earnings"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "All household earnings" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--gold)" sub={viewMode === "month" ? `${stats.activeLoansCount || 0} active loan(s)` : `Avg ${fmtMoney(stats.avgMonthlyEmi, sym)}/month`} onClick={() => onNav("emi")} />
-            <Tile label={viewMode === "month" ? "Net After EMI" : "Yearly Net After EMI"} value={fmtMoney(stats.netAfterEmi || 0, sym)} color={(stats.netAfterEmi || 0) >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? "Cash left after spending and EMI" : "Yearly cash left after spending and EMI"} />
-            <Tile label="People" value={String(stats.peopleCount || 0)} color="var(--purple)" sub="From Khata and tagged household entries" onClick={() => onNav({ tab: "org", screen: "customers" })} />
             <Tile label="Spending Ratio" value={`${Math.round(stats.spendingRatio || 0)}%`} color={(stats.spendingRatio || 0) >= 100 ? "var(--danger)" : "var(--gold)"} sub="Spending as a share of earnings" />
           </div>
 
           <PersonalUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
+
+          <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
+
+          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+            <div className="card">
+              {top5Expenses.length === 0 ? (
+                <EmptyState title="No expenses this period" message="Add spending entries to see your biggest expenses here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+              ) : (
+                top5Expenses.map((expense, index) => (
+                  <div key={expense.id || index} className="card-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </Collapsible>
 
           <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
             <div className="card">
@@ -733,6 +836,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </Collapsible>
+
+          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+            <div className="card">
+              {top5Expenses.length === 0 ? (
+                <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+              ) : (
+                top5Expenses.map((expense, index) => (
+                  <div key={expense.id || index} className="card-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                    </div>
+                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  </div>
+                ))
               )}
             </div>
           </Collapsible>
@@ -1055,6 +1176,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
         </Collapsible>
         )}
+
+        <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+          <div className="card">
+            {top5Expenses.length === 0 ? (
+              <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+            ) : (
+              top5Expenses.map((expense, index) => (
+                <div key={expense.id || index} className="card-row">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </Collapsible>
       </div>
 
       {onboardingGuide}

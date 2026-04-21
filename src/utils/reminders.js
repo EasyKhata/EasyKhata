@@ -52,21 +52,28 @@ export function buildReminders(data, year, month) {
       const m = i.collectionMonth || i.month || (i.date ? i.date.slice(0, 7) : "");
       return m === mk && String(i.collectionType || "").trim() === "Monthly Maintenance";
     });
-    const paidFlatIds = new Set(monthIncome.map(i => String(i.customerId || i.flatNumber || "")));
+    // Build paid set from both customerId and flatNumber so either match counts
+    const paidFlatIds = new Set();
+    monthIncome.forEach(i => {
+      if (i.customerId) paidFlatIds.add(String(i.customerId));
+      if (i.flatNumber) paidFlatIds.add(String(i.flatNumber).trim().toLowerCase());
+    });
     const unpaidFlats = (data.customers || []).filter(c => {
-      const key = String(c.id || c.flatNumber || "");
-      return key && !paidFlatIds.has(key);
+      const byId = c.id ? paidFlatIds.has(String(c.id)) : false;
+      const byFlat = c.flatNumber ? paidFlatIds.has(String(c.flatNumber || c.name || "").trim().toLowerCase()) : false;
+      const byName = c.name ? paidFlatIds.has(String(c.name).trim().toLowerCase()) : false;
+      return !byId && !byFlat && !byName;
     });
     const totalIncome = monthIncome.reduce((s, i) => s + Number(i.amount || 0), 0);
 
     if (unpaidFlats.length > 0) {
       reminders.push({
         id: `collections-${mk}`,
-        type: "invoiceDue",
+        type: "pendingCollections",
         tab: "income",
         tone: "gold",
         title: `${unpaidFlats.length} flat(s) pending collection`,
-        message: `Collected ${formatPlainMoney(totalIncome)} this month. ${paidFlatIds.size} flat(s) are covered and ${unpaidFlats.length} remain pending.`
+        message: `Collected ${formatPlainMoney(totalIncome)} this month. ${paidFlatIds.size} flat(s) covered · ${unpaidFlats.length} pending: ${unpaidFlats.slice(0, 3).map(c => c.name || c.flatNumber || "Flat").join(", ")}${unpaidFlats.length > 3 ? ` +${unpaidFlats.length - 3} more` : ""}.`
       });
     }
     if ((summary.monthNet ?? 0) < 0) {
@@ -196,7 +203,11 @@ export function buildReminders(data, year, month) {
 }
 
 export function filterRemindersByPrefs(reminders, prefs) {
-  return reminders.filter(reminder => prefs?.[reminder.type] !== false);
+  return reminders.filter(reminder => {
+    // pendingCollections defaults to ON (not stored means enabled)
+    if (reminder.type === "pendingCollections") return prefs?.pendingCollections !== false;
+    return prefs?.[reminder.type] !== false;
+  });
 }
 
 function formatPlainMoney(value) {

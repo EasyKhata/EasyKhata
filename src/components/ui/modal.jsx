@@ -90,37 +90,54 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
         transition={{ type: "spring", damping: 30, stiffness: 320, mass: 0.8 }}
       >
         <div className="modal-header">
-          <button onClick={onClose} className="btn-secondary" style={{ padding: "8px 14px", fontSize: 13 }}>
-            ✕ Cancel
-          </button>
-          <span style={{ fontFamily: "var(--serif)", fontSize: 17, color: "var(--text)", textAlign: "center" }}>
+          <span style={{ fontFamily: "var(--serif)", fontSize: 17, color: "var(--text)" }}>
             {title}
           </span>
           <button
-            onClick={handleSave}
-            disabled={!canSave || isSaving}
+            onClick={onClose}
             style={{
-              background: canSave && !isSaving ? btnBg : "var(--surface-high)",
-              border: "none",
-              borderRadius: 12,
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: 700,
-              color: canSave && !isSaving ? "#0C0C10" : "var(--text-dim)",
-              cursor: canSave && !isSaving ? "pointer" : "not-allowed",
-              fontFamily: "var(--font)",
-              transition: "all var(--transition-fast)"
+              background: "none", border: "none", padding: "4px 8px",
+              fontSize: 18, color: "var(--text-sec)", cursor: "pointer",
+              lineHeight: 1, borderRadius: 8, fontFamily: "var(--font)",
+              transition: "color var(--transition-fast)"
             }}
+            aria-label="Close"
           >
-            {isSaving ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span className="btn-spinner" />
-                Saving…
-              </span>
-            ) : saveLabel}
+            ✕
           </button>
         </div>
         <div className="modal-body">{children}</div>
+        {onSave && (
+          <div style={{ padding: "12px 20px 20px", display: "flex", gap: 10, borderTop: "1px solid var(--border)" }}>
+            <button onClick={onClose} className="btn-secondary" style={{ flex: 1, padding: "12px", fontSize: 14 }}>
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!canSave || isSaving}
+              style={{
+                flex: 2,
+                background: canSave && !isSaving ? btnBg : "var(--surface-high)",
+                border: "none",
+                borderRadius: 12,
+                padding: "12px",
+                fontSize: 14,
+                fontWeight: 700,
+                color: canSave && !isSaving ? "#0C0C10" : "var(--text-dim)",
+                cursor: canSave && !isSaving ? "pointer" : "not-allowed",
+                fontFamily: "var(--font)",
+                transition: "all var(--transition-fast)"
+              }}
+            >
+              {isSaving ? (
+                <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <span className="btn-spinner" />
+                  Saving…
+                </span>
+              ) : saveLabel}
+            </button>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

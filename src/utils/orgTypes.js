@@ -38,7 +38,6 @@ const BASE_CONFIG = {
 export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
   { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage clients, payments received, invoices, and business expenses." },
-  { value: ORG_TYPES.SMALL_BUSINESS, label: "Small Business", description: "Run a service business with clients, invoices, team, and operating expenses." },
   { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." }
 ];
 
@@ -80,14 +79,15 @@ export const ORG_TYPE_CONFIGS = {
         key: "loans",
         label: "Loans & EMI",
         entryLabel: "EMI",
-        empty: () => ({ loanName: "", lender: "", monthlyEmi: "", startDate: "", dueDay: "", endDate: "" }),
+        empty: () => ({ loanName: "", personName: "", lender: "", monthlyEmi: "", startDate: "", dueDay: "1", endDate: "" }),
         fields: [
           { key: "loanName", label: "Loan / EMI Name", type: "text", required: true, placeholder: "Home loan" },
+          { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
           { key: "lender", label: "Lender", type: "text", required: true, placeholder: "Bank or person name" },
           { key: "monthlyEmi", label: "Monthly EMI", type: "number", required: true, placeholder: "0.00" },
           { key: "startDate", label: "Start Date", type: "date" },
           { key: "dueDay", label: "Due Date", type: "select", required: true, options: Array.from({ length: 31 }, (_, index) => String(index + 1)) },
-          { key: "endDate", label: "End Date", type: "date" }
+          { key: "endDate", label: "End Date", type: "date", required: true }
         ]
       }
     ]
@@ -233,7 +233,7 @@ export const ORG_TYPE_CONFIGS = {
 };
 
 export function getOrgType(value) {
-  return ORG_TYPE_CONFIGS[value] ? value : ORG_TYPES.SMALL_BUSINESS;
+  return ORG_TYPE_CONFIGS[value] ? value : ORG_TYPES.FREELANCER;
 }
 
 export function getOrgConfig(value) {

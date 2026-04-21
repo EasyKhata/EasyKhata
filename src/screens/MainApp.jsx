@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, Settings,
+  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Settings,
   TrendingDown, TrendingUp, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -34,6 +34,7 @@ const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
 const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
 const AdminSupportSection = lazy(() => import("../sections/AdminSupportSection"));
+const DiscussionsSection = lazy(() => import("../sections/DiscussionsSection"));
 
 const now = new Date();
 const TAB_COLOR = {
@@ -45,6 +46,7 @@ const TAB_COLOR = {
   emi: "var(--gold)",
   khata: "var(--gold)",
   invoices: "var(--blue)",
+  discussions: "var(--blue)",
   settings: "var(--purple)",
   adminDashboard: "var(--gold)",
   adminSupport: "var(--blue)"
@@ -57,6 +59,7 @@ const TAB_ICONS = {
   emi: CreditCard,
   khata: BookOpen,
   invoices: FileText,
+  discussions: MessageSquare,
   org: Building2,
   settings: Settings,
   adminSupport: HeadphonesIcon,
@@ -634,6 +637,7 @@ export default function MainApp() {
   const orgConfig = getOrgConfig(currentOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
+  const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
@@ -646,9 +650,10 @@ export default function MainApp() {
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
     ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
+    ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Discuss" }] : []),
     ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
     ...(isAdmin ? [] : [])
-  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
+  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
   const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
   const handleDateChange = useCallback((nextYear, nextMonth) => {
@@ -748,6 +753,7 @@ export default function MainApp() {
         )}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
+        {tab === "discussions" && isApartmentOrg && <DiscussionsSection />}
         {tab === "khata" && !isAdmin && isSmallBusinessOrg && <KhataSection orgType={currentOrgType} />}
         {tab === "invoices" && !hideInvoices && (
           <InvoicesSection
@@ -762,13 +768,15 @@ export default function MainApp() {
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
-  }, [currentOrgType, datePickerNode, handleNavigate, handleQuickstartHandled, hideInvoices, isAdmin, isPersonalOrg, isSmallBusinessOrg, month, quickstartIntent, settingsNavigation, tab, viewMode, year]);
+  }, [currentOrgType, datePickerNode, handleNavigate, handleQuickstartHandled, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, month, quickstartIntent, settingsNavigation, tab, viewMode, year]);
 
 
   const footerTabs = useMemo(() => {
     const baseTabOrder = isAdmin
       ? ["dashboard", "users", "adminSupport", "invoices"]
-      : ["dashboard", "income", "expenses", "emi", "invoices", "org"];
+      : isApartmentOrg
+        ? ["dashboard", "income", "expenses", "discussions", "invoices", "org"]
+        : ["dashboard", "income", "expenses", "emi", "invoices", "org"];
     const baseTabs = baseTabOrder
       .filter(tabId => TABS.some(item => item.id === tabId))
       .map(tabId => TABS.find(item => item.id === tabId))
@@ -778,7 +786,7 @@ export default function MainApp() {
     }
     const fallbackTab = TABS.find(item => item.id === tab);
     return fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
-  }, [TABS, isAdmin, tab]);
+  }, [TABS, isAdmin, isApartmentOrg, tab]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
@@ -1045,7 +1053,7 @@ export default function MainApp() {
                 key={tabItem.id}
                 type="button"
                 className={`app-bottom-nav-btn${active ? " active" : ""}`}
-                onClick={() => setTab(tabItem.id)}
+                onClick={() => (tabItem.id === "org" || tabItem.id === "settings") ? handleNavigate({ tab: tabItem.id, screen: "main" }) : setTab(tabItem.id)}
                 style={active ? { color: activeColor } : undefined}
               >
                 <span className="app-bottom-nav-icon" style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 40%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 12%, var(--surface-high))` } : undefined}>
