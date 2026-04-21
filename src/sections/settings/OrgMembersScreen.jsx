@@ -121,7 +121,7 @@ export default function OrgMembersScreen({ onBack }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>
             Invite a Member
           </div>
-          <Field label="Email address" hint="They will receive access once they sign into EasyKhata with this email.">
+          <Field label="Email address" hint="They will receive access once they sign into EazyKhata with this email.">
             <Input
               type="email"
               placeholder="committee@society.com"
@@ -248,7 +248,7 @@ export default function OrgMembersScreen({ onBack }) {
 
         <div className="card" style={{ padding: "12px 14px" }}>
           <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EasyKhata with their own account. Once they accept, they can access this organization's data based on their role. Admins can add and edit records; Viewers can only view and export.
+            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EazyKhata with their own account. Once they accept, they can access this organization's data based on their role. Admins can add and edit records; Viewers can only view and export.
           </div>
         </div>
       </div>

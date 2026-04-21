@@ -72,9 +72,9 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Choose how you want to use EasyKhata and set the name you want shown across the app. You can fill the remaining details later from Khata.
+              Choose how you want to use EazyKhata and set the name you want shown across the app. You can fill the remaining details later from Khata.
             </div>
-            <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EasyKhata.">
+            <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EazyKhata.">
               <Select value={orgType} onChange={e => setAccountForm(current => ({ ...current, organizationType: e.target.value }))}>
                 {selectableOrgTypeOptions.map(option => (
                   <option key={option.value} value={option.value}>

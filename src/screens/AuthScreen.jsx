@@ -75,17 +75,17 @@ export default function AuthScreen() {
     return (
       <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 20 }}>
         <Modal
-          title="Welcome to EasyKhata"
+          title="Welcome to EazyKhata"
           onClose={null}
           onSave={handleCompleteSetup}
           saveLabel={setupLoading ? "Setting up..." : "Get Started"}
           canSave={!setupLoading}
         >
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
-            Signed in as <b>{pendingSetup.email}</b>. Tell us how you'll use EasyKhata.
+            Signed in as <b>{pendingSetup.email}</b>. Tell us how you'll use EazyKhata.
           </div>
 
-          <Field label="How will you use EasyKhata?" required hint={selectedOrgDesc}>
+          <Field label="How will you use EazyKhata?" required hint={selectedOrgDesc}>
             <Select value={orgType} onChange={e => setOrgType(e.target.value)}>
               {orgTypeOptions.map(o => (
                 <option key={o.value} value={o.value}>{o.label}</option>

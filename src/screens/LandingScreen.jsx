@@ -532,7 +532,7 @@ export default function LandingScreen({ onGetStarted }) {
               <div className="ekReveal" style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 12 }}>Made For Everyone</div>
               <h2 className="ekReveal" style={{ fontFamily: "var(--serif)", fontSize: "clamp(24px, 4vw, 38px)", color: "var(--text)", lineHeight: 1.2, marginBottom: 12 }}>One App, Every Kind of Khata</h2>
               <p className="ekReveal" style={{ fontSize: 15, color: "var(--text-sec)", maxWidth: 440, margin: "0 auto" }}>
-                EasyKhata adapts its sections, labels, and features to your workspace type.
+                EazyKhata adapts its sections, labels, and features to your workspace type.
               </p>
             </div>
 

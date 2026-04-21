@@ -48,7 +48,7 @@ const PLAN_LIMITS = {
 };
 
 export const UPI_CONFIG = {
-  payeeName: "EasyKhata"
+  payeeName: "EazyKhata"
 };
 
 export const PLAN_LABELS = {

@@ -1,6 +1,6 @@
 {
-  "appId": "net.easykhata.app",
-  "appName": "EasyKhata",
+  "appId": "com.eazykhata.app",
+  "appName": "EazyKhata",
   "webDir": "dist",
   "plugins": {
     "StatusBar": {
