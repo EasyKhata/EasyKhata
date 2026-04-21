@@ -196,6 +196,24 @@ export const societyApi = {
     api.get(`/society/member?period=${encodeURIComponent(period)}`)
 };
 
+// ── Discussion Messages ───────────────────────────────────────────────────────
+
+export const messagesApi = {
+  // Load all messages (or only new ones when after=ISO is provided)
+  list: (ownerId, orgId, after) => {
+    const qs = after ? `?after=${encodeURIComponent(after)}` : "";
+    return api.get(`/users/${ownerId}/orgs/${orgId}/messages${qs}`);
+  },
+
+  // Send a new message
+  send: (ownerId, orgId, payload) =>
+    api.post(`/users/${ownerId}/orgs/${orgId}/messages`, payload),
+
+  // Delete a message
+  delete: (ownerId, orgId, messageId) =>
+    api.delete(`/users/${ownerId}/orgs/${orgId}/messages/${messageId}`)
+};
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export const adminApi = {

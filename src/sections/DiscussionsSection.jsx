@@ -1,13 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
+import { messagesApi } from "../lib/api";
 import { DeleteBtn } from "../components/UI";
 
 const MAX_MSG_LEN = 500;
+const POLL_INTERVAL = 8000; // 8 seconds
 
-function formatTime(isoString) {
-  if (!isoString) return "";
-  const d = new Date(isoString);
+function formatTime(isoOrDate) {
+  if (!isoOrDate) return "";
+  const d = new Date(isoOrDate);
   if (isNaN(d)) return "";
   const today = new Date();
   const isToday = d.toDateString() === today.toDateString();
@@ -38,26 +40,86 @@ function Avatar({ name, isMe, size = 32 }) {
 
 export default function DiscussionsSection() {
   const { user } = useAuth();
-  const d = useData();
+  const { activeSharedOrgKey, activeOrgId } = useData();
+
+  // Resolve which org owner's namespace to use for API calls.
+  // For member users, user.sharedOrgs[key] holds { ownerId, orgId }.
+  // For the org owner, ownerId = user.id and orgId = data.activeOrgId.
+  const sharedInfo = activeSharedOrgKey ? user?.sharedOrgs?.[activeSharedOrgKey] : null;
+  const ownerId = sharedInfo?.ownerId || user?.id;
+  const orgId   = sharedInfo?.orgId   || activeOrgId;
+
+  const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [loading, setLoading] = useState(true);
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const latestSentAtRef = useRef(null); // ISO string of newest message seen
+  const pollTimerRef = useRef(null);
 
-  const messages = useMemo(() => {
-    const raw = (d.orgRecords?.discussions || []);
-    return raw.slice().sort((a, b) => String(a.sentAt || "").localeCompare(String(b.sentAt || "")));
-  }, [d.orgRecords?.discussions]);
+  const isAdmin = user?.role === "admin";
+  const senderName = user?.name || user?.displayName || user?.email?.split("@")[0] || "Resident";
+  const senderRole = isAdmin ? "admin" : "member";
 
+  // ── Load / poll ─────────────────────────────────────────────────────────────
+
+  const fetchMessages = useCallback(async (after) => {
+    if (!ownerId || !orgId) return;
+    try {
+      const rows = await messagesApi.list(ownerId, orgId, after || undefined);
+      if (!Array.isArray(rows) || rows.length === 0) return;
+
+      setMessages(prev => {
+        const existingIds = new Set(prev.map(m => m.id));
+        const fresh = rows.filter(m => !existingIds.has(m.id));
+        if (fresh.length === 0) return prev;
+        const merged = [...prev, ...fresh].sort((a, b) =>
+          String(a.sentAt).localeCompare(String(b.sentAt))
+        );
+        return merged;
+      });
+
+      // Track the latest sentAt for incremental polls
+      const newest = rows.reduce((max, m) =>
+        String(m.sentAt) > String(max) ? String(m.sentAt) : max,
+        latestSentAtRef.current || ""
+      );
+      latestSentAtRef.current = newest;
+
+      setLoadError("");
+    } catch (err) {
+      if (!after) setLoadError("Could not load messages. Retrying…");
+    }
+  }, [ownerId, orgId]);
+
+  // Initial full load
+  useEffect(() => {
+    if (!ownerId || !orgId) return;
+    setLoading(true);
+    fetchMessages(null).finally(() => setLoading(false));
+  }, [ownerId, orgId, fetchMessages]);
+
+  // Polling for new messages
+  useEffect(() => {
+    if (!ownerId || !orgId) return;
+    pollTimerRef.current = setInterval(() => {
+      fetchMessages(latestSentAtRef.current);
+    }, POLL_INTERVAL);
+    return () => clearInterval(pollTimerRef.current);
+  }, [ownerId, orgId, fetchMessages]);
+
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  const senderName = user?.name || user?.displayName || user?.email?.split("@")[0] || "Resident";
-  const isAdmin = user?.role === "admin";
+  // ── Send ────────────────────────────────────────────────────────────────────
 
-  function handleSend() {
+  async function handleSend() {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     if (trimmed.length > MAX_MSG_LEN) {
@@ -66,16 +128,40 @@ export default function DiscussionsSection() {
     }
     setError("");
     setSending(true);
-    d.addOrgRecord("discussions", {
-      text: trimmed,
-      senderName,
+
+    const tempId = `temp_${Date.now()}`;
+    const optimistic = {
+      id: tempId,
       senderId: user?.id || "",
-      senderRole: isAdmin ? "admin" : "member",
-      sentAt: new Date().toISOString()
-    });
+      senderName,
+      senderRole,
+      text: trimmed,
+      sentAt: new Date().toISOString(),
+      _pending: true
+    };
+    setMessages(prev => [...prev, optimistic]);
     setText("");
-    setSending(false);
-    setTimeout(() => inputRef.current?.focus(), 50);
+
+    try {
+      const saved = await messagesApi.send(ownerId, orgId, {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        text: trimmed,
+        senderName,
+        senderRole,
+        sentAt: optimistic.sentAt
+      });
+      // Replace optimistic placeholder with real record
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...saved } : m));
+      latestSentAtRef.current = String(saved.sentAt);
+    } catch {
+      // Remove optimistic on failure and restore text
+      setMessages(prev => prev.filter(m => m.id !== tempId));
+      setText(trimmed);
+      setError("Failed to send. Please try again.");
+    } finally {
+      setSending(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
   }
 
   function handleKeyDown(e) {
@@ -85,12 +171,30 @@ export default function DiscussionsSection() {
     }
   }
 
-  function canDelete(msg) {
-    return isAdmin || String(msg.senderId || "") === String(user?.id || "");
+  // ── Delete ──────────────────────────────────────────────────────────────────
+
+  async function handleDelete(msg) {
+    if (msg._pending) return;
+    setMessages(prev => prev.filter(m => m.id !== msg.id));
+    try {
+      await messagesApi.delete(ownerId, orgId, msg.id);
+    } catch {
+      setMessages(prev => [...prev, msg].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt))));
+    }
   }
 
+  function canDelete(msg) {
+    if (msg._pending) return false;
+    return isAdmin
+      || String(msg.senderId || "") === String(user?.id || "")
+      || user?.id === ownerId;
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", maxHeight: "calc(100vh - 140px)", paddingBottom: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", maxHeight: "calc(100vh - 140px)" }}>
+
       {/* Header */}
       <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep, #0d2137) 0%, var(--bg) 60%)", flexShrink: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
@@ -106,11 +210,22 @@ export default function DiscussionsSection() {
 
       {/* Message list */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
-        {messages.length === 0 && (
+
+        {loading && (
+          <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
+            Loading messages…
+          </div>
+        )}
+
+        {!loading && loadError && (
+          <div style={{ textAlign: "center", padding: "24px", color: "var(--danger)", fontSize: 13 }}>{loadError}</div>
+        )}
+
+        {!loading && !loadError && messages.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
             <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
             <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--text-sec)" }}>No messages yet</div>
-            <div>Start the conversation — post an announcement, ask a question, or share an update with your residents.</div>
+            <div>Start the conversation — post an announcement, ask a question, or share an update.</div>
           </div>
         )}
 
@@ -127,6 +242,7 @@ export default function DiscussionsSection() {
                   {new Date(msg.sentAt).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
                 </div>
               )}
+
               <div style={{ display: "flex", flexDirection: isMe ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
                 {showSender && !isMe && <Avatar name={msg.senderName} isMe={false} size={30} />}
                 {!showSender && !isMe && <div style={{ width: 30, flexShrink: 0 }} />}
@@ -140,7 +256,7 @@ export default function DiscussionsSection() {
                   )}
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
                     <div style={{
-                      background: isMe ? "var(--accent)" : "var(--surface)",
+                      background: msg._pending ? "var(--accent-dim, #4a5568)" : isMe ? "var(--accent)" : "var(--surface)",
                       color: isMe ? "#fff" : "var(--text)",
                       borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                       padding: "10px 14px",
@@ -148,16 +264,17 @@ export default function DiscussionsSection() {
                       lineHeight: 1.5,
                       border: isMe ? "none" : "1px solid var(--border)",
                       wordBreak: "break-word",
-                      whiteSpace: "pre-wrap"
+                      whiteSpace: "pre-wrap",
+                      opacity: msg._pending ? 0.7 : 1
                     }}>
                       {msg.text}
                     </div>
                     {canDelete(msg) && (
-                      <DeleteBtn onDelete={() => d.removeOrgRecord("discussions", msg.id)} style={{ opacity: 0.5 }} />
+                      <DeleteBtn onDelete={() => handleDelete(msg)} style={{ opacity: 0.5 }} />
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
-                    {formatTime(msg.sentAt)}
+                    {msg._pending ? "Sending…" : formatTime(msg.sentAt)}
                   </div>
                 </div>
 
@@ -167,6 +284,7 @@ export default function DiscussionsSection() {
             </React.Fragment>
           );
         })}
+
         <div ref={bottomRef} />
       </div>
 
