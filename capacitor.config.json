@@ -3,6 +3,9 @@
   "appName": "EazyKhata",
   "webDir": "dist",
   "plugins": {
+    "FirebaseAuthentication": {
+      "providers": ["google.com"]
+    },
     "StatusBar": {
       "overlaysWebView": false,
       "style": "DARK",

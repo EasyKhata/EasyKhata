@@ -2,10 +2,8 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import {
   GoogleAuthProvider,
   browserPopupRedirectResolver,
-  getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
-  signInWithRedirect,
   signOut
 } from "firebase/auth";
 import { auth } from "../firebase";
@@ -16,6 +14,8 @@ import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
 import { isNative } from "../utils/native";
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { signInWithCredential } from "firebase/auth";
 
 const AuthContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
@@ -189,13 +189,6 @@ export function AuthProvider({ children }) {
     };
   }
 
-  // On Android, after the Chrome Custom Tab redirect the app resumes —
-  // getRedirectResult picks up the signed-in credential automatically.
-  useEffect(() => {
-    if (isNative) {
-      getRedirectResult(auth, browserPopupRedirectResolver).catch(err => logError("Redirect result error", err));
-    }
-  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
@@ -249,22 +242,17 @@ export function AuthProvider({ children }) {
     return () => unsubscribe();
   }, []);
 
-  async function signInWithGoogle() {
+/*  async function signInWithGoogle() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
 
-      if (isNative) {
-        // Android: use redirect with browserPopupRedirectResolver so Firebase
-        // opens the OAuth flow in a Chrome Custom Tab instead of the WebView.
-        // The indexedDB persistence in firebase.js ensures the result survives
-        // the round-trip back into the app.
-        await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
-        return { success: true };
-      } else {
-        await signInWithPopup(auth, provider);
-        return { success: true };
-      }
+      // Use signInWithPopup on both native and web.
+      // On native, browserPopupRedirectResolver opens a Chrome Custom Tab
+      // without the sessionStorage round-trip that breaks signInWithRedirect.
+      const resolver = isNative ? browserPopupRedirectResolver : undefined;
+      await signInWithPopup(auth, provider, resolver);
+      return { success: true };
     } catch (err) {
       if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {
         return { error: null };
@@ -276,7 +264,36 @@ export function AuthProvider({ children }) {
       return { error: "Sign-in failed. Please try again." };
     }
   }
+*/
 
+async function signInWithGoogle() {
+  try {
+    const result = await FirebaseAuthentication.signInWithGoogle({
+  mode: 'explicit'
+});
+
+    if (!result?.credential?.idToken) {
+      return { error: "No ID token received" };
+    }
+
+    const credential = GoogleAuthProvider.credential(
+      result.credential.idToken
+    );
+
+    await signInWithCredential(auth, credential);
+
+    return { success: true };
+
+  } catch (err) {
+    console.error("Google sign-in error:", err);
+
+    if (err?.code === "canceled") {
+      return { error: null };
+    }
+
+    return { error: "Sign-in failed. Please try again." };
+  }
+}
   // Called from the first-time setup modal after org type + phone are collected
   async function completeSetup({ organizationType, phone, phoneCountryCode }) {
     if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
