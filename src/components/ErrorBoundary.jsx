@@ -37,7 +37,7 @@ function ChunkErrorFallback() {
           New version available
         </h2>
         <p style={{ color: "var(--text-sec, #555)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
-          EasyKhata was updated. Reloading to get the latest version…
+          EazyKhata was updated. Reloading to get the latest version…
         </p>
         <button
           onClick={() => window.location.reload()}
@@ -128,8 +128,8 @@ export default class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    console.error("[EasyKhata] Uncaught error:", error.message);
-    console.error("[EasyKhata] Component stack:", info?.componentStack || "unknown");
+    console.error("[EazyKhata] Uncaught error:", error.message);
+    console.error("[EazyKhata] Component stack:", info?.componentStack || "unknown");
   }
 
   handleRetry() {

@@ -60,7 +60,7 @@ function drawPdfBrandBadge(doc, x, y, variant = "dark") {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.8);
   doc.setTextColor(textColor[0], textColor[1], textColor[2]);
-  doc.text("EasyKhata", x + 11.5, y + 5.7);
+  doc.text("EazyKhata", x + 11.5, y + 5.7);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.6);
   doc.setTextColor(linkColor[0], linkColor[1], linkColor[2]);

@@ -996,7 +996,7 @@ export default function MainApp() {
                 )}
               </button>
               <button
-                onClick={() => { if (window.confirm("Sign out of EasyKhata?")) logout(); }}
+                onClick={() => { if (window.confirm("Sign out of EazyKhata?")) logout(); }}
                 title="Sign out"
                 style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >

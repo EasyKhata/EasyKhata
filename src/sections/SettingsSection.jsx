@@ -1376,7 +1376,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         key: orderData.keyId,
         amount: orderData.amount,
         currency: orderData.currency || "INR",
-        name: "EasyKhata",
+        name: "EazyKhata",
         description: `${PLAN_LABELS[targetPlan] || "Pro"} Subscription`,
         order_id: orderData.orderId,
         method: {
@@ -1464,9 +1464,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   function emailPaymentProof() {
     const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
-    const subject = encodeURIComponent(`EasyKhata payment proof - ${user?.name || "Customer"}`);
+    const subject = encodeURIComponent(`EazyKhata payment proof - ${user?.name || "Customer"}`);
     const body = encodeURIComponent(
-      `Hello,\n\nI have completed the UPI payment for EasyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
+      `Hello,\n\nI have completed the UPI payment for EazyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
     );
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
@@ -1487,7 +1487,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const subject = encodeURIComponent(String(supportForm.subject || `${topicLabel} - ${user?.name || "Customer"}`).trim());
     const message = String(supportForm.message || "").trim();
     const body = encodeURIComponent(
-      `Hello EasyKhata Support,\n\nTopic: ${topicLabel}\n\n${message ? `${message}\n\n` : ""}Support context:\n${buildSupportContext()}\n\nPlease help me with this issue.\n`
+      `Hello EazyKhata Support,\n\nTopic: ${topicLabel}\n\n${message ? `${message}\n\n` : ""}Support context:\n${buildSupportContext()}\n\nPlease help me with this issue.\n`
     );
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
@@ -2451,7 +2451,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     return withNotice(
       <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`Add ${activeOrgSection.entryLabel}`}>
         {items.length === 0 ? (
-          <EmptyState title={`No ${activeOrgSection.label.toLowerCase()} yet`} message={`Add your first ${activeOrgSection.entryLabel.toLowerCase()} record to tailor EasyKhata to your workflow.`} accentColor="var(--blue)" />
+          <EmptyState title={`No ${activeOrgSection.label.toLowerCase()} yet`} message={`Add your first ${activeOrgSection.entryLabel.toLowerCase()} record to tailor EazyKhata to your workflow.`} accentColor="var(--blue)" />
         ) : (
           <div className="card">
             {items.map(item => (
