@@ -15,11 +15,27 @@
       },
       "oauth_client": [
         {
+          "client_id": "374078093945-0n8db2clt8sdulv6giet69turc2fqvc9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "net.easykhata.app",
+            "certificate_hash": "3d4dbc97fd429c51acb12ace310d7f7b3291f667"
+          }
+        },
+        {
           "client_id": "374078093945-8ccvjubmak2rvdg1no2idf9osf88p6up.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "net.easykhata.app",
             "certificate_hash": "a0d94444d773a187501903eeef0881aeea22a0cb"
+          }
+        },
+        {
+          "client_id": "374078093945-j15u4omg9d83jl602ng0e1bkm9o1vdeo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "net.easykhata.app",
+            "certificate_hash": "d0b8cf63307b9e4423eac5a54e57d4ee0c7e5ee2"
           }
         },
         {
