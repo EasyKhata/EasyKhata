@@ -39,6 +39,30 @@
       ]
     }
   ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "easykhata.net"
+        }
+      ],
+      "destination": "https://www.eazykhata.in/$1",
+      "permanent": true
+    },
+    {
+      "source": "/(.*)",
+      "has": [
+        {
+          "type": "host",
+          "value": "www.easykhata.net"
+        }
+      ],
+      "destination": "https://www.eazykhata.in/$1",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/).*)",
