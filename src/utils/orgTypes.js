@@ -110,8 +110,7 @@ export const ORG_TYPE_CONFIGS = {
     profileNamePlaceholder: "E.g. Deepak Design Studio",
     accountIntro: "This profile powers your client invoices, payments, and expense records.",
     incomeFields: [
-      { key: "clientName", label: "Client", type: "text", placeholder: "Select client" },
-      { key: "paymentStatus", label: "Payment Status", type: "select", options: ["Received", "Partially Received", "Awaiting"] }
+      { key: "clientName", label: "Client", type: "text", placeholder: "Select client" }
     ],
     expenseFields: [
       { key: "clientName", label: "Client", type: "text", placeholder: "Select client" },

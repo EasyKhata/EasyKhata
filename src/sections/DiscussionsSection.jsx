@@ -5,7 +5,7 @@ import { messagesApi } from "../lib/api";
 import { DeleteBtn } from "../components/UI";
 
 const MAX_MSG_LEN = 500;
-const POLL_INTERVAL = 8000; // 8 seconds
+const POLL_INTERVAL = 8000;
 
 function formatTime(isoOrDate) {
   if (!isoOrDate) return "";
@@ -24,30 +24,53 @@ function formatTime(isoOrDate) {
 
 function getInitials(name) {
   if (!name) return "?";
-  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
 }
 
-function Avatar({ name, isMe, size = 32 }) {
-  const colors = ["var(--accent)", "var(--gold)", "var(--purple)", "var(--blue)", "var(--danger)"];
-  const idx = name ? name.charCodeAt(0) % colors.length : 0;
-  const bg = isMe ? "var(--accent)" : colors[idx];
+function Avatar({ name, tone = "member", size = 34 }) {
+  const colors = {
+    owner: "var(--accent)",
+    admin: "var(--gold)",
+    me: "var(--accent)",
+    member: "var(--blue)"
+  };
+  const background = colors[tone] || colors.member;
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.38, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size * 0.36,
+        fontWeight: 700,
+        color: "#fff",
+        flexShrink: 0,
+        boxShadow: "0 8px 18px rgba(0,0,0,0.12)"
+      }}
+    >
       {getInitials(name)}
     </div>
   );
+}
+
+function roleTone(role, isMe) {
+  if (isMe) return "me";
+  if (role === "owner") return "owner";
+  if (role === "admin") return "admin";
+  return "member";
 }
 
 export default function DiscussionsSection() {
   const { user } = useAuth();
   const { activeSharedOrgKey, activeOrgId } = useData();
 
-  // Resolve which org owner's namespace to use for API calls.
-  // For member users, user.sharedOrgs[key] holds { ownerId, orgId }.
-  // For the org owner, ownerId = user.id and orgId = data.activeOrgId.
   const sharedInfo = activeSharedOrgKey ? user?.sharedOrgs?.[activeSharedOrgKey] : null;
   const ownerId = sharedInfo?.ownerId || user?.id;
-  const orgId   = sharedInfo?.orgId   || activeOrgId;
+  const orgId = sharedInfo?.orgId || activeOrgId;
 
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
@@ -58,14 +81,13 @@ export default function DiscussionsSection() {
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const latestSentAtRef = useRef(null); // ISO string of newest message seen
+  const latestSentAtRef = useRef(null);
   const pollTimerRef = useRef(null);
 
+  const isOwner = String(ownerId || "") === String(user?.id || "");
   const isAdmin = user?.role === "admin";
   const senderName = user?.name || user?.displayName || user?.email?.split("@")[0] || "Resident";
-  const senderRole = isAdmin ? "admin" : "member";
-
-  // ── Load / poll ─────────────────────────────────────────────────────────────
+  const senderRole = isOwner ? "owner" : isAdmin ? "admin" : "member";
 
   const fetchMessages = useCallback(async (after) => {
     if (!ownerId || !orgId) return;
@@ -74,50 +96,41 @@ export default function DiscussionsSection() {
       if (!Array.isArray(rows) || rows.length === 0) return;
 
       setMessages(prev => {
-        const existingIds = new Set(prev.map(m => m.id));
-        const fresh = rows.filter(m => !existingIds.has(m.id));
+        const existingIds = new Set(prev.map(message => message.id));
+        const fresh = rows.filter(message => !existingIds.has(message.id));
         if (fresh.length === 0) return prev;
-        const merged = [...prev, ...fresh].sort((a, b) =>
-          String(a.sentAt).localeCompare(String(b.sentAt))
-        );
-        return merged;
+        return [...prev, ...fresh].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
       });
 
-      // Track the latest sentAt for incremental polls
-      const newest = rows.reduce((max, m) =>
-        String(m.sentAt) > String(max) ? String(m.sentAt) : max,
+      const newest = rows.reduce(
+        (max, message) => (String(message.sentAt) > String(max) ? String(message.sentAt) : max),
         latestSentAtRef.current || ""
       );
       latestSentAtRef.current = newest;
-
       setLoadError("");
     } catch (err) {
-      if (!after) setLoadError("Could not load messages. Retrying…");
+      if (!after) setLoadError("Could not load messages. Retrying...");
     }
-  }, [ownerId, orgId]);
+  }, [orgId, ownerId]);
 
-  // Initial full load
   useEffect(() => {
-    if (!ownerId || !orgId) return;
+    if (!ownerId || !orgId) return undefined;
     setLoading(true);
     fetchMessages(null).finally(() => setLoading(false));
-  }, [ownerId, orgId, fetchMessages]);
+    return undefined;
+  }, [fetchMessages, orgId, ownerId]);
 
-  // Polling for new messages
   useEffect(() => {
-    if (!ownerId || !orgId) return;
+    if (!ownerId || !orgId) return undefined;
     pollTimerRef.current = setInterval(() => {
       fetchMessages(latestSentAtRef.current);
     }, POLL_INTERVAL);
     return () => clearInterval(pollTimerRef.current);
-  }, [ownerId, orgId, fetchMessages]);
+  }, [fetchMessages, orgId, ownerId]);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
-
-  // ── Send ────────────────────────────────────────────────────────────────────
 
   async function handleSend() {
     const trimmed = text.trim();
@@ -126,12 +139,12 @@ export default function DiscussionsSection() {
       setError(`Message too long (max ${MAX_MSG_LEN} chars).`);
       return;
     }
+
     setError("");
     setSending(true);
 
-    const tempId = `temp_${Date.now()}`;
     const optimistic = {
-      id: tempId,
+      id: `temp_${Date.now()}`,
       senderId: user?.id || "",
       senderName,
       senderRole,
@@ -139,6 +152,7 @@ export default function DiscussionsSection() {
       sentAt: new Date().toISOString(),
       _pending: true
     };
+
     setMessages(prev => [...prev, optimistic]);
     setText("");
 
@@ -150,12 +164,10 @@ export default function DiscussionsSection() {
         senderRole,
         sentAt: optimistic.sentAt
       });
-      // Replace optimistic placeholder with real record
-      setMessages(prev => prev.map(m => m.id === tempId ? { ...saved } : m));
+      setMessages(prev => prev.map(message => (message.id === optimistic.id ? { ...saved } : message)));
       latestSentAtRef.current = String(saved.sentAt);
-    } catch {
-      // Remove optimistic on failure and restore text
-      setMessages(prev => prev.filter(m => m.id !== tempId));
+    } catch (err) {
+      setMessages(prev => prev.filter(message => message.id !== optimistic.id));
       setText(trimmed);
       setError("Failed to send. Please try again.");
     } finally {
@@ -164,56 +176,78 @@ export default function DiscussionsSection() {
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
+  function handleKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
       handleSend();
     }
   }
 
-  // ── Delete ──────────────────────────────────────────────────────────────────
-
-  async function handleDelete(msg) {
-    if (msg._pending) return;
-    setMessages(prev => prev.filter(m => m.id !== msg.id));
+  async function handleDelete(message) {
+    if (message._pending) return;
+    setMessages(prev => prev.filter(item => item.id !== message.id));
     try {
-      await messagesApi.delete(ownerId, orgId, msg.id);
-    } catch {
-      setMessages(prev => [...prev, msg].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt))));
+      await messagesApi.delete(ownerId, orgId, message.id);
+    } catch (err) {
+      setMessages(prev => [...prev, message].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt))));
     }
   }
 
-  function canDelete(msg) {
-    if (msg._pending) return false;
-    return isAdmin
-      || String(msg.senderId || "") === String(user?.id || "")
-      || user?.id === ownerId;
+  function canDelete(message) {
+    if (message._pending) return false;
+    return isAdmin || isOwner || String(message.senderId || "") === String(user?.id || "");
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", maxHeight: "calc(100vh - 140px)" }}>
-
-      {/* Header */}
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep, #0d2137) 0%, var(--bg) 60%)", flexShrink: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Community Board
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        maxHeight: "calc(100vh - 140px)",
+        borderRadius: 22,
+        overflow: "hidden",
+        border: "1px solid var(--border)",
+        background: "var(--surface)"
+      }}
+    >
+      <div
+        style={{
+          flexShrink: 0,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          background: "linear-gradient(180deg, color-mix(in srgb, var(--blue) 18%, var(--surface-high)) 0%, var(--surface) 100%)",
+          borderBottom: "1px solid var(--border)"
+        }}
+      >
+        <Avatar name="Community" tone="member" size={38} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Apartment Group Chat</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
+            Residents and management updates - {messages.length} message{messages.length !== 1 ? "s" : ""}
+          </div>
         </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--blue)", letterSpacing: -0.5 }}>
-          Discussions
-        </div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          Group chat for residents and management · {messages.length} message{messages.length !== 1 ? "s" : ""}
+        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", padding: "6px 10px", borderRadius: 999, background: "var(--accent-deep)" }}>
+          Live
         </div>
       </div>
 
-      {/* Message list */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
-
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: "16px 14px 10px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)"
+        }}
+      >
         {loading && (
           <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
-            Loading messages…
+            Loading messages...
           </div>
         )}
 
@@ -223,63 +257,84 @@ export default function DiscussionsSection() {
 
         {!loading && !loadError && messages.length === 0 && (
           <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>💬</div>
+            <div style={{ fontSize: 30, marginBottom: 12 }}>Chat</div>
             <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--text-sec)" }}>No messages yet</div>
-            <div>Start the conversation — post an announcement, ask a question, or share an update.</div>
+            <div>Start the conversation - post an announcement, ask a question, or share an update.</div>
           </div>
         )}
 
-        {messages.map((msg, index) => {
-          const isMe = String(msg.senderId || "") === String(user?.id || "");
-          const prevMsg = messages[index - 1];
-          const showDate = !prevMsg || new Date(msg.sentAt).toDateString() !== new Date(prevMsg.sentAt).toDateString();
-          const showSender = !prevMsg || prevMsg.senderId !== msg.senderId || showDate;
+        {messages.map((message, index) => {
+          const isMe = String(message.senderId || "") === String(user?.id || "");
+          const prevMessage = messages[index - 1];
+          const showDate = !prevMessage || new Date(message.sentAt).toDateString() !== new Date(prevMessage.sentAt).toDateString();
+          const showSender = !prevMessage || prevMessage.senderId !== message.senderId || showDate;
+          const tone = roleTone(message.senderRole, isMe);
 
           return (
-            <React.Fragment key={msg.id || index}>
+            <React.Fragment key={message.id || index}>
               {showDate && (
-                <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-dim)", fontWeight: 700, letterSpacing: 0.5, padding: "4px 0" }}>
-                  {new Date(msg.sentAt).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+                <div style={{ textAlign: "center", fontSize: 11, color: "var(--text-dim)", fontWeight: 700, padding: "6px 0" }}>
+                  <span style={{ display: "inline-flex", padding: "5px 10px", borderRadius: 999, background: "color-mix(in srgb, var(--surface) 88%, transparent)", border: "1px solid var(--border)" }}>
+                    {new Date(message.sentAt).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+                  </span>
                 </div>
               )}
 
               <div style={{ display: "flex", flexDirection: isMe ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
-                {showSender && !isMe && <Avatar name={msg.senderName} isMe={false} size={30} />}
-                {!showSender && !isMe && <div style={{ width: 30, flexShrink: 0 }} />}
+                {showSender && !isMe ? <Avatar name={message.senderName} tone={tone} size={30} /> : !isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
 
-                <div style={{ maxWidth: "72%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
+                <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
                   {showSender && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isMe ? "var(--accent)" : msg.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)", marginBottom: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
-                      {isMe ? "You" : msg.senderName || "Resident"}
-                      {msg.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>· Admin</span>}
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: isMe ? "var(--accent)" : message.senderRole === "owner" ? "var(--accent)" : message.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)",
+                        marginBottom: 3,
+                        paddingLeft: isMe ? 0 : 2,
+                        paddingRight: isMe ? 2 : 0
+                      }}
+                    >
+                      {isMe ? "You" : message.senderName || "Resident"}
+                      {message.senderRole === "owner" && !isMe && <span style={{ color: "var(--accent)", marginLeft: 4 }}>- Owner</span>}
+                      {message.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>- Admin</span>}
                     </div>
                   )}
+
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
-                    <div style={{
-                      background: msg._pending ? "var(--accent-dim, #4a5568)" : isMe ? "var(--accent)" : "var(--surface)",
-                      color: isMe ? "#fff" : "var(--text)",
-                      borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                      padding: "10px 14px",
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                      border: isMe ? "none" : "1px solid var(--border)",
-                      wordBreak: "break-word",
-                      whiteSpace: "pre-wrap",
-                      opacity: msg._pending ? 0.7 : 1
-                    }}>
-                      {msg.text}
+                    <div
+                      style={{
+                        background: message._pending
+                          ? "color-mix(in srgb, var(--accent) 70%, var(--surface))"
+                          : isMe
+                            ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)"
+                            : "color-mix(in srgb, var(--surface) 92%, white)",
+                        color: isMe ? "#fff" : "var(--text)",
+                        borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px",
+                        padding: "10px 14px 9px",
+                        fontSize: 14,
+                        lineHeight: 1.5,
+                        border: isMe ? "none" : "1px solid var(--border)",
+                        wordBreak: "break-word",
+                        whiteSpace: "pre-wrap",
+                        opacity: message._pending ? 0.7 : 1,
+                        boxShadow: "0 10px 24px rgba(0,0,0,0.08)"
+                      }}
+                    >
+                      {message.text}
                     </div>
-                    {canDelete(msg) && (
-                      <DeleteBtn onDelete={() => handleDelete(msg)} style={{ opacity: 0.5 }} />
+
+                    {canDelete(message) && (
+                      <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.45 }} />
                     )}
                   </div>
+
                   <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
-                    {msg._pending ? "Sending…" : formatTime(msg.sentAt)}
+                    {message._pending ? "Sending..." : formatTime(message.sentAt)}
                   </div>
                 </div>
 
-                {showSender && isMe && <Avatar name={senderName} isMe size={30} />}
-                {!showSender && isMe && <div style={{ width: 30, flexShrink: 0 }} />}
+                {showSender && isMe ? <Avatar name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
               </div>
             </React.Fragment>
           );
@@ -288,22 +343,24 @@ export default function DiscussionsSection() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Compose bar */}
-      <div style={{ flexShrink: 0, padding: "10px 14px 16px", background: "var(--bg)", borderTop: "1px solid var(--border)" }}>
+      <div style={{ flexShrink: 0, padding: "12px 14px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
         {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 18, padding: "8px 8px 8px 12px" }}>
           <input
             ref={inputRef}
             className="input-field"
-            placeholder="Type a message… (Enter to send)"
+            placeholder="Message the group"
             value={text}
-            onChange={e => { setText(e.target.value); if (error) setError(""); }}
+            onChange={event => {
+              setText(event.target.value);
+              if (error) setError("");
+            }}
             onKeyDown={handleKeyDown}
-            style={{ flex: 1 }}
+            style={{ flex: 1, border: "none", background: "transparent", padding: 0, minHeight: 22 }}
           />
           <button
             className="btn-primary"
-            style={{ padding: "10px 18px", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
+            style={{ width: 44, height: 44, borderRadius: 999, padding: 0, fontSize: 13, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
             onClick={handleSend}
             disabled={!text.trim() || sending}
           >
