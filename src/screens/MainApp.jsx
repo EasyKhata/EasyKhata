@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Settings,
+  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Settings,
   TrendingDown, TrendingUp, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -364,6 +364,8 @@ export default function MainApp() {
   const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const headerMenuRef = useRef(null);
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [trialBannerVisible, setTrialBannerVisible] = useState(true);
@@ -600,6 +602,23 @@ export default function MainApp() {
     setDismissedIds(getDismissedReminderIds(user?.id));
   }, [user?.id]);
 
+  useEffect(() => {
+    function handleDocumentClick(event) {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target)) {
+        setShowHeaderMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    document.addEventListener("touchstart", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+      document.removeEventListener("touchstart", handleDocumentClick);
+    };
+  }, []);
+
+  const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
+
   const liveReminders = useMemo(() => {
     if (hasResidentPortalAccess) {
       const flatDue = residentMemberView?.flatDue || null;
@@ -759,8 +778,6 @@ export default function MainApp() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
-
   useEffect(() => {
     if (!hasResidentPortalAccess) {
       setResidentMemberView(null);
@@ -841,10 +858,29 @@ export default function MainApp() {
       .map(tabId => TABS.find(item => item.id === tabId))
       .filter(Boolean);
     if (baseTabs.some(item => item.id === tab) || !TABS.some(item => item.id === tab)) {
-      return baseTabs;
+      return baseTabs.map(item => ({
+        ...item,
+        label:
+          item.id === "dashboard" ? "Home" :
+          item.id === "expenses" ? "Spend" :
+          item.id === "discussions" ? "Chat" :
+          item.id === "org" ? "Khata" :
+          item.id === "adminSupport" ? "Support" :
+          item.label
+      }));
     }
     const fallbackTab = TABS.find(item => item.id === tab);
-    return fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
+    const nextTabs = fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
+    return nextTabs.map(item => ({
+      ...item,
+      label:
+        item.id === "dashboard" ? "Home" :
+        item.id === "expenses" ? "Spend" :
+        item.id === "discussions" ? "Chat" :
+        item.id === "org" ? "Khata" :
+        item.id === "adminSupport" ? "Support" :
+        item.label
+    }));
   }, [TABS, isAdmin, isApartmentOrg, tab]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
@@ -1036,13 +1072,6 @@ export default function MainApp() {
                 </div>
               )}
               <button
-                onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
-                title="Open profile settings"
-                style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-              >
-                <Settings size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
-              </button>
-              <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
                 style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
@@ -1054,13 +1083,40 @@ export default function MainApp() {
                   </span>
                 )}
               </button>
-              <button
-                onClick={() => { if (window.confirm("Sign out of EazyKhata?")) logout(); }}
-                title="Sign out"
-                style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-              >
-                <LogOut size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
-              </button>
+              <div style={{ position: "relative" }} ref={headerMenuRef}>
+                <button
+                  onClick={() => setShowHeaderMenu(value => !value)}
+                  title="More options"
+                  style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <MoreHorizontal size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
+                </button>
+                {showHeaderMenu && (
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 168, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", overflow: "hidden", zIndex: 220 }}>
+                    <button
+                      onClick={() => {
+                        setShowHeaderMenu(false);
+                        handleNavigate({ tab: "settings", screen: "main" });
+                      }}
+                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <Settings size={15} strokeWidth={2} />
+                      Settings
+                    </button>
+                    <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
+                    <button
+                      onClick={() => {
+                        setShowHeaderMenu(false);
+                        if (window.confirm("Sign out of EazyKhata?")) logout();
+                      }}
+                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <LogOut size={15} strokeWidth={2} />
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

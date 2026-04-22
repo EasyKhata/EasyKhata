@@ -15,15 +15,16 @@ export default function OrganizationSwitcherModal({
 
   return (
     <Modal title="Switch Khata" onClose={onClose}>
-      <div className="card">
+      <div className="ledger-feed-card">
         {organizations.map(org => {
           const isActiveOrg = org.id === activeOrgId;
           return (
-            <div key={org.id} className="card-row" style={{ gap: 12 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div key={org.id} className="ledger-feed-row" style={{ gap: 12 }}>
+              <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {org.name}
                 </div>
+                <div className="ledger-feed-meta">{isActiveOrg ? "Currently open" : "Tap Switch to move into this Khata"}</div>
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>

@@ -230,13 +230,13 @@ export default function QuickInvoiceModal({
           <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.7, display: "block", marginBottom: 10 }}>
             Items ({items.length})
           </label>
-          <div className="card" style={{ marginBottom: 16 }}>
+          <div className="ledger-feed-card" style={{ marginBottom: 16 }}>
             {items.map((item, idx) => (
-              <div key={item.id} className="card-row" style={{ borderBottom: idx === items.length - 1 ? "none" : "1px solid var(--border)" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{item.desc}</div>
-                  {item.subDesc && <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{item.subDesc}</div>}
-                  <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
+              <div key={item.id} className="ledger-feed-row" style={{ borderBottom: idx === items.length - 1 ? "none" : "1px solid var(--border)" }}>
+                <div className="ledger-feed-main">
+                  <div className="ledger-feed-title">{item.desc}</div>
+                  {item.subDesc && <div className="ledger-feed-meta">{item.subDesc}</div>}
+                  <div className="ledger-feed-meta" style={{ marginTop: 3 }}>
                     {item.qty} × {fmtMoney(item.rate, sym)} {item.taxRate > 0 && `+ ${item.taxRate}% tax`}
                   </div>
                 </div>

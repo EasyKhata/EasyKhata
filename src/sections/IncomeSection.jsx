@@ -983,22 +983,22 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
   }
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            Total {config.incomeLabel} - {MONTHS[month]} {year}
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
+            Total {config.incomeLabel} · {MONTHS[month]} {year}
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--accent)", letterSpacing: -0.5 }}>{fmtMoney(totalIncome, sym)}</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-            {isPersonalOrg ? "Track household earnings person by person for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
+          <div className="ledger-hero-value" style={{ color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
+          <div className="ledger-hero-sub">
+            {isPersonalOrg ? "Track household earnings for the selected month and keep entries easy to scan." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
-          <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
+        <div className="ledger-hero-actions">
+          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
           {!isViewerMode && (
-            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
-              + New {isApartmentOrg ? "Maintenance" : config.incomeLabel}
+            <button className="btn-primary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 176, whiteSpace: "nowrap" }}>
+              + Add {isApartmentOrg ? "Collection" : config.incomeEntryLabel}
             </button>
           )}
         </div>
@@ -1010,9 +1010,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
         </div>
       )}
 
-      <div style={{ padding: "22px 18px 0" }}>
+      <div className="ledger-block">
         {isApartmentOrg && !isViewerMode && (
-          <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+          <div className="ledger-feed-card" style={{ padding: 16 }}>
             <div style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
               <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
@@ -1132,12 +1132,15 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           </div>
         )}
         {(invIncome.length > 0 || manualIncome.length > 0) && (
-          <div style={{ marginBottom: 18 }}>
+          <div className="ledger-feed-card ledger-search-card">
             <Input
               placeholder={`Search ${config.incomeLabel.toLowerCase()} by name, note, date, or amount`}
               value={searchTerm}
               onChange={event => setSearchTerm(event.target.value)}
             />
+            <div className="ledger-block-caption">
+              Find entries by description, person, note, invoice number, or amount.
+            </div>
           </div>
         )}
         {!config.hideInvoices && !isApartmentOrg && (
@@ -1146,7 +1149,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               <span>From {config.invoicesLabel}</span>
               <span style={{ color: "var(--accent)" }}>{fmtMoney(totalInv, sym)}</span>
             </div>
-            <div className="card" style={{ marginBottom: 22 }}>
+            <div className="ledger-feed-card">
               {invIncome.length === 0 ? (
                 <EmptyState
                   title={`No ${config.invoicesLabel.toLowerCase()} collected yet`}
@@ -1161,15 +1164,15 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                 </div>
               ) : (
                 filteredInvIncome.map(invoice => (
-                  <div key={invoice.id} className="card-row">
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div key={invoice.id} className="ledger-feed-row">
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                       <Avatar name={invoice.customer?.name || "?"} size={34} fontSize={12} />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} - Paid on {fmtDate(invoice.paidDate || invoice.date)}</div>
+                      <div className="ledger-feed-main">
+                        <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name}</div>
+                        <div className="ledger-feed-meta">{invoice.number} · Paid on {fmtDate(invoice.paidDate || invoice.date)}</div>
                       </div>
                     </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(invoiceGrandTotal(invoice), sym)}</span>
+                    <span className="ledger-feed-amount" style={{ color: "var(--accent)" }}>{fmtMoney(invoiceGrandTotal(invoice), sym)}</span>
                   </div>
                 ))
               )}
@@ -1181,7 +1184,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           <span>{isApartmentOrg ? config.incomeLabel : `Manual ${config.incomeLabel}`}</span>
           <span style={{ color: "var(--accent)" }}>{fmtMoney(totalManual, sym)}</span>
         </div>
-        <div className="card">
+        <div className="ledger-feed-card">
           {isApartmentOrg && !hasApartmentFlats && manualIncome.length === 0 ? (
             <EmptyState
               title="Add flats before tracking collections"
@@ -1220,18 +1223,18 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             </div>
           ) : (
             filteredManualIncome.map(item => (
-              <div key={item.id} className="card-row">
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.label}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              <div key={item.id} className="ledger-feed-row">
+                <div className="ledger-feed-main">
+                  <div className="ledger-feed-title">{item.label}</div>
+                  <div className="ledger-feed-meta">
                     {fmtDate(item.date)}
-                    {item.invoiceNumber || item.receiptNumber ? ` - ${item.invoiceNumber || item.receiptNumber}` : ""}
-                    {item.note ? ` - ${item.note}` : ""}
-                    {(config.incomeFields || []).map(field => item[field.key] ? ` - ${item[field.key]}` : "").join("")}
-                    {isSmallBusinessOrg && Array.isArray(item.saleItems) && item.saleItems.length > 0 ? ` - ${item.saleItems.length} product(s)` : ""}
+                    {item.invoiceNumber || item.receiptNumber ? ` · ${item.invoiceNumber || item.receiptNumber}` : ""}
+                    {item.note ? ` · ${item.note}` : ""}
+                    {(config.incomeFields || []).map(field => item[field.key] ? ` · ${item[field.key]}` : "").join("")}
+                    {isSmallBusinessOrg && Array.isArray(item.saleItems) && item.saleItems.length > 0 ? ` · ${item.saleItems.length} product(s)` : ""}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div className="ledger-feed-side">
                   {isSmallBusinessOrg && Array.isArray(item.saleItems) && item.saleItems.length > 0 && (
                     <>
                       <span className="pill" style={{
@@ -1261,7 +1264,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                       )}
                     </>
                   )}
-                  <span style={{ fontSize: 15, fontWeight: 700, color: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "var(--text-dim)" : "var(--accent)", textDecoration: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "line-through" : "none" }}>
+                  <span className="ledger-feed-amount" style={{ color: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "var(--text-dim)" : "var(--accent)", textDecoration: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "line-through" : "none" }}>
                     {fmtMoney(item.amount, sym)}
                   </span>
                   {/* Simple sale (non-POS): status pill + toggle */}
@@ -1477,23 +1480,30 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               </Field>
             </div>
           ) : (
-            <>
-              <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required error={errors.label}>
-                <Input
-                  error={errors.label}
-                  placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`}
-                  value={form.label}
-                  onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }}
-                  autoFocus={guidedField === "label"}
-                  style={guidedField === "label" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
-                />
-              </Field>
-              <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`} error={errors.amount}>
-                <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
-              </Field>
-              <Field label="Date Received" required error={errors.date}>
-                <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
-              </Field>
+            <div className="ledger-form-grid">
+              <div className="ledger-form-group">
+                <div className="ledger-form-group-title">Primary details</div>
+                <Field label={isSmallBusinessOrg ? "What was sold" : "Description"} required error={errors.label}>
+                  <Input
+                    error={errors.label}
+                    placeholder={isSmallBusinessOrg ? "e.g. Sarees, Tailoring, Milk delivery, Repair work..." : `e.g. ${config.incomeEntryLabel}`}
+                    value={form.label}
+                    onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }}
+                    autoFocus={guidedField === "label"}
+                    style={guidedField === "label" ? { borderColor: "var(--blue)", boxShadow: "0 0 0 2px rgba(103,178,255,0.2)" } : undefined}
+                  />
+                </Field>
+                <div className="ledger-form-split">
+                  <Field label={`Amount (${sym})`} required hint={`Enter the ${config.incomeEntryLabel.toLowerCase()} amount.`} error={errors.amount}>
+                    <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
+                  </Field>
+                  <Field label="Date Received" required error={errors.date}>
+                    <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
+                  </Field>
+                </div>
+              </div>
+              <div className="ledger-form-group compact">
+                <div className="ledger-form-group-title">Entry details</div>
               {(config.incomeFields || []).map(field => (
                 <Field key={field.key} label={field.label} error={errors[field.key]}>
                   {isPersonalOrg && field.key === "personName" ? (
@@ -1550,6 +1560,9 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                   ) : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
                 </Field>
               ))}
+              </div>
+              <div className="ledger-form-group compact">
+                <div className="ledger-form-group-title">Optional</div>
               {isSmallBusinessOrg && (
                 <Field label="Payment Status">
                   <Select value={form.saleStatus || "paid"} onChange={e => setForm(current => ({ ...current, saleStatus: e.target.value }))}>
@@ -1561,7 +1574,8 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               <Field label="Note">
                 <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
               </Field>
-            </>
+              </div>
+            </div>
           )}
         </Modal>
       )}

@@ -679,21 +679,21 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+    <div className="ledger-screen">
+        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
+          <div className="ledger-hero-meta">
+            <div className="ledger-overline" style={{ color: "var(--blue)", marginBottom: 6 }}>
               {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
             </div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--blue)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+            <div className="ledger-hero-value" style={{ color: "var(--blue)" }}>{fmtMoney(total, sym)}</div>
+            <div className="ledger-hero-sub">
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
-            <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
+          <div className="ledger-hero-actions">
+            <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
             {!isAdmin && !isViewerMode && (
-              <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
+              <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 180, whiteSpace: "nowrap" }}>
                 + New {documentLabel}
               </button>
             )}
@@ -706,9 +706,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         </div>
       )}
 
-      <div style={{ padding: "22px 18px 0" }}>
+      <div className="ledger-block">
         {monthInv.length > 0 && (
-          <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+          <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
             <Field label={`Search ${documentCollectionLabel}`} hint="Find records by name, flat, number, date, amount, or type.">
               <Input placeholder={`Search ${documentCollectionLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
             </Field>
@@ -720,8 +720,13 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
         {isAdmin && (
           <>
-            <div className="section-label">Payment Requests</div>
-            <div className="card" style={{ padding: 14, marginBottom: 18 }}>
+            <div className="ledger-block-header" style={{ marginBottom: 10 }}>
+              <div>
+                <div className="ledger-block-title">Payment Requests</div>
+                <div className="ledger-block-caption">Review payment proofs and subscription approvals in one queue.</div>
+              </div>
+            </div>
+            <div className="ledger-feed-card" style={{ padding: 14, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {REQUEST_FILTERS.map(([value, label]) => (
                   <button
@@ -745,14 +750,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {adminRequestError && <div style={{ marginTop: 12, fontSize: 12, color: "var(--danger)" }}>{adminRequestError}</div>}
             </div>
 
-            <div className="card" style={{ marginBottom: 18 }}>
+            <div className="ledger-feed-card" style={{ marginBottom: 18 }}>
               {!paymentRequestsEnabled ? (
                 <EmptyState title="Payment requests are locked by rules" message="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." accentColor="var(--gold)" />
               ) : filteredRequests.length === 0 ? (
                 <EmptyState title="No payment requests" message="Customer UPI payment submissions will appear here for admin verification." accentColor="var(--gold)" />
               ) : (
                 filteredRequests.map(request => (
-                  <div key={request.id} className="card-row" style={{ alignItems: "flex-start", gap: 14 }}>
+                  <div key={request.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 14 }}>
                     <Avatar name={request.userName || request.userEmail || "?"} size={42} fontSize={14} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
@@ -822,14 +827,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           </>
         )}
 
-        <div className="card">
+        <div className="ledger-feed-card">
           {monthInv.length === 0 ? (
             <EmptyState title={isAdmin ? "No subscription invoices this month" : `No ${documentCollectionLabel.toLowerCase()} this month`} message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue, reminders, and history.`} actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
           ) : filteredMonthInv.length === 0 ? (
             <EmptyState title="No matching records" message="Try a different search term to find the receipt or bill you need." accentColor="var(--blue)" />
           ) : (
             filteredMonthInv.map(invoice => (
-              <div key={invoice.id} className="card-row" onClick={() => setDetail(invoice)} style={{ cursor: "pointer" }}>
+              <div key={invoice.id} className="ledger-feed-row" onClick={() => setDetail(invoice)} style={{ cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
                   <Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={40} fontSize={14} />
                   <div style={{ minWidth: 0 }}>
@@ -905,17 +910,19 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </div>
             )}
 
-            <div className="card" style={{ marginBottom: 16 }}>
+            <div className="ledger-feed-card" style={{ marginBottom: 16 }}>
               {invoice.items.map(item => (
-                <div key={item.id} className="card-row">
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.desc || "Item"}</div>
-                    {item.subDesc && <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{item.subDesc}</div>}
-                    <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
+                <div key={item.id} className="ledger-feed-row">
+                  <div className="ledger-feed-main">
+                    <div className="ledger-feed-title">{item.desc || "Item"}</div>
+                    {item.subDesc && <div className="ledger-feed-meta">{item.subDesc}</div>}
+                    <div className="ledger-feed-meta" style={{ marginTop: 3 }}>
                       {showTaxFields ? `${item.hsn ? `HSN ${item.hsn} · ` : ""}${item.qty} × ${fmtMoney(item.rate, sym)} · GST ${Number(item.taxRate ?? item.igst ?? 0)}%` : `${item.qty} × ${fmtMoney(item.rate, sym)}`}
                     </div>
                   </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), sym)}</span>
+                  <div className="ledger-feed-side">
+                    <span className="ledger-feed-amount">{fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), sym)}</span>
+                  </div>
                 </div>
               ))}
               <div style={{ padding: "14px 18px", borderTop: "1px solid var(--border)", fontSize: 13, color: "var(--text-sec)" }}>

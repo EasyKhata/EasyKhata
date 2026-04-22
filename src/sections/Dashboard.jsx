@@ -97,28 +97,32 @@ function PersonalUsagePie({ stats, sym, viewMode, isMobile = false }) {
           {segments.map(segment => {
             const pct = Math.round((segment.value / total) * 100);
             return (
-              <div key={segment.label} className="card-row" style={{ padding: 0, border: "none" }}>
+              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{segment.label}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{pct}% of tracked usage</div>
+                  <div className="ledger-feed-main">
+                    <div className="ledger-feed-title">{segment.label}</div>
+                    <div className="ledger-feed-meta">{pct}% of tracked usage</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{fmtMoney(segment.value, sym)}</span>
+                <div className="ledger-feed-side">
+                  <span className="ledger-feed-amount">{fmtMoney(segment.value, sym)}</span>
+                </div>
               </div>
             );
           })}
           {shortfall > 0 && (
-            <div className="card-row" style={{ padding: 0, border: "none" }}>
+            <div className="ledger-feed-row" style={{ paddingInline: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ width: 12, height: 12, borderRadius: 999, background: "var(--purple)", flexShrink: 0 }} />
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Shortfall</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Extra outflow beyond earnings this period</div>
+                <div className="ledger-feed-main">
+                  <div className="ledger-feed-title">Shortfall</div>
+                  <div className="ledger-feed-meta">Extra outflow beyond earnings this period</div>
                 </div>
               </div>
-              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--purple)" }}>{fmtMoney(shortfall, sym)}</span>
+              <div className="ledger-feed-side">
+                <span className="ledger-feed-amount" style={{ color: "var(--purple)" }}>{fmtMoney(shortfall, sym)}</span>
+              </div>
             </div>
           )}
         </div>
@@ -218,15 +222,17 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
           {segments.map(segment => {
             const pct = Math.round((segment.value / total) * 100);
             return (
-              <div key={segment.label} className="card-row" style={{ padding: 0, border: "none" }}>
+              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{segment.label}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{pct}% of tracked usage</div>
+                  <div className="ledger-feed-main">
+                    <div className="ledger-feed-title">{segment.label}</div>
+                    <div className="ledger-feed-meta">{pct}% of tracked usage</div>
                   </div>
                 </div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{fmtMoney(segment.value, sym)}</span>
+                <div className="ledger-feed-side">
+                  <span className="ledger-feed-amount">{fmtMoney(segment.value, sym)}</span>
+                </div>
               </div>
             );
           })}
@@ -238,7 +244,7 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
 
 function QuickstartChecklistCard({ progressLabel, items }) {
   return (
-    <div className="card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
+      <div className="ledger-feed-card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Quickstart Checklist</div>
         <div style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 700 }}>{progressLabel}</div>
@@ -246,12 +252,12 @@ function QuickstartChecklistCard({ progressLabel, items }) {
       <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
         Finish these two actions to unlock your fastest path to first value.
       </div>
-      <div className="card" style={{ marginBottom: 0, padding: 12 }}>
+      <div className="ledger-feed-card" style={{ marginBottom: 0, padding: 12 }}>
         {items.map((item, index) => (
           <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: index === items.length - 1 ? 0 : 10, marginBottom: index === items.length - 1 ? 0 : 10, borderBottom: index === items.length - 1 ? "none" : "1px solid var(--border)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
               <span style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${item.completed ? "var(--accent)" : "var(--border)"}`, background: item.completed ? "var(--accent-deep)" : "transparent", color: item.completed ? "var(--accent)" : "var(--text-dim)", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {item.completed ? "v" : String(index + 1)}
+                {item.completed ? "✓" : String(index + 1)}
               </span>
               <div style={{ fontSize: 13, color: "var(--text)", opacity: item.completed ? 0.72 : 1 }}>{item.label}</div>
             </div>
@@ -277,7 +283,7 @@ function SavingsGoalCard({ goals, sym, onNav }) {
   const remaining = Math.max(0, target - saved);
 
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
+    <div className="ledger-feed-card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Savings Goal</div>
@@ -497,10 +503,43 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const statsStyle = statsLoading ? { opacity: 0.55, pointerEvents: "none", transition: "opacity 0.2s" } : {};
 
   const Tile = ({ label, value, color, sub, onClick }) => (
-    <div onClick={onClick} style={{ background: "var(--surface)", border: `1px solid ${color}33`, borderRadius: 18, padding: "18px 16px", cursor: onClick ? "pointer" : "default", boxShadow: "var(--card-shadow)" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>{label}</div>
-      <div style={{ fontFamily: "var(--serif)", fontSize: 24, color, letterSpacing: -0.5, marginBottom: sub ? 5 : 0 }}>{value}</div>
-      {sub && <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{sub}</div>}
+    <div
+      onClick={onClick}
+      className={`ledger-summary-card${onClick ? " interactive" : ""}`}
+      style={{ borderColor: `${color}33` }}
+    >
+      <div className="ledger-summary-label" style={{ color }}>{label}</div>
+      <div className="ledger-summary-value" style={{ color }}>{value}</div>
+      {sub && <div className="ledger-summary-sub">{sub}</div>}
+    </div>
+  );
+
+  const FeedGroup = ({ title, caption, children }) => (
+    <div className="ledger-block">
+      <div className="ledger-block-header">
+        <div>
+          <div className="ledger-block-title">{title}</div>
+          {caption && <div className="ledger-block-caption">{caption}</div>}
+        </div>
+      </div>
+      <div className="ledger-feed-card">{children}</div>
+    </div>
+  );
+
+  const FeedRow = ({ title, meta, amount, amountColor = "var(--text)", children }) => (
+    <div className="ledger-feed-row">
+      <div className="ledger-feed-main">
+        <div className="ledger-feed-title">{title}</div>
+        {meta && <div className="ledger-feed-meta">{meta}</div>}
+      </div>
+      <div className="ledger-feed-side">
+        {children}
+        {amount !== undefined && (
+          <span className="ledger-feed-amount" style={{ color: amountColor }}>
+            {amount}
+          </span>
+        )}
+      </div>
     </div>
   );
 
@@ -556,25 +595,25 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       : `Overall balance for ${year}.`;
 
     return (
-      <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1, ...statsStyle }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+      <div className="ledger-screen">
+        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
+          <div className="ledger-hero-meta" style={statsStyle}>
+            <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
               Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
             </div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+            <div className="ledger-hero-value" style={{ color: heroTone }}>
               {overallBalance < 0 ? "-" : ""}{fmtMoney(Math.abs(overallBalance), sym)}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{apartmentHeroSub}</div>
+            <div className="ledger-hero-sub">{apartmentHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
         </div>
 
-        <div style={{ padding: "20px 18px 0" }}>
+        <div className="ledger-block">
           {showQuickstartChecklist && (
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
+          <div className="ledger-summary-grid">
             <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label="Opening Balance" value={formatSignedMoney(openingBalance)} color={openingBalance >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? `Balance at start of ${MONTHS[month]} ${year}` : `Balance brought into ${year}`} />
@@ -591,17 +630,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <div style={{ padding: "0 18px" }}>
             <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-              <div className="card">
+              <div className="ledger-feed-card">
                 {top5Expenses.length === 0 ? (
                   <EmptyState title="No expenses this period" message="Add society expense entries to see the biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
                 ) : (
                   top5Expenses.map((expense, index) => (
-                    <div key={expense.id || index} className="card-row">
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                    <div key={expense.id || index} className="ledger-feed-row">
+                      <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                        <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                       </div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                      <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
                     </div>
                   ))
                 )}
@@ -621,22 +660,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       ? (stats.netAfterEmi >= 0 ? "Your earnings are covering spending and EMI commitments this month." : "Household cash flow is under pressure this month.")
       : (stats.netAfterEmi >= 0 ? "Your household stayed ahead of spending and EMI commitments this year." : "Household cash flow is under pressure this year.");
     return (
-      <div style={{ paddingBottom: 20 }}>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+      <div className="ledger-screen">
+        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
+          <div className="ledger-hero-meta">
+            <div className="ledger-overline" style={{ color: "var(--gold)" }}>
               Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
             </div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)", letterSpacing: -1, lineHeight: 1 }}>
+            <div className="ledger-hero-value" style={{ color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)" }}>
               {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{personalHeroSub}</div>
+            <div className="ledger-hero-sub">{personalHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
         </div>
 
-        <div style={{ padding: "20px 18px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
+        <div className="ledger-block">
+          <div className="ledger-summary-grid">
             <Tile label={viewMode === "month" ? "Earnings" : "Total Earnings"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "All household earnings" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--gold)" sub={viewMode === "month" ? `${stats.activeLoansCount || 0} active loan(s)` : `Avg ${fmtMoney(stats.avgMonthlyEmi, sym)}/month`} onClick={() => onNav("emi")} />
@@ -648,14 +687,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
 
           <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="card">
+            <div className="ledger-feed-card">
               {top5Expenses.length === 0 ? (
                 <EmptyState title="No expenses this period" message="Add spending entries to see your biggest expenses here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
               ) : (
                 top5Expenses.map((expense, index) => (
-                  <div key={expense.id || index} className="card-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                  <div key={expense.id || index} className="ledger-feed-row">
+                    <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                      <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                     </div>
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
@@ -666,12 +705,12 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
-            <div className="card">
+            <div className="ledger-feed-card">
               {stats.upcomingEmis.length === 0 ? (
                 <EmptyState title="No EMI records yet" message="Add your active EMIs to track due dates and balances." actionLabel="Go to EMIs" onAction={() => onNav("emi")} accentColor="var(--gold)" />
               ) : (
                 stats.upcomingEmis.map(emi => (
-                  <div key={emi.id || emi.loanName} className="card-row">
+                  <div key={emi.id || emi.loanName} className="ledger-feed-row">
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{emi.loanName || "EMI"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[emi.lender || "", getPersonalEmiDueDay(emi) ? `Due on ${getPersonalEmiDueDay(emi)}` : "No due date", emi.endDate ? `Ends ${emi.endDate}` : ""].filter(Boolean).join(" · ")}</div>
@@ -684,12 +723,12 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Spending Mix" icon="💸" color="var(--danger)" count={stats.topExpenseCategories.length} defaultOpen={stats.topExpenseCategories.length > 0}>
-            <div className="card">
+            <div className="ledger-feed-card">
               {stats.topExpenseCategories.length === 0 ? (
                 <EmptyState title="No spending tracked yet" message="Add spending entries to see where the household budget is going." actionLabel="Go to Spending" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
               ) : (
                 stats.topExpenseCategories.map(category => (
-                  <div key={category.category} className="card-row">
+                  <div key={category.category} className="ledger-feed-row">
                     <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
                   </div>
@@ -699,9 +738,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Smart Suggestions" icon="◎" color="var(--blue)" count={stats.actionTips.length} defaultOpen>
-            <div className="card">
+            <div className="ledger-feed-card">
               {stats.actionTips.map((tip, index) => (
-                <div key={`${tip.title}-${index}`} className="card-row">
+                <div key={`${tip.title}-${index}`} className="ledger-feed-row">
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{tip.title}</div>
                     <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{tip.message}</div>
@@ -733,27 +772,27 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const freelancerMaxCashFlow = Math.max(1, ...freelancerCashFlow.map(item => Math.max(item.income, item.expenses)));
 
     return (
-      <div style={{ paddingBottom: 20 }}>
-        <div style={{ padding: "18px 18px 0" }}>
+      <div className="ledger-screen">
+        <div className="ledger-block">
           {showQuickstartChecklist && (
             <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
           )}
         </div>
-        <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
+          <div className="ledger-hero-meta">
+            <div className="ledger-overline" style={{ color: "var(--blue)" }}>
               Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
             </div>
-            <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+            <div className="ledger-hero-value" style={{ color: heroTone }}>
               {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{freelancerHeroSub}</div>
+            <div className="ledger-hero-sub">{freelancerHeroSub}</div>
           </div>
-          {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
         </div>
 
-        <div style={{ padding: "20px 18px 0" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
+        <div className="ledger-block">
+          <div className="ledger-summary-grid">
             <Tile label={viewMode === "month" ? "Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Payments logged plus paid client invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Tools, travel, subscriptions, and delivery costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
             <Tile label="Awaiting Payments" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} client invoice(s) still open`} onClick={() => onNav("invoices")} />
@@ -763,20 +802,20 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
 
           <Collapsible title="Invoice Follow-up" icon="◎" color="var(--blue)" count={(stats.overdueInvoices.length || 0) + (stats.dueSoonInvoices.length || 0)} defaultOpen>
-            <div className="card">
+            <div className="ledger-feed-card">
               {stats.overdueInvoices.length === 0 && stats.dueSoonInvoices.length === 0 ? (
                 <EmptyState title="No invoice follow-up right now" message="Your open client invoices are either paid or not near their due date yet." accentColor="var(--accent)" />
               ) : (
                 [...stats.overdueInvoices, ...stats.dueSoonInvoices.filter(invoice => !stats.overdueInvoices.some(overdue => overdue.id === invoice.id))].slice(0, 6).map(invoice => (
-                  <div key={invoice.id} className="card-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.number || "Invoice"}</div>
+                  <div key={invoice.id} className="ledger-feed-row">
+                    <div className="ledger-feed-main">
+                      <div className="ledger-feed-title">{invoice.number || "Invoice"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
                         {[invoice.customer?.name || invoice.billTo?.name || "No client", invoice.dueDate ? `Due ${invoice.dueDate}` : "No due date"].filter(Boolean).join(" · ")}
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: getInvoiceStatusColor(invoice.status || invoice.computedStatus || "pending") }}>{fmtMoney(invoice.total || 0, sym)}</div>
+                    <div className="ledger-feed-side">
+                      <div className="ledger-feed-amount" style={{ color: getInvoiceStatusColor(invoice.status || invoice.computedStatus || "pending") }}>{fmtMoney(invoice.total || 0, sym)}</div>
                       <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{getInvoiceStatusLabel(invoice.status || invoice.computedStatus || "pending")}</div>
                     </div>
                   </div>
@@ -786,22 +825,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Client Snapshot" icon="⭐" color="var(--blue)" count={showAdvanced ? stats.topCustomers.length : 0} defaultOpen={showAdvanced && stats.topCustomers.length > 0}>
-            <div className="card">
+            <div className="ledger-feed-card">
               {!showAdvanced ? (
                 <EmptyState title="Client insights are on Pro" message="Upgrade to Pro to see your strongest clients and outstanding balances in one place." accentColor="var(--blue)" />
               ) : stats.topCustomers.length === 0 ? (
                 <EmptyState title="No client billing yet" message="Create invoices or log client payments to see who brings in the most work." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} accentColor="var(--blue)" />
               ) : (
                 stats.topCustomers.map(client => (
-                  <div key={client.name} className="card-row">
+                  <div key={client.name} className="ledger-feed-row">
                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                       <Avatar name={client.name} size={38} fontSize={13} />
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{client.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Open balance {fmtMoney(client.balance, sym)}</div>
+                      <div className="ledger-feed-main">
+                        <div className="ledger-feed-title">{client.name}</div>
+                        <div className="ledger-feed-meta">Open balance {fmtMoney(client.balance, sym)}</div>
                       </div>
                     </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(client.revenue, sym)}</span>
+                    <span className="ledger-feed-amount" style={{ color: "var(--blue)" }}>{fmtMoney(client.revenue, sym)}</span>
                   </div>
                 ))
               )}
@@ -810,23 +849,23 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <Collapsible title="Freelancer Alerts" icon="🚨" color="var(--gold)" count={showAdvanced ? stats.alertItems.length : 0} defaultOpen={showAdvanced && stats.alertItems.length > 0}>
             {!showAdvanced ? (
-              <div className="card">
+              <div className="ledger-feed-card">
                 <EmptyState title="Freelancer alerts are on Pro" message="Upgrade to Pro for overdue invoice alerts, spending spikes, and payment follow-up reminders." accentColor="var(--gold)" />
               </div>
             ) : stats.alertItems.length === 0 ? (
-              <div className="card">
+              <div className="ledger-feed-card">
                 <EmptyState title="No freelancer alerts right now" message="Payments, open invoices, and spending look steady for the selected period." accentColor="var(--accent)" />
               </div>
             ) : (
-              <div className="card">
+              <div className="ledger-feed-card">
                 {stats.alertItems.map((alert, index) => {
                   const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
                   return (
-                    <div key={`${alert.title}-${index}`} className="card-row">
-                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
+                    <div key={`${alert.title}-${index}`} className="ledger-feed-row">
+                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginTop: 6, flexShrink: 0 }} />
+                      <div className="ledger-feed-main">
+                        <div className="ledger-feed-title" style={{ color }}>{alert.title}</div>
+                        <div className="ledger-feed-meta">{alert.message}</div>
                       </div>
                     </div>
                   );
@@ -870,17 +909,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="card">
+            <div className="ledger-feed-card">
               {top5Expenses.length === 0 ? (
                 <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
               ) : (
                 top5Expenses.map((expense, index) => (
-                  <div key={expense.id || index} className="card-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                  <div key={expense.id || index} className="ledger-feed-row">
+                    <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                      <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                     </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                    <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
                   </div>
                 ))
               )}
@@ -894,21 +933,21 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   }
 
   return (
-    <div style={{ paddingBottom: 20 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-text)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
             {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 44, color: heroTone, letterSpacing: -1, lineHeight: 1 }}>
+          <div className="ledger-hero-value" style={{ color: heroTone }}>
             {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
           </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 8 }}>{heroSub}</div>
+          <div className="ledger-hero-sub">{heroSub}</div>
         </div>
-        {headerDatePicker && <div style={{ width: isMobile ? "100%" : "auto", flexShrink: 0, display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>}
+        {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
       </div>
 
-      <div style={{ padding: "20px 18px 0" }}>
+      <div className="ledger-block">
         {!activeSharedOrgKey && (reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
           <div style={{ marginBottom: 18, padding: "12px 14px", background: reviewAccessEnabled ? "var(--blue-deep)" : currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
@@ -925,7 +964,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 22 }}>
+        <div className="ledger-summary-grid">
           {viewMode === "month" ? (
             <>
           <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash In" : "Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg && !hasPosSystem ? "Payments and collections received" : isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
@@ -991,10 +1030,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                     Owed to Me
                   </div>
                   {stats.pendingCustomers.slice(0, 5).map(customer => (
-                    <div key={customer.name} className="card-row">
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(customer.amount, sym)}</span>
-                    </div>
+                    <FeedRow key={customer.name} title={customer.name} amount={fmtMoney(customer.amount, sym)} amountColor="var(--gold)" />
                   ))}
                 </>
               )}
@@ -1004,13 +1040,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                     I Owe
                   </div>
                   {stats.partnersWithBalance.slice(0, 5).map(partner => (
-                    <div key={partner.partnerName} className="card-row">
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{partner.partnerName}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{partner.contact || "No contact added"}</div>
-                      </div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(partner.balanceDue, sym)}</span>
-                    </div>
+                    <FeedRow
+                      key={partner.partnerName}
+                      title={partner.partnerName}
+                      meta={partner.contact || "No contact added"}
+                      amount={fmtMoney(partner.balanceDue, sym)}
+                      amountColor="var(--blue)"
+                    />
                   ))}
                 </>
               )}
@@ -1037,13 +1073,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   <EmptyState title="Partner balances are clear" message="No outstanding partner or vendor dues are recorded right now." accentColor="var(--accent)" />
                 ) : (
                   stats.partnersWithBalance.slice(0, 5).map(partner => (
-                    <div key={partner.partnerName} className="card-row">
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{partner.partnerName}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{partner.contact || "No contact added"}</div>
-                      </div>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(partner.balanceDue, sym)}</span>
-                    </div>
+                    <FeedRow
+                      key={partner.partnerName}
+                      title={partner.partnerName}
+                      meta={partner.contact || "No contact added"}
+                      amount={fmtMoney(partner.balanceDue, sym)}
+                      amountColor="var(--gold)"
+                    />
                   ))
                 )}
               </div>
@@ -1071,11 +1107,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               {stats.alertItems.map((alert, index) => {
                 const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
                 return (
-                  <div key={`${alert.title}-${index}`} className="card-row">
-                    <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginRight: 12, flexShrink: 0 }} />
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color }}>{alert.title}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{alert.message}</div>
+                  <div key={`${alert.title}-${index}`} className="ledger-feed-row">
+                    <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginTop: 6, flexShrink: 0 }} />
+                    <div className="ledger-feed-main">
+                      <div className="ledger-feed-title" style={{ color }}>{alert.title}</div>
+                      <div className="ledger-feed-meta">{alert.message}</div>
                     </div>
                   </div>
                 );
@@ -1130,17 +1166,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={showAdvanced ? stats.topExpenseCategories.length : 0}
           defaultOpen={showAdvanced && stats.topExpenseCategories.length > 0}
         >
-          <div className="card">
+          <div className="ledger-feed-card">
             {!showAdvanced ? (
               <EmptyState title="Category insights are on Pro" message="Upgrade to Pro to see top expense categories and smarter spending analysis." accentColor="var(--danger)" />
             ) : stats.topExpenseCategories.length === 0 ? (
               <EmptyState title="No expenses yet" message="Add your first expense entry to unlock category insights and spending trends." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
             ) : (
               stats.topExpenseCategories.map(category => (
-                <div key={category.category} className="card-row">
-                  <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
-                </div>
+                <FeedRow key={category.category} title={category.category} amount={fmtMoney(category.amount, sym)} amountColor="var(--danger)" />
               ))
             )}
           </div>
@@ -1154,20 +1187,20 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={showAdvanced ? stats.highRiskCustomers.length : 0}
           defaultOpen={false}
         >
-          <div className="card">
+          <div className="ledger-feed-card">
             {!showAdvanced ? (
               <EmptyState title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." accentColor="var(--gold)" />
             ) : stats.highRiskCustomers.length === 0 ? (
               <EmptyState title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." accentColor="var(--accent)" />
             ) : (
               stats.highRiskCustomers.map(customer => (
-                <div key={customer.name} className="card-row">
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{customer.overdueCount} overdue invoice(s)</div>
-                  </div>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{Math.round(customer.lateRatio * 100)}% late</span>
-                </div>
+                <FeedRow
+                  key={customer.name}
+                  title={customer.name}
+                  meta={`${customer.overdueCount} overdue invoice(s)`}
+                  amount={`${Math.round(customer.lateRatio * 100)}% late`}
+                  amountColor="var(--danger)"
+                />
               ))
             )}
           </div>
@@ -1182,20 +1215,20 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={stats.pendingInvoices.length}
           defaultOpen={stats.pendingInvoices.length > 0}
         >
-          <div className="card">
+          <div className="ledger-feed-card">
             {stats.pendingInvoices.length === 0 ? (
               <EmptyState title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." accentColor="var(--accent)" />
             ) : (
               stats.pendingInvoices.slice(0, 4).map(invoice => {
                 const color = getInvoiceStatusColor(invoice.computedStatus);
                 return (
-                  <div key={invoice.id} className="card-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
+                  <div key={invoice.id} className="ledger-feed-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
+                    <div className="ledger-feed-main">
+                      <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
                       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
+                    <div className="ledger-feed-side">
+                      <div className="ledger-feed-amount" style={{ color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
                       <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
                     </div>
                   </div>
@@ -1207,17 +1240,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         )}
 
         <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-          <div className="card">
+          <div className="ledger-feed-card">
             {top5Expenses.length === 0 ? (
               <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
             ) : (
               top5Expenses.map((expense, index) => (
-                <div key={expense.id || index} className="card-row">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                <div key={expense.id || index} className="ledger-feed-row">
+                  <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                    <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                     <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                   </div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
                 </div>
               ))
             )}

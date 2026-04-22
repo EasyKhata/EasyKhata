@@ -7,6 +7,15 @@ function toPeriodKey(year, month) {
   return `${year}-${String(month + 1).padStart(2, "0")}`;
 }
 
+function StatCell({ label, value, color = "var(--text)" }) {
+  return (
+    <div className="ledger-summary-card" style={{ borderColor: `${color}22` }}>
+      <div className="ledger-summary-label" style={{ color: "var(--text-dim)" }}>{label}</div>
+      <div className="ledger-summary-value" style={{ color, fontSize: 24 }}>{value}</div>
+    </div>
+  );
+}
+
 export default function MemberPortalSection({ user, year, month, headerDatePicker }) {
   const [portal, setPortal] = useState(null);
   const [commonRecord, setCommonRecord] = useState(null);
@@ -47,73 +56,104 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
   }, [commonRecord?.notices]);
 
   if (loading) {
-    return <div style={{ padding: "22px 18px 100px", color: "var(--text-dim)" }}>Loading resident portal...</div>;
+    return <div className="ledger-screen" style={{ color: "var(--text-dim)" }}>Loading resident portal...</div>;
   }
 
   if (!user?.societyPortalId) {
     return (
-      <div style={{ padding: "22px 18px 100px" }}>
-        <div className="section-label">Resident View</div>
-        <div className="card">
-          <EmptyState title="Resident access not joined" message="Open Settings and join with invite code to track common records and your flat dues." />
+      <div className="ledger-screen">
+        <div className="ledger-block">
+          <div className="ledger-block-header">
+            <div>
+              <div className="ledger-block-title">Resident View</div>
+              <div className="ledger-block-caption">Join with your invite code to see dues and society records.</div>
+            </div>
+          </div>
+          <div className="ledger-feed-card">
+            <EmptyState title="Resident access not joined" message="Open Settings and join with your invite code to track common records and your flat dues." />
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 60%)", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            Resident Read-Only View
-          </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 28, color: "var(--text)" }}>{portal?.name || "Society Portal"}</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--blue)" }}>Resident View</div>
+          <div className="ledger-hero-value" style={{ color: "var(--text)" }}>{portal?.name || "Society Portal"}</div>
+          <div className="ledger-hero-sub">
             Flat {user?.societyFlatNumber || "-"} · {MONTHS[month]} {year}
           </div>
           {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{error}</div>}
         </div>
-        <div style={{ flexShrink: 0 }}>{headerDatePicker}</div>
+        {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
       </div>
 
-      <div style={{ padding: "22px 18px 0" }}>
-        <div className="section-label">Common Records</div>
-        <div className="card" style={{ marginBottom: 18 }}>
+      <div className="ledger-block">
+        <div className="ledger-block-header">
+          <div>
+            <div className="ledger-block-title">Common Records</div>
+            <div className="ledger-block-caption">Published society totals for the selected month.</div>
+          </div>
+        </div>
+        <div className="ledger-feed-card">
           {!commonRecord ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>No published common records for this month yet.</div>
+            <EmptyState title="No common records yet" message="The association has not published society records for this month." accentColor="var(--blue)" />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Expected</div><div style={{ fontSize: 15, fontWeight: 700 }}>{fmtMoney(commonRecord.expectedAmount || 0, commonRecord.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Collected</div><div style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(commonRecord.collectedAmount || 0, commonRecord.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Pending</div><div style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(commonRecord.pendingAmount || 0, commonRecord.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Society Expenses</div><div style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(commonRecord.expenseAmount || 0, commonRecord.currencySymbol || "Rs")}</div></div>
+            <div className="ledger-summary-grid">
+              <StatCell label="Expected" value={fmtMoney(commonRecord.expectedAmount || 0, commonRecord.currencySymbol || "Rs")} />
+              <StatCell label="Collected" value={fmtMoney(commonRecord.collectedAmount || 0, commonRecord.currencySymbol || "Rs")} color="var(--accent)" />
+              <StatCell label="Pending" value={fmtMoney(commonRecord.pendingAmount || 0, commonRecord.currencySymbol || "Rs")} color="var(--gold)" />
+              <StatCell label="Society Expenses" value={fmtMoney(commonRecord.expenseAmount || 0, commonRecord.currencySymbol || "Rs")} color="var(--danger)" />
             </div>
           )}
         </div>
+      </div>
 
-        <div className="section-label">Your Flat Dues</div>
-        <div className="card" style={{ marginBottom: 18 }}>
+      <div className="ledger-block">
+        <div className="ledger-block-header">
+          <div>
+            <div className="ledger-block-title">Your Flat Dues</div>
+            <div className="ledger-block-caption">Your unit-level summary for this period.</div>
+          </div>
+        </div>
+        <div className="ledger-feed-card">
           {!flatDue ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>No due summary found for your flat in this month.</div>
+            <EmptyState title="No dues summary found" message="No due summary has been published for your flat in this month." accentColor="var(--gold)" />
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Expected</div><div style={{ fontSize: 15, fontWeight: 700 }}>{fmtMoney(flatDue.expectedAmount || 0, flatDue.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Paid</div><div style={{ fontSize: 15, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(flatDue.paidAmount || 0, flatDue.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Pending</div><div style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(flatDue.pendingAmount || 0, flatDue.currencySymbol || "Rs")}</div></div>
-              <div><div style={{ fontSize: 11, color: "var(--text-dim)" }}>Status</div><div style={{ fontSize: 14, fontWeight: 700 }}>{flatDue.status || "pending"}</div></div>
+            <div className="ledger-summary-grid">
+              <StatCell label="Expected" value={fmtMoney(flatDue.expectedAmount || 0, flatDue.currencySymbol || "Rs")} />
+              <StatCell label="Paid" value={fmtMoney(flatDue.paidAmount || 0, flatDue.currencySymbol || "Rs")} color="var(--accent)" />
+              <StatCell label="Pending" value={fmtMoney(flatDue.pendingAmount || 0, flatDue.currencySymbol || "Rs")} color="var(--gold)" />
+              <StatCell label="Status" value={String(flatDue.status || "pending")} color="var(--text)" />
             </div>
           )}
         </div>
+      </div>
 
-        <div className="section-label">Notices</div>
-        <div className="card">
+      <div className="ledger-block">
+        <div className="ledger-block-header">
+          <div>
+            <div className="ledger-block-title">Notices</div>
+            <div className="ledger-block-caption">Updates shared by the association for this month.</div>
+          </div>
+        </div>
+        <div className="ledger-feed-card">
           {noticeItems.length === 0 ? (
-            <div style={{ fontSize: 13, color: "var(--text-dim)" }}>No notices published this month.</div>
+            <EmptyState title="No notices this month" message="You are all caught up for the selected period." accentColor="var(--blue)" />
           ) : (
             noticeItems.map((notice, index) => (
-              <div key={`${notice}-${index}`} style={{ padding: index === noticeItems.length - 1 ? 0 : "0 0 12px", marginBottom: index === noticeItems.length - 1 ? 0 : 12, borderBottom: index === noticeItems.length - 1 ? "none" : "1px solid var(--border)", fontSize: 13, color: "var(--text-sec)" }}>
-                {notice}
+              <div
+                key={`${notice}-${index}`}
+                className="ledger-feed-row"
+                style={{ borderBottom: index === noticeItems.length - 1 ? "none" : undefined }}
+              >
+                <div className="ledger-feed-main">
+                  <div className="ledger-feed-title">Notice {index + 1}</div>
+                  <div className="ledger-feed-meta">{notice}</div>
+                </div>
               </div>
             ))
           )}
