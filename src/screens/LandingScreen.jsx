@@ -411,8 +411,6 @@ export default function LandingScreen({ onGetStarted }) {
         }}>
           <BrandLogo compact showTagline={false} />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <a href="#features" style={{ fontSize: 13, color: "var(--text-sec)", textDecoration: "none", padding: "6px 10px" }}>Features</a>
-            <a href="#pricing" style={{ fontSize: 13, color: "var(--text-sec)", textDecoration: "none", padding: "6px 10px" }}>Pricing</a>
             <button onClick={onGetStarted} className="btn-primary" style={{ padding: "9px 20px", fontSize: 13 }}>Sign In →</button>
           </div>
         </nav>
