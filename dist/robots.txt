@@ -1,4 +1,4 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
 Disallow:
-Sitemap: https://www.easykhata.net/sitemap.xml
+Sitemap: https://www.eazykhata.in/sitemap.xml

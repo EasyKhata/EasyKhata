@@ -1,5 +1,6 @@
 import { fmtDate } from "../components/UI";
 import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
+import { APP_WEBSITE_HOST } from "./brand";
 import { buildLocationLabel, parseLocationFields } from "./profile";
 
 let jsPDF = null;
@@ -64,7 +65,7 @@ function drawPdfBrandBadge(doc, x, y, variant = "dark") {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.6);
   doc.setTextColor(linkColor[0], linkColor[1], linkColor[2]);
-  doc.text("www.easykhata.net", x + 11.5, y + 8.9);
+  doc.text(APP_WEBSITE_HOST, x + 11.5, y + 8.9);
 }
 
 function contactAddress(contact = {}) {

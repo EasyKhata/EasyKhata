@@ -63,7 +63,7 @@ import {
   PLAN_LABELS,
   PLANS
 } from "../utils/subscription";
-import { APP_SUPPORT_EMAIL } from "../utils/brand";
+import { APP_SUPPORT_EMAIL, APP_UPGRADE_URL } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
 import { ORG_TYPE_OPTIONS, ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
@@ -1340,9 +1340,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     // Send users to the website to complete the upgrade there.
     if (isNative) {
       import("@capacitor/browser").then(({ Browser }) => {
-        Browser.open({ url: "https://www.easykhata.net/#upgrade" });
+        Browser.open({ url: APP_UPGRADE_URL });
       }).catch(() => {
-        window.open("https://www.easykhata.net/#upgrade", "_blank");
+        window.open(APP_UPGRADE_URL, "_blank");
       });
       setScreen("main");
       return;
