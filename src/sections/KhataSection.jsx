@@ -121,45 +121,49 @@ export default function KhataSection({ orgType }) {
   }
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)" }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Customer Khata
-        </div>
-        <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--gold)", letterSpacing: -0.5 }}>{fmtMoney(totalOutstanding, sym)}</div>
-        <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-          Open customer balance across {customers.length} customer{customers.length === 1 ? "" : "s"}. Total sales: {fmtMoney(totalSales, sym)}.
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--gold)" }}>Customer Khata</div>
+          <div className="ledger-hero-value" style={{ color: "var(--gold)" }}>{fmtMoney(totalOutstanding, sym)}</div>
+          <div className="ledger-hero-sub">
+            Open customer balance across {customers.length} customer{customers.length === 1 ? "" : "s"}. Total sales: {fmtMoney(totalSales, sym)}.
+          </div>
         </div>
       </div>
 
-      <div style={{ padding: "22px 18px 0" }}>
-        <div className="card" style={{ padding: 16, marginBottom: 18 }}>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 10 }}>
+      <div className="ledger-block">
+        <div className="ledger-feed-card ledger-search-card">
+          <div className="ledger-inline-note">
             Open a customer to view a passbook-style khata history with sales, payments, and running balance.
           </div>
           <Input placeholder="Search customers by name, company, phone, or email" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} />
         </div>
 
-        <div className="card">
+        <div className="ledger-feed-card">
           {customers.length === 0 ? (
-            <EmptyState title="No customers added yet" message="Add customers in Khata to start tracking khata history and balances." accentColor="var(--gold)" />
+            <EmptyState title="No customers added yet" message="Add customers in Khata to start tracking balances and payment history." accentColor="var(--gold)" />
           ) : filteredCustomers.length === 0 ? (
             <EmptyState title="No matching customers" message="Try a different search term to find the customer you need." accentColor="var(--gold)" />
           ) : (
             filteredCustomers.map(customer => (
-              <div key={customer.id} className="card-row" style={{ cursor: "pointer" }} onClick={() => setSelectedCustomer(customer)}>
+              <div key={customer.id} className="ledger-feed-row" style={{ cursor: "pointer" }} onClick={() => setSelectedCustomer(customer)}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                   <Avatar name={customer.name || "?"} size={36} fontSize={12} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{customer.name}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                    <div className="ledger-feed-title" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{customer.name}</div>
+                    <div className="ledger-feed-meta" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {[customer.company || "", `${customer.invoiceCount || 0} invoice${customer.invoiceCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ") || "No extra details"}
                     </div>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: (customer.outstanding || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>{fmtMoney(customer.outstanding || 0, sym)}</div>
-                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>{(customer.outstanding || 0) > 0 ? "Open balance" : "Settled"}</div>
+                <div className="ledger-feed-side">
+                  <div className="ledger-feed-amount" style={{ color: (customer.outstanding || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>
+                    {fmtMoney(customer.outstanding || 0, sym)}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+                    {(customer.outstanding || 0) > 0 ? "Open balance" : "Settled"}
+                  </div>
                 </div>
               </div>
             ))
@@ -169,19 +173,21 @@ export default function KhataSection({ orgType }) {
 
       {selectedCustomer && (
         <Modal title={`${selectedCustomer.name} Khata`} onClose={() => setSelectedCustomer(null)} canSave={false}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-            <div className="card" style={{ padding: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>Total Sales</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(selectedCustomer.totalSales || 0, sym)}</div>
+          <div className="ledger-summary-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginBottom: 16 }}>
+            <div className="ledger-summary-card" style={{ borderColor: "var(--accent-deep)" }}>
+              <div className="ledger-summary-label" style={{ color: "var(--text-dim)" }}>Total Sales</div>
+              <div className="ledger-summary-value" style={{ color: "var(--accent)", fontSize: 24 }}>{fmtMoney(selectedCustomer.totalSales || 0, sym)}</div>
             </div>
-            <div className="card" style={{ padding: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>Open Balance</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: (selectedCustomer.outstanding || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>{fmtMoney(selectedCustomer.outstanding || 0, sym)}</div>
+            <div className="ledger-summary-card" style={{ borderColor: "var(--gold-deep)" }}>
+              <div className="ledger-summary-label" style={{ color: "var(--text-dim)" }}>Open Balance</div>
+              <div className="ledger-summary-value" style={{ color: (selectedCustomer.outstanding || 0) > 0 ? "var(--gold)" : "var(--accent)", fontSize: 24 }}>
+                {fmtMoney(selectedCustomer.outstanding || 0, sym)}
+              </div>
             </div>
           </div>
 
-          <div className="card">
-            <div className="card-row" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+          <div className="ledger-feed-card">
+            <div className="ledger-feed-row" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
               <span style={{ width: 72 }}>Date</span>
               <span style={{ flex: 1 }}>Details</span>
               <span style={{ width: 78, textAlign: "right" }}>Debit</span>
@@ -192,15 +198,21 @@ export default function KhataSection({ orgType }) {
               <EmptyState title="No khata history yet" message="Create invoices for this customer to build their passbook history." accentColor="var(--gold)" />
             ) : (
               selectedCustomer.entries.map(entry => (
-                <div key={entry.id} className="card-row" style={{ alignItems: "flex-start", gap: 10 }}>
+                <div key={entry.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 10 }}>
                   <div style={{ width: 72, fontSize: 12, color: "var(--text-dim)" }}>{fmtDate(entry.date)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{entry.description}</div>
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{entry.note}</div>
                   </div>
-                  <div style={{ width: 78, textAlign: "right", fontSize: 13, fontWeight: 700, color: entry.debit > 0 ? "var(--danger)" : "var(--text-dim)" }}>{entry.debit > 0 ? fmtMoney(entry.debit, sym) : "--"}</div>
-                  <div style={{ width: 78, textAlign: "right", fontSize: 13, fontWeight: 700, color: entry.credit > 0 ? "var(--accent)" : "var(--text-dim)" }}>{entry.credit > 0 ? fmtMoney(entry.credit, sym) : "--"}</div>
-                  <div style={{ width: 88, textAlign: "right", fontSize: 13, fontWeight: 700, color: (entry.balance || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>{fmtMoney(entry.balance || 0, sym)}</div>
+                  <div style={{ width: 78, textAlign: "right", fontSize: 13, fontWeight: 700, color: entry.debit > 0 ? "var(--danger)" : "var(--text-dim)" }}>
+                    {entry.debit > 0 ? fmtMoney(entry.debit, sym) : "--"}
+                  </div>
+                  <div style={{ width: 78, textAlign: "right", fontSize: 13, fontWeight: 700, color: entry.credit > 0 ? "var(--accent)" : "var(--text-dim)" }}>
+                    {entry.credit > 0 ? fmtMoney(entry.credit, sym) : "--"}
+                  </div>
+                  <div style={{ width: 88, textAlign: "right", fontSize: 13, fontWeight: 700, color: (entry.balance || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>
+                    {fmtMoney(entry.balance || 0, sym)}
+                  </div>
                 </div>
               ))
             )}

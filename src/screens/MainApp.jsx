@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Settings,
+  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Settings,
   TrendingDown, TrendingUp, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -12,6 +12,7 @@ import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import PendingInviteBanner from "../components/PendingInviteBanner";
+import { societyApi } from "../lib/api";
 import { APP_UPGRADE_URL } from "../utils/brand";
 import {
   buildReminders,
@@ -363,6 +364,8 @@ export default function MainApp() {
   const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const headerMenuRef = useRef(null);
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [trialBannerVisible, setTrialBannerVisible] = useState(true);
@@ -389,8 +392,10 @@ export default function MainApp() {
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+  const [isCompactMobile, setIsCompactMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 420 : false));
   const [idleWarning, setIdleWarning] = useState(false);
   const [idleCountdown, setIdleCountdown] = useState(120);
+  const [residentMemberView, setResidentMemberView] = useState(null);
   const idleCountdownRef = useRef(null);
   const historyMountedRef = useRef(false);
   const isPopStateRef = useRef(false);
@@ -597,11 +602,52 @@ export default function MainApp() {
     setDismissedIds(getDismissedReminderIds(user?.id));
   }, [user?.id]);
 
+  useEffect(() => {
+    function handleDocumentClick(event) {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target)) {
+        setShowHeaderMenu(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    document.addEventListener("touchstart", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+      document.removeEventListener("touchstart", handleDocumentClick);
+    };
+  }, []);
+
+  const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
+
   const liveReminders = useMemo(() => {
+    if (hasResidentPortalAccess) {
+      const flatDue = residentMemberView?.flatDue || null;
+      const pendingAmount = Number(flatDue?.pendingAmount || 0);
+      if (pendingAmount <= 0) return [];
+
+      const period = String(flatDue?.period || new Date().toISOString().slice(0, 7));
+      const [yearPart, monthPart] = period.split("-");
+      const monthNumber = Number(monthPart);
+      const monthLabel = monthNumber >= 1 && monthNumber <= 12
+        ? `${MONTHS[monthNumber - 1]} ${yearPart}`
+        : period;
+
+      return [
+        {
+          id: `resident-due-${residentMemberView?.portal?.id || user?.societyPortalId || "portal"}-${period}`,
+          type: "pendingCollections",
+          tab: "org",
+          tone: "gold",
+          title: `Pending due for Flat ${flatDue?.flatNumber || user?.societyFlatNumber || "-"}`,
+          message: `${monthLabel} still has ${pendingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} pending. Open the resident access section to review your dues.`
+        }
+      ];
+    }
+
     const currentDate = new Date();
     const reminders = buildReminders(data, currentDate.getFullYear(), currentDate.getMonth());
     return filterRemindersByPrefs(reminders, data.notificationPrefs || {});
-  }, [data]);
+  }, [data, hasResidentPortalAccess, residentMemberView, user?.societyFlatNumber, user?.societyPortalId]);
 
   const inboxReminders = useMemo(
     () => liveReminders.filter(item => !dismissedIds.includes(item.id)),
@@ -724,12 +770,41 @@ export default function MainApp() {
 
     const handleResize = () => {
       setIsMobile(window.innerWidth <= 768);
+      setIsCompactMobile(window.innerWidth <= 420);
     };
 
     handleResize();
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!hasResidentPortalAccess) {
+      setResidentMemberView(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const period = new Date().toISOString().slice(0, 7);
+
+    async function loadResidentMemberView() {
+      try {
+        const result = await societyApi.getMemberView(period);
+        if (!cancelled) {
+          setResidentMemberView(result || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setResidentMemberView(null);
+        }
+      }
+    }
+
+    loadResidentMemberView();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasResidentPortalAccess, user?.societyPortalId, user?.societyFlatNumber]);
 
   const renderTabContent = useCallback(() => {
     const fallback = tab === "settings" || (isAdmin && tab === "users")
@@ -783,10 +858,29 @@ export default function MainApp() {
       .map(tabId => TABS.find(item => item.id === tabId))
       .filter(Boolean);
     if (baseTabs.some(item => item.id === tab) || !TABS.some(item => item.id === tab)) {
-      return baseTabs;
+      return baseTabs.map(item => ({
+        ...item,
+        label:
+          item.id === "dashboard" ? "Home" :
+          item.id === "expenses" ? "Spend" :
+          item.id === "discussions" ? "Chat" :
+          item.id === "org" ? "Khata" :
+          item.id === "adminSupport" ? "Support" :
+          item.label
+      }));
     }
     const fallbackTab = TABS.find(item => item.id === tab);
-    return fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
+    const nextTabs = fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
+    return nextTabs.map(item => ({
+      ...item,
+      label:
+        item.id === "dashboard" ? "Home" :
+        item.id === "expenses" ? "Spend" :
+        item.id === "discussions" ? "Chat" :
+        item.id === "org" ? "Khata" :
+        item.id === "adminSupport" ? "Support" :
+        item.label
+    }));
   }, [TABS, isAdmin, isApartmentOrg, tab]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
@@ -907,15 +1001,15 @@ export default function MainApp() {
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)", paddingTop: isMobile ? "env(safe-area-inset-top, 0px)" : undefined }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? "10px 12px" : "12px 20px 12px", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? (isCompactMobile ? "8px 10px" : "10px 12px") : "12px 20px 12px", gap: isCompactMobile ? 8 : 10 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: isCompactMobile ? 8 : 12, minWidth: 0, flex: 1 }}>
               <button
                 onClick={() => setTab("dashboard")}
                 title="Go to dashboard"
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
+                  width: isCompactMobile ? 32 : 36,
+                  height: isCompactMobile ? 32 : 36,
+                  borderRadius: isCompactMobile ? 16 : 18,
                   border: "1px solid var(--border)",
                   background: "var(--surface-high)",
                   cursor: "pointer",
@@ -927,25 +1021,25 @@ export default function MainApp() {
                   marginTop: 2
                 }}
               >
-                <BrandMark size={22} />
+                <BrandMark size={isCompactMobile ? 18 : 22} />
               </button>
               <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
-                <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontSize: isMobile ? (isCompactMobile ? 9 : 10) : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: isCompactMobile ? 0.55 : 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {isAdmin ? "Admin" : (account?.name || currentOrgLabel || "My Khata")}
                 </div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? 16 : 24, color: "var(--text)", lineHeight: 1.15, marginTop: isMobile ? 2 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? (isCompactMobile ? 14 : 16) : 24, color: "var(--text)", lineHeight: 1.12, marginTop: isMobile ? 2 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {TABS.find(item => item.id === tab)?.label}
                 </div>
               </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8 }}>
               {/* Org switcher — only shown when user has shared orgs */}
               {sharedOrgs.length > 0 && (
                 <div style={{ position: "relative" }} ref={orgSwitcherRef}>
                   <button
                     onClick={() => setShowOrgSwitcher(v => !v)}
                     title="Switch Khata"
-                    style={{ height: isMobile ? 34 : 36, borderRadius: 10, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "var(--border)"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "var(--surface-high)", color: activeSharedOrgKey ? "var(--accent)" : "var(--text-sec)", cursor: "pointer", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: "0 10px", flexShrink: 0 }}
+                    style={{ height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "var(--border)"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "var(--surface-high)", color: activeSharedOrgKey ? "var(--accent)" : "var(--text-sec)", cursor: "pointer", fontSize: isCompactMobile ? 10 : 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 8px" : "0 10px", flexShrink: 0, maxWidth: isCompactMobile ? 110 : 160, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                   >
                     {activeSharedOrgKey
                       ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared Khata")
@@ -978,31 +1072,51 @@ export default function MainApp() {
                 </div>
               )}
               <button
-                onClick={() => handleNavigate({ tab: "settings", screen: "main" })}
-                title="Open profile settings"
-                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-              >
-                <Settings size={isMobile ? 15 : 16} strokeWidth={2} />
-              </button>
-              <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                <Bell size={isMobile ? 15 : 16} strokeWidth={2} />
+                <Bell size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
                 {inboxReminders.length > 0 && (
-                  <span style={{ position: "absolute", top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                  <span style={{ position: "absolute", top: isCompactMobile ? -4 : -5, right: isCompactMobile ? -4 : -5, minWidth: isCompactMobile ? 16 : 18, height: isCompactMobile ? 16 : 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
                     {inboxReminders.length}
                   </span>
                 )}
               </button>
-              <button
-                onClick={() => { if (window.confirm("Sign out of EazyKhata?")) logout(); }}
-                title="Sign out"
-                style={{ width: isMobile ? 34 : 36, height: isMobile ? 34 : 36, borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-              >
-                <LogOut size={isMobile ? 15 : 16} strokeWidth={2} />
-              </button>
+              <div style={{ position: "relative" }} ref={headerMenuRef}>
+                <button
+                  onClick={() => setShowHeaderMenu(value => !value)}
+                  title="More options"
+                  style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <MoreHorizontal size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
+                </button>
+                {showHeaderMenu && (
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 168, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", overflow: "hidden", zIndex: 220 }}>
+                    <button
+                      onClick={() => {
+                        setShowHeaderMenu(false);
+                        handleNavigate({ tab: "settings", screen: "main" });
+                      }}
+                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <Settings size={15} strokeWidth={2} />
+                      Settings
+                    </button>
+                    <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
+                    <button
+                      onClick={() => {
+                        setShowHeaderMenu(false);
+                        if (window.confirm("Sign out of EazyKhata?")) logout();
+                      }}
+                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                    >
+                      <LogOut size={15} strokeWidth={2} />
+                      Sign out
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1015,7 +1129,7 @@ export default function MainApp() {
         {activeSharedOrgKey && (() => {
           const org = sharedOrgs.find(o => o.key === activeSharedOrgKey);
           return org ? (
-            <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: "7px 18px", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+            <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: isCompactMobile ? "6px 10px" : "7px 18px", display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, fontSize: isCompactMobile ? 11 : 12 }}>
               <span style={{ color: "var(--text-dim)" }}>Viewing</span>
               <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
               {(() => { const liveRole = activeSharedOrgRole ?? org.role ?? "viewer"; return (
@@ -1026,7 +1140,7 @@ export default function MainApp() {
           ) : null;
         })()}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)" : "14px 18px 104px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px" }}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={tab}

@@ -15,7 +15,6 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
 
-  // Auto-focus first focusable element once on open
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
@@ -23,33 +22,31 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     firstFocusable?.focus();
   }, []);
 
-  // Escape key + Tab cycling — keyboard handler only, never steals focus
   useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return undefined;
 
-    function handleKeyDown(e) {
-      if (e.key === "Escape") {
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
         onClose?.();
         return;
       }
-      if (e.key !== "Tab") return;
+      if (event.key !== "Tab") return;
 
       const focusable = Array.from(surface.querySelectorAll(FOCUSABLE));
       if (!focusable.length) return;
+
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
 
-      if (e.shiftKey) {
+      if (event.shiftKey) {
         if (document.activeElement === first) {
-          e.preventDefault();
+          event.preventDefault();
           last.focus();
         }
-      } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+      } else if (document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     }
 
@@ -96,19 +93,25 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
           <button
             onClick={onClose}
             style={{
-              background: "none", border: "none", padding: "4px 8px",
-              fontSize: 18, color: "var(--text-sec)", cursor: "pointer",
-              lineHeight: 1, borderRadius: 8, fontFamily: "var(--font)",
+              background: "none",
+              border: "none",
+              padding: "4px 8px",
+              fontSize: 26,
+              color: "var(--text-sec)",
+              cursor: "pointer",
+              lineHeight: 1,
+              borderRadius: 8,
+              fontFamily: "var(--font)",
               transition: "color var(--transition-fast)"
             }}
             aria-label="Close"
           >
-            ✕
+            <span aria-hidden="true">×</span>
           </button>
         </div>
         <div className="modal-body">{children}</div>
         {onSave && (
-          <div style={{ padding: "12px 20px 20px", display: "flex", gap: 10, borderTop: "1px solid var(--border)" }}>
+          <div className="modal-footer">
             <button onClick={onClose} className="btn-secondary" style={{ flex: 1, padding: "12px", fontSize: 14 }}>
               Cancel
             </button>
@@ -132,7 +135,7 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
               {isSaving ? (
                 <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                   <span className="btn-spinner" />
-                  Saving…
+                  Saving...
                 </span>
               ) : saveLabel}
             </button>

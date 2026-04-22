@@ -387,16 +387,16 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   const ExpenseRow = ({ expense }) => (
-    <div className="card-row">
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{expense.label}</span>
+    <div className="ledger-feed-row">
+      <div className="ledger-feed-main">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div className="ledger-feed-title">{expense.label}</div>
           {!isPersonalOrg && expense.recurring && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>Recurring</span>}
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{expenseMeta(expense)}</div>
+        <div className="ledger-feed-meta">{expenseMeta(expense)}</div>
       </div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
+      <div className="ledger-feed-side">
+        <span className="ledger-feed-amount" style={{ color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
         {!isViewerMode && (
           <>
             <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
@@ -408,21 +408,27 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   );
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            Total {config.expensesLabel} - {MONTHS[month]} {year}
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--danger)" }}>
+            Total {config.expensesLabel} · {MONTHS[month]} {year}
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--danger)", letterSpacing: -0.5 }}>{fmtMoney(total, sym)}</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-            {isPersonalOrg ? "Search and review every spending entry for this month in one place." : isApartmentOrg ? "Track all society bills, utilities, and repairs here." : config.enableBudgets === false ? "Track all business costs here in one place." : `${budgetCards.filter(item => item.progress >= 100).length} budget(s) exceeded this month`}
+          <div className="ledger-hero-value" style={{ color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
+          <div className="ledger-hero-sub">
+            {isPersonalOrg
+              ? "Review monthly spending without oversized cards."
+              : isApartmentOrg
+                ? "Track society bills, utilities, and repairs in one compact ledger."
+                : config.enableBudgets === false
+                  ? "Track business costs in one place."
+                  : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
-          <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
+        <div className="ledger-hero-actions">
+          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
           {!isViewerMode && (
-            <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
+            <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 176, whiteSpace: "nowrap" }}>
               + {config.expensesActionLabel}
             </button>
           )}
@@ -430,16 +436,16 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       </div>
 
       {isViewerMode && (
-        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+        <div className="ledger-inline-note" style={{ background: "var(--surface-high)", border: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600 }}>
           View only · Contact the org owner to add or edit records
         </div>
       )}
 
-      <div style={{ padding: "22px 18px 0" }}>
+      <div className="ledger-block">
         {isPersonalOrg ? (
           <>
             {hasHouseholdPeople && (
-              <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+                <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
                 <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, person, note, or linked name.">
                   <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
                 </Field>
@@ -449,7 +455,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
             )}
 
-            <div className="card">
+            <div className="ledger-feed-card">
               {!hasHouseholdPeople ? (
                 <EmptyState
                   title="Add a person before tracking spendings"
@@ -481,16 +487,19 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
           <>
             {config.enableBudgets !== false && (
               <>
-                <div className="section-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>Category Budgets</span>
+                <div className="ledger-block-header" style={{ marginBottom: 10 }}>
+                  <div>
+                    <div className="ledger-block-title">Category Budgets</div>
+                    <div className="ledger-block-caption">See overspending early and set simple monthly limits.</div>
+                  </div>
                   <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={openBudgetEditor}>Set Budgets</button>
                 </div>
-                <div className="card" style={{ marginBottom: 22 }}>
+                <div className="ledger-feed-card" style={{ marginBottom: 22 }}>
                   {budgetCards.length === 0 ? (
                     <EmptyState title="No budgets set yet" message="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} accentColor="var(--danger)" />
                   ) : (
                     budgetCards.map(item => (
-                      <div key={item.category} className="card-row" style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}>
+                        <div key={item.category} className="ledger-feed-row" style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                           <div>
                             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.category}</div>
@@ -509,7 +518,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             )}
 
             {active.length > 0 && (
-              <div className="card" style={{ padding: 16, marginBottom: 18 }}>
+              <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
                 <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, vendor, note, or linked name.">
                   <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
                 </Field>
@@ -522,7 +531,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {isSmallBusinessOrg ? (
               <>
                 <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
-                  <div className="card">
+                  <div className="ledger-feed-card">
                     {salaryExpenses.length === 0 ? (
                       <EmptyState title="No team payouts yet" message="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--purple)" />
                     ) : (
@@ -532,7 +541,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
 
                 <Collapsible title="Partner & Vendor Payments" icon="🏷" color="var(--gold)" count={partnerExpenses.length} defaultOpen={partnerExpenses.length > 0}>
-                  <div className="card">
+                  <div className="ledger-feed-card">
                     {partnerExpenses.length === 0 ? (
                       <EmptyState title="No partner payments yet" message="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--gold)" />
                     ) : (
@@ -542,7 +551,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
 
                 <Collapsible title="Operating Expenses" icon="•" color="var(--danger)" count={otherExpenses.length} defaultOpen>
-                  <div className="card">
+                  <div className="ledger-feed-card">
                     {otherExpenses.length === 0 ? (
                       <EmptyState title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--danger)" />
                     ) : (
@@ -552,8 +561,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
               </>
             ) : isFreelancerOrg ? (
-              <div className="card">
-                {!hasFreelancerClients ? (
+                <div className="ledger-feed-card">
+                  {!hasFreelancerClients ? (
                   <EmptyState
                     title="Add a client before tracking expenses"
                     message="Freelancer expenses must be linked to at least one client. Add your first client in Khata to continue."
@@ -577,12 +586,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
             ) : recurring.length > 0 && (
               <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
-                <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
+                <div className="ledger-feed-card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
               </Collapsible>
             )}
 
             {!isApartmentOrg && !isSmallBusinessOrg && !isFreelancerOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
-              <div className="card">
+              <div className="ledger-feed-card">
                 {oneTime.length === 0 ? (
                   <EmptyState
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
@@ -598,7 +607,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             </Collapsible>}
 
             {isApartmentOrg && hasApartmentFlats && (
-              <div className="card">
+              <div className="ledger-feed-card">
                 {active.length === 0 ? (
                   <EmptyState
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
@@ -616,7 +625,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             )}
 
             {isApartmentOrg && !hasApartmentFlats && (
-              <div className="card">
+              <div className="ledger-feed-card">
                 {active.length === 0 ? (
                   <EmptyState
                     title="Add flats before tracking society expenses"
@@ -651,22 +660,29 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             </div>
           )}
 
-          <div className="card" style={{ padding: "16px", marginBottom: 16 }}>
-            <Field label="Description" required error={errors.label}>
-              <Input error={errors.label} placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }} />
-            </Field>
-            <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`} error={errors.amount}>
-              <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
-            </Field>
-            <Field label="Category">
-              <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>
-                {categoryOptions.map(category => <option key={category}>{category}</option>)}
-              </Select>
-            </Field>
-            <Field label="Expense Date" required error={errors.date}>
-              <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
-            </Field>
-            {(config.expenseFields || []).map(field => (
+          <div className="ledger-form-grid">
+            <div className="ledger-form-group">
+              <div className="ledger-form-group-title">Primary details</div>
+              <Field label="Description" required error={errors.label}>
+                <Input error={errors.label} placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }} />
+              </Field>
+              <div className="ledger-form-split">
+                <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`} error={errors.amount}>
+                  <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
+                </Field>
+                <Field label="Expense Date" required error={errors.date}>
+                  <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />
+                </Field>
+              </div>
+              <Field label="Category">
+                <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>
+                  {categoryOptions.map(category => <option key={category}>{category}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="ledger-form-group compact">
+              <div className="ledger-form-group-title">Entry details</div>
+              {(config.expenseFields || []).map(field => (
               <Field key={field.key} label={field.label} error={field.key === "personName" ? errors.personName : undefined}>
                 {isPersonalOrg && field.key === "personName"
                   ? (
@@ -731,9 +747,13 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 )}
               </>
             )}
-            <Field label="Note">
-              <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
-            </Field>
+            </div>
+            <div className="ledger-form-group compact">
+              <div className="ledger-form-group-title">Optional</div>
+              <Field label="Note">
+                <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
+              </Field>
+            </div>
           </div>
         </Modal>
       )}

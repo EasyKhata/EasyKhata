@@ -108,7 +108,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     if (form.endDate < minEnd) {
       setForm(current => ({ ...current, endDate: "" }));
     }
-  }, [form.startDate, showForm]);
+  }, [form.startDate, form.endDate, showForm]);
 
   const peopleOptions = useMemo(() => getPeopleOptions(d.customers), [d.customers]);
   const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => getPersonalEmiDueDay(a) - getPersonalEmiDueDay(b));
@@ -178,6 +178,11 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     setShowForm(false);
   }
 
+  function updateField(key, value) {
+    setForm(current => ({ ...current, [key]: value }));
+    if (errors[key]) setErrors(prev => ({ ...prev, [key]: "" }));
+  }
+
   function save() {
     const nextErrors = {};
     if (!hasMinLength(form.loanName, 2)) nextErrors.loanName = "Enter the EMI or loan name.";
@@ -191,10 +196,12 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     } else if (form.startDate && form.startDate > TODAY) {
       nextErrors.startDate = "Start date cannot be in the future.";
     }
+
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
     }
+
     const effectiveStartDate = form.startDate || CURRENT_MONTH_START;
     const minimumEndDate = nextMonthStart(effectiveStartDate);
     if (form.endDate < minimumEndDate) {
@@ -218,63 +225,67 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   }
 
   return (
-    <div style={{ paddingBottom: 100 }}>
-      <div className="section-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 60%)", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "space-between", gap: 16 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+    <div className="ledger-screen">
+      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
+        <div className="ledger-hero-meta">
+          <div className="ledger-overline" style={{ color: "var(--gold)" }}>
             EMI Commitments · {MONTHS[month]} {year}
           </div>
-          <div style={{ fontFamily: "var(--serif)", fontSize: 42, color: "var(--gold)", letterSpacing: -0.5 }}>{fmtMoney(monthlyEmi, sym)}</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 6 }}>
-            {activeLoans.length} active EMI record(s)
+          <div className="ledger-hero-value" style={{ color: "var(--gold)" }}>
+            {fmtMoney(monthlyEmi, sym)}
+          </div>
+          <div className="ledger-hero-sub">
+            {activeLoans.length
+              ? `${activeLoans.length} active EMI ${activeLoans.length === 1 ? "entry" : "entries"} this month.`
+              : "Track home loan, vehicle loan, and other EMI commitments here."}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "flex-end", gap: 10, width: isMobile ? "100%" : "auto", flexShrink: 0 }}>
-          <div style={{ width: isMobile ? "100%" : "auto", display: "flex", justifyContent: isMobile ? "stretch" : "flex-end" }}>{headerDatePicker}</div>
-          <button className="btn-secondary" onClick={openNew} style={{ alignSelf: isMobile ? "stretch" : "flex-end", marginTop: 0, padding: "10px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", width: isMobile ? "100%" : "auto" }}>
+        <div className="ledger-hero-actions">
+          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
+          <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 160, whiteSpace: "nowrap" }}>
             + Add EMI
           </button>
         </div>
       </div>
 
-      <div style={{ padding: "22px 18px 0" }}>
-        <div style={{ marginBottom: 14 }}>
+      <div className="ledger-block">
+        <div className="ledger-feed-card ledger-search-card">
           <Input
             placeholder="Search EMI by loan, lender, due day, or amount"
             value={searchTerm}
             onChange={event => setSearchTerm(event.target.value)}
           />
+          <div className="ledger-block-caption">
+            Review due dates, lenders, and monthly commitments without scrolling through oversized cards.
+          </div>
         </div>
-        <div className="card">
+
+        <div className="ledger-feed-card">
           {!hasHouseholdPeople ? (
             <EmptyState title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} accentColor="var(--gold)" />
           ) : loans.length === 0 ? (
             <EmptyState title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
           ) : activeLoans.length === 0 ? (
-            <EmptyState title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs will only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
+            <EmptyState title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
           ) : filteredLoans.length === 0 ? (
             <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
               No EMI records match this search.
             </div>
           ) : (
             filteredLoans.map(item => (
-              <div key={item.id} className="card-row">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.loanName || "EMI"}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              <div key={item.id} className="ledger-feed-row">
+                <div className="ledger-feed-main">
+                  <div className="ledger-feed-title">{item.loanName || "EMI"}</div>
+                  <div className="ledger-feed-meta">
                     {[
                       item.lender || "",
                       getPersonalEmiDueDay(item) ? `Due on ${getPersonalEmiDueDay(item)}` : "No due date",
                       getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : ""
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                    ].filter(Boolean).join(" · ")}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(getPersonalEmiAmount(item), sym)}</span>
+                <div className="ledger-feed-side">
+                  <span className="ledger-feed-amount" style={{ color: "var(--gold)" }}>{fmtMoney(getPersonalEmiAmount(item), sym)}</span>
                   <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
                   <DeleteBtn onDelete={() => d.removeOrgRecord("loans", item.id)} />
                 </div>
@@ -286,57 +297,48 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
       {showForm && (
         <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">
-          {emiSection.fields.map(field => {
-            const onChange = value => {
-              setForm(current => ({ ...current, [field.key]: value }));
-              if (errors[field.key]) setErrors(prev => ({ ...prev, [field.key]: "" }));
-            };
-            if (field.key === "personName") {
-              return (
-                <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
-                  <Select
-                    value={form.personName || ""}
-                    onChange={e => onChange(e.target.value)}
-                    error={errors.personName}
-                  >
-                    <option value="">— Select family member —</option>
-                    {peopleOptions.map(name => <option key={name} value={name}>{name}</option>)}
+          <div className="ledger-form-grid">
+            <div className="ledger-form-group">
+              <div className="ledger-form-group-title">Primary details</div>
+              <Field label="Loan / EMI Name" required error={errors.loanName}>
+                <Input value={form.loanName || ""} onChange={e => updateField("loanName", e.target.value)} placeholder="Home loan" error={errors.loanName} />
+              </Field>
+              <Field label="Lender" required error={errors.lender}>
+                <Input list="emi-lender-banks" value={form.lender || ""} onChange={e => updateField("lender", e.target.value)} placeholder="Bank or person name" error={errors.lender} />
+                <datalist id="emi-lender-banks">
+                  {INDIAN_BANKS.map(bank => <option key={bank} value={bank} />)}
+                </datalist>
+              </Field>
+              <Field label={`Monthly EMI (${sym})`} required error={errors.monthlyEmi}>
+                <Input type="number" min="0" step="0.01" value={form.monthlyEmi || ""} onChange={e => updateField("monthlyEmi", e.target.value)} placeholder="0.00" error={errors.monthlyEmi} />
+              </Field>
+            </div>
+
+            <div className="ledger-form-group compact">
+              <div className="ledger-form-group-title">Schedule</div>
+              <Field label="Family Member" error={errors.personName}>
+                <Select value={form.personName || ""} onChange={e => updateField("personName", e.target.value)} error={errors.personName}>
+                  <option value="">Select family member</option>
+                  {peopleOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                </Select>
+              </Field>
+              <div className="ledger-form-split">
+                <Field label="Start Date" error={errors.startDate}>
+                  <DateSelectInput value={form.startDate || ""} onChange={value => updateField("startDate", value)} max={TODAY} yearOrder="asc" />
+                </Field>
+                <Field label="Due Date" required error={errors.dueDay}>
+                  <Select value={form.dueDay || "1"} onChange={e => updateField("dueDay", e.target.value)} error={errors.dueDay}>
+                    {Array.from({ length: 31 }, (_, index) => String(index + 1)).map(day => (
+                      <option key={day} value={day}>{day}</option>
+                    ))}
                   </Select>
                 </Field>
-              );
-            }
-            if (field.key === "lender") {
-              return (
-                <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
-                  <Input
-                    list="emi-lender-banks"
-                    value={form.lender || ""}
-                    onChange={e => onChange(e.target.value)}
-                    placeholder={field.placeholder || "Bank or person name"}
-                    error={errors.lender}
-                  />
-                  <datalist id="emi-lender-banks">
-                    {INDIAN_BANKS.map(bank => <option key={bank} value={bank} />)}
-                  </datalist>
-                </Field>
-              );
-            }
-            return (
-              <Field key={field.key} label={field.label} required={Boolean(field.required)} error={errors[field.key]}>
-                {renderField(
-                  field,
-                  form[field.key],
-                  onChange,
-                  field.key === "startDate"
-                    ? { max: TODAY }
-                    : field.key === "endDate"
-                      ? { min: nextMonthStart(form.startDate || CURRENT_MONTH_START), max: EMI_END_DATE_MAX }
-                      : {},
-                  errors[field.key]
-                )}
+              </div>
+              <Field label="End Date" required error={errors.endDate}>
+                <DateSelectInput value={form.endDate || ""} onChange={value => updateField("endDate", value)} min={nextMonthStart(form.startDate || CURRENT_MONTH_START)} max={EMI_END_DATE_MAX} yearOrder="asc" />
               </Field>
-            );
-          })}
+            </div>
+          </div>
         </Modal>
       )}
     </div>

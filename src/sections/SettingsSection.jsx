@@ -1818,39 +1818,42 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   if (screen === "main") {
     if (isOrgMode && user?.role !== "admin") {
       return withNotice(
-        <div style={{ padding: "20px 18px", paddingBottom: 100 }}>
-          <div className="card" style={{ padding: "20px 18px", marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>
+        <div className="ledger-screen">
+          <div className="ledger-feed-card" style={{ padding: 18, marginBottom: 16 }}>
+            <div className="ledger-overline" style={{ marginBottom: 8 }}>
               Active Khata
             </div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{account?.name || "My Khata"}</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              {orgConfig.profileNameLabel} profile, customer directory, and khata-specific records live here.
+            <div style={{ fontSize: 30, fontWeight: 700, color: "var(--text)", lineHeight: 1.1, marginBottom: 8 }}>{account?.name || "My Khata"}</div>
+            <div className="ledger-hero-sub">
+              {orgConfig.profileNameLabel} profile, directory, and khata-specific records live here.
             </div>
             {(account?.location || account?.phone || account?.email) && (
-              <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7, marginTop: 12 }}>
+              <div className="ledger-inline-note" style={{ marginTop: 12 }}>
                 {[account?.location, account?.phone, account?.email].filter(Boolean).join(" · ")}
               </div>
             )}
           </div>
 
-          <div style={{ marginBottom: 10 }}>
-            <div className="section-label">Khata</div>
+          <div className="ledger-block">
+            <div className="ledger-block-header">
+              <div className="ledger-block-title">Khata</div>
+              <div className="ledger-block-caption">Manage your main workspace, people, reports, and records.</div>
+            </div>
             <div className="card">
               <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               {organizations.length > 1 && (
                 <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
               )}
               {canCreateOrganization && (
-                <MenuRow icon="+" label="New Khata" sub="Add another Khata for a different use type" onClick={() => setScreen("create-org")} />
+                <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => setScreen("create-org")} />
               )}
-              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}(s)`} onClick={() => setScreen("customers")} />
-              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download resident-ready monthly or yearly society reports" : "Download a monthly or financial year PDF report")} onClick={openReportPicker} />
+              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => setScreen("customers")} />
+              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
                   icon="I"
                   label="Import Apartment Data"
-                  sub="Upload one CSV file with flats, collections, expenses, dues, and opening balances"
+                  sub="Upload flats, collections, expenses, dues, and opening balances in one CSV"
                   onClick={() => setScreen("apartment-import")}
                 />
               )}
@@ -1859,7 +1862,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   icon="M"
                   label="Apartment Resident Portal"
                   badge="Coming Soon"
-                  sub="Apartment resident portal is temporarily disabled and will be rolled out in a future release."
+                  sub="Resident portal is temporarily disabled and will return in a future release."
                   onClick={() => setUpgradeInfo(getUpgradeCopy("residentPortal"))}
                 />
               )}
@@ -1876,8 +1879,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
 
           {isPersonalOrg && (
-            <div style={{ marginBottom: 10, marginTop: 20 }}>
-              <div className="section-label">Savings Goal</div>
+            <div className="ledger-block">
+              <div className="ledger-block-header">
+                <div className="ledger-block-title">Savings Goal</div>
+                <div className="ledger-block-caption">Track one clear savings target alongside your monthly cashflow.</div>
+              </div>
               <div className="card">
                 <MenuRow
                   icon="G"
@@ -1885,7 +1891,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   sub={
                     Number(goals?.targetAmount || 0) > 0
                       ? `Target: ${fmtMoney(Number(goals.targetAmount), currency?.symbol || "Rs")} · Saved: ${fmtMoney(Number(goals.savedAmount || 0), currency?.symbol || "Rs")}`
-                      : "Set a savings target, track progress, and add a note"
+                      : "Set a target, track progress, and add a note"
                   }
                   onClick={() => setScreen("savings-goal")}
                 />
@@ -1894,8 +1900,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           )}
 
           {isApartmentOrg && (
-            <div style={{ marginBottom: 10, marginTop: 20 }}>
-              <div className="section-label">Residents &amp; Access</div>
+            <div className="ledger-block">
+              <div className="ledger-block-header">
+                <div className="ledger-block-title">Residents &amp; Access</div>
+                <div className="ledger-block-caption">Handle resident visibility, roles, and apartment audit history.</div>
+              </div>
               <div className="card">
                 <MenuRow icon="T" label="Resident Members" sub="Invite residents and manage their roles" onClick={() => setScreen("org-members")} />
                 <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
@@ -1946,7 +1955,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 </Field>
               )}
 
-              <div className="card" style={{ padding: 16 }}>
+              <div className="ledger-feed-card" style={{ padding: 16 }}>
                 <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
                   {reportForm.period === "financial-year"
                     ? "This will export one PDF covering the full April to March financial year."
@@ -1967,16 +1976,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     return withNotice(
-      <div style={{ padding: "20px 18px", paddingBottom: 100 }}>
-        <div className="card" style={{ padding: "20px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 14 }}>
-          <Avatar name={user?.name || "?"} size={52} fontSize={20} />
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{user?.name}</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)" }}>{user?.phone}</div>
-            {user?.location && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{user.location}</div>}
-            {user?.dateOfBirth && <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>DOB: {user.dateOfBirth}</div>}
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.title}</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{planSummary.message}</div>
+      <div className="ledger-screen">
+        <div className="ledger-feed-card" style={{ padding: 18, marginBottom: 16, display: "flex", alignItems: "flex-start", gap: 14 }}>
+          <Avatar name={user?.name || "?"} size={48} fontSize={18} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "var(--text)", lineHeight: 1.15 }}>{user?.name}</div>
+            <div className="ledger-hero-sub" style={{ marginTop: 4 }}>{user?.phone}</div>
+            {user?.location && <div className="ledger-inline-note" style={{ marginTop: 6 }}>{user.location}</div>}
+            {user?.dateOfBirth && <div className="ledger-inline-note" style={{ marginTop: 4 }}>DOB {user.dateOfBirth}</div>}
+            <div className="ledger-inline-note" style={{ marginTop: 8 }}>{planSummary.title}</div>
+            <div className="ledger-inline-note" style={{ marginTop: 4 }}>{planSummary.message}</div>
             {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
@@ -1984,18 +1993,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         </div>
 
         {user?.role === "admin" && (
-          <div className="card" style={{ padding: "18px 16px", marginBottom: 20, borderLeft: "4px solid var(--gold)" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Admin Dashboard</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your admin dashboard is now available from the main tab bar. Use it for user management, subscription approvals, and activity reporting. This settings area contains your personal profile, reporting tools, currency controls, and notifications.
+          <div className="ledger-feed-card" style={{ padding: 16, marginBottom: 16, borderLeft: "4px solid var(--gold)" }}>
+            <div className="ledger-block-title">Admin Dashboard</div>
+            <div className="ledger-block-caption" style={{ marginTop: 8 }}>
+              Your admin dashboard is available from the main tab bar. Use it for user management, subscription approvals, and activity reporting.
             </div>
           </div>
         )}
 
         {user?.role !== "admin" && (
-          <div className="card" style={{ padding: "18px 16px", marginBottom: 20 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Plans and access</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
+          <div className="ledger-block">
+            <div className="ledger-block-header">
+              <div className="ledger-block-title">Plans and access</div>
+              <div className="ledger-block-caption">Understand your current access and manage upgrades from one place.</div>
+            </div>
+            <div className="ledger-feed-card" style={{ padding: 16 }}>
+              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 14 }}>
               {isPersonalOrg
                 ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
                 : reviewAccessEnabled
@@ -2006,10 +2019,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             {!isPersonalOrg && (
               <>
-                <div className="card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
+                <div className="ledger-feed-card" style={{ padding: 14, background: "var(--surface-high)", marginBottom: 14 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                      <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", marginBottom: 6 }}>
                         {reviewAccessEnabled ? "Review Access" : "Free"}
                       </div>
                       <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
@@ -2017,7 +2030,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", textTransform: "uppercase", marginBottom: 6 }}>
+                      <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", marginBottom: 6 }}>
                         {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
                       </div>
                       <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
@@ -2039,10 +2052,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </>
             )}
           </div>
+          </div>
         )}
 
-        <div style={{ marginBottom: 10 }}>
-          <div className="section-label">{user?.role === "admin" ? "Admin Account" : "Account"}</div>
+        <div className="ledger-block">
+          <div className="ledger-block-header">
+            <div className="ledger-block-title">{user?.role === "admin" ? "Admin Account" : "Account"}</div>
+            <div className="ledger-block-caption">Update your identity, currency, and reporting tools.</div>
+          </div>
           <div className="card">
             <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
@@ -2050,8 +2067,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
         </div>
 
-        <div style={{ marginBottom: 10, marginTop: 20 }}>
-          <div className="section-label">Preferences</div>
+        <div className="ledger-block">
+          <div className="ledger-block-header">
+            <div className="ledger-block-title">Preferences</div>
+            <div className="ledger-block-caption">Theme, notifications, and support all live here.</div>
+          </div>
           <div className="card">
             <div className="card-row">
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -2074,7 +2094,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </div>
         </div>
 
-        <div style={{ marginTop: 20 }}>
+        <div className="ledger-block">
           <div className="card">
             <MenuRow icon="O" label="Sign Out" danger onClick={() => { if (window.confirm("Sign out?")) logout(); }} />
           </div>
@@ -2133,7 +2153,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </Field>
             )}
 
-            <div className="card" style={{ padding: 16 }}>
+            <div className="ledger-feed-card" style={{ padding: 16 }}>
               <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
                 {user?.role === "admin"
                   ? "Pick the month and year you want to export for admin activity reporting."
