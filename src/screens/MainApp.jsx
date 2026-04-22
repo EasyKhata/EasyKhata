@@ -12,6 +12,7 @@ import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import PendingInviteBanner from "../components/PendingInviteBanner";
+import { APP_UPGRADE_URL } from "../utils/brand";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -668,9 +669,9 @@ export default function MainApp() {
     // Send users to the website to upgrade there.
     if (isNative) {
       import("@capacitor/browser").then(({ Browser }) => {
-        Browser.open({ url: "https://www.easykhata.net/#upgrade" });
+        Browser.open({ url: APP_UPGRADE_URL });
       }).catch(() => {
-        window.open("https://www.easykhata.net/#upgrade", "_blank");
+        window.open(APP_UPGRADE_URL, "_blank");
       });
       return;
     }
@@ -1157,4 +1158,3 @@ export default function MainApp() {
     </div>
   );
 }
-

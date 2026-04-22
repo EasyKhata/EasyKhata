@@ -1,5 +1,6 @@
 import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isSmallBusinessOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
+import { APP_WEBSITE_HOST } from "./brand";
 
 let jsPDF = null;
 async function ensureJsPDF() {
@@ -50,7 +51,7 @@ function drawPdfBrandBadge(doc, x, y, variant = "dark") {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.6);
   doc.setTextColor(linkColor[0], linkColor[1], linkColor[2]);
-  doc.text("www.easykhata.net", x + 11.5, y + 8.9);
+  doc.text(APP_WEBSITE_HOST, x + 11.5, y + 8.9);
 }
 
 function ensureSpace(doc, y, needed) {

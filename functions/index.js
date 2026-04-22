@@ -8,6 +8,10 @@ const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
 const ALLOWED_ORIGINS = [
+  "https://www.eazykhata.in",
+  "https://eazykhata.in",
+  "https://www.easykhata.in",
+  "https://easykhata.in",
   "https://www.easykhata.net",
   "https://easykhata.net",
   "https://ledger-app-599cc.web.app",
