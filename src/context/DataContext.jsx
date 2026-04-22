@@ -623,24 +623,13 @@ export function DataProvider({ children }) {
 
       const nextOrgId = orgId || DEFAULT_ORG_ID;
       const orgData = data.orgs?.[nextOrgId];
-      const orgType = getOrgType(orgData?.account?.organizationType || user?.organizationType);
       const nowIso = new Date().toISOString();
       const updates = {
         updatedAt: nowIso,
-        lastActivityAt: nowIso,
-        "analytics.lastSessionStartedAt": sessionRef.current.startedAt || nowIso,
-        [`analytics.byOrg.${nextOrgId}.lastSessionStartedAt`]: nowIso,
-        [`analytics.byOrg.${nextOrgId}.organizationType`]: orgType,
-        [`analytics.byOrg.${nextOrgId}.name`]: orgData?.account?.name || "Organization"
+        lastActivityAt: nowIso
       };
 
-      if (!sessionRef.current.sessionRegistered) {
-        updates["analytics.sessionCount"] = (updates["analytics.sessionCount"] || 0) + 1;
-        sessionRef.current.sessionRegistered = true;
-      }
-
       if (!sessionRef.current.orgVisits?.[nextOrgId]) {
-        updates[`analytics.byOrg.${nextOrgId}.sessionCount`] = 1;
         sessionRef.current.orgVisits = { ...(sessionRef.current.orgVisits || {}), [nextOrgId]: true };
       }
 
@@ -648,13 +637,14 @@ export function DataProvider({ children }) {
         ...(sessionRef.current.orgMeta || {}),
         [nextOrgId]: {
           name: orgData?.account?.name || "",
-          organizationType: orgType
+          organizationType: getOrgType(orgData?.account?.organizationType || user?.organizationType)
         }
       };
       persistSessionDraft();
       await usersApi.update(user.id, updates).catch(err => logError("Session org change flush failed", err));
+      setUser(prev => (prev ? { ...prev, lastActivityAt: nowIso } : prev));
     },
-    [data.orgs, persistSessionDraft, user?.id, user?.organizationType]
+    [data.orgs, persistSessionDraft, setUser, user?.id, user?.organizationType]
   );
 
   const flushSessionAnalytics = useCallback(

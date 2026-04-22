@@ -30,14 +30,18 @@ function describeArc(cx, cy, radius, startAngle, endAngle) {
 }
 
 function PersonalUsagePie({ stats, sym, viewMode, isMobile = false }) {
+  const totalIncome = Math.max(0, Number(stats.totalIncome || 0));
+  const totalExpense = Math.max(0, Number(stats.totalExpense || 0));
+  const totalEmi = Math.max(0, Number(stats.totalEmi || 0));
+  const shortfall = Math.max(0, totalExpense + totalEmi - totalIncome);
   const segments = [
-    { label: "Spending", value: Math.max(0, Number(stats.totalExpense || 0)), color: "var(--danger)" },
-    { label: "EMI", value: Math.max(0, Number(stats.totalEmi || 0)), color: "var(--gold)" },
-    {
-      label: (stats.netAfterEmi || 0) >= 0 ? "Remaining" : "Shortfall",
-      value: Math.abs(Number(stats.netAfterEmi || 0)),
-      color: (stats.netAfterEmi || 0) >= 0 ? "var(--accent)" : "var(--purple)"
-    }
+    { label: "Spending", value: totalExpense, color: "var(--danger)" },
+    { label: "EMI", value: totalEmi, color: "var(--gold)" },
+    ...(shortfall > 0 ? [] : [{
+      label: "Remaining",
+      value: Math.max(0, totalIncome - totalExpense - totalEmi),
+      color: "var(--accent)"
+    }])
   ].filter(item => item.value > 0);
 
   const total = segments.reduce((sum, item) => sum + item.value, 0);
@@ -105,6 +109,18 @@ function PersonalUsagePie({ stats, sym, viewMode, isMobile = false }) {
               </div>
             );
           })}
+          {shortfall > 0 && (
+            <div className="card-row" style={{ padding: 0, border: "none" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ width: 12, height: 12, borderRadius: 999, background: "var(--purple)", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Shortfall</div>
+                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Extra outflow beyond earnings this period</div>
+                </div>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--purple)" }}>{fmtMoney(shortfall, sym)}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -409,10 +425,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   // Without this, income/invoices are empty until the user visits those sections,
   // causing false "not done" state on existing orgs.
   useEffect(() => {
-    if (!data.loaded || activeSharedOrgKey) return;
-    ensureCollectionLoaded?.("income");
-    ensureCollectionLoaded?.("invoices");
-  }, [data.loaded, activeSharedOrgKey, ensureCollectionLoaded]);
+    if (!data.loaded) return undefined;
+    const timer = window.setTimeout(() => {
+      ensureCollectionLoaded?.("income");
+      ensureCollectionLoaded?.("expenses");
+      ensureCollectionLoaded?.("invoices");
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [data.loaded, data.activeOrgId, activeSharedOrgKey, ensureCollectionLoaded]);
 
   // Wait for relevant collections to load before deciding whether to show the checklist.
   // Customers are eager (always ready). Income covers personal/apartment; invoices cover the rest.
@@ -445,6 +465,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   ), [stats.cashFlow, stats.monthlyBreakdown, viewMode]);
 
   const top5Expenses = useMemo(() => {
+    if (!collectionFetched?.expenses && Array.isArray(stats.topExpenseCategories) && stats.topExpenseCategories.length > 0) {
+      return stats.topExpenseCategories.slice(0, 5).map(category => ({
+        id: `category_${category.category}`,
+        category: category.category,
+        note: category.category,
+        amount: category.amount,
+        isCategorySummary: true
+      }));
+    }
     const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
     return (data.expenses || [])
       .filter(e => {
@@ -458,7 +487,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       .slice()
       .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
       .slice(0, 5);
-  }, [data.expenses, month, year, viewMode]);
+  }, [collectionFetched?.expenses, data.expenses, month, stats.topExpenseCategories, year, viewMode]);
 
   if (!data.loaded) {
     return <DashboardSkeleton />;

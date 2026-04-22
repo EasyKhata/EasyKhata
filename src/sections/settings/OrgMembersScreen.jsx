@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
 import { Input, Field, LoadingButton } from "../../components/UI";
 
-const ROLES = [
+const BASE_ROLES = [
   { value: "admin",  label: "Admin",  desc: "Can add, edit, and delete records" },
   { value: "viewer", label: "Viewer", desc: "Can view records and download reports only" }
 ];
@@ -18,6 +18,11 @@ export default function OrgMembersScreen({ onBack }) {
   const data = useData();
   const orgId = data.activeOrgId || "org_primary";
   const orgName = data.account?.name || "Your Organization";
+  const orgType = data.account?.organizationType || "";
+  const isApartmentOrg = orgType === "apartment";
+  const roles = isApartmentOrg
+    ? [{ value: "viewer", label: "Viewer", desc: "Can view records and download reports only" }]
+    : BASE_ROLES;
 
   const [members, setMembers] = useState([]);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -44,6 +49,12 @@ export default function OrgMembersScreen({ onBack }) {
     const t = setTimeout(() => setSuccessMsg(""), 3000);
     return () => clearTimeout(t);
   }, [successMsg]);
+
+  useEffect(() => {
+    if (!roles.some(role => role.value === inviteRole)) {
+      setInviteRole("viewer");
+    }
+  }, [inviteRole, roles]);
 
   const handleInvite = useCallback(async () => {
     const email = inviteEmail.trim().toLowerCase();
@@ -130,30 +141,38 @@ export default function OrgMembersScreen({ onBack }) {
               onKeyDown={e => e.key === "Enter" && handleInvite()}
             />
           </Field>
-          <Field label="Role" hint={ROLES.find(r => r.value === inviteRole)?.desc}>
-            <div style={{ display: "flex", gap: 8 }}>
-              {ROLES.map(r => (
-                <button
-                  key={r.value}
-                  type="button"
-                  onClick={() => setInviteRole(r.value)}
-                  style={{
-                    flex: 1,
-                    padding: "9px 12px",
-                    borderRadius: 10,
-                    border: `2px solid ${inviteRole === r.value ? "var(--accent)" : "var(--border)"}`,
-                    background: inviteRole === r.value ? "var(--accent-deep)" : "var(--surface)",
-                    color: inviteRole === r.value ? "var(--accent)" : "var(--text)",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: "pointer"
-                  }}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          </Field>
+          {roles.length > 1 ? (
+            <Field label="Role" hint={roles.find(r => r.value === inviteRole)?.desc}>
+              <div style={{ display: "flex", gap: 8 }}>
+                {roles.map(r => (
+                  <button
+                    key={r.value}
+                    type="button"
+                    onClick={() => setInviteRole(r.value)}
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: 10,
+                      border: `2px solid ${inviteRole === r.value ? "var(--accent)" : "var(--border)"}`,
+                      background: inviteRole === r.value ? "var(--accent-deep)" : "var(--surface)",
+                      color: inviteRole === r.value ? "var(--accent)" : "var(--text)",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer"
+                    }}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          ) : (
+            <Field label="Access" hint="Apartment members can be invited as viewers only.">
+              <div className="input-field" style={{ display: "flex", alignItems: "center", minHeight: 44, fontWeight: 700, color: "var(--text)" }}>
+                Viewer
+              </div>
+            </Field>
+          )}
           {error && (
             <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 10, fontWeight: 600 }}>{error}</div>
           )}
@@ -210,7 +229,7 @@ export default function OrgMembersScreen({ onBack }) {
                   Invited {member.invitedAt ? new Date(member.invitedAt).toLocaleDateString("en-IN") : ""}
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  {ROLES.map(r => (
+                  {roles.map(r => (
                     <button
                       key={r.value}
                       type="button"
@@ -248,7 +267,7 @@ export default function OrgMembersScreen({ onBack }) {
 
         <div className="card" style={{ padding: "12px 14px" }}>
           <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EazyKhata with their own account. Once they accept, they can access this organization's data based on their role. Admins can add and edit records; Viewers can only view and export.
+            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EazyKhata with their own account. Once they accept, they can access this organization's data based on their role. {isApartmentOrg ? "Apartment organizations keep access simple: only the owner can manage records and invited members stay on viewer access." : "Admins can add and edit records; Viewers can only view and export."}
           </div>
         </div>
       </div>
