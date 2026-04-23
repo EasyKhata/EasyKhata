@@ -2,7 +2,7 @@ import React from "react";
 import {
   Modal, Field, Input, Select, PhoneNumberInput,
   StructuredLocationFields, Avatar, EmptyState, DeleteBtn,
-  PaginatedListControls, fmtMoney
+  PaginatedListControls, WorkflowRecordCard, WorkflowSetupCard, fmtMoney
 } from "../../components/UI";
 import { PHONE_COUNTRY_OPTIONS, DEFAULT_PHONE_COUNTRY_CODE } from "../../utils/profile";
 
@@ -71,6 +71,44 @@ export default function CustomersScreen({
 }) {
   const sym = currency?.symbol || "Rs";
 
+  function CustomerListCard({ customer }) {
+    const meta = orgConfig.showCustomerFinancials === false
+      ? [customer.ownerName || "No owner"].filter(Boolean).join(" · ") || "Flat details"
+      : `Balance ${fmtMoney(customer.outstanding, sym)} · Revenue ${fmtMoney(customer.totalRevenue, sym)}`;
+
+    return (
+      <WorkflowRecordCard
+        avatar={<Avatar name={customer.name} size={40} fontSize={13} />}
+        title={customer.name}
+        meta={meta}
+        amount={orgConfig.showCustomerFinancials === false ? null : fmtMoney(customer.outstanding, sym)}
+        amountTone={orgConfig.showCustomerFinancials === false ? "var(--text)" : ((customer.outstanding || 0) > 0 ? "gold" : "accent")}
+        onClick={() => onOpenDetail(customer)}
+        actions={[
+          { label: "Edit", onClick: () => onOpenEditCust(customer), tone: "blue" },
+          { label: "Delete", onClick: () => { if (window.confirm(`Remove ${customer.name}?`)) onRemoveCustomer(customer.id); }, tone: "danger" }
+        ]}
+      />
+    );
+  }
+
+  function PaymentHistoryCard({ payment }) {
+    const statusTone = payment.status === "overdue" ? "danger" : payment.status === "paid" ? "accent" : "gold";
+    const meta = [
+      payment.date ? new Date(`${payment.date}T00:00:00`).toLocaleDateString("en-IN") : "--",
+      payment.dueMessage || ""
+    ].filter(Boolean).join(" · ");
+    return (
+      <WorkflowRecordCard
+        title={payment.number}
+        meta={meta}
+        amount={fmtMoney(payment.total, sym)}
+        amountTone="blue"
+        badges={[{ label: payment.status, tone: statusTone }]}
+      />
+    );
+  }
+
   if (screen === "customers") {
     return (
       <Modal
@@ -90,10 +128,10 @@ export default function CustomersScreen({
         )}
 
         {customerDirectory.length === 0 ? (
-          <EmptyState
-            title={`No ${orgConfig.customerLabel.toLowerCase()} yet`}
-            message={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building your records.`}
-            accentColor="var(--blue)"
+          <WorkflowSetupCard
+            title={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()}`}
+            body={`Create your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building this directory and record history.`}
+            tone="blue"
           />
         ) : filteredCustomerDirectory.length === 0 ? (
           <EmptyState
@@ -117,37 +155,7 @@ export default function CustomersScreen({
               />
             </div>
             <div className="card">
-              {paginatedCustomerDirectory.map(customer => (
-                <div key={customer.id} className="card-row">
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", flex: 1 }}
-                    onClick={() => onOpenDetail(customer)}
-                  >
-                    <Avatar name={customer.name} size={38} fontSize={13} />
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{customer.name}</div>
-                      {orgConfig.showCustomerFinancials === false ? (
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                          {[customer.ownerName || "No owner"].filter(Boolean).join(" · ") || "Flat details"}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                          Balance {fmtMoney(customer.outstanding, sym)} · Revenue {fmtMoney(customer.totalRevenue, sym)}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <button
-                      onClick={() => onOpenEditCust(customer)}
-                      style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}
-                    >
-                      Edit
-                    </button>
-                    <DeleteBtn onDelete={() => { if (window.confirm(`Remove ${customer.name}?`)) onRemoveCustomer(customer.id); }} />
-                  </div>
-                </div>
-              ))}
+              {paginatedCustomerDirectory.map(customer => <CustomerListCard key={customer.id} customer={customer} />)}
             </div>
           </>
         )}
@@ -224,31 +232,13 @@ export default function CustomersScreen({
         <div className="section-label">Payment History</div>
         <div className="card">
           {selectedCustomerPayments.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
-              No invoice history yet for this customer.
-            </div>
+            <WorkflowSetupCard
+              title="No payment history yet"
+              body="Once you create invoices or record payments, this customer's billing history will appear here."
+              tone="blue"
+            />
           ) : (
-            selectedCustomerPayments.map(payment => (
-              <div key={payment.id} className="card-row">
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{payment.number}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    {payment.date ? new Date(`${payment.date}T00:00:00`).toLocaleDateString("en-IN") : "--"}
-                    {payment.dueMessage ? ` · ${payment.dueMessage}` : ""}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(payment.total, sym)}</div>
-                  <div style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: payment.status === "overdue" ? "var(--danger)" : payment.status === "paid" ? "var(--accent)" : "var(--gold)"
-                  }}>
-                    {payment.status}
-                  </div>
-                </div>
-              </div>
-            ))
+            selectedCustomerPayments.map(payment => <PaymentHistoryCard key={payment.id} payment={payment} />)
           )}
         </div>
       </Modal>

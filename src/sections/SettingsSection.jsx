@@ -17,7 +17,7 @@ import { useData } from "../context/DataContext";
 import { useTheme } from "../context/ThemeContext";
 import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { loadRazorpay } from "../utils/razorpay";
-import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice, SectionSkeleton } from "../components/UI";
+import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, EmptyState, ToastNotice, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
@@ -2464,23 +2464,30 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     return withNotice(
       <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`Add ${activeOrgSection.entryLabel}`}>
         {items.length === 0 ? (
-          <EmptyState title={`No ${activeOrgSection.label.toLowerCase()} yet`} message={`Add your first ${activeOrgSection.entryLabel.toLowerCase()} record to tailor EazyKhata to your workflow.`} accentColor="var(--blue)" />
+          <WorkflowSetupCard
+            title={`Add your first ${activeOrgSection.entryLabel.toLowerCase()}`}
+            body={`Create a ${activeOrgSection.entryLabel.toLowerCase()} record to tailor this khata to your workflow.`}
+            tone="blue"
+          />
         ) : (
           <div className="card">
             {items.map(item => (
-              <div key={item.id} className="card-row">
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item[activeOrgSection.fields[0]?.key] || activeOrgSection.entryLabel}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                    {activeOrgSection.fields.slice(1).map(field => item[field.key]).filter(Boolean).join(" - ")}
-                    {activeOrgSection.key === "services" ? ` - ${Array.isArray(item.products) ? item.products.length : 0} product(s)` : ""}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button onClick={() => openEditOrgRecord(item)} style={{ background: "var(--blue-deep)", border: "none", borderRadius: 9, color: "var(--blue)", fontSize: 12, fontWeight: 600, padding: "5px 10px", cursor: "pointer", fontFamily: "var(--font)" }}>Edit</button>
-                  <DeleteBtn onDelete={() => { if (window.confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`)) removeOrgRecord(activeOrgSection.key, item.id); }} />
-                </div>
-              </div>
+              <WorkflowRecordCard
+                key={item.id}
+                title={item[activeOrgSection.fields[0]?.key] || activeOrgSection.entryLabel}
+                meta={[
+                  activeOrgSection.fields.slice(1).map(field => item[field.key]).filter(Boolean).join(" · "),
+                  activeOrgSection.key === "services" ? `${Array.isArray(item.products) ? item.products.length : 0} product(s)` : ""
+                ].filter(Boolean).join(" · ")}
+                actions={[
+                  { label: "Edit", onClick: () => openEditOrgRecord(item), tone: "blue" },
+                  {
+                    label: "Delete",
+                    onClick: () => { if (window.confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`)) removeOrgRecord(activeOrgSection.key, item.id); },
+                    tone: "danger"
+                  }
+                ]}
+              />
             ))}
           </div>
         )}

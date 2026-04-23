@@ -16,7 +16,9 @@ import {
   MONTHS,
   uid,
   EmptyState,
-  SectionSkeleton
+  SectionSkeleton,
+  WorkflowSetupCard,
+  WorkflowRecordCard
 } from "../components/UI";
 import { UpgradeModal } from "../components/UI";
 import { useAuth } from "../context/AuthContext";
@@ -237,6 +239,32 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const filteredRequests = useMemo(() => (
     paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter)
   ), [paymentRequests, requestFilter]);
+
+  const DocumentCard = ({ invoice }) => (
+    <WorkflowRecordCard
+      avatar={<Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={40} fontSize={14} />}
+      title={invoice.customer?.name || invoice.billTo?.name || "--"}
+      meta={[
+        invoice.number,
+        invoice.date ? fmtDate(invoice.date) : "",
+        !isApartmentOrg && invoice.dueMessage ? invoice.dueMessage : ""
+      ].filter(Boolean).join(" · ")}
+      amount={fmtMoney(invoice.total, sym)}
+      amountTone="var(--blue)"
+      badges={!isApartmentOrg ? [{
+        label: getDocumentStatusLabel(invoice.computedStatus, isQuote),
+        tone:
+          invoice.computedStatus === "paid" || invoice.computedStatus === "approved"
+            ? "accent"
+            : invoice.computedStatus === "pending" || invoice.computedStatus === "draft"
+              ? "gold"
+              : invoice.computedStatus === "sent"
+                ? "blue"
+                : "danger"
+      }] : []}
+      onClick={() => setDetail(invoice)}
+    />
+  );
 
   async function updatePaymentRequestStatus(request, status) {
     setAdminRequestError("");
@@ -829,34 +857,18 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
         <div className="ledger-feed-card">
           {monthInv.length === 0 ? (
-            <EmptyState title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`} message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`} actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
+            <WorkflowSetupCard
+              eyebrow={isQuote ? "Quotes" : isApartmentOrg ? "Receipts & bills" : "Documents"}
+              title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`}
+              message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
+              actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel}
+              onAction={openNew}
+              tone="accent"
+            />
           ) : filteredMonthInv.length === 0 ? (
             <EmptyState title="No matching records" message="Try a different search term to find the receipt or bill you need." accentColor="var(--blue)" />
           ) : (
-            filteredMonthInv.map(invoice => (
-              <div key={invoice.id} className="ledger-feed-row" onClick={() => setDetail(invoice)} style={{ cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={40} fontSize={14} />
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{invoice.customer?.name || invoice.billTo?.name || "--"}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {fmtDate(invoice.date)}</div>
-                      {!isApartmentOrg && invoice.dueMessage && (
-                        <div style={{ fontSize: 11, color: getDocumentStatusColor(invoice.computedStatus, isQuote), marginTop: 3 }}>
-                          {invoice.dueMessage}
-                        </div>
-                      )}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
-                  {!isApartmentOrg && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: getDocumentStatusColor(invoice.computedStatus, isQuote), marginTop: 4 }}>
-                      {getDocumentStatusLabel(invoice.computedStatus, isQuote)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
+            filteredMonthInv.map(invoice => <DocumentCard key={invoice.id} invoice={invoice} />)
           )}
         </div>
       </div>

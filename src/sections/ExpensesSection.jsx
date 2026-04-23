@@ -16,7 +16,9 @@ import {
   EmptyState,
   SectionSkeleton,
   ProgressBar,
-  UpgradeModal
+  UpgradeModal,
+  WorkflowSetupCard,
+  WorkflowRecordCard
 } from "../components/UI";
 import Collapsible from "../components/Collapsible";
 import { getPersonalMemberOptions } from "../utils/analytics";
@@ -387,24 +389,17 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   const ExpenseRow = ({ expense }) => (
-    <div className="ledger-feed-row">
-      <div className="ledger-feed-main">
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <div className="ledger-feed-title">{expense.label}</div>
-          {!isPersonalOrg && expense.recurring && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>Recurring</span>}
-        </div>
-        <div className="ledger-feed-meta">{expenseMeta(expense)}</div>
-      </div>
-      <div className="ledger-feed-side">
-        <span className="ledger-feed-amount" style={{ color: "var(--danger)", fontSize: isApartmentOrg ? 12 : undefined }}>{fmtMoney(expense.amount, sym)}</span>
-        {!isViewerMode && (
-          <div className="ledger-compact-actions">
-            <button className="ledger-action-btn" onClick={() => openEdit(expense)}>Edit</button>
-            <DeleteBtn onDelete={() => d.removeExpense(expense.id)} style={{ minHeight: 34, padding: "0 10px", borderRadius: 11, fontSize: 11, fontWeight: 700 }} />
-          </div>
-        )}
-      </div>
-    </div>
+    <WorkflowRecordCard
+      title={expense.label}
+      meta={expenseMeta(expense)}
+      amount={fmtMoney(expense.amount, sym)}
+      amountTone="danger"
+      badges={!isPersonalOrg && expense.recurring ? [{ label: "Recurring", tone: "blue" }] : []}
+      actions={!isViewerMode ? [
+        { label: "Edit", onClick: () => openEdit(expense) },
+        { label: "Delete", onClick: () => d.removeExpense(expense.id), tone: "danger" }
+      ] : []}
+    />
   );
 
   return (
@@ -457,20 +452,22 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
 
             <div className="ledger-feed-card">
               {!hasHouseholdPeople ? (
-                <EmptyState
+                <WorkflowSetupCard
+                  eyebrow="Household setup"
                   title="Add a person before tracking spendings"
                   message="Household spending must be tagged to at least one person. Add your first person in Khata to continue."
                   actionLabel="Open People"
                   onAction={openPeopleManager}
-                  accentColor="var(--danger)"
+                  tone="danger"
                 />
               ) : active.length === 0 ? (
-                <EmptyState
+                <WorkflowSetupCard
+                  eyebrow="Track spend"
                   title={`No ${config.expensesLabel.toLowerCase()} yet`}
                   message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
                   actionLabel={config.expensesActionLabel}
                   onAction={openNew}
-                  accentColor="var(--danger)"
+                  tone="danger"
                 />
               ) : filteredExpenses.length === 0 ? (
                 <EmptyState
@@ -563,20 +560,22 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             ) : isFreelancerOrg ? (
                 <div className="ledger-feed-card">
                   {!hasFreelancerClients ? (
-                  <EmptyState
+                  <WorkflowSetupCard
+                    eyebrow="Client setup"
                     title="Add a client before tracking expenses"
                     message="Freelancer expenses must be linked to at least one client. Add your first client in Khata to continue."
                     actionLabel="Open Clients"
                     onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
-                    accentColor="var(--danger)"
+                    tone="danger"
                   />
                 ) : active.length === 0 ? (
-                  <EmptyState
+                  <WorkflowSetupCard
+                    eyebrow="Track spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
                     message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
-                    accentColor="var(--danger)"
+                    tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
                   <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
@@ -609,12 +608,13 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {isApartmentOrg && hasApartmentFlats && (
               <div className="ledger-feed-card">
                 {active.length === 0 ? (
-                  <EmptyState
+                  <WorkflowSetupCard
+                    eyebrow="Society spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
                     message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
-                    accentColor="var(--danger)"
+                    tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
                   <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
@@ -627,12 +627,13 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {isApartmentOrg && !hasApartmentFlats && (
               <div className="ledger-feed-card">
                 {active.length === 0 ? (
-                  <EmptyState
+                  <WorkflowSetupCard
+                    eyebrow="Society setup"
                     title="Add flats before tracking society expenses"
                     message="Society expenses stay locked until you create at least one flat record in Khata."
                     actionLabel="Open Flats"
                     onAction={openFlatManager}
-                    accentColor="var(--danger)"
+                    tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
                   <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />

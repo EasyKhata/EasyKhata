@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { societyApi } from "../lib/api";
-import { EmptyState, fmtMoney, MONTHS } from "../components/UI";
+import { WorkflowRecordCard, WorkflowSetupCard, fmtMoney, MONTHS } from "../components/UI";
 import { logError } from "../utils/logger";
 
 function toPeriodKey(year, month) {
@@ -13,6 +13,16 @@ function StatCell({ label, value, color = "var(--text)" }) {
       <div className="ledger-summary-label" style={{ color: "var(--text-dim)" }}>{label}</div>
       <div className="ledger-summary-value" style={{ color, fontSize: 24 }}>{value}</div>
     </div>
+  );
+}
+
+function NoticeCard({ notice, index }) {
+  return (
+    <WorkflowRecordCard
+      title={`Notice ${index + 1}`}
+      subtitle={notice}
+      tone="default"
+    />
   );
 }
 
@@ -70,7 +80,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
             </div>
           </div>
           <div className="ledger-feed-card">
-            <EmptyState title="Resident access not joined" message="Open Settings and join with your invite code to track common records and your flat dues." />
+            <WorkflowSetupCard title="Resident access not joined" description="Open Settings and join with your invite code to track common records and your flat dues." tone="info" />
           </div>
         </div>
       </div>
@@ -100,7 +110,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="ledger-feed-card">
           {!commonRecord ? (
-            <EmptyState title="No common records yet" message="The association has not published society records for this month." accentColor="var(--blue)" />
+            <WorkflowSetupCard title="No common records yet" description="The association has not published society records for this month." tone="info" />
           ) : (
             <div className="ledger-summary-grid">
               <StatCell label="Expected" value={fmtMoney(commonRecord.expectedAmount || 0, commonRecord.currencySymbol || "Rs")} />
@@ -121,7 +131,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="ledger-feed-card">
           {!flatDue ? (
-            <EmptyState title="No dues summary found" message="No due summary has been published for your flat in this month." accentColor="var(--gold)" />
+            <WorkflowSetupCard title="No dues summary found" description="No due summary has been published for your flat in this month." tone="warning" />
           ) : (
             <div className="ledger-summary-grid">
               <StatCell label="Expected" value={fmtMoney(flatDue.expectedAmount || 0, flatDue.currencySymbol || "Rs")} />
@@ -142,20 +152,9 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="ledger-feed-card">
           {noticeItems.length === 0 ? (
-            <EmptyState title="No notices this month" message="You are all caught up for the selected period." accentColor="var(--blue)" />
+            <WorkflowSetupCard title="No notices this month" description="You are all caught up for the selected period." tone="info" />
           ) : (
-            noticeItems.map((notice, index) => (
-              <div
-                key={`${notice}-${index}`}
-                className="ledger-feed-row"
-                style={{ borderBottom: index === noticeItems.length - 1 ? "none" : undefined }}
-              >
-                <div className="ledger-feed-main">
-                  <div className="ledger-feed-title">Notice {index + 1}</div>
-                  <div className="ledger-feed-meta">{notice}</div>
-                </div>
-              </div>
-            ))
+            noticeItems.map((notice, index) => <NoticeCard key={`${notice}-${index}`} notice={notice} index={index} />)
           )}
         </div>
       </div>
