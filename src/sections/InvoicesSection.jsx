@@ -829,7 +829,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
         <div className="ledger-feed-card">
           {monthInv.length === 0 ? (
-            <EmptyState title={isAdmin ? "No subscription invoices this month" : `No ${documentCollectionLabel.toLowerCase()} this month`} message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue, reminders, and history.`} actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
+            <EmptyState title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`} message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`} actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel} onAction={openNew} accentColor="var(--blue)" />
           ) : filteredMonthInv.length === 0 ? (
             <EmptyState title="No matching records" message="Try a different search term to find the receipt or bill you need." accentColor="var(--blue)" />
           ) : (

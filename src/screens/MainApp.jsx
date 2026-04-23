@@ -79,6 +79,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
   const isCurrentMonth = year === currentYear && month === currentMonth;
   const isCurrentYear = year === currentYear;
   const yearOptions = Array.from({ length: 8 }, (_, index) => currentYear - (7 - index));
+  const compactPicker = typeof window !== "undefined" ? window.innerWidth <= 420 : false;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -153,8 +154,8 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
       <button
         onClick={prev}
         style={{
-          width: 32,
-          height: 32,
+          width: compactPicker ? 30 : 32,
+          height: compactPicker ? 30 : 32,
           borderRadius: 9,
           border: "1px solid var(--border)",
           background: "var(--surface)",
@@ -169,7 +170,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
       </button>
 
       {useNativeMonthPicker ? (
-        <div style={{ minWidth: 112, maxWidth: 128, padding: "5px 8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)", flexShrink: 1 }}>
+        <div style={{ minWidth: compactPicker ? 102 : 112, maxWidth: compactPicker ? 120 : 128, padding: compactPicker ? "4px 7px" : "5px 8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface)", color: "var(--text)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)", flexShrink: 1 }}>
           <div style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
             Month
           </div>
@@ -186,7 +187,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
               if (Number.isNaN(nextYear) || Number.isNaN(nextMonth) || nextMonth < 0 || nextMonth > 11) return;
               onChange(nextYear, nextMonth);
             }}
-            style={{ width: "100%", border: "none", background: "transparent", color: "var(--blue)", fontFamily: "var(--serif)", fontSize: 13, lineHeight: 1.2, padding: 0 }}
+            style={{ width: "100%", border: "none", background: "transparent", color: "var(--blue)", fontFamily: "var(--serif)", fontSize: compactPicker ? 12 : 13, lineHeight: 1.2, padding: 0 }}
           />
         </div>
       ) : (
@@ -200,9 +201,9 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
             setOpen(current => !current);
           }}
           style={{
-            minWidth: 96,
-            maxWidth: 118,
-            padding: "6px 9px",
+            minWidth: compactPicker ? 86 : 96,
+            maxWidth: compactPicker ? 112 : 118,
+            padding: compactPicker ? "5px 8px" : "6px 9px",
             borderRadius: 10,
             border: "1px solid var(--border)",
             background: "var(--surface)",
@@ -215,10 +216,10 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
             flexShrink: 1
           }}
         >
-          <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+          <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.55 }}>
             {viewMode === "month" ? "Month" : "Year"}
           </span>
-          <span style={{ fontFamily: "var(--serif)", fontSize: 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
+          <span style={{ fontFamily: "var(--serif)", fontSize: compactPicker ? 12 : 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
             {viewMode === "month" ? `${MONTHS[month].slice(0, 3)} ${year}` : year}
           </span>
         </button>
@@ -228,8 +229,8 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
         onClick={next}
         disabled={nextDisabled}
         style={{
-          width: 32,
-          height: 32,
+          width: compactPicker ? 30 : 32,
+          height: compactPicker ? 30 : 32,
           borderRadius: 9,
           border: "1px solid var(--border)",
           background: "var(--surface)",
@@ -683,6 +684,7 @@ export default function MainApp() {
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
   const orgConfig = getOrgConfig(currentOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
+  const isFreelancerOrg = currentOrgType === ORG_TYPES.FREELANCER;
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
@@ -697,8 +699,8 @@ export default function MainApp() {
     ] : []),
     ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
     ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
-    ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Discuss" }] : []),
-    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: currentOrgLabel }] : []),
+    ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Chat" }] : []),
+    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: "Khata" }] : []),
     ...(isAdmin ? [] : [])
   ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
@@ -862,7 +864,11 @@ export default function MainApp() {
         ...item,
         label:
           item.id === "dashboard" ? "Home" :
+          item.id === "income" && isApartmentOrg ? "Maint." :
+          item.id === "income" && isFreelancerOrg ? "Payments" :
           item.id === "expenses" ? "Spend" :
+          item.id === "invoices" && isApartmentOrg ? "Bills" :
+          item.id === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
           item.id === "discussions" ? "Chat" :
           item.id === "org" ? "Khata" :
           item.id === "adminSupport" ? "Support" :
@@ -873,15 +879,19 @@ export default function MainApp() {
     const nextTabs = fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
     return nextTabs.map(item => ({
       ...item,
-      label:
+        label:
         item.id === "dashboard" ? "Home" :
+        item.id === "income" && isApartmentOrg ? "Maint." :
+        item.id === "income" && isFreelancerOrg ? "Payments" :
         item.id === "expenses" ? "Spend" :
+        item.id === "invoices" && isApartmentOrg ? "Bills" :
+        item.id === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
         item.id === "discussions" ? "Chat" :
         item.id === "org" ? "Khata" :
         item.id === "adminSupport" ? "Support" :
         item.label
     }));
-  }, [TABS, isAdmin, isApartmentOrg, tab]);
+  }, [TABS, isAdmin, isApartmentOrg, isFreelancerOrg, isSmallBusinessOrg, tab]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
@@ -1001,15 +1011,15 @@ export default function MainApp() {
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)", paddingTop: isMobile ? "env(safe-area-inset-top, 0px)" : undefined }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: isMobile ? "center" : "flex-start", padding: isMobile ? (isCompactMobile ? "8px 10px" : "10px 12px") : "12px 20px 12px", gap: isCompactMobile ? 8 : 10 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: isCompactMobile ? 8 : 12, minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? (isCompactMobile ? "6px 8px" : "8px 10px") : "12px 20px 12px", gap: isCompactMobile ? 6 : 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, minWidth: 0, flex: 1 }}>
               <button
                 onClick={() => setTab("dashboard")}
                 title="Go to dashboard"
                 style={{
-                  width: isCompactMobile ? 32 : 36,
-                  height: isCompactMobile ? 32 : 36,
-                  borderRadius: isCompactMobile ? 16 : 18,
+                  width: isCompactMobile ? 30 : 34,
+                  height: isCompactMobile ? 30 : 34,
+                  borderRadius: isCompactMobile ? 15 : 17,
                   border: "1px solid var(--border)",
                   background: "var(--surface-high)",
                   cursor: "pointer",
@@ -1018,16 +1028,16 @@ export default function MainApp() {
                   justifyContent: "center",
                   flexShrink: 0,
                   padding: 0,
-                  marginTop: 2
+                  marginTop: 0
                 }}
               >
-                <BrandMark size={isCompactMobile ? 18 : 22} />
+                <BrandMark size={isCompactMobile ? 17 : 20} />
               </button>
               <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
-                <div style={{ fontSize: isMobile ? (isCompactMobile ? 9 : 10) : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: isCompactMobile ? 0.55 : 0.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontSize: isMobile ? (isCompactMobile ? 8 : 9) : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: isCompactMobile ? 0.45 : 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {isAdmin ? "Admin" : (account?.name || currentOrgLabel || "My Khata")}
                 </div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: isMobile ? (isCompactMobile ? 14 : 16) : 24, color: "var(--text)", lineHeight: 1.12, marginTop: isMobile ? 2 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontFamily: "var(--font)", fontSize: isMobile ? (isCompactMobile ? 15 : 17) : 24, fontWeight: 700, color: "var(--text)", lineHeight: 1.08, marginTop: isMobile ? 1 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {TABS.find(item => item.id === tab)?.label}
                 </div>
               </div>
@@ -1039,32 +1049,36 @@ export default function MainApp() {
                   <button
                     onClick={() => setShowOrgSwitcher(v => !v)}
                     title="Switch Khata"
-                    style={{ height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "var(--border)"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "var(--surface-high)", color: activeSharedOrgKey ? "var(--accent)" : "var(--text-sec)", cursor: "pointer", fontSize: isCompactMobile ? 10 : 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 8px" : "0 10px", flexShrink: 0, maxWidth: isCompactMobile ? 110 : 160, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                    style={{ height: isMobile ? (isCompactMobile ? 30 : 34) : 38, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "color-mix(in srgb, var(--accent) 34%, var(--border))"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "linear-gradient(180deg, color-mix(in srgb, var(--accent-deep) 92%, var(--surface-high)), color-mix(in srgb, var(--surface-pop) 92%, transparent))", color: activeSharedOrgKey ? "var(--accent)" : "var(--text)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 11px", flexShrink: 0, minWidth: isCompactMobile ? 88 : 118, maxWidth: isCompactMobile ? 104 : 152, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", boxShadow: activeSharedOrgKey ? "0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent)" : "0 6px 16px color-mix(in srgb, var(--accent) 12%, transparent)" }}
                   >
-                    {activeSharedOrgKey
-                      ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared Khata")
-                      : "My Khata"} ▾
+                    <span style={{ width: isCompactMobile ? 6 : 7, height: isCompactMobile ? 6 : 7, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {activeSharedOrgKey
+                        ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared")
+                        : (isCompactMobile ? "Switch" : "My Khata")}
+                    </span>
+                    <span style={{ flexShrink: 0, color: activeSharedOrgKey ? "var(--accent)" : "var(--text-dim)" }}>▾</span>
                   </button>
                   {showOrgSwitcher && (
-                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, minWidth: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.18)", zIndex: 200, overflow: "hidden" }}>
+                    <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 11, minWidth: isCompactMobile ? 184 : 210, maxWidth: isCompactMobile ? 220 : 260, boxShadow: "0 10px 28px rgba(15,23,42,0.12)", zIndex: 200, overflow: "hidden" }}>
                       <button
                         onClick={() => { switchToOwnOrg(); setShowOrgSwitcher(false); }}
-                        style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: !activeSharedOrgKey ? "var(--accent-deep)" : "transparent", border: "none", color: !activeSharedOrgKey ? "var(--accent)" : "var(--text)", fontSize: 13, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                        style={{ width: "100%", padding: "9px 12px", textAlign: "left", background: !activeSharedOrgKey ? "var(--accent-deep)" : "transparent", border: "none", color: !activeSharedOrgKey ? "var(--accent)" : "var(--text)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
                       >
                         {!activeSharedOrgKey && <span style={{ fontSize: 10 }}>✓</span>}
-                        {account?.name || "My Organization"}
-                        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)", fontWeight: 600 }}>Owner</span>
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account?.name || "My Organization"}</span>
+                        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)", fontWeight: 600, flexShrink: 0 }}>Owner</span>
                       </button>
                       <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
                       {sharedOrgs.map(org => (
                         <button
                           key={org.key}
                           onClick={() => { switchToSharedOrg(org.key); setShowOrgSwitcher(false); }}
-                          style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: activeSharedOrgKey === org.key ? "var(--accent-deep)" : "transparent", border: "none", color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text)", fontSize: 13, fontWeight: activeSharedOrgKey === org.key ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                          style={{ width: "100%", padding: "9px 12px", textAlign: "left", background: activeSharedOrgKey === org.key ? "var(--accent-deep)" : "transparent", border: "none", color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text)", fontSize: 12, fontWeight: activeSharedOrgKey === org.key ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
                         >
                           {activeSharedOrgKey === org.key && <span style={{ fontSize: 10 }}>✓</span>}
-                          {org.orgName || "Organization"}
-                          <span style={{ marginLeft: "auto", fontSize: 10, color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text-dim)", fontWeight: 600, textTransform: "capitalize" }}>{org.role}</span>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
+                          <span style={{ marginLeft: "auto", fontSize: 10, color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text-dim)", fontWeight: 600, textTransform: "capitalize", flexShrink: 0 }}>{org.role}</span>
                         </button>
                       ))}
                     </div>
@@ -1074,11 +1088,11 @@ export default function MainApp() {
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isMobile ? (isCompactMobile ? 28 : 32) : 36, height: isMobile ? (isCompactMobile ? 28 : 32) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                <Bell size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
+                  <Bell size={isMobile ? (isCompactMobile ? 13 : 14) : 16} strokeWidth={2} />
                 {inboxReminders.length > 0 && (
-                  <span style={{ position: "absolute", top: isCompactMobile ? -4 : -5, right: isCompactMobile ? -4 : -5, minWidth: isCompactMobile ? 16 : 18, height: isCompactMobile ? 16 : 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                    <span style={{ position: "absolute", top: isCompactMobile ? -4 : -5, right: isCompactMobile ? -4 : -5, minWidth: isCompactMobile ? 15 : 18, height: isCompactMobile ? 15 : 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: isCompactMobile ? 8 : 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
                     {inboxReminders.length}
                   </span>
                 )}
@@ -1087,9 +1101,9 @@ export default function MainApp() {
                 <button
                   onClick={() => setShowHeaderMenu(value => !value)}
                   title="More options"
-                  style={{ width: isMobile ? (isCompactMobile ? 30 : 34) : 36, height: isMobile ? (isCompactMobile ? 30 : 34) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  style={{ width: isMobile ? (isCompactMobile ? 28 : 32) : 36, height: isMobile ? (isCompactMobile ? 28 : 32) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                 >
-                  <MoreHorizontal size={isMobile ? (isCompactMobile ? 14 : 15) : 16} strokeWidth={2} />
+                  <MoreHorizontal size={isMobile ? (isCompactMobile ? 13 : 14) : 16} strokeWidth={2} />
                 </button>
                 {showHeaderMenu && (
                   <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 168, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", overflow: "hidden", zIndex: 220 }}>

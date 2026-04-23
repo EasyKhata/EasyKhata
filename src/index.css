@@ -59,12 +59,12 @@
 }
 
 [data-theme="light"] {
-  --bg: #f5f7fc;
+  --bg: #eef2f8;
   --surface: #ffffff;
-  --surface-high: #f7f9ff;
-  --surface-pop: #eef3ff;
-  --border: #dde4f0;
-  --border-mid: #c6d1e4;
+  --surface-high: #f4f7fd;
+  --surface-pop: #e8eefb;
+  --border: #d8e1ef;
+  --border-mid: #c5d0e3;
   --accent: #1f9d55;
   --accent-deep: #dff7ea;
   --accent-text: #168b49;
@@ -80,8 +80,8 @@
   --text-sec: #4c5d76;
   --text-dim: #7f8ea5;
   --white: #FFFFFF;
-  --input-bg: #fcfdff;
-  --card-shadow: 0 8px 20px rgba(17, 24, 39, 0.07);
+  --input-bg: #fafcff;
+  --card-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -260,8 +260,8 @@ input, select, textarea, button {
 
 .card {
   background: color-mix(in srgb, var(--surface) 95%, transparent);
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   overflow: hidden; box-shadow: var(--card-shadow);
 }
 
@@ -275,32 +275,32 @@ input, select, textarea, button {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 34px 20px;
+  padding: 24px 18px;
 }
 
 .empty-state-orb {
-  width: 58px;
-  height: 58px;
-  border-radius: 29px;
+  width: 46px;
+  height: 46px;
+  border-radius: 23px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
 .card-row {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 16px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding: 11px 13px; border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
 }
 .card-row:last-child { border-bottom: none; }
 
 .input-field {
   width: 100%; background: var(--input-bg);
   border: 1px solid var(--border);
-  border-radius: 12px; padding: 12px 14px;
+  border-radius: 11px; padding: 11px 12px;
   /* 16px prevents iOS Safari auto-zoom on focus */
   font-size: 16px; color: var(--text);
   font-family: var(--font); outline: none;
@@ -354,8 +354,8 @@ select.input-field {
 }
 
 .btn-primary {
-  border: none; border-radius: 12px; padding: 12px 18px;
-  font-size: 14px; font-weight: 700; font-family: var(--font);
+  border: none; border-radius: 11px; padding: 10px 15px;
+  font-size: 13px; font-weight: 700; font-family: var(--font);
   cursor: pointer; transition: opacity 0.2s, transform 0.1s, filter 0.2s;
   background: var(--accent); color: var(--bg);
 }
@@ -364,8 +364,8 @@ select.input-field {
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-secondary {
-  border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px;
-  font-size: 14px; font-weight: 600; font-family: var(--font);
+  border: 1px solid var(--border); border-radius: 11px; padding: 9px 12px;
+  font-size: 13px; font-weight: 600; font-family: var(--font);
   cursor: pointer; background: color-mix(in srgb, var(--surface-high) 90%, transparent); color: var(--text);
   transition: opacity 0.2s, background 0.2s, border-color 0.2s;
 }
@@ -430,20 +430,20 @@ select.input-field {
 }
 
 .ledger-screen {
-  padding: 12px 12px 96px;
+  padding: 8px 8px 90px;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .ledger-hero {
   position: relative;
   overflow: hidden;
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
   box-shadow: var(--card-shadow);
   display: grid;
-  gap: 14px;
+  gap: 7px;
 }
 
 .ledger-hero::after {
@@ -462,28 +462,28 @@ select.input-field {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
 .ledger-overline {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 1px;
+  letter-spacing: 0.85px;
   text-transform: uppercase;
 }
 
 .ledger-hero-value {
   font-family: var(--serif);
-  font-size: clamp(36px, 9vw, 44px);
-  line-height: 0.98;
-  letter-spacing: -0.8px;
+  font-size: clamp(28px, 7vw, 36px);
+  line-height: 0.96;
+  letter-spacing: -0.7px;
 }
 
 .ledger-hero-sub {
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--text-sec);
-  max-width: 32ch;
+  max-width: 30ch;
 }
 
 .ledger-hero-actions {
@@ -492,23 +492,24 @@ select.input-field {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 .ledger-summary-grid {
   display: grid;
-  gap: 10px;
+  gap: 7px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .ledger-summary-card {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 16px;
-  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
+  border-radius: 13px;
+  padding: 10px 10px;
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
+  box-shadow: none;
 }
 
 .ledger-summary-card.interactive {
@@ -522,53 +523,53 @@ select.input-field {
 .ledger-summary-label {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.9px;
+  letter-spacing: 0.75px;
   text-transform: uppercase;
 }
 
 .ledger-summary-value {
   font-family: var(--serif);
-  font-size: clamp(22px, 5.8vw, 28px);
+  font-size: clamp(18px, 4.7vw, 22px);
   line-height: 1;
-  letter-spacing: -0.5px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: -0.35px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .ledger-summary-sub {
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.35;
   color: var(--text-dim);
 }
 
 .ledger-block {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .ledger-block-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 
 .ledger-block-title {
-  font-size: 17px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
 }
 
 .ledger-block-caption {
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--text-dim);
+  line-height: 1.35;
 }
 
 .ledger-feed-card {
   background: color-mix(in srgb, var(--surface) 95%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 54%, transparent);
+  border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--card-shadow);
 }
@@ -576,9 +577,9 @@ select.input-field {
 .ledger-feed-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
-  padding: 13px 14px;
+  padding: 9px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
@@ -593,7 +594,7 @@ select.input-field {
 }
 
 .ledger-feed-title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -602,8 +603,8 @@ select.input-field {
 }
 
 .ledger-feed-meta {
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 10px;
+  line-height: 1.35;
   color: var(--text-dim);
 }
 
@@ -616,36 +617,61 @@ select.input-field {
 }
 
 .ledger-feed-amount {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   white-space: nowrap;
 }
 
+.ledger-compact-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ledger-action-btn {
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--surface-high) 92%, transparent);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.ledger-action-btn.danger {
+  background: color-mix(in srgb, var(--danger-deep) 92%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 16%, var(--border));
+}
+
 .ledger-search-card {
-  padding: 12px;
+  padding: 9px;
   display: grid;
-  gap: 8px;
+  gap: 5px;
 }
 
 .ledger-inline-note {
-  border-radius: 12px;
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.5;
+  border-radius: 11px;
+  padding: 9px 11px;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .ledger-form-grid {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .ledger-form-group {
   background: color-mix(in srgb, var(--surface) 95%, transparent);
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  border-radius: 16px;
-  padding: 14px;
+  border-radius: 14px;
+  padding: 12px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .ledger-form-group.compact {
@@ -667,7 +693,7 @@ select.input-field {
 }
 
 .modal-footer {
-  padding: 12px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+  padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   display: flex;
   gap: 10px;
   border-top: 1px solid var(--border);
@@ -687,9 +713,19 @@ select.input-field {
 .pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
 
 .menu-glass {
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
   backdrop-filter: blur(10px);
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+[data-theme="light"] .ledger-hero,
+[data-theme="light"] .ledger-feed-card,
+[data-theme="light"] .card {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
+}
+
+[data-theme="light"] .ledger-summary-card {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
 }
 
 .app-bottom-nav {
@@ -699,10 +735,10 @@ select.input-field {
   bottom: 0;
   z-index: 210;
   border-radius: 0;
-  padding: 8px 10px calc(env(safe-area-inset-bottom, 0px) + 8px);
+  padding: 5px 6px calc(env(safe-area-inset-bottom, 0px) + 5px);
   display: grid;
   align-items: stretch;
-  gap: 6px;
+  gap: 4px;
   overflow: hidden;
   box-shadow: 0 -10px 26px rgba(3, 10, 24, 0.18);
   border-left: none;
@@ -715,8 +751,8 @@ select.input-field {
   min-width: 0;
   border: 1px solid transparent;
   background: transparent;
-  border-radius: 12px;
-  padding: 6px 8px 5px;
+  border-radius: 10px;
+  padding: 4px 4px 3px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -734,8 +770,8 @@ select.input-field {
 }
 
 .app-bottom-nav-icon {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
@@ -752,9 +788,10 @@ select.input-field {
 }
 
 .app-bottom-nav-label {
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -820,19 +857,22 @@ svg {
     padding: 14px 12px 16px;
   }
   .ledger-screen {
-    padding: 10px 10px 92px;
-    gap: 12px;
+    padding: 6px 6px 88px;
+    gap: 8px;
   }
   .ledger-hero {
-    padding: 14px;
-    border-radius: 16px;
-    gap: 12px;
+    padding: 10px;
+    border-radius: 13px;
+    gap: 7px;
+  }
+  .ledger-hero-value {
+    font-size: clamp(25px, 7vw, 31px);
   }
   .ledger-hero-sub {
-    font-size: 12px;
+    font-size: 10px;
   }
   .ledger-summary-grid {
-    gap: 8px;
+    gap: 6px;
   }
   .ledger-summary-card,
   .ledger-feed-card,
@@ -840,11 +880,11 @@ svg {
     border-radius: 14px;
   }
   .ledger-summary-card {
-    padding: 11px 12px;
+    padding: 8px 9px;
   }
   .ledger-feed-row {
-    padding: 11px 12px;
-    gap: 10px;
+    padding: 8px 9px;
+    gap: 7px;
   }
   .ledger-form-group {
     padding: 12px;
@@ -858,18 +898,18 @@ svg {
     padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   }
   .empty-state {
-    padding: 26px 16px;
+    padding: 16px 12px;
   }
   .empty-state-orb {
-    width: 50px;
-    height: 50px;
-    border-radius: 25px;
-    font-size: 20px;
-    margin-bottom: 12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    font-size: 14px;
+    margin-bottom: 8px;
   }
   .app-bottom-nav {
-    padding: 6px 6px calc(env(safe-area-inset-bottom, 0px) + 6px);
-    gap: 4px;
+    padding: 5px 5px calc(env(safe-area-inset-bottom, 0px) + 5px);
+    gap: 3px;
   }
   .app-bottom-nav-btn {
     border-radius: 10px;
@@ -881,7 +921,15 @@ svg {
     height: 20px;
   }
   .app-bottom-nav-label {
-    font-size: 9px;
+    font-size: 8px;
+  }
+  .ledger-block-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ledger-block-caption {
+    max-width: 100%;
   }
 }
 

@@ -396,12 +396,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
         <div className="ledger-feed-meta">{expenseMeta(expense)}</div>
       </div>
       <div className="ledger-feed-side">
-        <span className="ledger-feed-amount" style={{ color: "var(--danger)" }}>{fmtMoney(expense.amount, sym)}</span>
+        <span className="ledger-feed-amount" style={{ color: "var(--danger)", fontSize: isApartmentOrg ? 12 : undefined }}>{fmtMoney(expense.amount, sym)}</span>
         {!isViewerMode && (
-          <>
-            <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(expense)}>Edit</button>
-            <DeleteBtn onDelete={() => d.removeExpense(expense.id)} />
-          </>
+          <div className="ledger-compact-actions">
+            <button className="ledger-action-btn" onClick={() => openEdit(expense)}>Edit</button>
+            <DeleteBtn onDelete={() => d.removeExpense(expense.id)} style={{ minHeight: 34, padding: "0 10px", borderRadius: 11, fontSize: 11, fontWeight: 700 }} />
+          </div>
         )}
       </div>
     </div>
@@ -428,7 +428,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
         <div className="ledger-hero-actions">
           <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
           {!isViewerMode && (
-            <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 176, whiteSpace: "nowrap" }}>
+            <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 164, whiteSpace: "nowrap" }}>
               + {config.expensesActionLabel}
             </button>
           )}

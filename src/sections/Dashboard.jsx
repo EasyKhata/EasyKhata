@@ -165,43 +165,43 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
   let startAngle = 0;
 
   return (
-    <div className="card" style={{ padding: 18, marginBottom: 22 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+    <div className="ledger-feed-card" style={{ padding: 14, marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Collections Usage</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Collections Usage</div>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
             {viewMode === "month" ? "How this month’s collections are being used." : "How this year’s collections are being used."}
           </div>
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
           Total collected {fmtMoney(totalCollected, sym)}
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 14, padding: 10 }}>
+      <div className="ledger-feed-card" style={{ marginBottom: 12, padding: 10, background: "color-mix(in srgb, var(--surface-high) 92%, transparent)" }}>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
           <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collection Efficiency</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{collectionEfficiency}%</div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collection</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{collectionEfficiency}%</div>
           </div>
           <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Spent from Collected</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{expenseShare}%</div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Spent</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>{expenseShare}%</div>
           </div>
           <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{netAmount >= 0 ? "Balance Left" : "Shortfall"}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: netAmount >= 0 ? "var(--accent)" : "var(--gold)" }}>{netShare}%</div>
+            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{netAmount >= 0 ? "Balance" : "Shortfall"}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: netAmount >= 0 ? "var(--accent)" : "var(--gold)" }}>{netShare}%</div>
           </div>
           <div>
             <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Dues</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: pendingDueAmount > 0 ? "var(--gold)" : "var(--text)" }}>{fmtMoney(pendingDueAmount, sym)}</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: pendingDueAmount > 0 ? "var(--gold)" : "var(--text)" }}>{fmtMoney(pendingDueAmount, sym)}</div>
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 176px) minmax(0, 1fr)", gap: 14, alignItems: "center" }}>
         <div style={{ display: "flex", justifyContent: "center" }}>
-          <svg width={isMobile ? "156" : "190"} height={isMobile ? "156" : "190"} viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
+          <svg width={isMobile ? "148" : "176"} height={isMobile ? "148" : "176"} viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
             <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
             {segments.map(segment => {
               const angle = (segment.value / total) * 360;
@@ -212,17 +212,17 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
             })}
             <circle cx="95" cy="95" r="42" fill="var(--bg)" />
             <text x="95" y="90" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text-dim)", fontWeight: 700 }}>Net</text>
-            <text x="95" y="108" textAnchor="middle" style={{ fontSize: 13, fill: "var(--text)", fontWeight: 700 }}>
+            <text x="95" y="108" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text)", fontWeight: 700 }}>
               {fmtMoney(stats.profit || 0, sym)}
             </text>
           </svg>
         </div>
 
-        <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 9 }}>
           {segments.map(segment => {
             const pct = Math.round((segment.value / total) * 100);
             return (
-              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0 }}>
+              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0, paddingBlock: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
                   <div className="ledger-feed-main">
@@ -506,10 +506,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     <div
       onClick={onClick}
       className={`ledger-summary-card${onClick ? " interactive" : ""}`}
-      style={{ borderColor: `${color}33` }}
+      style={{ borderColor: `${color}18`, background: "color-mix(in srgb, var(--surface) 96%, transparent)" }}
     >
       <div className="ledger-summary-label" style={{ color }}>{label}</div>
-      <div className="ledger-summary-value" style={{ color }}>{value}</div>
+      <div className="ledger-summary-value" style={{ color, fontSize: "clamp(17px, 4.4vw, 21px)" }}>{value}</div>
       {sub && <div className="ledger-summary-sub">{sub}</div>}
     </div>
   );

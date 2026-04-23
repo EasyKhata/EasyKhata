@@ -94,12 +94,12 @@ export function EmptyState({ title, message, actionLabel, onAction, accentColor 
   return (
     <div className="empty-state fade-in">
       <div className="empty-state-orb" style={{ background: `${accentColor}22`, color: accentColor }} />
-      <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 14, color: "var(--text-sec)", lineHeight: 1.6, maxWidth: 260 }}>{message}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.55, maxWidth: 260 }}>{message}</div>
       {actionLabel && onAction && (
         <button
           className="btn-secondary"
-          style={{ marginTop: 16, padding: "10px 16px", color: accentColor, borderColor: `${accentColor}44` }}
+          style={{ marginTop: 12, padding: "9px 14px", color: accentColor, borderColor: `${accentColor}44` }}
           onClick={onAction}
         >
           {actionLabel}
