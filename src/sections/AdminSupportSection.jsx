@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "../lib/api";
-import { EmptyState, SectionSkeleton } from "../components/UI";
+import { SectionSkeleton, WorkflowSetupCard } from "../components/UI";
 import { logError } from "../utils/logger";
 
 function formatTicketStatus(status) {
@@ -214,7 +214,7 @@ export default function AdminSupportSection() {
       )}
       {!visibleTickets.length ? (
         <div className="card">
-          <EmptyState title="No support tickets" message="No tickets match this filter right now." accentColor="var(--blue)" />
+          <WorkflowSetupCard title="No support tickets" description="No tickets match this filter right now." tone="info" />
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(260px, 340px) minmax(0, 1fr)", gap: 14 }}>
@@ -270,7 +270,7 @@ export default function AdminSupportSection() {
           </div>
           <div className="card" style={{ marginBottom: 0 }}>
             {!selectedTicket ? (
-              <EmptyState title="Select a ticket" message="Choose a ticket from the left queue to operate on it." accentColor="var(--blue)" />
+              <WorkflowSetupCard title="Select a ticket" description="Choose a ticket from the left queue to operate on it." tone="info" />
             ) : (
               <>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 8 }}>

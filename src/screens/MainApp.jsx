@@ -363,6 +363,9 @@ export default function MainApp() {
   const { user, logout } = useAuth();
   const data = useData();
   const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
+  const ownOrgNameRef = useRef(null);
+  if (!activeSharedOrgKey && account?.name) ownOrgNameRef.current = account.name;
+  const ownOrgName = ownOrgNameRef.current || account?.name || "My Organization";
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
@@ -384,7 +387,7 @@ export default function MainApp() {
   }, [trialBannerVisible]);
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
-  const [quickstartIntent, setQuickstartIntent] = useState(null);
+
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [viewMode, setViewMode] = useState("month"); // "month" or "year"
@@ -449,10 +452,6 @@ export default function MainApp() {
     const nextTab = routedTab === "settings" && ["account", "customers", "create-org", "org-records"].includes(nextTarget?.screen)
       ? "org"
       : routedTab;
-
-    if (nextTarget?.quickstart) {
-      setQuickstartIntent({ action: nextTarget.quickstart, token: Date.now() });
-    }
 
     setTab(nextTab);
 
@@ -709,9 +708,7 @@ export default function MainApp() {
     setYear(nextYear);
     setMonth(nextMonth);
   }, []);
-  const handleQuickstartHandled = useCallback(() => {
-    setQuickstartIntent(null);
-  }, []);
+
   const openUpgradeFlow = useCallback(() => {
     // On Android we cannot use in-app payments (Play Store policy).
     // Send users to the website to upgrade there.
@@ -824,8 +821,6 @@ export default function MainApp() {
             year={year}
             month={month}
             orgType={currentOrgType}
-            quickstartIntent={quickstartIntent}
-            onQuickstartHandled={handleQuickstartHandled}
             headerDatePicker={datePickerNode}
           />
         )}
@@ -838,15 +833,13 @@ export default function MainApp() {
             year={year}
             month={month}
             orgType={currentOrgType}
-            quickstartIntent={quickstartIntent}
-            onQuickstartHandled={handleQuickstartHandled}
             headerDatePicker={datePickerNode}
           />
         )}
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
-  }, [currentOrgType, datePickerNode, handleNavigate, handleQuickstartHandled, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, month, quickstartIntent, settingsNavigation, tab, viewMode, year]);
+  }, [currentOrgType, datePickerNode, handleNavigate, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, month, settingsNavigation, tab, viewMode, year]);
 
 
   const footerTabs = useMemo(() => {
@@ -1066,7 +1059,7 @@ export default function MainApp() {
                         style={{ width: "100%", padding: "9px 12px", textAlign: "left", background: !activeSharedOrgKey ? "var(--accent-deep)" : "transparent", border: "none", color: !activeSharedOrgKey ? "var(--accent)" : "var(--text)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
                       >
                         {!activeSharedOrgKey && <span style={{ fontSize: 10 }}>✓</span>}
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account?.name || "My Organization"}</span>
+                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
                         <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)", fontWeight: 600, flexShrink: 0 }}>Owner</span>
                       </button>
                       <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
@@ -1154,7 +1147,7 @@ export default function MainApp() {
           ) : null;
         })()}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: tab === "discussions" ? "hidden" : "auto", overflowX: "hidden", padding: tab === "discussions" ? 0 : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"), ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {}) }}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={tab}
@@ -1162,6 +1155,7 @@ export default function MainApp() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.16, ease: "easeOut" }}
+              style={tab === "discussions" ? { height: "100%", display: "flex", flexDirection: "column" } : {}}
             >
               {renderTabContent()}
             </motion.div>

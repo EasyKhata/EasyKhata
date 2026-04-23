@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Avatar, EmptyState, Input, Modal, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard, fmtDate, fmtMoney } from "../components/UI";
+import { Avatar, Input, Modal, SectionSkeleton, WorkflowActionStrip, WorkflowRecordCard, WorkflowSetupCard, fmtDate, fmtMoney } from "../components/UI";
 import { getFinancialInvoices, getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
@@ -149,33 +149,41 @@ export default function KhataSection({ orgType }) {
 
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--gold)" }}>Customer Khata</div>
-          <div className="ledger-hero-value" style={{ color: "var(--gold)" }}>{fmtMoney(totalOutstanding, sym)}</div>
-          <div className="ledger-hero-sub">
-            Open customer balance across {customers.length} customer{customers.length === 1 ? "" : "s"}. Total sales: {fmtMoney(totalSales, sym)}.
+      <WorkflowActionStrip
+        title="Open a customer to view passbook-style sales, payments, and running balance."
+        actions={[]}
+      />
+      <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--gold)" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>Customer Khata</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "var(--gold)" }}>{fmtMoney(totalOutstanding, sym)}</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
+            Open balance across {customers.length} customer{customers.length === 1 ? "" : "s"} · Total sales: {fmtMoney(totalSales, sym)}
           </div>
         </div>
       </div>
 
       <div className="ledger-block">
-        <div className="ledger-feed-card ledger-search-card">
+        <div className="card ledger-search-card">
           <div className="ledger-inline-note">
             Open a customer to view a passbook-style khata history with sales, payments, and running balance.
           </div>
           <Input placeholder="Search customers by name, company, phone, or email" value={searchTerm} onChange={event => setSearchTerm(event.target.value)} />
         </div>
 
-        <div className="ledger-feed-card">
+        <div className="card">
           {customers.length === 0 ? (
             <WorkflowSetupCard
               title="Add your first customer"
-              body="Customer balances and passbook-style khata history will appear here once you add a customer and start billing."
-              tone="gold"
+              description="Customer balances and passbook-style khata history will appear here once you add a customer and start billing."
+              tone="warning"
             />
           ) : filteredCustomers.length === 0 ? (
-            <EmptyState title="No matching customers" message="Try a different search term to find the customer you need." accentColor="var(--gold)" />
+            <WorkflowSetupCard
+              title="No matching customers"
+              description="Try a different search term to find the customer you need."
+              tone="warning"
+            />
           ) : (
             filteredCustomers.map(customer => <CustomerCard key={customer.id} customer={customer} />)
           )}
@@ -197,7 +205,7 @@ export default function KhataSection({ orgType }) {
             </div>
           </div>
 
-          <div className="ledger-feed-card">
+          <div className="card">
             <div className="ledger-feed-row" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
               <span style={{ width: 72 }}>Date</span>
               <span style={{ flex: 1 }}>Details</span>
@@ -208,8 +216,8 @@ export default function KhataSection({ orgType }) {
             {selectedCustomer.entries.length === 0 ? (
               <WorkflowSetupCard
                 title="No khata history yet"
-                body="Create invoices for this customer to build their sale and payment history here."
-                tone="gold"
+                description="Create invoices for this customer to build their sale and payment history here."
+                tone="warning"
               />
             ) : (
               selectedCustomer.entries.map(entry => (

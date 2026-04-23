@@ -13,10 +13,10 @@ import {
   fmtDate,
   monthKey,
   MONTHS,
-  EmptyState,
   SectionSkeleton,
   ProgressBar,
   UpgradeModal,
+  WorkflowActionStrip,
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
@@ -402,34 +402,16 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     />
   );
 
+  const expensesSub = isPersonalOrg
+    ? "Review monthly spending without oversized cards."
+    : isApartmentOrg
+      ? "Track society bills, utilities, and repairs in one compact ledger."
+      : config.enableBudgets === false
+        ? "Track business costs in one place."
+        : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`;
+
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--danger-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--danger)" }}>
-            Total {config.expensesLabel} · {MONTHS[month]} {year}
-          </div>
-          <div className="ledger-hero-value" style={{ color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
-          <div className="ledger-hero-sub">
-            {isPersonalOrg
-              ? "Review monthly spending without oversized cards."
-              : isApartmentOrg
-                ? "Track society bills, utilities, and repairs in one compact ledger."
-                : config.enableBudgets === false
-                  ? "Track business costs in one place."
-                  : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`}
-          </div>
-        </div>
-        <div className="ledger-hero-actions">
-          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
-          {!isViewerMode && (
-            <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 164, whiteSpace: "nowrap" }}>
-              + {config.expensesActionLabel}
-            </button>
-          )}
-        </div>
-      </div>
-
       {isViewerMode && (
         <div className="ledger-inline-note" style={{ background: "var(--surface-high)", border: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600 }}>
           View only · Contact the org owner to add or edit records
@@ -437,10 +419,25 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       )}
 
       <div className="ledger-block">
+        <WorkflowActionStrip
+          title={expensesSub}
+          actions={!isViewerMode ? [{ label: `+ ${config.expensesActionLabel}`, onClick: openNew, tone: "danger", dot: true }] : []}
+        />
+        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                Total {config.expensesLabel} · {MONTHS[month]} {year}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
+            </div>
+            {headerDatePicker && <div>{headerDatePicker}</div>}
+          </div>
+        </div>
         {isPersonalOrg ? (
           <>
             {hasHouseholdPeople && (
-                <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
+                <div className="card ledger-search-card" style={{ marginBottom: 18 }}>
                 <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, person, note, or linked name.">
                   <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
                 </Field>
@@ -450,7 +447,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
             )}
 
-            <div className="ledger-feed-card">
+            <div className="card">
               {!hasHouseholdPeople ? (
                 <WorkflowSetupCard
                   eyebrow="Household setup"
@@ -470,11 +467,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   tone="danger"
                 />
               ) : filteredExpenses.length === 0 ? (
-                <EmptyState
-                  title="No matching spendings"
-                  message="Try a different search term to find the entry you need."
-                  accentColor="var(--danger)"
-                />
+                <div style={{ padding: "18px 16px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                  No matching spendings. Try a different search term.
+                </div>
               ) : (
                 filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
               )}
@@ -484,23 +479,23 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
           <>
             {config.enableBudgets !== false && (
               <>
-                <div className="ledger-block-header" style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
                   <div>
-                    <div className="ledger-block-title">Category Budgets</div>
-                    <div className="ledger-block-caption">See overspending early and set simple monthly limits.</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Category Budgets</div>
+                    <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>See overspending early and set simple monthly limits.</div>
                   </div>
                   <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={openBudgetEditor}>Set Budgets</button>
                 </div>
-                <div className="ledger-feed-card" style={{ marginBottom: 22 }}>
+                <div className="card" style={{ marginBottom: 22 }}>
                   {budgetCards.length === 0 ? (
-                    <EmptyState title="No budgets set yet" message="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} accentColor="var(--danger)" />
+                    <WorkflowSetupCard title="No budgets set yet" description="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} tone="danger" />
                   ) : (
-                    budgetCards.map(item => (
-                        <div key={item.category} className="ledger-feed-row" style={{ alignItems: "stretch", flexDirection: "column", gap: 10 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                    budgetCards.map((item, index) => (
+                      <div key={item.category} style={{ padding: "12px 14px", borderBottom: index < budgetCards.length - 1 ? "1px solid color-mix(in srgb, var(--border) 68%, transparent)" : "none" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
                           <div>
-                            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{item.category}</div>
-                            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{item.category}</div>
+                            <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
                               {fmtMoney(item.spent, sym)} spent of {fmtMoney(item.budget, sym)}
                             </div>
                           </div>
@@ -515,7 +510,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             )}
 
             {active.length > 0 && (
-              <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
+              <div className="card ledger-search-card" style={{ marginBottom: 18 }}>
                 <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, vendor, note, or linked name.">
                   <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
                 </Field>
@@ -528,9 +523,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {isSmallBusinessOrg ? (
               <>
                 <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
-                  <div className="ledger-feed-card">
+                  <div className="card">
                     {salaryExpenses.length === 0 ? (
-                      <EmptyState title="No team payouts yet" message="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--purple)" />
+                      <WorkflowSetupCard title="No team payouts yet" description="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
                     ) : (
                       salaryExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -538,9 +533,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
 
                 <Collapsible title="Partner & Vendor Payments" icon="🏷" color="var(--gold)" count={partnerExpenses.length} defaultOpen={partnerExpenses.length > 0}>
-                  <div className="ledger-feed-card">
+                  <div className="card">
                     {partnerExpenses.length === 0 ? (
-                      <EmptyState title="No partner payments yet" message="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--gold)" />
+                      <WorkflowSetupCard title="No partner payments yet" description="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
                     ) : (
                       partnerExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -548,9 +543,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
 
                 <Collapsible title="Operating Expenses" icon="•" color="var(--danger)" count={otherExpenses.length} defaultOpen>
-                  <div className="ledger-feed-card">
+                  <div className="card">
                     {otherExpenses.length === 0 ? (
-                      <EmptyState title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} accentColor="var(--danger)" />
+                      <WorkflowSetupCard title={`No ${config.expensesLabel.toLowerCase()} yet`} description={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} tone="danger" />
                     ) : (
                       otherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -558,7 +553,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Collapsible>
               </>
             ) : isFreelancerOrg ? (
-                <div className="ledger-feed-card">
+                <div className="card">
                   {!hasFreelancerClients ? (
                   <WorkflowSetupCard
                     eyebrow="Client setup"
@@ -578,26 +573,28 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
-                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                  <div style={{ padding: "18px 16px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                    No matching expenses. Try a different search term.
+                  </div>
                 ) : (
                   filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                 )}
               </div>
             ) : recurring.length > 0 && (
               <Collapsible title={`Recurring ${config.expensesLabel}`} icon="↻" color="var(--danger)" count={recurring.length} defaultOpen>
-                <div className="ledger-feed-card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
+                <div className="card">{recurring.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}</div>
               </Collapsible>
             )}
 
             {!isApartmentOrg && !isSmallBusinessOrg && !isFreelancerOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
-              <div className="ledger-feed-card">
+              <div className="card">
                 {oneTime.length === 0 ? (
-                  <EmptyState
+                  <WorkflowSetupCard
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    description={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
-                    accentColor="var(--danger)"
+                    tone="danger"
                   />
                 ) : (
                   oneTime.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
@@ -606,7 +603,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             </Collapsible>}
 
             {isApartmentOrg && hasApartmentFlats && (
-              <div className="ledger-feed-card">
+              <div className="card">
                 {active.length === 0 ? (
                   <WorkflowSetupCard
                     eyebrow="Society spend"
@@ -617,7 +614,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
-                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                  <div style={{ padding: "18px 16px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                    No matching expenses. Try a different search term.
+                  </div>
                 ) : (
                   filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                 )}
@@ -625,7 +624,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             )}
 
             {isApartmentOrg && !hasApartmentFlats && (
-              <div className="ledger-feed-card">
+              <div className="card">
                 {active.length === 0 ? (
                   <WorkflowSetupCard
                     eyebrow="Society setup"
@@ -636,7 +635,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
-                  <EmptyState title="No matching expenses" message="Try a different search term to find the expense you need." accentColor="var(--danger)" />
+                  <div style={{ padding: "18px 16px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
+                    No matching expenses. Try a different search term.
+                  </div>
                 ) : (
                   filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                 )}

@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Modal, Field, Input, Select, PhoneNumberInput,
-  StructuredLocationFields, Avatar, EmptyState, DeleteBtn,
+  StructuredLocationFields, Avatar, DeleteBtn,
   PaginatedListControls, WorkflowRecordCard, WorkflowSetupCard, fmtMoney
 } from "../../components/UI";
 import { PHONE_COUNTRY_OPTIONS, DEFAULT_PHONE_COUNTRY_CODE } from "../../utils/profile";
@@ -130,14 +130,14 @@ export default function CustomersScreen({
         {customerDirectory.length === 0 ? (
           <WorkflowSetupCard
             title={`Add your first ${orgConfig.customerEntryLabel.toLowerCase()}`}
-            body={`Create your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building this directory and record history.`}
-            tone="blue"
+            description={`Create your first ${orgConfig.customerEntryLabel.toLowerCase()} to start building this directory and record history.`}
+            tone="info"
           />
         ) : filteredCustomerDirectory.length === 0 ? (
-          <EmptyState
+          <WorkflowSetupCard
             title="No matching records"
-            message="Try a different search term to find the flat or customer you need."
-            accentColor="var(--blue)"
+            description="Try a different search term to find the flat or customer you need."
+            tone="info"
           />
         ) : (
           <>

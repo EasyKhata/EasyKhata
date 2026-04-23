@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, EmptyState, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
+import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
 import { logError } from "../utils/logger";
 import {
   getPersonalEmiDueDay,
@@ -153,10 +153,10 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
   if (total <= 0) {
     return (
       <div className="card" style={{ padding: 18, marginBottom: 22 }}>
-        <EmptyState
+        <WorkflowSetupCard
           title="No society usage yet"
-          message={`Add collections and society expenses to see how funds are being used for this ${viewMode === "month" ? "month" : "year"}.`}
-          accentColor="var(--blue)"
+          description={`Add collections and society expenses to see how funds are being used for this ${viewMode === "month" ? "month" : "year"}.`}
+          tone="info"
         />
       </div>
     );
@@ -165,7 +165,7 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
   let startAngle = 0;
 
   return (
-    <div className="ledger-feed-card" style={{ padding: 14, marginBottom: 18 }}>
+    <div className="card" style={{ padding: 14, marginBottom: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Collections Usage</div>
@@ -178,7 +178,7 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
         </div>
       </div>
 
-      <div className="ledger-feed-card" style={{ marginBottom: 12, padding: 10, background: "color-mix(in srgb, var(--surface-high) 92%, transparent)" }}>
+      <div className="card" style={{ marginBottom: 12, padding: 10, background: "color-mix(in srgb, var(--surface-high) 92%, transparent)" }}>
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
           <div>
             <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collection</div>
@@ -242,36 +242,6 @@ function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
   );
 }
 
-function QuickstartChecklistCard({ progressLabel, items }) {
-  return (
-      <div className="ledger-feed-card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Quickstart Checklist</div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", fontWeight: 700 }}>{progressLabel}</div>
-      </div>
-      <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
-        Finish these two actions to unlock your fastest path to first value.
-      </div>
-      <div className="ledger-feed-card" style={{ marginBottom: 0, padding: 12 }}>
-        {items.map((item, index) => (
-          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: index === items.length - 1 ? 0 : 10, marginBottom: index === items.length - 1 ? 0 : 10, borderBottom: index === items.length - 1 ? "none" : "1px solid var(--border)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-              <span style={{ width: 18, height: 18, borderRadius: 999, border: `1px solid ${item.completed ? "var(--accent)" : "var(--border)"}`, background: item.completed ? "var(--accent-deep)" : "transparent", color: item.completed ? "var(--accent)" : "var(--text-dim)", fontSize: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {item.completed ? "✓" : String(index + 1)}
-              </span>
-              <div style={{ fontSize: 13, color: "var(--text)", opacity: item.completed ? 0.72 : 1 }}>{item.label}</div>
-            </div>
-            {!item.completed && (
-              <button className="btn-secondary" type="button" style={{ padding: "8px 10px", fontSize: 11, color: "var(--blue)", flexShrink: 0 }} onClick={item.onAction}>
-                Open
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function SavingsGoalCard({ goals, sym, onNav }) {
   const target = Number(goals?.targetAmount || 0);
@@ -283,7 +253,7 @@ function SavingsGoalCard({ goals, sym, onNav }) {
   const remaining = Math.max(0, target - saved);
 
   return (
-    <div className="ledger-feed-card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
+    <div className="card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Savings Goal</div>
@@ -324,7 +294,7 @@ function SavingsGoalCard({ goals, sym, onNav }) {
 
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
-  const { activeSharedOrgKey, collectionFetched, ensureCollectionLoaded } = data;
+  const { activeSharedOrgKey, collectionFetched, isViewerMode } = data;
   const { user, updateProfile } = useAuth();
   const sym = data.currency?.symbol || "Rs";
   const [showSetupGuide, setShowSetupGuide] = useState(false);
@@ -409,41 +379,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const hasCustomerRecord = (data.customers || []).length > 0;
   const hasInvoiceRecord = (data.invoices || []).some(item => String(item?.documentType || "invoice") === "invoice");
   const hasIncomeRecord = (data.income || []).length > 0;
-  const hasDuesRecord = (data.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
-  const firstValueCompleted = isApartmentOrg ? hasDuesRecord : (orgConfig.hideInvoices ? hasIncomeRecord : hasInvoiceRecord);
-  const quickstartItems = useMemo(() => ([
-    {
-      id: "people",
-      label: isApartmentOrg ? "Add first resident/flat" : isPersonalOrg ? "Add first family member" : "Add first customer",
-      completed: hasCustomerRecord,
-      onAction: () => onNav({ tab: "org", screen: "customers" })
-    },
-    {
-      id: "value",
-      label: isApartmentOrg ? "Record first dues collection" : orgConfig.hideInvoices ? "Record first income" : "Create first invoice",
-      completed: firstValueCompleted,
-      onAction: () => onNav({ tab: orgConfig.hideInvoices || isApartmentOrg ? "income" : "invoices", quickstart: isApartmentOrg ? "first-dues" : orgConfig.hideInvoices ? "first-income" : "first-invoice" })
-    }
-  ]), [firstValueCompleted, hasCustomerRecord, isApartmentOrg, isPersonalOrg, onNav, orgConfig.hideInvoices]);
-  const quickstartDone = useMemo(() => quickstartItems.filter(item => item.completed).length, [quickstartItems]);
-
-  // Trigger lazy collection loads needed for accurate quickstart state.
-  // Without this, income/invoices are empty until the user visits those sections,
-  // causing false "not done" state on existing orgs.
-  useEffect(() => {
-    if (!data.loaded) return undefined;
-    const timer = window.setTimeout(() => {
-      ensureCollectionLoaded?.("income");
-      ensureCollectionLoaded?.("expenses");
-      ensureCollectionLoaded?.("invoices");
-    }, 60);
-    return () => window.clearTimeout(timer);
-  }, [data.loaded, data.activeOrgId, activeSharedOrgKey, ensureCollectionLoaded]);
-
-  // Wait for relevant collections to load before deciding whether to show the checklist.
-  // Customers are eager (always ready). Income covers personal/apartment; invoices cover the rest.
-  const collectionsReadyForQuickstart = collectionFetched?.customers && collectionFetched?.income && collectionFetched?.invoices;
-  const showQuickstartChecklist = !activeSharedOrgKey && !showSetupGuide && collectionsReadyForQuickstart && quickstartDone < quickstartItems.length;
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = isSmallBusinessOrg
@@ -526,7 +461,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               ? `${stats.activeLoansCount || 0} EMI record(s) are being tracked alongside spending and earnings.`
               : "Income, spending, and goals are ready for planning."
           };
-  const apartmentActions = [
+  const apartmentActions = isViewerMode ? [] : [
     { label: "Add collection", onClick: () => onNav("income"), tone: "accent", dot: true },
     { label: "Add expense", onClick: () => onNav("expenses"), tone: "danger" },
     { label: "Residents", onClick: () => onNav({ tab: "org", screen: "customers" }), tone: "gold" }
@@ -613,7 +548,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           {caption && <div className="ledger-block-caption">{caption}</div>}
         </div>
       </div>
-      <div className="ledger-feed-card">{children}</div>
+      <div className="card">{children}</div>
     </div>
   );
 
@@ -687,34 +622,33 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
     return (
       <div className="ledger-screen">
-        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
-          <div className="ledger-hero-meta" style={statsStyle}>
-            <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
-              Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-            </div>
-            <div className="ledger-hero-value" style={{ color: heroTone }}>
-              {overallBalance < 0 ? "-" : ""}{fmtMoney(Math.abs(overallBalance), sym)}
-            </div>
-            <div className="ledger-hero-sub">{apartmentHeroSub}</div>
-          </div>
-          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
-        </div>
-
         <div className="ledger-block">
           <WorkflowActionStrip title={apartmentSummary.title} subtitle={apartmentSummary.subtitle} actions={apartmentActions} />
-          {showQuickstartChecklist && (
-            <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
-          )}
+
+          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)", ...statsStyle }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                  Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
+                  {overallBalance < 0 ? "-" : ""}{fmtMoney(Math.abs(overallBalance), sym)}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{apartmentHeroSub}</div>
+              </div>
+              {headerDatePicker && <div>{headerDatePicker}</div>}
+            </div>
+          </div>
           <div className="ledger-summary-grid">
-            <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
-            <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
+            <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={!isViewerMode ? () => onNav("income") : undefined} />
+            <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={!isViewerMode ? () => onNav("expenses") : undefined} />
             <Tile label="Opening Balance" value={formatSignedMoney(openingBalance)} color={openingBalance >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? `Balance at start of ${MONTHS[month]} ${year}` : `Balance brought into ${year}`} />
             <Tile
               label="Flats"
               value={String(stats.flatsCount || 0)}
               color="var(--gold)"
               sub={`${stats.unpaidFlats?.length || 0} pending in ${viewMode === "month" ? "this month" : "the latest month"} · open Org flats`}
-              onClick={() => onNav({ tab: "org", screen: "customers" })}
+              onClick={!isViewerMode ? () => onNav({ tab: "org", screen: "customers" }) : undefined}
             />
           </div>
 
@@ -722,7 +656,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <div style={{ padding: "0 18px" }}>
             <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-              <div className="ledger-feed-card">
+              <div className="card">
                 {top5Expenses.length === 0 ? (
                   <WorkflowSetupCard title="No expenses this period" description="Add society expense entries to see the biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
                 ) : (
@@ -753,21 +687,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       : (stats.netAfterEmi >= 0 ? "Your household stayed ahead of spending and EMI commitments this year." : "Household cash flow is under pressure this year.");
     return (
       <div className="ledger-screen">
-        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
-          <div className="ledger-hero-meta">
-            <div className="ledger-overline" style={{ color: "var(--gold)" }}>
-              Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-            </div>
-            <div className="ledger-hero-value" style={{ color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)" }}>
-              {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
-            </div>
-            <div className="ledger-hero-sub">{personalHeroSub}</div>
-          </div>
-          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
-        </div>
-
         <div className="ledger-block">
           <WorkflowActionStrip title={personalSummary.title} subtitle={personalSummary.subtitle} actions={personalActions} />
+          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--gold)", ...statsStyle }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                  Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)" }}>
+                  {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{personalHeroSub}</div>
+              </div>
+              {headerDatePicker && <div>{headerDatePicker}</div>}
+            </div>
+          </div>
           <div className="ledger-summary-grid">
             <Tile label={viewMode === "month" ? "Earnings" : "Total Earnings"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "All household earnings" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
@@ -780,7 +715,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
 
           <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="ledger-feed-card">
+            <div className="card">
               {top5Expenses.length === 0 ? (
                 <WorkflowSetupCard title="No expenses this period" description="Add spending entries to see your biggest expenses here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
               ) : (
@@ -798,7 +733,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
-            <div className="ledger-feed-card">
+            <div className="card">
               {stats.upcomingEmis.length === 0 ? (
                 <WorkflowSetupCard title="No EMI records yet" description="Add your active EMIs to track due dates and balances." actionLabel="Go to EMIs" onAction={() => onNav("emi")} tone="warning" />
               ) : (
@@ -816,9 +751,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Spending Mix" icon="💸" color="var(--danger)" count={stats.topExpenseCategories.length} defaultOpen={stats.topExpenseCategories.length > 0}>
-            <div className="ledger-feed-card">
+            <div className="card">
               {stats.topExpenseCategories.length === 0 ? (
-                <EmptyState title="No spending tracked yet" message="Add spending entries to see where the household budget is going." actionLabel="Go to Spending" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+                <WorkflowSetupCard title="No spending tracked yet" description="Add spending entries to see where the household budget is going." actionLabel="Go to Spending" onAction={() => onNav("expenses")} tone="danger" />
               ) : (
                 stats.topExpenseCategories.map(category => (
                   <div key={category.category} className="ledger-feed-row">
@@ -831,7 +766,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Smart Suggestions" icon="◎" color="var(--blue)" count={stats.actionTips.length} defaultOpen>
-            <div className="ledger-feed-card">
+            <div className="card">
               {stats.actionTips.map((tip, index) => (
                 <div key={`${tip.title}-${index}`} className="ledger-feed-row">
                   <div>
@@ -868,24 +803,21 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       <div className="ledger-screen">
         <div className="ledger-block">
           <WorkflowActionStrip title={freelancerSummary.title} subtitle={freelancerSummary.subtitle} actions={freelancerActions} />
-          {showQuickstartChecklist && (
-            <QuickstartChecklistCard progressLabel={`${quickstartDone}/${quickstartItems.length} done`} items={quickstartItems} />
-          )}
-        </div>
-        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
-          <div className="ledger-hero-meta">
-            <div className="ledger-overline" style={{ color: "var(--blue)" }}>
-              Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-            </div>
-            <div className="ledger-hero-value" style={{ color: heroTone }}>
-              {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-            </div>
-            <div className="ledger-hero-sub">{freelancerHeroSub}</div>
-          </div>
-          {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
-        </div>
 
-        <div className="ledger-block">
+          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--blue)", ...statsStyle }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                  Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
+                  {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+                </div>
+                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{freelancerHeroSub}</div>
+              </div>
+              {headerDatePicker && <div>{headerDatePicker}</div>}
+            </div>
+          </div>
           <div className="ledger-summary-grid">
             <Tile label={viewMode === "month" ? "Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Payments logged plus paid client invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
             <Tile label={viewMode === "month" ? "Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Tools, travel, subscriptions, and delivery costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
@@ -896,7 +828,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
 
           <Collapsible title="Invoice Follow-up" icon="◎" color="var(--blue)" count={(stats.overdueInvoices.length || 0) + (stats.dueSoonInvoices.length || 0)} defaultOpen>
-            <div className="ledger-feed-card">
+            <div className="card">
               {stats.overdueInvoices.length === 0 && stats.dueSoonInvoices.length === 0 ? (
                 <WorkflowSetupCard title="No invoice follow-up right now" description="Your open client invoices are either paid or not near their due date yet." tone="success" />
               ) : (
@@ -919,7 +851,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title="Client Snapshot" icon="⭐" color="var(--blue)" count={showAdvanced ? stats.topCustomers.length : 0} defaultOpen={showAdvanced && stats.topCustomers.length > 0}>
-            <div className="ledger-feed-card">
+            <div className="card">
               {!showAdvanced ? (
                 <WorkflowSetupCard title="Client insights are on Pro" description="Upgrade to Pro to see your strongest clients and outstanding balances in one place." tone="info" />
               ) : stats.topCustomers.length === 0 ? (
@@ -943,15 +875,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
           <Collapsible title="Freelancer Alerts" icon="🚨" color="var(--gold)" count={showAdvanced ? stats.alertItems.length : 0} defaultOpen={showAdvanced && stats.alertItems.length > 0}>
             {!showAdvanced ? (
-              <div className="ledger-feed-card">
+              <div className="card">
                 <WorkflowSetupCard title="Freelancer alerts are on Pro" description="Upgrade to Pro for overdue invoice alerts, spending spikes, and payment follow-up reminders." tone="warning" />
               </div>
             ) : stats.alertItems.length === 0 ? (
-              <div className="ledger-feed-card">
+              <div className="card">
                 <WorkflowSetupCard title="No freelancer alerts right now" description="Payments, open invoices, and spending look steady for the selected period." tone="success" />
               </div>
             ) : (
-              <div className="ledger-feed-card">
+              <div className="card">
                 {stats.alertItems.map((alert, index) => {
                   const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
                   return (
@@ -971,7 +903,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <Collapsible title="Cash Flow Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
             <div className="card" style={{ padding: "18px" }}>
               {!showAdvanced ? (
-                <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month freelancer cash flow trend." : "Upgrade to Pro to see your yearly freelancer cash flow trend."} accentColor="var(--blue)" />
+                <WorkflowSetupCard title="Cash flow trend is on Pro" description={viewMode === "month" ? "Upgrade to Pro to see your six-month freelancer cash flow trend." : "Upgrade to Pro to see your yearly freelancer cash flow trend."} tone="info" />
               ) : viewMode === "month" ? (
                 <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
                   {stats.cashFlow.map(item => (
@@ -1003,9 +935,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </Collapsible>
 
           <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="ledger-feed-card">
+            <div className="card">
               {top5Expenses.length === 0 ? (
-                <EmptyState title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} accentColor="var(--danger)" />
+                <WorkflowSetupCard title="No expenses this period" description="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
               ) : (
                 top5Expenses.map((expense, index) => (
                   <div key={expense.id || index} className="ledger-feed-row">
@@ -1028,21 +960,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
-            {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-          </div>
-          <div className="ledger-hero-value" style={{ color: heroTone }}>
-            {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-          </div>
-          <div className="ledger-hero-sub">{heroSub}</div>
-        </div>
-        {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
-      </div>
-
       <div className="ledger-block">
         <WorkflowActionStrip title={businessSummary.title} subtitle={businessSummary.subtitle} actions={businessActions} />
+        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: `4px solid ${heroTone}`, ...statsStyle }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: heroTone, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
+                {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{heroSub}</div>
+            </div>
+            {headerDatePicker && <div>{headerDatePicker}</div>}
+          </div>
+        </div>
         {!activeSharedOrgKey && (reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
           <div style={{ marginBottom: 18, padding: "12px 14px", background: reviewAccessEnabled ? "var(--blue-deep)" : currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
@@ -1223,7 +1156,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         >
           <div className="card" style={{ padding: "18px" }}>
             {!showAdvanced ? (
-              <EmptyState title="Cash flow trend is on Pro" message={viewMode === "month" ? "Upgrade to Pro to see your six-month cash flow trend and business runway insights." : "Upgrade to Pro to see your yearly cash flow trend and business runway insights."} accentColor="var(--blue)" />
+              <WorkflowSetupCard title="Cash flow trend is on Pro" description={viewMode === "month" ? "Upgrade to Pro to see your six-month cash flow trend and business runway insights." : "Upgrade to Pro to see your yearly cash flow trend and business runway insights."} tone="info" />
             ) : viewMode === "month" ? (
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
               {stats.cashFlow.map(item => (
@@ -1261,7 +1194,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={showAdvanced ? stats.topExpenseCategories.length : 0}
           defaultOpen={showAdvanced && stats.topExpenseCategories.length > 0}
         >
-          <div className="ledger-feed-card">
+          <div className="card">
             {!showAdvanced ? (
               <WorkflowSetupCard title="Category insights are on Pro" description="Upgrade to Pro to see top expense categories and smarter spending analysis." tone="danger" />
             ) : stats.topExpenseCategories.length === 0 ? (
@@ -1282,7 +1215,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={showAdvanced ? stats.highRiskCustomers.length : 0}
           defaultOpen={false}
         >
-          <div className="ledger-feed-card">
+          <div className="card">
             {!showAdvanced ? (
               <WorkflowSetupCard title="Risk scoring is on Pro" description="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
             ) : stats.highRiskCustomers.length === 0 ? (
@@ -1310,7 +1243,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           count={stats.pendingInvoices.length}
           defaultOpen={stats.pendingInvoices.length > 0}
         >
-          <div className="ledger-feed-card">
+          <div className="card">
             {stats.pendingInvoices.length === 0 ? (
               <WorkflowSetupCard title="Nothing pending" description="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
             ) : (
@@ -1335,7 +1268,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         )}
 
         <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-          <div className="ledger-feed-card">
+          <div className="card">
             {top5Expenses.length === 0 ? (
               <WorkflowSetupCard title="No expenses this period" description="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
             ) : (
