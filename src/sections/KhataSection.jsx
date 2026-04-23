@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Avatar, EmptyState, Input, Modal, SectionSkeleton, fmtDate, fmtMoney } from "../components/UI";
+import { Avatar, EmptyState, Input, Modal, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard, fmtDate, fmtMoney } from "../components/UI";
 import { getFinancialInvoices, getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
@@ -112,6 +112,33 @@ export default function KhataSection({ orgType }) {
   const totalOutstanding = customers.reduce((sum, customer) => sum + Number(customer.outstanding || 0), 0);
   const totalSales = customers.reduce((sum, customer) => sum + Number(customer.totalSales || 0), 0);
 
+  function customerMeta(customer) {
+    const parts = [
+      customer.company || "",
+      `${customer.invoiceCount || 0} invoice${customer.invoiceCount === 1 ? "" : "s"}`
+    ].filter(Boolean);
+    return parts.join(" · ") || "No extra details";
+  }
+
+  function CustomerCard({ customer }) {
+    return (
+      <WorkflowRecordCard
+        avatar={<Avatar name={customer.name || "?"} size={38} fontSize={13} />}
+        title={customer.name}
+        meta={customerMeta(customer)}
+        amount={fmtMoney(customer.outstanding || 0, sym)}
+        amountTone={(customer.outstanding || 0) > 0 ? "gold" : "accent"}
+        badges={[
+          {
+            label: (customer.outstanding || 0) > 0 ? "Open balance" : "Settled",
+            tone: (customer.outstanding || 0) > 0 ? "gold" : "accent"
+          }
+        ]}
+        onClick={() => setSelectedCustomer(customer)}
+      />
+    );
+  }
+
   if (!data.loaded) {
     return <SectionSkeleton rows={4} />;
   }
@@ -142,31 +169,15 @@ export default function KhataSection({ orgType }) {
 
         <div className="ledger-feed-card">
           {customers.length === 0 ? (
-            <EmptyState title="No customers added yet" message="Add customers in Khata to start tracking balances and payment history." accentColor="var(--gold)" />
+            <WorkflowSetupCard
+              title="Add your first customer"
+              body="Customer balances and passbook-style khata history will appear here once you add a customer and start billing."
+              tone="gold"
+            />
           ) : filteredCustomers.length === 0 ? (
             <EmptyState title="No matching customers" message="Try a different search term to find the customer you need." accentColor="var(--gold)" />
           ) : (
-            filteredCustomers.map(customer => (
-              <div key={customer.id} className="ledger-feed-row" style={{ cursor: "pointer" }} onClick={() => setSelectedCustomer(customer)}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <Avatar name={customer.name || "?"} size={36} fontSize={12} />
-                  <div className="ledger-feed-main" style={{ minWidth: 0 }}>
-                    <div className="ledger-feed-title" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{customer.name}</div>
-                    <div className="ledger-feed-meta" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {[customer.company || "", `${customer.invoiceCount || 0} invoice${customer.invoiceCount === 1 ? "" : "s"}`].filter(Boolean).join(" · ") || "No extra details"}
-                    </div>
-                  </div>
-                </div>
-                <div className="ledger-feed-side">
-                  <div className="ledger-feed-amount" style={{ color: (customer.outstanding || 0) > 0 ? "var(--gold)" : "var(--accent)" }}>
-                    {fmtMoney(customer.outstanding || 0, sym)}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
-                    {(customer.outstanding || 0) > 0 ? "Open balance" : "Settled"}
-                  </div>
-                </div>
-              </div>
-            ))
+            filteredCustomers.map(customer => <CustomerCard key={customer.id} customer={customer} />)
           )}
         </div>
       </div>
@@ -195,7 +206,11 @@ export default function KhataSection({ orgType }) {
               <span style={{ width: 88, textAlign: "right" }}>Balance</span>
             </div>
             {selectedCustomer.entries.length === 0 ? (
-              <EmptyState title="No khata history yet" message="Create invoices for this customer to build their passbook history." accentColor="var(--gold)" />
+              <WorkflowSetupCard
+                title="No khata history yet"
+                body="Create invoices for this customer to build their sale and payment history here."
+                tone="gold"
+              />
             ) : (
               selectedCustomer.entries.map(entry => (
                 <div key={entry.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 10 }}>

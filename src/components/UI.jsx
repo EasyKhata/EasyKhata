@@ -4,3 +4,4 @@ export { Field, Input, Textarea, Select, PhoneNumberInput, StructuredLocationFie
 export { Modal } from "./ui/modal";
 export { Skeleton, SectionSkeleton, DashboardSkeleton, EmptyState, ToastNotice, UpgradeModal, SubscriptionBanner } from "./ui/feedback";
 export { Avatar, ProgressBar, Toggle, MonthNav, PaginatedListControls, DeleteBtn, CurrencyPicker, LoadingButton } from "./ui/display";
+export { WorkflowActionStrip, WorkflowSetupCard, WorkflowRecordCard } from "./ui/workflow";

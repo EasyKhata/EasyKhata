@@ -20,7 +20,9 @@ import {
   SectionSkeleton,
   uid,
   PaginatedListControls,
-  UpgradeModal
+  UpgradeModal,
+  WorkflowSetupCard,
+  WorkflowRecordCard
 } from "../components/UI";
 import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -399,6 +401,72 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  const ManualIncomeCard = ({ item }) => {
+    const saleStatus = String(item.saleStatus || "pending").toLowerCase();
+    const isSale = Array.isArray(item.saleItems) && item.saleItems.length > 0;
+    const meta = [
+      item.date ? fmtDate(item.date) : "",
+      item.invoiceNumber || item.receiptNumber || "",
+      item.note || "",
+      ...(config.incomeFields || []).map(field => item[field.key]).filter(Boolean),
+      isSmallBusinessOrg && isSale ? `${item.saleItems.length} product(s)` : ""
+    ].filter(Boolean).join(" · ");
+
+    const badges = [];
+    if (isSmallBusinessOrg && isSale) {
+      badges.push({
+        label: saleStatus === "paid" ? "Paid" : saleStatus === "refunded" ? "Refunded" : saleStatus === "canceled" ? "Canceled" : "Pending",
+        tone: saleStatus === "paid" ? "accent" : saleStatus === "pending" ? "gold" : "danger"
+      });
+    }
+    if (isSmallBusinessOrg && !isSale && item.saleStatus != null) {
+      badges.push({
+        label: String(item.saleStatus) === "paid" ? "Paid" : "Pending",
+        tone: String(item.saleStatus) === "paid" ? "accent" : "gold"
+      });
+    }
+
+    const actions = [];
+
+    if (isSmallBusinessOrg && isSale && !isViewerMode && saleStatus !== "canceled" && saleStatus !== "refunded") {
+      actions.push(
+        { label: "Print", onClick: event => { event.stopPropagation(); handlePrintSaleReceipt(item); } },
+        { label: "Send", onClick: event => { event.stopPropagation(); handleSendSaleReceipt(item); } },
+        { label: "Refund", onClick: event => { event.stopPropagation(); issueSaleRefund(item); }, tone: "danger" }
+      );
+    }
+
+    if (isSmallBusinessOrg && !isSale && item.saleStatus != null && !isViewerMode) {
+      actions.push({
+        label: String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid",
+        onClick: event => {
+          event.stopPropagation();
+          toggleSaleStatus(item);
+        },
+        tone: String(item.saleStatus) === "paid" ? "gold" : "accent"
+      });
+    }
+
+    if ((!isSmallBusinessOrg || !isSale) && !isViewerMode) {
+      actions.push(
+        { label: "Edit", onClick: event => { event.stopPropagation(); openEdit(item); } },
+        { label: "Delete", onClick: event => { event.stopPropagation(); d.removeIncome(item.id); }, tone: "danger" }
+      );
+    }
+
+    return (
+      <WorkflowRecordCard
+        avatar={<Avatar name={item.label || item.personName || item.clientName || "?"} size={38} fontSize={13} />}
+        title={item.label}
+        meta={meta}
+        amount={fmtMoney(item.amount, sym)}
+        amountTone={saleStatus === "canceled" || saleStatus === "refunded" ? "danger" : "accent"}
+        badges={badges}
+        actions={actions}
+      />
+    );
+  };
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -1186,43 +1254,47 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
         </div>
         <div className="ledger-feed-card">
           {isApartmentOrg && !hasApartmentFlats && manualIncome.length === 0 ? (
-            <EmptyState
+            <WorkflowSetupCard
+              eyebrow="Collections setup"
               title="Add flats before tracking collections"
-              message="Maintenance collections need at least one flat record in Khata."
+              message="Maintenance collections need at least one flat record in Khata so each payment stays linked to the right unit."
               actionLabel="Open Flats"
               onAction={openFlatManager}
-              accentColor="var(--accent)"
+              tone="accent"
             />
           ) : !hasHouseholdPeople ? (
-            <EmptyState
+            <WorkflowSetupCard
+              eyebrow="Household setup"
               title="Add a person before tracking earnings"
-              message="Household earnings must be tagged to at least one person. Add your first person in Khata to continue."
+              message="Household earnings must be tagged to at least one person. Add your first person in Khata to keep every entry connected to the right family member."
               actionLabel="Open People"
               onAction={openPeopleManager}
-              accentColor="var(--accent)"
+              tone="accent"
             />
           ) : isFreelancerOrg && !hasFreelancerClients ? (
-            <EmptyState
+            <WorkflowSetupCard
+              eyebrow="Client setup"
               title="Add a client before tracking payments"
-              message="Freelancer payments must be linked to at least one client. Add your first client in Khata to continue."
+              message="Freelancer payments should be linked to a client so invoices, collections, and follow-up all stay aligned."
               actionLabel="Open Clients"
               onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
-              accentColor="var(--accent)"
+              tone="accent"
             />
           ) : manualIncome.length === 0 ? (
-            <EmptyState
+            <WorkflowSetupCard
+              eyebrow={isApartmentOrg ? "Collections" : "Manual entries"}
               title={`No ${config.incomeLabel.toLowerCase()} yet`}
               message={isApartmentOrg ? "Use Add Collection to enter maintenance amounts already collected before onboarding or received after starting with the app." : `Track cash, transfers, or direct ${config.incomeEntryLabel.toLowerCase()} entries here.`}
               actionLabel={config.incomeActionLabel}
               onAction={openNew}
-              accentColor="var(--accent)"
+              tone="accent"
             />
           ) : filteredManualIncome.length === 0 ? (
             <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
               No {config.incomeLabel.toLowerCase()} match this search.
             </div>
           ) : (
-            filteredManualIncome.map(item => (
+            filteredManualIncome.map(item => ( /*
               <div key={item.id} className="ledger-feed-row">
                 <div className="ledger-feed-main">
                   <div className="ledger-feed-title">{item.label}</div>
@@ -1267,7 +1339,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                   <span className="ledger-feed-amount" style={{ color: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "var(--text-dim)" : "var(--accent)", textDecoration: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "line-through" : "none" }}>
                     {fmtMoney(item.amount, sym)}
                   </span>
-                  {/* Simple sale (non-POS): status pill + toggle */}
+                  // Simple sale (non-POS): status pill + toggle
                   {isSmallBusinessOrg && item.saleStatus != null && !(Array.isArray(item.saleItems) && item.saleItems.length > 0) && (
                     <>
                       <span className="pill" style={{
@@ -1295,7 +1367,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                   )}
                 </div>
               </div>
-            ))
+            */ <ManualIncomeCard key={item.id} item={item} />))
           )}
         </div>
       </div>

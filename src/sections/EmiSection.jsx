@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, DateSelectInput, DeleteBtn, fmtMoney, fmtDate, MONTHS, SectionSkeleton, EmptyState } from "../components/UI";
+import { Modal, Field, Input, Select, DateSelectInput, fmtMoney, fmtDate, MONTHS, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -78,6 +78,25 @@ function renderField(field, value, onChange, options = {}, error = undefined) {
   }
 
   return <Input error={error} {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
+}
+
+function EmiCard({ item, sym, onEdit, onDelete }) {
+  return (
+    <WorkflowRecordCard
+      title={item.loanName || "EMI"}
+      subtitle={[
+        item.lender || "",
+        getPersonalEmiDueDay(item) ? `Due on ${getPersonalEmiDueDay(item)}` : "No due date",
+        getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : ""
+      ].filter(Boolean).join(" · ")}
+      amount={fmtMoney(getPersonalEmiAmount(item), sym)}
+      amountTone="gold"
+      actions={[
+        { label: "Edit", tone: "secondary", onClick: () => onEdit(item) },
+        { label: "Delete", tone: "danger", onClick: () => onDelete(item.id) }
+      ]}
+    />
+  );
 }
 
 export default function EmiSection({ year, month, orgType, headerDatePicker }) {
@@ -262,18 +281,18 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
         <div className="ledger-feed-card">
           {!hasHouseholdPeople ? (
-            <EmptyState title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} accentColor="var(--gold)" />
+            <WorkflowSetupCard title="Add a person before tracking EMIs" description="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} tone="warning" />
           ) : loans.length === 0 ? (
-            <EmptyState title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
+            <WorkflowSetupCard title="No EMI records yet" description="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} tone="warning" />
           ) : activeLoans.length === 0 ? (
-            <EmptyState title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} accentColor="var(--gold)" />
+            <WorkflowSetupCard title={`No active EMIs for ${MONTHS[month]} ${year}`} description="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} tone="warning" />
           ) : filteredLoans.length === 0 ? (
             <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
               No EMI records match this search.
             </div>
           ) : (
             filteredLoans.map(item => (
-              <div key={item.id} className="ledger-feed-row">
+              false ? <div key={item.id} className="ledger-feed-row">
                 <div className="ledger-feed-main">
                   <div className="ledger-feed-title">{item.loanName || "EMI"}</div>
                   <div className="ledger-feed-meta">
@@ -287,9 +306,9 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
                 <div className="ledger-feed-side">
                   <span className="ledger-feed-amount" style={{ color: "var(--gold)" }}>{fmtMoney(getPersonalEmiAmount(item), sym)}</span>
                   <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
-                  <DeleteBtn onDelete={() => d.removeOrgRecord("loans", item.id)} />
+                  <button className="btn-danger" onClick={() => d.removeOrgRecord("loans", item.id)}>Delete</button>
                 </div>
-              </div>
+              </div> : <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} />
             ))
           )}
         </div>
