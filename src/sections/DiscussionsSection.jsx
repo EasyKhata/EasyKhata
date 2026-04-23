@@ -204,8 +204,8 @@ export default function DiscussionsSection() {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        maxHeight: "calc(100vh - 140px)",
-        borderRadius: 22,
+        maxHeight: "calc(100vh - 108px)",
+        borderRadius: 16,
         overflow: "hidden",
         border: "1px solid var(--border)",
         background: "var(--surface)"
@@ -214,22 +214,22 @@ export default function DiscussionsSection() {
       <div
         style={{
           flexShrink: 0,
-          padding: "14px 16px",
+          padding: "10px 12px",
           display: "flex",
           alignItems: "center",
-          gap: 12,
+          gap: 9,
           background: "linear-gradient(180deg, color-mix(in srgb, var(--blue) 18%, var(--surface-high)) 0%, var(--surface) 100%)",
           borderBottom: "1px solid var(--border)"
         }}
       >
-        <Avatar name="Community" tone="member" size={38} />
+        <Avatar name="Community" tone="member" size={32} />
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Apartment Group Chat</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Apartment Group Chat</div>
+          <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1 }}>
             Residents and management updates - {messages.length} message{messages.length !== 1 ? "s" : ""}
           </div>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", padding: "6px 10px", borderRadius: 999, background: "var(--accent-deep)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", padding: "5px 9px", borderRadius: 999, background: "var(--accent-deep)" }}>
           Live
         </div>
       </div>
@@ -238,28 +238,28 @@ export default function DiscussionsSection() {
         style={{
           flex: 1,
           overflowY: "auto",
-          padding: "16px 14px 10px",
+          padding: "10px 10px 6px",
           display: "flex",
           flexDirection: "column",
-          gap: 10,
+          gap: 6,
           background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)"
         }}
       >
         {loading && (
-          <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
+          <div style={{ textAlign: "center", padding: "28px 20px", color: "var(--text-dim)", fontSize: 13 }}>
             Loading messages...
           </div>
         )}
 
         {!loading && loadError && (
-          <div style={{ textAlign: "center", padding: "24px", color: "var(--danger)", fontSize: 13 }}>{loadError}</div>
+          <div style={{ textAlign: "center", padding: "18px", color: "var(--danger)", fontSize: 12 }}>{loadError}</div>
         )}
 
         {!loading && !loadError && messages.length === 0 && (
-          <div style={{ textAlign: "center", padding: "48px 24px", color: "var(--text-dim)", fontSize: 14 }}>
-            <div style={{ fontSize: 30, marginBottom: 12 }}>Chat</div>
-            <div style={{ fontWeight: 700, marginBottom: 6, color: "var(--text-sec)" }}>No messages yet</div>
-            <div>Start the conversation - post an announcement, ask a question, or share an update.</div>
+          <div style={{ textAlign: "center", padding: "22px 18px", color: "var(--text-dim)", fontSize: 12 }}>
+            <div style={{ fontSize: 18, marginBottom: 6 }}>Chat</div>
+            <div style={{ fontWeight: 700, marginBottom: 5, color: "var(--text-sec)" }}>No messages yet</div>
+            <div>Post an announcement, ask a question, or share an update.</div>
           </div>
         )}
 
@@ -343,24 +343,24 @@ export default function DiscussionsSection() {
         <div ref={bottomRef} />
       </div>
 
-      <div style={{ flexShrink: 0, padding: "12px 14px 16px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-        {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
-        <div style={{ display: "flex", gap: 10, alignItems: "center", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 18, padding: "8px 8px 8px 12px" }}>
-          <input
+        <div style={{ flexShrink: 0, padding: "8px 10px 10px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
+          {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
+          <div style={{ display: "flex", gap: 7, alignItems: "center", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 15, padding: "6px 6px 6px 9px" }}>
+            <input
             ref={inputRef}
             className="input-field"
-            placeholder="Message the group"
+            placeholder="Message group"
             value={text}
             onChange={event => {
               setText(event.target.value);
               if (error) setError("");
             }}
             onKeyDown={handleKeyDown}
-            style={{ flex: 1, border: "none", background: "transparent", padding: 0, minHeight: 22 }}
+            style={{ flex: 1, border: "none", background: "transparent", padding: 0, minHeight: 20, fontSize: 14 }}
           />
           <button
             className="btn-primary"
-            style={{ width: 44, height: 44, borderRadius: 999, padding: 0, fontSize: 13, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
+            style={{ width: 38, height: 38, borderRadius: 999, padding: 0, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
             onClick={handleSend}
             disabled={!text.trim() || sending}
           >

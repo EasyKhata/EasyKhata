@@ -1012,10 +1012,10 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
 
       <div className="ledger-block">
         {isApartmentOrg && !isViewerMode && (
-          <div className="ledger-feed-card" style={{ padding: 16 }}>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
-              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
+          <div className="ledger-feed-card" style={{ padding: 14 }}>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.45 }}>
                 Set one monthly amount for all flats, then mark individual flats as paid for {MONTHS[month]} {year}.
               </div>
             </div>
@@ -1031,7 +1031,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             ) : (
               <>
                 {!isViewerMode && (
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 10, marginBottom: anyFlatPaidThisMonth ? 8 : 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto", gap: 8, marginBottom: anyFlatPaidThisMonth ? 7 : 12 }}>
                   <Input
                     type="number"
                     min="0"
@@ -1042,32 +1042,32 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     onChange={event => setBulkMaintenanceAmount(event.target.value)}
                     style={{ opacity: anyFlatPaidThisMonth ? 0.55 : 1 }}
                   />
-                  <button className="btn-secondary" style={{ whiteSpace: "nowrap" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0) || anyFlatPaidThisMonth}>
+                  <button className="btn-secondary" style={{ whiteSpace: "nowrap", minHeight: 42, padding: "0 14px" }} onClick={applyMaintenanceAmountToAllFlats} disabled={!(Number(bulkMaintenanceAmount) > 0) || anyFlatPaidThisMonth}>
                     Apply to All Flats
                   </button>
                 </div>
                 )}
                 {applyAmountToast && (
-                  <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--accent-deep)", color: "var(--accent)", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                  <div style={{ padding: "7px 10px", borderRadius: 10, background: "var(--accent-deep)", color: "var(--accent)", fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
                     ✓ {applyAmountToast}
                   </div>
                 )}
                 {anyFlatPaidThisMonth && (
-                  <div style={{ padding: "8px 12px", borderRadius: 9, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 12, fontWeight: 600, marginBottom: 14, lineHeight: 1.5 }}>
+                  <div style={{ padding: "9px 10px", borderRadius: 11, background: "var(--gold-deep)", color: "var(--gold)", fontSize: 11, fontWeight: 600, marginBottom: 12, lineHeight: 1.45 }}>
                     {paidFlatsCount} flat{paidFlatsCount !== 1 ? "s" : ""} already marked as paid this month — the monthly amount is locked. Mark them as pending first if you need to change it. Note: changing the amount will affect records for all pending flats.
                   </div>
                 )}
-                <div className="card" style={{ marginBottom: 12, padding: 12 }}>
+                <div className="ledger-feed-card" style={{ marginBottom: 10, padding: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Flats</div><div style={{ fontSize: 14, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Paid</div><div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{apartmentCollectionMetrics.paidFlats}</div></div>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending</div><div style={{ fontSize: 14, fontWeight: 700, color: "var(--gold)" }}>{apartmentCollectionMetrics.pendingFlats}</div></div>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Expected</div><div style={{ fontSize: 13, fontWeight: 700 }}>{fmtMoney(apartmentCollectionMetrics.expectedAmount, sym)}</div></div>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collected</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(apartmentCollectionMetrics.collectedAmount, sym)}</div></div>
-                    <div><div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Amt</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Flats</div><div style={{ fontSize: 13, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Paid</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{apartmentCollectionMetrics.paidFlats}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pending</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{apartmentCollectionMetrics.pendingFlats}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Expected</div><div style={{ fontSize: 12, fontWeight: 700 }}>{fmtMoney(apartmentCollectionMetrics.expectedAmount, sym)}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Collected</div><div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(apartmentCollectionMetrics.collectedAmount, sym)}</div></div>
+                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pending Amt</div><div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div></div>
                   </div>
                 </div>
-                <div style={{ position: "sticky", top: 6, zIndex: 2, background: "var(--card)", borderRadius: 10, paddingBottom: 8, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 12 }}>
+                <div style={{ position: "sticky", top: 6, zIndex: 2, background: "var(--card)", borderRadius: 10, paddingBottom: 6, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 10 }}>
                   <Input placeholder="Search flat / owner" value={flatSearchTerm} onChange={event => setFlatSearchTerm(event.target.value)} />
                   <Select value={flatStatusFilter} onChange={event => setFlatStatusFilter(event.target.value)}>
                     <option value="all">All</option>
@@ -1076,7 +1076,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     <option value="unpriced">No amount set</option>
                   </Select>
                 </div>
-                <div className="card" style={{ marginBottom: 10, padding: 10 }}>
+                <div className="ledger-feed-card" style={{ marginBottom: 8, padding: 10 }}>
                   <PaginatedListControls
                     totalItems={visibleApartmentCollectionStatus.length}
                     page={flatPage}
@@ -1089,12 +1089,12 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     itemLabel="flats"
                   />
                 </div>
-                <div className="card" style={{ marginBottom: 0 }}>
+                <div className="ledger-feed-card" style={{ marginBottom: 0 }}>
                   {paginatedApartmentCollectionStatus.map(flat => (
-                    <div key={flat.id} className="card-row" style={{ alignItems: "center" }}>
+                    <div key={flat.id} className="ledger-feed-row" style={{ alignItems: "center" }}>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{flat.value}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                        <div className="ledger-feed-title">{flat.value}</div>
+                        <div className="ledger-feed-meta">
                           {[
                             flat.ownerName || "No owner",
                             flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"
@@ -1108,14 +1108,14 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                           <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
                         )}
                         {!isViewerMode && (
-                          <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openBulkCollectionDraft(flat)}>
+                          <button className="ledger-action-btn" onClick={() => openBulkCollectionDraft(flat)}>
                             Review
                           </button>
                         )}
                         {!isViewerMode && isCurrentViewedMonth && !flat.paidEntry && (
                           <button
-                            className="btn-secondary"
-                            style={{ padding: "7px 12px", fontSize: 12, color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
+                            className="ledger-action-btn"
+                            style={{ color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
                             disabled={pendingFlatPayments.includes(flat.id) || !(Number(bulkMaintenanceAmount) > 0)}
                             title={!(Number(bulkMaintenanceAmount) > 0) ? "Set the monthly maintenance amount above before marking as paid" : undefined}
                             onClick={() => markFlatAsPaid(flat)}
