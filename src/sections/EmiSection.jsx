@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
-import { Modal, Field, Input, Select, DateSelectInput, fmtMoney, fmtDate, MONTHS, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
+import { Modal, Field, Input, Select, DateSelectInput, fmtMoney, fmtDate, MONTHS, SectionSkeleton, WorkflowActionStrip, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -245,41 +245,40 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--gold-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--gold)" }}>
-            EMI Commitments · {MONTHS[month]} {year}
+      <WorkflowActionStrip
+        title="Track home loan, vehicle loan, and other monthly EMI commitments."
+        actions={hasHouseholdPeople ? [{ label: "+ Add EMI", onClick: openNew, tone: "accent", dot: true }] : []}
+      />
+      <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--gold)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+              EMI Commitments · {MONTHS[month]} {year}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--gold)" }}>{fmtMoney(monthlyEmi, sym)}</div>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
+              {activeLoans.length
+                ? `${activeLoans.length} active EMI ${activeLoans.length === 1 ? "entry" : "entries"} this month`
+                : "No active EMIs this month"}
+            </div>
           </div>
-          <div className="ledger-hero-value" style={{ color: "var(--gold)" }}>
-            {fmtMoney(monthlyEmi, sym)}
-          </div>
-          <div className="ledger-hero-sub">
-            {activeLoans.length
-              ? `${activeLoans.length} active EMI ${activeLoans.length === 1 ? "entry" : "entries"} this month.`
-              : "Track home loan, vehicle loan, and other EMI commitments here."}
-          </div>
-        </div>
-        <div className="ledger-hero-actions">
-          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
-          <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 160, whiteSpace: "nowrap" }}>
-            + Add EMI
-          </button>
+          {headerDatePicker && <div>{headerDatePicker}</div>}
         </div>
       </div>
 
       <div className="ledger-block">
-        <div className="ledger-feed-card ledger-search-card">
+        <div className="card ledger-search-card">
           <Input
             placeholder="Search EMI by loan, lender, due day, or amount"
             value={searchTerm}
             onChange={event => setSearchTerm(event.target.value)}
           />
-          <div className="ledger-block-caption">
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 6 }}>
             Review due dates, lenders, and monthly commitments without scrolling through oversized cards.
           </div>
         </div>
 
-        <div className="ledger-feed-card">
+        <div className="card">
           {!hasHouseholdPeople ? (
             <WorkflowSetupCard title="Add a person before tracking EMIs" description="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} tone="warning" />
           ) : loans.length === 0 ? (
@@ -292,23 +291,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
             </div>
           ) : (
             filteredLoans.map(item => (
-              false ? <div key={item.id} className="ledger-feed-row">
-                <div className="ledger-feed-main">
-                  <div className="ledger-feed-title">{item.loanName || "EMI"}</div>
-                  <div className="ledger-feed-meta">
-                    {[
-                      item.lender || "",
-                      getPersonalEmiDueDay(item) ? `Due on ${getPersonalEmiDueDay(item)}` : "No due date",
-                      getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : ""
-                    ].filter(Boolean).join(" · ")}
-                  </div>
-                </div>
-                <div className="ledger-feed-side">
-                  <span className="ledger-feed-amount" style={{ color: "var(--gold)" }}>{fmtMoney(getPersonalEmiAmount(item), sym)}</span>
-                  <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
-                  <button className="btn-danger" onClick={() => d.removeOrgRecord("loans", item.id)}>Delete</button>
-                </div>
-              </div> : <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} />
+              <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} />
             ))
           )}
         </div>

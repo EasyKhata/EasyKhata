@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
-import { Avatar, EmptyState, SectionSkeleton } from "../components/UI";
+import { Avatar, SectionSkeleton, WorkflowSetupCard } from "../components/UI";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import {
   PLAN_LABELS,
@@ -232,7 +232,7 @@ export default function AdminUsersSection() {
 
       <div className="card">
         {filteredUsers.length === 0 ? (
-          <EmptyState title="No matching users" message="Try changing the search or filter to find the account you want." accentColor="var(--blue)" />
+          <WorkflowSetupCard title="No matching users" description="Try changing the search or filter to find the account you want." tone="info" />
         ) : (
           filteredUsers.map(member => (
             <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>

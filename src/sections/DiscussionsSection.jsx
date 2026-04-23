@@ -200,17 +200,15 @@ export default function DiscussionsSection() {
 
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        maxHeight: "calc(100vh - 108px)",
-        borderRadius: 16,
-        overflow: "hidden",
-        border: "1px solid var(--border)",
-        background: "var(--surface)"
-      }}
-    >
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    height: "100vh",
+    overflow: "hidden",
+    background: "var(--surface)",
+    paddingBottom: "50px" // adjust to footer height
+  }}
+>
       <div
         style={{
           flexShrink: 0,
@@ -256,10 +254,9 @@ export default function DiscussionsSection() {
         )}
 
         {!loading && !loadError && messages.length === 0 && (
-          <div style={{ textAlign: "center", padding: "22px 18px", color: "var(--text-dim)", fontSize: 12 }}>
-            <div style={{ fontSize: 18, marginBottom: 6 }}>Chat</div>
-            <div style={{ fontWeight: 700, marginBottom: 5, color: "var(--text-sec)" }}>No messages yet</div>
-            <div>Post an announcement, ask a question, or share an update.</div>
+          <div style={{ padding: "28px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-sec)", marginBottom: 6 }}>No messages yet</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Post an announcement, ask a question, or share an update with the group.</div>
           </div>
         )}
 

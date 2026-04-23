@@ -261,8 +261,20 @@ input, select, textarea, button {
 .card {
   background: color-mix(in srgb, var(--surface) 95%, transparent);
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  overflow: hidden; box-shadow: var(--card-shadow);
+  border: 1px solid color-mix(in srgb, var(--border) 44%, transparent);
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.15s ease;
+}
+.card:hover {
+  box-shadow: 0 14px 36px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.07);
+  border-color: color-mix(in srgb, var(--border) 68%, transparent);
+  transform: translateY(-1px);
+}
+.card:focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), var(--card-shadow);
 }
 
 .skeleton {
@@ -568,10 +580,16 @@ select.input-field {
 
 .ledger-feed-card {
   background: color-mix(in srgb, var(--surface) 95%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 54%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 44%, transparent);
   border-radius: 14px;
   overflow: hidden;
   box-shadow: var(--card-shadow);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, transform 0.15s ease;
+}
+.ledger-feed-card:hover {
+  box-shadow: 0 14px 36px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.07);
+  border-color: color-mix(in srgb, var(--border) 68%, transparent);
+  transform: translateY(-1px);
 }
 
 .ledger-feed-row {

@@ -79,7 +79,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
               <div className="ledger-block-caption">Join with your invite code to see dues and society records.</div>
             </div>
           </div>
-          <div className="ledger-feed-card">
+          <div className="card">
             <WorkflowSetupCard title="Resident access not joined" description="Open Settings and join with your invite code to track common records and your flat dues." tone="info" />
           </div>
         </div>
@@ -89,30 +89,32 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
 
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--blue)" }}>Resident View</div>
-          <div className="ledger-hero-value" style={{ color: "var(--text)" }}>{portal?.name || "Society Portal"}</div>
-          <div className="ledger-hero-sub">
-            Flat {user?.societyFlatNumber || "-"} · {MONTHS[month]} {year}
-          </div>
-          {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{error}</div>}
-        </div>
-        {headerDatePicker && <div className="ledger-hero-actions">{headerDatePicker}</div>}
-      </div>
-
       <div className="ledger-block">
-        <div className="ledger-block-header">
-          <div>
-            <div className="ledger-block-title">Common Records</div>
-            <div className="ledger-block-caption">Published society totals for the selected month.</div>
+        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                Resident View
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)" }}>{portal?.name || "Society Portal"}</div>
+              <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
+                Flat {user?.societyFlatNumber || "-"} · {MONTHS[month]} {year}
+              </div>
+              {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 6 }}>{error}</div>}
+            </div>
+            {headerDatePicker && <div>{headerDatePicker}</div>}
           </div>
         </div>
-        <div className="ledger-feed-card">
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Common Records</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Published society totals for the selected month.</div>
+        </div>
+        <div className="card" style={{ marginBottom: 22 }}>
           {!commonRecord ? (
             <WorkflowSetupCard title="No common records yet" description="The association has not published society records for this month." tone="info" />
           ) : (
-            <div className="ledger-summary-grid">
+            <div className="ledger-summary-grid" style={{ padding: "12px 4px" }}>
               <StatCell label="Expected" value={fmtMoney(commonRecord.expectedAmount || 0, commonRecord.currencySymbol || "Rs")} />
               <StatCell label="Collected" value={fmtMoney(commonRecord.collectedAmount || 0, commonRecord.currencySymbol || "Rs")} color="var(--accent)" />
               <StatCell label="Pending" value={fmtMoney(commonRecord.pendingAmount || 0, commonRecord.currencySymbol || "Rs")} color="var(--gold)" />
@@ -120,20 +122,16 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
             </div>
           )}
         </div>
-      </div>
 
-      <div className="ledger-block">
-        <div className="ledger-block-header">
-          <div>
-            <div className="ledger-block-title">Your Flat Dues</div>
-            <div className="ledger-block-caption">Your unit-level summary for this period.</div>
-          </div>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Your Flat Dues</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Your unit-level summary for this period.</div>
         </div>
-        <div className="ledger-feed-card">
+        <div className="card" style={{ marginBottom: 22 }}>
           {!flatDue ? (
             <WorkflowSetupCard title="No dues summary found" description="No due summary has been published for your flat in this month." tone="warning" />
           ) : (
-            <div className="ledger-summary-grid">
+            <div className="ledger-summary-grid" style={{ padding: "12px 4px" }}>
               <StatCell label="Expected" value={fmtMoney(flatDue.expectedAmount || 0, flatDue.currencySymbol || "Rs")} />
               <StatCell label="Paid" value={fmtMoney(flatDue.paidAmount || 0, flatDue.currencySymbol || "Rs")} color="var(--accent)" />
               <StatCell label="Pending" value={fmtMoney(flatDue.pendingAmount || 0, flatDue.currencySymbol || "Rs")} color="var(--gold)" />
@@ -141,16 +139,12 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
             </div>
           )}
         </div>
-      </div>
 
-      <div className="ledger-block">
-        <div className="ledger-block-header">
-          <div>
-            <div className="ledger-block-title">Notices</div>
-            <div className="ledger-block-caption">Updates shared by the association for this month.</div>
-          </div>
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Notices</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Updates shared by the association for this month.</div>
         </div>
-        <div className="ledger-feed-card">
+        <div className="card" style={{ marginBottom: 22 }}>
           {noticeItems.length === 0 ? (
             <WorkflowSetupCard title="No notices this month" description="You are all caught up for the selected period." tone="info" />
           ) : (

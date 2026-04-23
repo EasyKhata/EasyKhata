@@ -15,8 +15,8 @@ import {
   monthKey,
   MONTHS,
   uid,
-  EmptyState,
   SectionSkeleton,
+  WorkflowActionStrip,
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
@@ -146,7 +146,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function InvoicesSection({ year, month, documentType = "invoice", orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
+export default function InvoicesSection({ year, month, documentType = "invoice", orgType, headerDatePicker }) {
   const d = useData();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
@@ -336,16 +336,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     return fields.includes(needle);
   }), [monthInv, searchQuery]);
 
-  useEffect(() => {
-    if (!d.loaded) return;
-    if (!quickstartIntent?.action) return;
-    if (quickstartIntent.action !== "first-invoice") return;
-    if (isQuote || isApartmentOrg) return;
-
-    setGuidedField("customerId");
-    openNew();
-    onQuickstartHandled?.();
-  }, [d.loaded, isApartmentOrg, isQuote, onQuickstartHandled, quickstartIntent?.action, quickstartIntent?.token]);
 
   useEffect(() => {
     if (!guidedField) return undefined;
@@ -708,25 +698,24 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
   return (
     <div className="ledger-screen">
-        <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--blue-deep) 0%, var(--bg) 65%)" }}>
-          <div className="ledger-hero-meta">
-            <div className="ledger-overline" style={{ color: "var(--blue)", marginBottom: 6 }}>
+      <WorkflowActionStrip
+        title={isAdmin ? "Review and approve subscription payment requests." : `Manage all ${documentCollectionLabel.toLowerCase()} for this period.`}
+        actions={!isAdmin && !isViewerMode ? [{ label: `+ New ${documentLabel}`, onClick: openNew, tone: "accent", dot: true }] : []}
+      />
+      <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
               {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
             </div>
-            <div className="ledger-hero-value" style={{ color: "var(--blue)" }}>{fmtMoney(total, sym)}</div>
-            <div className="ledger-hero-sub">
+            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--blue)" }}>{fmtMoney(total, sym)}</div>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          <div className="ledger-hero-actions">
-            <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
-            {!isAdmin && !isViewerMode && (
-              <button className="btn-secondary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 180, whiteSpace: "nowrap" }}>
-                + New {documentLabel}
-              </button>
-            )}
-          </div>
+          {headerDatePicker && <div>{headerDatePicker}</div>}
         </div>
+      </div>
 
       {isViewerMode && (
         <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
@@ -736,7 +725,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
       <div className="ledger-block">
         {monthInv.length > 0 && (
-          <div className="ledger-feed-card ledger-search-card" style={{ marginBottom: 18 }}>
+          <div className="card ledger-search-card" style={{ marginBottom: 18 }}>
             <Field label={`Search ${documentCollectionLabel}`} hint="Find records by name, flat, number, date, amount, or type.">
               <Input placeholder={`Search ${documentCollectionLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
             </Field>
@@ -748,13 +737,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
         {isAdmin && (
           <>
-            <div className="ledger-block-header" style={{ marginBottom: 10 }}>
-              <div>
-                <div className="ledger-block-title">Payment Requests</div>
-                <div className="ledger-block-caption">Review payment proofs and subscription approvals in one queue.</div>
-              </div>
+            <div style={{ marginBottom: 10, paddingLeft: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Payment Requests</div>
+              <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>Review payment proofs and subscription approvals in one queue.</div>
             </div>
-            <div className="ledger-feed-card" style={{ padding: 14, marginBottom: 18 }}>
+            <div className="card" style={{ padding: 14, marginBottom: 18 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {REQUEST_FILTERS.map(([value, label]) => (
                   <button
@@ -778,11 +765,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {adminRequestError && <div style={{ marginTop: 12, fontSize: 12, color: "var(--danger)" }}>{adminRequestError}</div>}
             </div>
 
-            <div className="ledger-feed-card" style={{ marginBottom: 18 }}>
+            <div className="card" style={{ marginBottom: 18 }}>
               {!paymentRequestsEnabled ? (
-                <EmptyState title="Payment requests are locked by rules" message="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." accentColor="var(--gold)" />
+                <WorkflowSetupCard title="Payment requests are locked by rules" description="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." tone="warning" />
               ) : filteredRequests.length === 0 ? (
-                <EmptyState title="No payment requests" message="Customer UPI payment submissions will appear here for admin verification." accentColor="var(--gold)" />
+                <WorkflowSetupCard title="No payment requests" description="Customer UPI payment submissions will appear here for admin verification." tone="info" />
               ) : (
                 filteredRequests.map(request => (
                   <div key={request.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 14 }}>
@@ -855,18 +842,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           </>
         )}
 
-        <div className="ledger-feed-card">
+        <div className="card">
           {monthInv.length === 0 ? (
             <WorkflowSetupCard
               eyebrow={isQuote ? "Quotes" : isApartmentOrg ? "Receipts & bills" : "Documents"}
               title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`}
-              message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
+              description={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
               actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel}
               onAction={openNew}
               tone="accent"
             />
           ) : filteredMonthInv.length === 0 ? (
-            <EmptyState title="No matching records" message="Try a different search term to find the receipt or bill you need." accentColor="var(--blue)" />
+            <WorkflowSetupCard
+              title="No matching records"
+              description="Try a different search term to find the receipt or bill you need."
+              tone="info"
+            />
           ) : (
             filteredMonthInv.map(invoice => <DocumentCard key={invoice.id} invoice={invoice} />)
           )}
@@ -922,7 +913,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </div>
             )}
 
-            <div className="ledger-feed-card" style={{ marginBottom: 16 }}>
+            <div className="card" style={{ marginBottom: 16 }}>
               {invoice.items.map(item => (
                 <div key={item.id} className="ledger-feed-row">
                   <div className="ledger-feed-main">

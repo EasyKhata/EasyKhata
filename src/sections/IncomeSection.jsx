@@ -16,11 +16,11 @@ import {
   monthKey,
   MONTHS,
   Avatar,
-  EmptyState,
   SectionSkeleton,
   uid,
   PaginatedListControls,
   UpgradeModal,
+  WorkflowActionStrip,
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
@@ -181,7 +181,7 @@ function renderDynamicField(field, value, onChange) {
   return <Input {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} max={field.type === "date" ? TODAY : field.type === "month" ? CURRENT_MONTH : undefined} step={field.type === "number" ? "0.01" : undefined} />;
 }
 
-export default function IncomeSection({ year, month, orgType, quickstartIntent, onQuickstartHandled, headerDatePicker }) {
+export default function IncomeSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
   const isViewerMode = d.isViewerMode;
   const isReadOnlyFreeMode = d.isReadOnlyFreeMode;
@@ -528,55 +528,6 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
     if (flatPage > maxPages) setFlatPage(maxPages);
   }, [flatPage, flatPageSize, visibleApartmentCollectionStatus.length]);
 
-  useEffect(() => {
-    if (!d.loaded) return;
-    if (!quickstartIntent?.action) return;
-
-    if (quickstartIntent.action === "first-dues" && isApartmentOrg) {
-      const targetFlat = apartmentCollectionStatus.find(flat => !flat.paidEntry) || apartmentFlats[0] || null;
-      if (!targetFlat) {
-        openFlatManager();
-        onQuickstartHandled?.();
-        return;
-      }
-
-      setEditId(null);
-      setForm({
-        ...buildBlankForm(year, month, config),
-        label: `Monthly Maintenance - ${targetFlat.value}`,
-        amount: targetFlat.monthlyAmount > 0 ? String(targetFlat.monthlyAmount) : "",
-        date: defaultCollectionDate,
-        flatNumber: targetFlat.value,
-        residentName: targetFlat.ownerName || "",
-        collectionType: "Monthly Maintenance",
-        collectionMonth: mk
-      });
-      setGuidedField("flatNumber");
-      setFormError(""); setErrors({});;
-      setShowForm(true);
-      onQuickstartHandled?.();
-      return;
-    }
-
-    if (quickstartIntent.action === "first-income" && !isApartmentOrg) {
-      setGuidedField("label");
-      openNew();
-      onQuickstartHandled?.();
-    }
-  }, [
-    apartmentCollectionStatus,
-    apartmentFlats,
-    config,
-    d.loaded,
-    defaultCollectionDate,
-    isApartmentOrg,
-    mk,
-    month,
-    onQuickstartHandled,
-    quickstartIntent?.action,
-    quickstartIntent?.token,
-    year
-  ]);
 
   useEffect(() => {
     if (!guidedField) return undefined;
@@ -1052,35 +1003,30 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
 
   return (
     <div className="ledger-screen">
-      <div className="ledger-hero" style={{ background: "linear-gradient(145deg, var(--accent-deep) 0%, var(--bg) 65%)" }}>
-        <div className="ledger-hero-meta">
-          <div className="ledger-overline" style={{ color: "var(--accent-text)" }}>
-            Total {config.incomeLabel} · {MONTHS[month]} {year}
-          </div>
-          <div className="ledger-hero-value" style={{ color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
-          <div className="ledger-hero-sub">
-            {isPersonalOrg ? "Track household earnings for the selected month and keep entries easy to scan." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
-          </div>
-        </div>
-        <div className="ledger-hero-actions">
-          <div style={{ flex: isMobile ? "1 1 100%" : "0 0 auto", minWidth: isMobile ? "100%" : 0 }}>{headerDatePicker}</div>
-          {!isViewerMode && (
-            <button className="btn-primary" onClick={openNew} style={{ minWidth: isMobile ? "100%" : 176, whiteSpace: "nowrap" }}>
-              + Add {isApartmentOrg ? "Collection" : config.incomeEntryLabel}
-            </button>
-          )}
-        </div>
-      </div>
-
       {isViewerMode && (
-        <div style={{ margin: "0 18px", marginTop: 14, padding: "9px 14px", borderRadius: 10, background: "var(--surface-high)", border: "1px solid var(--border)", fontSize: 12, color: "var(--text-dim)", fontWeight: 600 }}>
+        <div className="ledger-inline-note" style={{ background: "var(--surface-high)", border: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600 }}>
           View only · Contact the org owner to add or edit records
         </div>
       )}
 
       <div className="ledger-block">
+        <WorkflowActionStrip
+          title={isPersonalOrg ? "Track household earnings for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
+          actions={!isViewerMode ? [{ label: `+ Add ${isApartmentOrg ? "Collection" : config.incomeEntryLabel}`, onClick: openNew, tone: "accent", dot: true }] : []}
+        />
+        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                Total {config.incomeLabel} · {MONTHS[month]} {year}
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
+            </div>
+            {headerDatePicker && <div>{headerDatePicker}</div>}
+          </div>
+        </div>
         {isApartmentOrg && !isViewerMode && (
-          <div className="ledger-feed-card" style={{ padding: 14 }}>
+          <div className="card" style={{ padding: 14, marginBottom: 18 }}>
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Monthly Maintenance Setup</div>
               <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.45 }}>
@@ -1089,12 +1035,12 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
             </div>
 
             {!hasApartmentFlats ? (
-              <EmptyState
+              <WorkflowSetupCard
                 title="Add flats first"
-                message="Create flat records in Khata before recording maintenance collections."
+                description="Create flat records in Khata before recording maintenance collections."
                 actionLabel="Open Flats"
                 onAction={openFlatManager}
-                accentColor="var(--accent)"
+                tone="accent"
               />
             ) : (
               <>
@@ -1125,7 +1071,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     {paidFlatsCount} flat{paidFlatsCount !== 1 ? "s" : ""} already marked as paid this month — the monthly amount is locked. Mark them as pending first if you need to change it. Note: changing the amount will affect records for all pending flats.
                   </div>
                 )}
-                <div className="ledger-feed-card" style={{ marginBottom: 10, padding: 10 }}>
+                <div className="card" style={{ marginBottom: 10, padding: 10 }}>
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
                     <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Flats</div><div style={{ fontSize: 13, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
                     <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Paid</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{apartmentCollectionMetrics.paidFlats}</div></div>
@@ -1144,7 +1090,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     <option value="unpriced">No amount set</option>
                   </Select>
                 </div>
-                <div className="ledger-feed-card" style={{ marginBottom: 8, padding: 10 }}>
+                <div className="card" style={{ marginBottom: 8, padding: 10 }}>
                   <PaginatedListControls
                     totalItems={visibleApartmentCollectionStatus.length}
                     page={flatPage}
@@ -1157,7 +1103,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
                     itemLabel="flats"
                   />
                 </div>
-                <div className="ledger-feed-card" style={{ marginBottom: 0 }}>
+                <div className="card" style={{ marginBottom: 0 }}>
                   {paginatedApartmentCollectionStatus.map(flat => (
                     <div key={flat.id} className="ledger-feed-row" style={{ alignItems: "center" }}>
                       <div>
@@ -1200,7 +1146,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           </div>
         )}
         {(invIncome.length > 0 || manualIncome.length > 0) && (
-          <div className="ledger-feed-card ledger-search-card">
+          <div className="card ledger-search-card">
             <Input
               placeholder={`Search ${config.incomeLabel.toLowerCase()} by name, note, date, or amount`}
               value={searchTerm}
@@ -1217,14 +1163,14 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               <span>From {config.invoicesLabel}</span>
               <span style={{ color: "var(--accent)" }}>{fmtMoney(totalInv, sym)}</span>
             </div>
-            <div className="ledger-feed-card">
+            <div className="card">
               {invIncome.length === 0 ? (
-                <EmptyState
+                <WorkflowSetupCard
                   title={`No ${config.invoicesLabel.toLowerCase()} collected yet`}
-                  message={`Paid ${config.invoicesLabel.toLowerCase()} received this month will appear here automatically.`}
+                  description={`Paid ${config.invoicesLabel.toLowerCase()} received this month will appear here automatically.`}
                   actionLabel={`Open ${config.invoicesLabel}`}
                   onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: "invoices" }))}
-                  accentColor="var(--blue)"
+                  tone="info"
                 />
               ) : filteredInvIncome.length === 0 ? (
                 <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
@@ -1252,7 +1198,7 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
           <span>{isApartmentOrg ? config.incomeLabel : `Manual ${config.incomeLabel}`}</span>
           <span style={{ color: "var(--accent)" }}>{fmtMoney(totalManual, sym)}</span>
         </div>
-        <div className="ledger-feed-card">
+        <div className="card">
           {isApartmentOrg && !hasApartmentFlats && manualIncome.length === 0 ? (
             <WorkflowSetupCard
               eyebrow="Collections setup"
@@ -1294,80 +1240,8 @@ export default function IncomeSection({ year, month, orgType, quickstartIntent, 
               No {config.incomeLabel.toLowerCase()} match this search.
             </div>
           ) : (
-            filteredManualIncome.map(item => ( /*
-              <div key={item.id} className="ledger-feed-row">
-                <div className="ledger-feed-main">
-                  <div className="ledger-feed-title">{item.label}</div>
-                  <div className="ledger-feed-meta">
-                    {fmtDate(item.date)}
-                    {item.invoiceNumber || item.receiptNumber ? ` · ${item.invoiceNumber || item.receiptNumber}` : ""}
-                    {item.note ? ` · ${item.note}` : ""}
-                    {(config.incomeFields || []).map(field => item[field.key] ? ` · ${item[field.key]}` : "").join("")}
-                    {isSmallBusinessOrg && Array.isArray(item.saleItems) && item.saleItems.length > 0 ? ` · ${item.saleItems.length} product(s)` : ""}
-                  </div>
-                </div>
-                <div className="ledger-feed-side">
-                  {isSmallBusinessOrg && Array.isArray(item.saleItems) && item.saleItems.length > 0 && (
-                    <>
-                      <span className="pill" style={{
-                        background: String(item.saleStatus || "pending") === "paid"
-                          ? "var(--accent-deep)"
-                          : String(item.saleStatus || "pending") === "refunded"
-                            ? "var(--danger-deep)"
-                          : String(item.saleStatus || "pending") === "canceled"
-                            ? "var(--danger-deep)"
-                            : "var(--gold-deep)",
-                        color: String(item.saleStatus || "pending") === "paid"
-                          ? "var(--accent)"
-                          : String(item.saleStatus || "pending") === "refunded"
-                            ? "var(--danger)"
-                          : String(item.saleStatus || "pending") === "canceled"
-                            ? "var(--danger)"
-                            : "var(--gold)"
-                      }}>
-                        {String(item.saleStatus || "pending") === "paid" ? "Paid" : String(item.saleStatus || "pending") === "refunded" ? "Refunded" : String(item.saleStatus || "pending") === "canceled" ? "Canceled" : "Pending"}
-                      </span>
-                      {!isViewerMode && String(item.saleStatus || "pending") !== "canceled" && String(item.saleStatus || "pending") !== "refunded" && (
-                        <>
-                          <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handlePrintSaleReceipt(item)}>Print Receipt</button>
-                          <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12 }} onClick={() => handleSendSaleReceipt(item)}>Send Receipt</button>
-                          <button className="btn-secondary" style={{ padding: "7px 10px", fontSize: 12, color: "var(--danger)" }} onClick={() => issueSaleRefund(item)}>Issue Refund</button>
-                        </>
-                      )}
-                    </>
-                  )}
-                  <span className="ledger-feed-amount" style={{ color: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "var(--text-dim)" : "var(--accent)", textDecoration: (String(item.saleStatus || "pending") === "canceled" || String(item.saleStatus || "pending") === "refunded") ? "line-through" : "none" }}>
-                    {fmtMoney(item.amount, sym)}
-                  </span>
-                  // Simple sale (non-POS): status pill + toggle
-                  {isSmallBusinessOrg && item.saleStatus != null && !(Array.isArray(item.saleItems) && item.saleItems.length > 0) && (
-                    <>
-                      <span className="pill" style={{
-                        background: String(item.saleStatus) === "paid" ? "var(--accent-deep)" : "var(--gold-deep)",
-                        color: String(item.saleStatus) === "paid" ? "var(--accent)" : "var(--gold)"
-                      }}>
-                        {String(item.saleStatus) === "paid" ? "Paid" : "Pending"}
-                      </span>
-                      {!isViewerMode && (
-                        <button
-                          className="btn-secondary"
-                          style={{ padding: "7px 10px", fontSize: 12 }}
-                          onClick={() => toggleSaleStatus(item)}
-                        >
-                          {String(item.saleStatus) === "paid" ? "Mark Pending" : "Mark Paid"}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {(!isSmallBusinessOrg || !Array.isArray(item.saleItems) || !item.saleItems.length) && !isViewerMode && (
-                    <>
-                      <button className="btn-secondary" style={{ padding: "7px 12px", fontSize: 12 }} onClick={() => openEdit(item)}>Edit</button>
-                      <DeleteBtn onDelete={() => d.removeIncome(item.id)} />
-                    </>
-                  )}
-                </div>
-              </div>
-            */ <ManualIncomeCard key={item.id} item={item} />))
+            filteredManualIncome.map(item => (
+              <ManualIncomeCard key={item.id} item={item} />))
           )}
         </div>
       </div>
