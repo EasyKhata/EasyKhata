@@ -64,6 +64,81 @@ function roleTone(role, isMe) {
   return "member";
 }
 
+function AnnouncementCard({ message, canDeleteMsg, onDelete }) {
+  const isOwner = message.senderRole === "owner";
+  const accentColor = isOwner ? "var(--accent)" : "var(--gold)";
+  const accentDeep = isOwner ? "var(--accent-deep)" : "color-mix(in srgb, var(--gold) 14%, var(--surface))";
+
+  return (
+    <div
+      style={{
+        margin: "4px 0",
+        borderRadius: 14,
+        border: `1px solid color-mix(in srgb, ${accentColor} 30%, var(--border))`,
+        background: accentDeep,
+        overflow: "hidden",
+        boxShadow: "0 4px 16px rgba(0,0,0,0.07)",
+        opacity: message._pending ? 0.7 : 1
+      }}
+    >
+      <div
+        style={{
+          padding: "8px 12px 6px",
+          borderBottom: `1px solid color-mix(in srgb, ${accentColor} 20%, var(--border))`,
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          justifyContent: "space-between"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 800,
+              color: accentColor,
+              textTransform: "uppercase",
+              letterSpacing: 0.7,
+              padding: "3px 7px",
+              borderRadius: 999,
+              background: `color-mix(in srgb, ${accentColor} 18%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${accentColor} 28%, transparent)`
+            }}
+          >
+            Announcement
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, color: accentColor }}>
+            {message.senderName || "Management"}
+            {message.senderRole === "owner" && <span style={{ marginLeft: 4, fontWeight: 600, color: "var(--text-dim)" }}>· Owner</span>}
+            {message.senderRole === "admin" && <span style={{ marginLeft: 4, fontWeight: 600, color: "var(--text-dim)" }}>· Admin</span>}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+            {message._pending ? "Sending..." : formatTime(message.sentAt)}
+          </span>
+          {canDeleteMsg && !message._pending && (
+            <DeleteBtn onDelete={onDelete} style={{ opacity: 0.45 }} />
+          )}
+        </div>
+      </div>
+      <div
+        style={{
+          padding: "10px 14px 12px",
+          fontSize: 14,
+          lineHeight: 1.6,
+          color: "var(--text)",
+          fontWeight: 500,
+          wordBreak: "break-word",
+          whiteSpace: "pre-wrap"
+        }}
+      >
+        {message.text}
+      </div>
+    </div>
+  );
+}
+
 export default function DiscussionsSection() {
   const { user } = useAuth();
   const { activeSharedOrgKey, activeOrgId } = useData();
@@ -74,6 +149,7 @@ export default function DiscussionsSection() {
 
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [messageType, setMessageType] = useState("chat");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -86,6 +162,7 @@ export default function DiscussionsSection() {
 
   const isOwner = String(ownerId || "") === String(user?.id || "");
   const isAdmin = user?.role === "admin";
+  const canAnnounce = isOwner || isAdmin;
   const senderName = user?.name || user?.displayName || user?.email?.split("@")[0] || "Resident";
   const senderRole = isOwner ? "owner" : isAdmin ? "admin" : "member";
 
@@ -143,12 +220,15 @@ export default function DiscussionsSection() {
     setError("");
     setSending(true);
 
+    const type = canAnnounce ? messageType : "chat";
+
     const optimistic = {
       id: `temp_${Date.now()}`,
       senderId: user?.id || "",
       senderName,
       senderRole,
       text: trimmed,
+      messageType: type,
       sentAt: new Date().toISOString(),
       _pending: true
     };
@@ -162,6 +242,7 @@ export default function DiscussionsSection() {
         text: trimmed,
         senderName,
         senderRole,
+        messageType: type,
         sentAt: optimistic.sentAt
       });
       setMessages(prev => prev.map(message => (message.id === optimistic.id ? { ...saved } : message)));
@@ -198,17 +279,19 @@ export default function DiscussionsSection() {
     return isAdmin || isOwner || String(message.senderId || "") === String(user?.id || "");
   }
 
+  const isAnnounceMode = canAnnounce && messageType === "announcement";
+
   return (
     <div
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    height: "100vh",
-    overflow: "hidden",
-    background: "var(--surface)",
-    paddingBottom: "50px" // adjust to footer height
-  }}
->
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        overflow: "hidden",
+        background: "var(--surface)"
+      }}
+    >
+      {/* Header */}
       <div
         style={{
           flexShrink: 0,
@@ -224,7 +307,7 @@ export default function DiscussionsSection() {
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Apartment Group Chat</div>
           <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1 }}>
-            Residents and management updates - {messages.length} message{messages.length !== 1 ? "s" : ""}
+            Residents and management updates · {messages.length} message{messages.length !== 1 ? "s" : ""}
           </div>
         </div>
         <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", padding: "5px 9px", borderRadius: 999, background: "var(--accent-deep)" }}>
@@ -232,6 +315,7 @@ export default function DiscussionsSection() {
         </div>
       </div>
 
+      {/* Message feed */}
       <div
         style={{
           flex: 1,
@@ -254,9 +338,14 @@ export default function DiscussionsSection() {
         )}
 
         {!loading && !loadError && messages.length === 0 && (
-          <div style={{ padding: "28px 20px", textAlign: "center" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-sec)", marginBottom: 6 }}>No messages yet</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>Post an announcement, ask a question, or share an update with the group.</div>
+          <div style={{ padding: "32px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>No messages yet</div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, maxWidth: 260, margin: "0 auto" }}>
+              {canAnnounce
+                ? "Post an announcement to share important updates with all residents, or send a message to start the conversation."
+                : "Management will post announcements here. You can also send messages to the group."}
+            </div>
           </div>
         )}
 
@@ -266,6 +355,7 @@ export default function DiscussionsSection() {
           const showDate = !prevMessage || new Date(message.sentAt).toDateString() !== new Date(prevMessage.sentAt).toDateString();
           const showSender = !prevMessage || prevMessage.senderId !== message.senderId || showDate;
           const tone = roleTone(message.senderRole, isMe);
+          const isAnnouncement = message.messageType === "announcement";
 
           return (
             <React.Fragment key={message.id || index}>
@@ -277,62 +367,70 @@ export default function DiscussionsSection() {
                 </div>
               )}
 
-              <div style={{ display: "flex", flexDirection: isMe ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
-                {showSender && !isMe ? <Avatar name={message.senderName} tone={tone} size={30} /> : !isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
+              {isAnnouncement ? (
+                <AnnouncementCard
+                  message={message}
+                  canDeleteMsg={canDelete(message)}
+                  onDelete={() => handleDelete(message)}
+                />
+              ) : (
+                <div style={{ display: "flex", flexDirection: isMe ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
+                  {showSender && !isMe ? <Avatar name={message.senderName} tone={tone} size={30} /> : !isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
 
-                <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
-                  {showSender && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 700,
-                        color: isMe ? "var(--accent)" : message.senderRole === "owner" ? "var(--accent)" : message.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)",
-                        marginBottom: 3,
-                        paddingLeft: isMe ? 0 : 2,
-                        paddingRight: isMe ? 2 : 0
-                      }}
-                    >
-                      {isMe ? "You" : message.senderName || "Resident"}
-                      {message.senderRole === "owner" && !isMe && <span style={{ color: "var(--accent)", marginLeft: 4 }}>- Owner</span>}
-                      {message.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>- Admin</span>}
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
-                    <div
-                      style={{
-                        background: message._pending
-                          ? "color-mix(in srgb, var(--accent) 70%, var(--surface))"
-                          : isMe
-                            ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)"
-                            : "color-mix(in srgb, var(--surface) 92%, white)",
-                        color: isMe ? "#fff" : "var(--text)",
-                        borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px",
-                        padding: "10px 14px 9px",
-                        fontSize: 14,
-                        lineHeight: 1.5,
-                        border: isMe ? "none" : "1px solid var(--border)",
-                        wordBreak: "break-word",
-                        whiteSpace: "pre-wrap",
-                        opacity: message._pending ? 0.7 : 1,
-                        boxShadow: "0 10px 24px rgba(0,0,0,0.08)"
-                      }}
-                    >
-                      {message.text}
-                    </div>
-
-                    {canDelete(message) && (
-                      <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.45 }} />
+                  <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
+                    {showSender && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: isMe ? "var(--accent)" : message.senderRole === "owner" ? "var(--accent)" : message.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)",
+                          marginBottom: 3,
+                          paddingLeft: isMe ? 0 : 2,
+                          paddingRight: isMe ? 2 : 0
+                        }}
+                      >
+                        {isMe ? "You" : message.senderName || "Resident"}
+                        {message.senderRole === "owner" && !isMe && <span style={{ color: "var(--accent)", marginLeft: 4 }}>· Owner</span>}
+                        {message.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>· Admin</span>}
+                      </div>
                     )}
+
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
+                      <div
+                        style={{
+                          background: message._pending
+                            ? "color-mix(in srgb, var(--accent) 70%, var(--surface))"
+                            : isMe
+                              ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)"
+                              : "color-mix(in srgb, var(--surface) 92%, white)",
+                          color: isMe ? "#fff" : "var(--text)",
+                          borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px",
+                          padding: "10px 14px 9px",
+                          fontSize: 14,
+                          lineHeight: 1.5,
+                          border: isMe ? "none" : "1px solid var(--border)",
+                          wordBreak: "break-word",
+                          whiteSpace: "pre-wrap",
+                          opacity: message._pending ? 0.7 : 1,
+                          boxShadow: "0 10px 24px rgba(0,0,0,0.08)"
+                        }}
+                      >
+                        {message.text}
+                      </div>
+
+                      {canDelete(message) && (
+                        <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.45 }} />
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
+                      {message._pending ? "Sending..." : formatTime(message.sentAt)}
+                    </div>
                   </div>
 
-                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
-                    {message._pending ? "Sending..." : formatTime(message.sentAt)}
-                  </div>
+                  {showSender && isMe ? <Avatar name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
                 </div>
-
-                {showSender && isMe ? <Avatar name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
-              </div>
+              )}
             </React.Fragment>
           );
         })}
@@ -340,13 +438,64 @@ export default function DiscussionsSection() {
         <div ref={bottomRef} />
       </div>
 
-        <div style={{ flexShrink: 0, padding: "8px 10px 10px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-          {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
-          <div style={{ display: "flex", gap: 7, alignItems: "center", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 15, padding: "6px 6px 6px 9px" }}>
-            <input
+      {/* Input area */}
+      <div style={{ flexShrink: 0, padding: "8px 10px 10px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
+        {/* Announcement mode toggle — only for owner/admin */}
+        {canAnnounce && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
+            <button
+              onClick={() => setMessageType("chat")}
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: `1px solid ${messageType === "chat" ? "var(--accent)" : "var(--border)"}`,
+                background: messageType === "chat" ? "var(--accent-deep)" : "transparent",
+                color: messageType === "chat" ? "var(--accent)" : "var(--text-dim)",
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+            >
+              Message
+            </button>
+            <button
+              onClick={() => setMessageType("announcement")}
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: `1px solid ${messageType === "announcement" ? "var(--accent)" : "var(--border)"}`,
+                background: messageType === "announcement" ? "var(--accent-deep)" : "transparent",
+                color: messageType === "announcement" ? "var(--accent)" : "var(--text-dim)",
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+            >
+              Announcement
+            </button>
+          </div>
+        )}
+
+        {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 7,
+            alignItems: "center",
+            background: "var(--bg)",
+            border: `1px solid ${isAnnounceMode ? "color-mix(in srgb, var(--accent) 50%, var(--border))" : "var(--border)"}`,
+            borderRadius: 15,
+            padding: "6px 6px 6px 9px",
+            transition: "border-color 0.15s ease"
+          }}
+        >
+          <input
             ref={inputRef}
             className="input-field"
-            placeholder="Message group"
+            placeholder={isAnnounceMode ? "Write an announcement for all residents..." : "Message group"}
             value={text}
             onChange={event => {
               setText(event.target.value);
@@ -357,11 +506,20 @@ export default function DiscussionsSection() {
           />
           <button
             className="btn-primary"
-            style={{ width: 38, height: 38, borderRadius: 999, padding: 0, fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
+            style={{
+              height: 38,
+              borderRadius: 999,
+              padding: "0 14px",
+              fontSize: 11,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              opacity: !text.trim() || sending ? 0.5 : 1
+            }}
             onClick={handleSend}
             disabled={!text.trim() || sending}
           >
-            Send
+            {isAnnounceMode ? "Post" : "Send"}
           </button>
         </div>
         <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5, textAlign: "right" }}>

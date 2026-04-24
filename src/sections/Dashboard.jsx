@@ -532,7 +532,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     <div
       onClick={onClick}
       className={`ledger-summary-card${onClick ? " interactive" : ""}`}
-      style={{ borderColor: `${color}18`, background: "color-mix(in srgb, var(--surface) 96%, transparent)" }}
+      style={{ borderColor: `${color}18`,border: "2px solid var(--gold)", background: "color-mix(in srgb, var(--surface) 96%, transparent)" }}
     >
       <div className="ledger-summary-label" style={{ color }}>{label}</div>
       <div className="ledger-summary-value" style={{ color, fontSize: "clamp(17px, 4.4vw, 21px)" }}>{value}</div>
