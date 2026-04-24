@@ -25,6 +25,7 @@ import { logError } from "../utils/logger";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
+const HOUSEHOLD_PRIMARY_PERSON_ID = "customer_primary_profile";
 
 // ── API shape ↔ DataContext shape mappers ─────────────────────────────────────
 
@@ -158,6 +159,41 @@ function withId(record = {}) {
   return { ...record, id: record.id || uid() };
 }
 
+function ensureHouseholdPrimaryPerson(orgData = {}) {
+  const orgType = getOrgType(orgData?.account?.organizationType);
+  if (orgType !== "personal") return orgData;
+
+  const account = orgData?.account || {};
+  const primaryName = String(account.name || "").trim();
+  if (!primaryName) return orgData;
+
+  const customers = Array.isArray(orgData.customers) ? orgData.customers : [];
+  const existingPrimary = customers.find(customer => customer?.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer?.isPrimaryProfile);
+  const primaryRecord = {
+    ...(existingPrimary || {}),
+    id: HOUSEHOLD_PRIMARY_PERSON_ID,
+    isPrimaryProfile: true,
+    isLockedProfile: true,
+    name: primaryName,
+    email: String(account.email || existingPrimary?.email || "").trim(),
+    phone: String(account.phone || existingPrimary?.phone || "").trim(),
+    phoneCountryCode: String(account.phoneCountryCode || existingPrimary?.phoneCountryCode || "").trim(),
+    phoneNumber: String(account.phoneNumber || existingPrimary?.phoneNumber || "").trim(),
+    addressLine: String(account.addressLine || existingPrimary?.addressLine || "").trim(),
+    city: String(account.city || existingPrimary?.city || "").trim(),
+    state: String(account.state || existingPrimary?.state || "").trim(),
+    country: String(account.country || existingPrimary?.country || "").trim(),
+    location: String(account.location || existingPrimary?.location || "").trim(),
+    address: String(account.address || existingPrimary?.address || "").trim()
+  };
+
+  const otherCustomers = customers.filter(customer => customer?.id !== HOUSEHOLD_PRIMARY_PERSON_ID && !customer?.isPrimaryProfile);
+  return {
+    ...orgData,
+    customers: [primaryRecord, ...otherCustomers]
+  };
+}
+
 const EMPTY_ORG_DATA = {
   income: [],
   expenses: [],
@@ -249,7 +285,7 @@ function normalizeOrgData(source = {}, fallback = {}) {
     customers: source.customers || [],
     orgRecords: source.orgRecords || {}
   };
-  return {
+  const normalizedOrg = {
     ...normalizedCollections,
     summary: {
       ...EMPTY_ORG_DATA.summary,
@@ -284,6 +320,7 @@ function normalizeOrgData(source = {}, fallback = {}) {
       }
     )
   };
+  return ensureHouseholdPrimaryPerson(normalizedOrg);
 }
 
 function normalizeOrgCollection(source = {}, fallback = {}) {
@@ -1037,19 +1074,43 @@ export function DataProvider({ children }) {
   const saveAccount = acc => update(d => ({ ...d, account: acc }));
   const resetForOrgTypeChange = (nextAccount) => {
     update(d => buildResetData(d, nextAccount));
-    // Clear server-side orgRecords — the sync endpoint only upserts so empty orgRecords
-    // in client state would never delete stale server records (e.g. EMI loans).
     const orgId = data.activeOrgId;
     if (user?.id && orgId) {
-      orgsApi.clearOrgRecords(user.id, orgId).catch(err => logError("clearOrgRecords failed", err));
+      Promise.allSettled([
+        orgsApi.syncCollection(user.id, orgId, "income", []),
+        orgsApi.syncCollection(user.id, orgId, "expenses", []),
+        orgsApi.syncCollection(user.id, orgId, "invoices", []),
+        orgsApi.syncCollection(user.id, orgId, "customers", []),
+        orgsApi.clearOrgRecords(user.id, orgId)
+      ]).then(results => {
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            const op = ["income", "expenses", "invoices", "customers", "orgRecords"][index];
+            logError(`resetForOrgTypeChange failed to clear ${op}`, result.reason);
+          }
+        });
+      });
     }
   };
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));
   const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(c)] }));
-  const updateCustomer = c => update(d => ({ ...d, customers: d.customers.map(x => (x.id === c.id ? c : x)) }));
-  const removeCustomer = id => update(d => ({ ...d, customers: d.customers.filter(c => c.id !== id) }));
+  const updateCustomer = c => update(d => ({
+    ...d,
+    customers: d.customers.map(existing => {
+      if (existing.id !== c.id) return existing;
+      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
+        return { ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true };
+      }
+      return c;
+    })
+  }));
+  const removeCustomer = id => update(d => {
+    const protectedCustomer = d.customers.find(customer => customer?.id === id && (customer.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer.isPrimaryProfile));
+    if (protectedCustomer) return d;
+    return { ...d, customers: d.customers.filter(c => c.id !== id) };
+  });
   const saveOrgRecords = (key, items) => update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: items } }));
   const addOrgRecord = (key, record) =>
     update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(record), ...(d.orgRecords?.[key] || [])] } }));
@@ -1088,17 +1149,82 @@ export function DataProvider({ children }) {
   async function switchOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
+    setLoaded(false);
+    const freshFetched = { income: false, expenses: false, invoices: false, customers: false };
+    collectionFetchedRef.current = freshFetched;
+    setCollectionFetched(freshFetched);
 
-    const nextState = buildStateFromOrganizations({
-      orgs: data.orgs,
-      activeOrgId: orgId,
-      sharedLedger: null
-    });
+    try {
+      const localData = getUserData(user.id, "appData") || EMPTY_DATA;
+      const localOrg = localData.orgs?.[orgId] || data.orgs?.[orgId] || {};
+      const [activeOrgFull, summary] = await Promise.all([
+        orgsApi.getFull(user.id, orgId).catch(() => null),
+        orgsApi.getSummary(user.id, orgId).catch(() => EMPTY_SUMMARY)
+      ]);
 
-    setData(nextState);
-    persistState(nextState);
-    setOwnDataReloadKey(k => k + 1);
-    return { success: true };
+      const pickCollection = (serverRecords, localRecords = []) => {
+        if (Array.isArray(serverRecords) && (serverRecords.length > 0 || !Array.isArray(localRecords) || localRecords.length === 0)) {
+          return serverRecords;
+        }
+        return Array.isArray(localRecords) ? localRecords : [];
+      };
+
+      const income = pickCollection(activeOrgFull?.income, localOrg.income);
+      const expenses = pickCollection(activeOrgFull?.expenses, localOrg.expenses);
+      const invoices = pickCollection(activeOrgFull?.invoices, localOrg.invoices);
+      const customers = pickCollection(activeOrgFull?.customers, localOrg.customers);
+      const orgRecords = activeOrgFull?.orgRecords && typeof activeOrgFull.orgRecords === "object"
+        ? activeOrgFull.orgRecords
+        : (localOrg.orgRecords || {});
+
+      const nextOrgs = { ...data.orgs };
+      nextOrgs[orgId] = normalizeOrgData(fromApiOrg(activeOrgFull || localOrg, {
+        income,
+        expenses,
+        invoices,
+        customers,
+        orgRecords
+      }));
+
+      const nextState = buildStateFromOrganizations({
+        orgs: nextOrgs,
+        activeOrgId: orgId,
+        sharedLedger: null
+      });
+
+      setData(nextState);
+      setOrgSummary(summary || EMPTY_SUMMARY);
+      setUserData(user.id, "appData", nextState);
+      setUser(prev =>
+        prev
+          ? {
+              ...prev,
+              activeOrgId: orgId,
+              organizationType: getOrgType(nextState.account?.organizationType || prev.organizationType)
+            }
+          : prev
+      );
+
+      if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+      lastSyncedRef.current[orgId].customers = buildBaseline(customers);
+      collectionFetchedRef.current = { ...collectionFetchedRef.current, customers: true };
+      setCollectionFetched(prev => ({ ...prev, customers: true }));
+
+      return { success: true };
+    } catch (err) {
+      logError("switchOrganization failed, falling back to cached state", err);
+      const nextState = buildStateFromOrganizations({
+        orgs: data.orgs,
+        activeOrgId: orgId,
+        sharedLedger: null
+      });
+      setData(nextState);
+      persistState(nextState);
+      setOwnDataReloadKey(k => k + 1);
+      return { success: true };
+    } finally {
+      setLoaded(true);
+    }
   }
 
   async function createOrganization(accountInput = {}) {

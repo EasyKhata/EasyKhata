@@ -194,6 +194,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
+  const showIncomeNote = isSmallBusinessOrg;
+  const visibleIncomeFields = useMemo(() => config.incomeFields || [], [config.incomeFields]);
   const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const societyName = String(d.account?.name || "").trim();
   const sym = d.currency?.symbol || "Rs";
@@ -468,10 +470,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     );
   };
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   const selectedMonthDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const defaultCollectionDate = selectedMonthDate > TODAY ? TODAY : selectedMonthDate;
   const apartmentCollectionStatus = useMemo(() => apartmentFlats.map(flat => {
@@ -567,6 +565,15 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     setFormError(""); setErrors({});;
     setShowForm(true);
   }
+
+  useEffect(() => {
+    function handleOpenAdd(event) {
+      if (event?.detail?.section && event.detail.section !== "income") return;
+      openNew();
+    }
+    window.addEventListener("ledger:open-add", handleOpenAdd);
+    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openEdit(income) {
     if (isReadOnlyFreeMode) {
@@ -819,14 +826,14 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       amount: (isSmallBusinessOrg && hasPosSystem) ? Number(computedSaleTotals.total || 0) : Number(nextForm.amount),
       date: nextForm.date,
       month: isApartmentOrg ? (nextForm.collectionMonth || nextForm.date.slice(0, 7)) : nextForm.date.slice(0, 7),
-      note: nextForm.note.trim()
+      ...(showIncomeNote ? { note: nextForm.note.trim() } : {})
     };
 
-    (config.incomeFields || []).forEach(field => {
+    visibleIncomeFields.forEach(field => {
       payload[field.key] = String(nextForm[field.key] || "").trim();
     });
 
-    const hasFutureMonth = (config.incomeFields || []).some(field => field.type === "month" && isFutureMonthValue(payload[field.key]));
+    const hasFutureMonth = visibleIncomeFields.some(field => field.type === "month" && isFutureMonthValue(payload[field.key]));
     if (hasFutureMonth) {
       setFormError("Future months are not allowed for records.");
       return;
@@ -1001,6 +1008,10 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
+
   return (
     <div className="ledger-screen">
       {isViewerMode && (
@@ -1012,7 +1023,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       <div className="ledger-block">
         <WorkflowActionStrip
           title={isPersonalOrg ? "Track household earnings for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
-          actions={!isViewerMode ? [{ label: `+ Add ${isApartmentOrg ? "Collection" : config.incomeEntryLabel}`, onClick: openNew, tone: "accent", dot: true }] : []}
+          actions={[]}
         />
         <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
@@ -1450,7 +1461,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               </div>
               <div className="ledger-form-group compact">
                 <div className="ledger-form-group-title">Entry details</div>
-              {(config.incomeFields || []).map(field => (
+              {visibleIncomeFields.map(field => (
                 <Field key={field.key} label={field.label} error={errors[field.key]}>
                   {isPersonalOrg && field.key === "personName" ? (
                     <Select error={errors.personName} value={form.personName || ""} onChange={event => { setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
@@ -1517,9 +1528,11 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                   </Select>
                 </Field>
               )}
-              <Field label="Note">
-                <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
-              </Field>
+              {showIncomeNote && (
+                <Field label="Note">
+                  <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
+                </Field>
+              )}
               </div>
             </div>
           )}

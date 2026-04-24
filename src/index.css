@@ -1,6 +1,6 @@
 :root {
-  --font: 'Sora', sans-serif;
-  --serif: 'DM Serif Display', serif;
+  --font: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --serif: 'Playfair Display', Georgia, serif;
 
   /* Spacing scale (8px base unit) */
   --space-1: 4px;
@@ -33,29 +33,58 @@
 }
 
 [data-theme="dark"] {
-  --bg: #0b0d12;
-  --surface: #11141c;
-  --surface-high: #171c27;
-  --surface-pop: #1d2431;
-  --border: #2a3344;
-  --border-mid: #3a465c;
-  --accent: #7ee8a2;
-  --accent-deep: #183628;
-  --accent-text: #65d994;
-  --gold: #f6c94e;
-  --gold-deep: #3a2f10;
-  --danger: #ff7a7a;
-  --danger-deep: #3f1c1f;
-  --blue: #77b6ff;
-  --blue-deep: #182b47;
-  --purple: #c59aff;
-  --purple-deep: #2e2245;
-  --text: #f3f6fb;
-  --text-sec: #9eabc0;
-  --text-dim: #65738b;
+  /* ── Surfaces — warm dark canvas ── */
+  --bg: #0C0908;
+  --surface: #131009;
+  --surface-high: #1B1510;
+  --surface-pop: #241C13;
+  --border: #2A1F16;
+  --border-mid: #3D3022;
+
+  /* ── Semantic colors ── */
+  --accent: #00C896;
+  --accent-deep: #002318;
+  --accent-text: #00e8ad;
+  --gold: #F0A500;
+  --gold-deep: #2A1C00;
+  --danger: #FF6052;
+  --danger-deep: #2E0D09;
+  --blue: #5B9EFF;
+  --blue-deep: #091626;
+  --purple: #AC7FFF;
+  --purple-deep: #180E2E;
+
+  /* ── Text — warm cream ── */
+  --text: #EEE4D8;
+  --text-sec: #A89882;
+  --text-dim: #5C4E42;
   --white: #FFFFFF;
-  --input-bg: #141a24;
-  --card-shadow: 0 10px 26px rgba(0,0,0,0.28);
+  --input-bg: #1B1510;
+  --card-shadow: 0 16px 40px rgba(0,0,0,0.4);
+
+  /* ── New design system aliases ── */
+  --canvas: #0C0908;
+  --card: #1B1510;
+  --raised: #241C13;
+  --pop: #2D2318;
+  --line: #2A1F16;
+  --line-2: #3D3022;
+  --cream: #EEE4D8;
+  --cream-2: #A89882;
+  --cream-3: #5C4E42;
+
+  /* ── Brand colors with deep variants ── */
+  --jade: #00C896;
+  --jade-deep: #002318;
+  --saffron: #F0A500;
+  --saffron-hi: #FFD166;
+  --saffron-deep: #2A1C00;
+  --ember: #FF6052;
+  --ember-deep: #2E0D09;
+  --sky: #5B9EFF;
+  --sky-deep: #091626;
+  --orchid: #AC7FFF;
+  --orchid-deep: #180E2E;
 }
 
 [data-theme="light"] {
@@ -78,6 +107,28 @@
   --purple-deep: #eee8ff;
   --text: #101827;
   --text-sec: #4c5d76;
+
+  /* ── New design system aliases (light) ── */
+  --canvas: #eef2f8;
+  --card: #ffffff;
+  --raised: #f4f7fd;
+  --pop: #e8eefb;
+  --line: #d8e1ef;
+  --line-2: #c5d0e3;
+  --cream: #101827;
+  --cream-2: #4c5d76;
+  --cream-3: #7f8ea5;
+  --jade: #1f9d55;
+  --jade-deep: #dff7ea;
+  --saffron: #ad5f00;
+  --saffron-hi: #c97a00;
+  --saffron-deep: #fff2d6;
+  --ember: #d63939;
+  --ember-deep: #fde9e9;
+  --sky: #2c63d6;
+  --sky-deep: #e2ebff;
+  --orchid: #7b4fd8;
+  --orchid-deep: #eee8ff;
   --text-dim: #7f8ea5;
   --white: #FFFFFF;
   --input-bg: #fafcff;
@@ -1338,3 +1389,375 @@ svg {
 }
 button:focus:not(:focus-visible),
 a:focus:not(:focus-visible) { outline: none; }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * EasyKhata — Visual Design Patch
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Appended block — overrides specific existing classes. Safe to remove.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. BOTTOM NAV ──────────────────────────────────────────────────────────── */
+
+.app-bottom-nav {
+  padding: 6px 8px calc(env(safe-area-inset-bottom, 0px) + 6px);
+  gap: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.app-bottom-nav-btn {
+  border-radius: 12px;
+  padding: 7px 4px 5px;
+  gap: 4px;
+  transition: background var(--transition-fast), color var(--transition-fast),
+              transform var(--transition-fast);
+}
+
+.app-bottom-nav-btn:active {
+  transform: scale(0.94);
+}
+
+.app-bottom-nav-btn.active {
+  background: color-mix(in srgb, currentColor 10%, var(--surface-pop));
+  border-color: color-mix(in srgb, currentColor 22%, var(--border));
+}
+
+.app-bottom-nav-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-high) 80%, transparent);
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+              box-shadow var(--transition-fast);
+}
+
+.app-bottom-nav-btn.active .app-bottom-nav-icon {
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 14%, var(--surface-high));
+  border-color: color-mix(in srgb, currentColor 35%, var(--border));
+  box-shadow: 0 0 10px color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.app-bottom-nav-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+}
+
+@media (max-width: 420px) {
+  .app-bottom-nav-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+  }
+  .app-bottom-nav-label {
+    font-size: 8px;
+  }
+}
+
+/* ── 2. CARDS ─────────────────────────────────────────────────────────────────*/
+
+.card {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 48%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.04) inset,
+    var(--card-shadow);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
+}
+
+.card:hover {
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.05) inset,
+    0 16px 40px rgba(0,0,0,0.16), 0 3px 10px rgba(0,0,0,0.09);
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  transform: translateY(-1px);
+}
+
+[data-theme="light"] .card {
+  box-shadow: 0 8px 24px rgba(15,23,42,0.06), 0 1px 3px rgba(15,23,42,0.04);
+}
+
+[data-theme="light"] .card:hover {
+  box-shadow: 0 14px 36px rgba(15,23,42,0.09), 0 2px 6px rgba(15,23,42,0.05);
+}
+
+/* ── 3. LEDGER HERO ─────────────────────────────────────────────────────────── */
+
+.ledger-hero {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  box-shadow: var(--card-shadow);
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent,
+    transparent 26px,
+    color-mix(in srgb, var(--white) 2.5%, transparent) 26px,
+    color-mix(in srgb, var(--white) 2.5%, transparent) 27px
+  );
+  background-color: var(--surface);
+}
+
+.ledger-hero-value {
+  font-family: var(--serif);
+  font-size: clamp(30px, 7.5vw, 38px);
+  line-height: 0.96;
+  letter-spacing: -1px;
+  color: var(--text);
+}
+
+.ledger-hero-value.positive { color: var(--accent); }
+.ledger-hero-value.negative { color: var(--danger); }
+
+.ledger-overline {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.ledger-hero-sub {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-sec);
+}
+
+/* ── 4. SECTION HERO ────────────────────────────────────────────────────────── */
+
+.section-hero {
+  padding: 20px 18px 22px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--surface-high) 70%, transparent) 0%,
+    transparent 100%
+  );
+}
+
+.section-hero::before {
+  content: "";
+  position: absolute;
+  top: -40px;
+  right: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+@media (max-width: 480px) {
+  .section-hero {
+    padding: 14px 14px 18px;
+  }
+}
+
+/* ── 5. BUTTONS ─────────────────────────────────────────────────────────────── */
+
+.btn-primary {
+  border-radius: 12px;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 28%, transparent);
+  transition: filter 0.18s, transform 0.12s, box-shadow 0.18s;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 36%, transparent);
+}
+
+.btn-primary:active {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.btn-secondary {
+  border-radius: 11px;
+  padding: 9px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  transition: background 0.18s, border-color 0.18s, transform 0.12s;
+}
+
+.btn-secondary:hover {
+  background: var(--surface-pop);
+  border-color: var(--border-mid);
+}
+
+.btn-secondary:active {
+  transform: translateY(1px);
+}
+
+/* ── 6. INPUT FIELD ─────────────────────────────────────────────────────────── */
+
+.input-field {
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+
+.input-field:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* ── 7. PILL BADGE ──────────────────────────────────────────────────────────── */
+
+.pill {
+  padding: 3px 11px;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+/* ── 8. CARD-ROW ────────────────────────────────────────────────────────────── */
+
+.card-row {
+  padding: 12px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  transition: background var(--transition-fast);
+}
+
+.card-row:hover {
+  background: color-mix(in srgb, var(--surface-high) 60%, transparent);
+}
+
+/* ── 9. BODY BACKGROUND ─────────────────────────────────────────────────────── */
+
+[data-theme="dark"] body {
+  background:
+    radial-gradient(ellipse 900px 360px at 20% -5%,
+      color-mix(in srgb, var(--saffron) 6%, transparent), transparent 60%),
+    radial-gradient(ellipse 800px 360px at 85% 5%,
+      color-mix(in srgb, var(--orchid) 5%, transparent), transparent 60%),
+    var(--bg);
+}
+
+/* ── 11. CARD LEATHER (new warm card style) ─────────────────────────────────── */
+
+.card-leather {
+  background: var(--card);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  box-shadow:
+    0 1px 0 rgba(238,228,216,0.05) inset,
+    0 16px 40px rgba(0,0,0,0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ruled-line texture on card-leather */
+.card-leather::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    180deg,
+    transparent, transparent 26px,
+    color-mix(in srgb, var(--cream) 2.5%, transparent) 26px,
+    color-mix(in srgb, var(--cream) 2.5%, transparent) 27px
+  );
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.card-leather > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── 12. SECTION EYEBROW ────────────────────────────────────────────────────── */
+
+.section-eyebrow {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--cream-3);
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+}
+
+/* ── 13. ANIMATIONS ─────────────────────────────────────────────────────────── */
+
+@keyframes ekFadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.anim-fade-up {
+  animation: ekFadeUp 0.45s ease both;
+}
+.anim-fade-up-2 { animation: ekFadeUp 0.45s 0.08s ease both; }
+.anim-fade-up-3 { animation: ekFadeUp 0.45s 0.16s ease both; }
+.anim-fade-up-4 { animation: ekFadeUp 0.45s 0.24s ease both; }
+.anim-fade-up-5 { animation: ekFadeUp 0.45s 0.32s ease both; }
+
+/* ── 10. APP HEADER ─────────────────────────────────────────────────────────── */
+
+.menu-glass {
+  background: color-mix(in srgb, var(--surface) 88%, transparent) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent) !important;
+}
+
+.ledger-feed-card {
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 48%, transparent);
+  box-shadow: var(--card-shadow);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.18s ease;
+}
+
+.ledger-feed-card:hover {
+  box-shadow: 0 14px 36px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  transform: translateY(-1px);
+}
+
+.ledger-summary-card {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 46%, transparent);
+  transition: border-color 0.18s, transform 0.15s;
+}
+
+.ledger-summary-card.interactive:hover {
+  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  transform: translateY(-1px);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.workflow-setup-card {
+  border-radius: 18px;
+}
+
+.workflow-record-card {
+  border-radius: 16px;
+}
+
+.modal-surface {
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(20px);
+}

@@ -416,7 +416,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
   const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
-  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(accForm.organizationType || orgType), [accForm.organizationType, orgType]);
+  const selectableOrgTypeOptions = useMemo(() => {
+    const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
+    const usedTypes = new Set(
+      organizations
+        .filter(org => org.id !== activeOrgId)
+        .map(org => getOrgType(org.organizationType))
+    );
+    return getSelectableOrgTypeOptions(accForm.organizationType || orgType).filter(
+      option => getOrgType(option.value) === currentOrgType || !usedTypes.has(getOrgType(option.value))
+    );
+  }, [accForm.organizationType, orgType, organizations, activeOrgId, account?.organizationType, user?.organizationType]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const [customerInsights, setCustomerInsights] = useState(customers);
@@ -706,6 +716,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
 
+    if (navigationTarget.screen === "profile") {
+      setScreen("profile");
+      return;
+    }
+
     if (navigationTarget.screen === "org-records" && navigationTarget.orgSectionKey) {
       setOrgSectionKey(navigationTarget.orgSectionKey);
       setOrgRecordForm(null);
@@ -807,6 +822,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const cleanOrganizationType = getOrgType(accForm.organizationType);
     const previousOrganizationType = getOrgType(account?.organizationType || user?.organizationType);
     const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
+    const duplicateOrgType = organizations.some(
+      org => org.id !== activeOrgId && getOrgType(org.organizationType) === cleanOrganizationType
+    );
 
     if (!isValidName(cleanName)) {
       showNotice("Please enter your full name.");
@@ -830,6 +848,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
     if (isApartmentOrg && !cleanAddressLine) {
       showNotice("Please enter the apartment or society address.");
+      return;
+    }
+    if (duplicateOrgType) {
+      showNotice("You already have a Khata with this usage type. Each user can have only one Khata per type.");
       return;
     }
 
@@ -968,7 +990,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       payload[field.key] = String(custForm?.[field.key] || "").trim();
     });
 
-    if (editCust) updateCustomer({ ...payload, id: editCust.id });
+    if (editCust) updateCustomer({
+      ...payload,
+      id: editCust.id,
+      ...(editCust?.isPrimaryProfile ? { isPrimaryProfile: true, isLockedProfile: true } : {})
+    });
     else addCustomer(payload);
     setScreen("customers");
   }
@@ -1795,21 +1821,27 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (customerPage > totalPages) setCustomerPage(totalPages);
   }, [customerPage, customerPageSize, filteredCustomerDirectory]);
 
-  const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => (
+  const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => {
+    const resolvedLabel = label === "Switch Khata" ? "Manage Khatas" : label;
+    const resolvedSub = label === "Switch Khata"
+      ? (organizations.length > 1 ? `${organizations.length} unique Khatas — open, review, or delete` : "Create or review your available Khata workspaces")
+      : sub;
+    return (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
         {icon ? <div style={{ width: 34, height: 34, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div> : null}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: danger ? "var(--danger)" : "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span>{label}</span>
+            <span>{resolvedLabel}</span>
             {badge && <span className="pill" style={{ background: "var(--surface-pop)", color: "var(--text-sec)" }}>{badge}</span>}
           </div>
-          {sub && <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.35 }}>{sub}</div>}
+          {resolvedSub && <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.35 }}>{resolvedSub}</div>}
         </div>
       </div>
       {!danger && !disabled && <span style={{ color: "var(--text-dim)", fontSize: 16, flexShrink: 0 }}>{">"}</span>}
     </div>
-  );
+    );
+  };
 
   if (!loaded) {
     return <SectionSkeleton rows={5} showHero={false} />;
@@ -1841,7 +1873,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             <div className="card">
               <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              {organizations.length > 1 && (
+              {(organizations.length > 1 || canCreateOrganization) && (
                 <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
               )}
               {canCreateOrganization && (

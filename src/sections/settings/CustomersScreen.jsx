@@ -72,6 +72,7 @@ export default function CustomersScreen({
   const sym = currency?.symbol || "Rs";
 
   function CustomerListCard({ customer }) {
+    const isProtectedProfile = Boolean(customer?.isPrimaryProfile || customer?.isLockedProfile);
     const meta = orgConfig.showCustomerFinancials === false
       ? [customer.ownerName || "No owner"].filter(Boolean).join(" · ") || "Flat details"
       : `Balance ${fmtMoney(customer.outstanding, sym)} · Revenue ${fmtMoney(customer.totalRevenue, sym)}`;
@@ -84,9 +85,10 @@ export default function CustomersScreen({
         amount={orgConfig.showCustomerFinancials === false ? null : fmtMoney(customer.outstanding, sym)}
         amountTone={orgConfig.showCustomerFinancials === false ? "var(--text)" : ((customer.outstanding || 0) > 0 ? "gold" : "accent")}
         onClick={() => onOpenDetail(customer)}
+        badges={isProtectedProfile ? [{ label: "Primary profile", tone: "blue" }] : []}
         actions={[
           { label: "Edit", onClick: () => onOpenEditCust(customer), tone: "blue" },
-          { label: "Delete", onClick: () => { if (window.confirm(`Remove ${customer.name}?`)) onRemoveCustomer(customer.id); }, tone: "danger" }
+          ...(!isProtectedProfile ? [{ label: "Delete", onClick: () => { if (window.confirm(`Remove ${customer.name}?`)) onRemoveCustomer(customer.id); }, tone: "danger" }] : [])
         ]}
       />
     );

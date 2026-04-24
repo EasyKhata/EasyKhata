@@ -431,6 +431,15 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     await downloadInvoice(invoice, d.account, sym, { isApartment: isApartmentOrg });
   }
 
+  useEffect(() => {
+    function handleOpenAdd(event) {
+      if (event?.detail?.section && event.detail.section !== "invoices") return;
+      openNew();
+    }
+    window.addEventListener("ledger:open-add", handleOpenAdd);
+    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function closeForm() {
     setShowForm(false);
     setForm(null);
@@ -700,7 +709,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     <div className="ledger-screen">
       <WorkflowActionStrip
         title={isAdmin ? "Review and approve subscription payment requests." : `Manage all ${documentCollectionLabel.toLowerCase()} for this period.`}
-        actions={!isAdmin && !isViewerMode ? [{ label: `+ New ${documentLabel}`, onClick: openNew, tone: "accent", dot: true }] : []}
+        actions={!isViewerMode ? [{ label: isQuote ? "Create Quote" : config.invoiceActionLabel, onClick: openNew }] : []}
       />
       <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
