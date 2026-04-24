@@ -1147,7 +1147,7 @@ export default function MainApp() {
           ) : null;
         })()}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: tab === "discussions" ? "hidden" : "auto", overflowX: "hidden", padding: tab === "discussions" ? 0 : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"), ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {}) }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: tab === "discussions" ? "hidden" : "auto", overflowX: "hidden", padding: tab === "discussions" ? "0 0 calc(env(safe-area-inset-bottom, 0px) + 62px)" : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"), ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {}) }}>
           <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={tab}
