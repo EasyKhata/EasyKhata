@@ -68,6 +68,187 @@ const TAB_ICONS = {
   adminDashboard: LayoutDashboard
 };
 
+function QuickAddSheet({ onClose, isPersonalOrg, isApartmentOrg, isFreelancerOrg, isReadOnlyFreeMode, isViewerMode, addIncome, addExpense, currentMonth, currentYear }) {
+  const [entryType, setEntryType] = React.useState("expense");
+  const [amount, setAmount] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [category, setCategory] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const amountRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => amountRef.current?.focus(), 80);
+    return () => clearTimeout(t);
+  }, []);
+
+  const today = new Date().toISOString().split("T")[0];
+  const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+
+  const expenseCategories = isPersonalOrg
+    ? ["Food", "Transport", "Bills", "Health", "Shopping", "Other"]
+    : isApartmentOrg
+      ? ["Maintenance", "Repair", "Utilities", "Salary", "Admin", "Other"]
+      : isFreelancerOrg
+        ? ["Tools", "Travel", "Marketing", "Office", "Other"]
+        : ["Rent", "Salaries", "Supplies", "Marketing", "Ops", "Other"];
+
+  const incomeCategories = isPersonalOrg
+    ? ["Salary", "Freelance", "Gift", "Investment", "Other"]
+    : isApartmentOrg
+      ? ["Maint. Fee", "Penalty", "Event", "Other"]
+      : isFreelancerOrg
+        ? ["Project", "Consulting", "Retainer", "Other"]
+        : ["Sales", "Service", "Consulting", "Other"];
+
+  const categories = entryType === "expense" ? expenseCategories : incomeCategories;
+  const accentColor = entryType === "income" ? "var(--jade)" : "var(--ember)";
+
+  function handleSave() {
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      setError("Enter a valid amount");
+      return;
+    }
+    if (isViewerMode || isReadOnlyFreeMode) {
+      setError("Your plan doesn't allow adding entries");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      if (entryType === "income") {
+        addIncome({
+          description: description || "Income",
+          source: description || "Income",
+          amount: Number(amount),
+          category: category || "Other",
+          date: today,
+          month: monthStr,
+        });
+      } else {
+        addExpense({
+          label: description || "Expense",
+          amount: Number(amount),
+          category: category || "Other",
+          note: "",
+          date: today,
+          month: monthStr,
+          recurring: false,
+          teamMemberName: "",
+          partnerName: "",
+          startMonth: "",
+          endDate: "",
+          endMonth: "",
+        });
+      }
+      onClose();
+    } catch {
+      setError("Failed to save. Try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* Drag handle */}
+      <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
+
+      {/* Title row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>×</button>
+      </div>
+
+      {/* Expense / Income toggle */}
+      <div style={{ display: "flex", gap: 8, background: "var(--surface-high)", borderRadius: 12, padding: 4 }}>
+        {["expense", "income"].map(type => (
+          <button
+            key={type}
+            onClick={() => { setEntryType(type); setCategory(""); setError(null); }}
+            style={{
+              flex: 1,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "none",
+              background: entryType === type
+                ? (type === "income" ? "color-mix(in srgb, var(--jade) 20%, var(--raised))" : "color-mix(in srgb, var(--ember) 20%, var(--raised))")
+                : "transparent",
+              color: entryType === type ? (type === "income" ? "var(--jade)" : "var(--ember)") : "var(--text-dim)",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              textTransform: "capitalize",
+            }}
+          >
+            {type === "income" ? "Income" : "Expense"}
+          </button>
+        ))}
+      </div>
+
+      {/* Amount input */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface-high)", borderRadius: 14, padding: "12px 16px", border: `1.5px solid color-mix(in srgb, ${accentColor} 30%, var(--border))` }}>
+        <span style={{ fontSize: 26, fontWeight: 800, color: accentColor, lineHeight: 1, flexShrink: 0 }}>₹</span>
+        <input
+          ref={amountRef}
+          type="number"
+          inputMode="decimal"
+          placeholder="0"
+          value={amount}
+          onChange={e => { setAmount(e.target.value); setError(null); }}
+          style={{ flex: 1, border: "none", background: "transparent", color: "var(--text)", fontSize: 28, fontWeight: 800, outline: "none", width: "100%", fontFamily: "var(--font)" }}
+        />
+      </div>
+
+      {/* Description */}
+      <input
+        type="text"
+        placeholder={entryType === "expense" ? "What did you spend on?" : "What did you earn from?"}
+        value={description}
+        onChange={e => setDescription(e.target.value)}
+        style={{ border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", borderRadius: 12, padding: "12px 14px", fontSize: 14, outline: "none", fontFamily: "var(--font)", width: "100%", boxSizing: "border-box" }}
+      />
+
+      {/* Category chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {categories.map(cat => (
+          <button
+            key={cat}
+            type="button"
+            onClick={() => setCategory(cat === category ? "" : cat)}
+            style={{
+              padding: "6px 13px",
+              borderRadius: 20,
+              border: `1.5px solid ${cat === category ? accentColor : "var(--border)"}`,
+              background: cat === category ? `color-mix(in srgb, ${accentColor} 15%, var(--raised))` : "var(--surface-high)",
+              color: cat === category ? accentColor : "var(--text-sec)",
+              fontSize: 12,
+              fontWeight: cat === category ? 700 : 500,
+              cursor: "pointer",
+            }}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, textAlign: "center" }}>{error}</div>
+      )}
+
+      {/* Save button */}
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={saving}
+        style={{ width: "100%", padding: "15px", borderRadius: 14, border: "none", background: accentColor, color: "#fff", fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, fontFamily: "var(--font)" }}
+      >
+        {saving ? "Saving…" : `Save ${entryType === "income" ? "Income" : "Expense"}`}
+      </button>
+    </div>
+  );
+}
+
 function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange }) {
   const [open, setOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
@@ -387,6 +568,7 @@ export default function MainApp() {
   }, [trialBannerVisible]);
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
+  const [showFab, setShowFab] = useState(false);
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -843,48 +1025,31 @@ export default function MainApp() {
 
 
   const footerTabs = useMemo(() => {
+    // No "dashboard" — navigated via header logo. Invoices hidden from apartment nav.
     const baseTabOrder = isAdmin
-      ? ["dashboard", "users", "adminSupport", "invoices"]
+      ? ["users", "__fab__", "adminSupport"]
       : isApartmentOrg
-        ? ["dashboard", "income", "expenses", "discussions", "invoices", "org"]
-        : ["dashboard", "income", "expenses", "emi", "invoices", "org"];
-    const baseTabs = baseTabOrder
-      .filter(tabId => TABS.some(item => item.id === tabId))
-      .map(tabId => TABS.find(item => item.id === tabId))
-      .filter(Boolean);
-    if (baseTabs.some(item => item.id === tab) || !TABS.some(item => item.id === tab)) {
-      return baseTabs.map(item => ({
-        ...item,
-        label:
-          item.id === "dashboard" ? "Home" :
-          item.id === "income" && isApartmentOrg ? "Maint." :
-          item.id === "income" && isFreelancerOrg ? "Payments" :
-          item.id === "expenses" ? "Spend" :
-          item.id === "invoices" && isApartmentOrg ? "Bills" :
-          item.id === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
-          item.id === "discussions" ? "Chat" :
-          item.id === "org" ? "Khata" :
-          item.id === "adminSupport" ? "Support" :
-          item.label
-      }));
-    }
-    const fallbackTab = TABS.find(item => item.id === tab);
-    const nextTabs = fallbackTab ? [...baseTabs, fallbackTab] : baseTabs;
-    return nextTabs.map(item => ({
-      ...item,
-        label:
-        item.id === "dashboard" ? "Home" :
-        item.id === "income" && isApartmentOrg ? "Maint." :
-        item.id === "income" && isFreelancerOrg ? "Payments" :
-        item.id === "expenses" ? "Spend" :
-        item.id === "invoices" && isApartmentOrg ? "Bills" :
-        item.id === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
-        item.id === "discussions" ? "Chat" :
-        item.id === "org" ? "Khata" :
-        item.id === "adminSupport" ? "Support" :
-        item.label
-    }));
-  }, [TABS, isAdmin, isApartmentOrg, isFreelancerOrg, isSmallBusinessOrg, tab]);
+        ? ["income", "expenses", "__fab__", "discussions", "org"]
+        : isPersonalOrg
+          ? ["income", "expenses", "__fab__", "emi", "org"]
+          : ["income", "expenses", "__fab__", "invoices", "org"];
+    return baseTabOrder.map(tabId => {
+      if (tabId === "__fab__") return { id: "__fab__", label: "", icon: null };
+      const found = TABS.find(item => item.id === tabId);
+      if (!found) return null;
+      const label =
+        tabId === "income" && isApartmentOrg ? "Maint." :
+        tabId === "income" && isFreelancerOrg ? "Payments" :
+        tabId === "expenses" ? "Spend" :
+        tabId === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
+        tabId === "discussions" ? "Chat" :
+        tabId === "org" ? "Khata" :
+        tabId === "adminSupport" ? "Support" :
+        tabId === "users" ? "Users" :
+        found.label;
+      return { ...found, label };
+    }).filter(Boolean);
+  }, [TABS, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
@@ -1004,129 +1169,143 @@ export default function MainApp() {
       {/* Main content area */}
       <div style={{ flex: 1, minWidth: 0, height: "100dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)", paddingTop: isMobile ? "env(safe-area-inset-top, 0px)" : undefined }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? (isCompactMobile ? "6px 8px" : "8px 10px") : "12px 20px 12px", gap: isCompactMobile ? 6 : 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, minWidth: 0, flex: 1 }}>
-              <button
-                onClick={() => setTab("dashboard")}
-                title="Go to dashboard"
-                style={{
-                  width: isCompactMobile ? 30 : 34,
-                  height: isCompactMobile ? 30 : 34,
-                  borderRadius: isCompactMobile ? 15 : 17,
-                  border: "1px solid var(--border)",
-                  background: "var(--surface-high)",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  flexShrink: 0,
-                  padding: 0,
-                  marginTop: 0
-                }}
-              >
-                <BrandMark size={isCompactMobile ? 17 : 20} />
-              </button>
-              <div style={{ minWidth: 0, paddingRight: isMobile ? 4 : 0 }}>
-                <div style={{ fontSize: isMobile ? (isCompactMobile ? 8 : 9) : 12, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: isCompactMobile ? 0.45 : 0.7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {isAdmin ? "Admin" : (account?.name || currentOrgLabel || "My Khata")}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? (isCompactMobile ? "8px 10px" : "9px 12px") : "10px 20px", gap: isCompactMobile ? 6 : 8 }}>
+
+            {/* Left: OrgAvatar + Org Name + Type badge — tappable to go to dashboard */}
+            <button
+              onClick={() => { setTab("dashboard"); setShowOrgSwitcher(false); }}
+              title="Go to dashboard"
+              style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
+            >
+              {/* OrgAvatar */}
+              {(() => {
+                const orgName = isAdmin ? "Admin" : (activeSharedOrgKey ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Org") : (account?.name || "K"));
+                const initials = orgName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
+                const avatarColor = isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)";
+                const sz = isCompactMobile ? 30 : 34;
+                return (
+                  <span style={{ width: sz, height: sz, borderRadius: sz * 0.28, background: `color-mix(in srgb, ${avatarColor} 22%, var(--raised))`, border: `1.5px solid color-mix(in srgb, ${avatarColor} 35%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: sz * 0.36, fontWeight: 800, color: avatarColor, flexShrink: 0, fontFamily: "var(--font)" }}>
+                    {initials}
+                  </span>
+                );
+              })()}
+              {/* Org name + type badge */}
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+                  <span style={{ fontSize: isCompactMobile ? 13 : 15, fontWeight: 700, color: "var(--text)", lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--serif)" }}>
+                    {isAdmin ? "Admin" : (activeSharedOrgKey ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Organization") : (account?.name || currentOrgLabel || "My Khata"))}
+                  </span>
+                  {!isAdmin && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)", background: `color-mix(in srgb, ${isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)"} 14%, var(--raised))`, border: `1px solid color-mix(in srgb, ${isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)"} 30%, transparent)`, borderRadius: 6, padding: "2px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                      {isApartmentOrg ? "Apartment" : isFreelancerOrg ? "Freelance" : isPersonalOrg ? "Household" : "Business"}
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontFamily: "var(--font)", fontSize: isMobile ? (isCompactMobile ? 15 : 17) : 24, fontWeight: 700, color: "var(--text)", lineHeight: 1.08, marginTop: isMobile ? 1 : 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {TABS.find(item => item.id === tab)?.label}
+                <div style={{ fontSize: isCompactMobile ? 9 : 10, color: "var(--text-dim)", marginTop: 1, fontWeight: 500 }}>
+                  {MONTHS[month]} {year} {activeSharedOrgKey ? `· ${(activeSharedOrgRole ?? sharedOrgs.find(o => o.key === activeSharedOrgKey)?.role ?? "viewer")}` : ""}
                 </div>
               </div>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8 }}>
-              {/* Org switcher — only shown when user has shared orgs */}
-              {sharedOrgs.length > 0 && (
+            </button>
+
+            {/* Right: Org switcher (always when multiple orgs) + Bell + More */}
+            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8, flexShrink: 0 }}>
+              {/* Org switcher — always shown for non-admin users */}
+              {!isAdmin && (
                 <div style={{ position: "relative" }} ref={orgSwitcherRef}>
                   <button
                     onClick={() => setShowOrgSwitcher(v => !v)}
                     title="Switch Khata"
-                    style={{ height: isMobile ? (isCompactMobile ? 30 : 34) : 38, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid ${activeSharedOrgKey ? "var(--accent)" : "color-mix(in srgb, var(--accent) 34%, var(--border))"}`, background: activeSharedOrgKey ? "var(--accent-deep)" : "linear-gradient(180deg, color-mix(in srgb, var(--accent-deep) 92%, var(--surface-high)), color-mix(in srgb, var(--surface-pop) 92%, transparent))", color: activeSharedOrgKey ? "var(--accent)" : "var(--text)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 11px", flexShrink: 0, minWidth: isCompactMobile ? 88 : 118, maxWidth: isCompactMobile ? 104 : 152, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", boxShadow: activeSharedOrgKey ? "0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent)" : "0 6px 16px color-mix(in srgb, var(--accent) 12%, transparent)" }}
+                    style={{ height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid color-mix(in srgb, var(--saffron) 40%, var(--border))`, background: activeSharedOrgKey ? "color-mix(in srgb, var(--saffron) 12%, var(--raised))" : "color-mix(in srgb, var(--saffron) 7%, var(--raised))", color: "var(--saffron)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 12px", flexShrink: 0 }}
                   >
-                    <span style={{ width: isCompactMobile ? 6 : 7, height: isCompactMobile ? 6 : 7, borderRadius: 999, background: "var(--accent)", flexShrink: 0 }} />
-                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {activeSharedOrgKey
-                        ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Shared")
-                        : (isCompactMobile ? "Switch" : "My Khata")}
-                    </span>
-                    <span style={{ flexShrink: 0, color: activeSharedOrgKey ? "var(--accent)" : "var(--text-dim)" }}>▾</span>
+                    <span style={{ fontSize: 12 }}>⇄</span>
+                    <span>{isCompactMobile ? "Orgs" : "Switch Org"}</span>
                   </button>
                   {showOrgSwitcher && (
-                    <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 11, minWidth: isCompactMobile ? 184 : 210, maxWidth: isCompactMobile ? 220 : 260, boxShadow: "0 10px 28px rgba(15,23,42,0.12)", zIndex: 200, overflow: "hidden" }}>
+                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>
+                      {/* Own org row */}
                       <button
                         onClick={() => { switchToOwnOrg(); setShowOrgSwitcher(false); }}
-                        style={{ width: "100%", padding: "9px 12px", textAlign: "left", background: !activeSharedOrgKey ? "var(--accent-deep)" : "transparent", border: "none", color: !activeSharedOrgKey ? "var(--accent)" : "var(--text)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                        style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: !activeSharedOrgKey ? "color-mix(in srgb, var(--jade) 8%, var(--raised))" : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
                       >
-                        {!activeSharedOrgKey && <span style={{ fontSize: 10 }}>✓</span>}
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
-                        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-dim)", fontWeight: 600, flexShrink: 0 }}>Owner</span>
+                        <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
+                          {(ownOrgName || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
+                        <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
+                        {!activeSharedOrgKey && <span style={{ fontSize: 12, color: "var(--jade)", flexShrink: 0 }}>✓</span>}
                       </button>
-                      <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
-                      {sharedOrgs.map(org => (
-                        <button
-                          key={org.key}
-                          onClick={() => { switchToSharedOrg(org.key); setShowOrgSwitcher(false); }}
-                          style={{ width: "100%", padding: "9px 12px", textAlign: "left", background: activeSharedOrgKey === org.key ? "var(--accent-deep)" : "transparent", border: "none", color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text)", fontSize: 12, fontWeight: activeSharedOrgKey === org.key ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
-                        >
-                          {activeSharedOrgKey === org.key && <span style={{ fontSize: 10 }}>✓</span>}
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
-                          <span style={{ marginLeft: "auto", fontSize: 10, color: activeSharedOrgKey === org.key ? "var(--accent)" : "var(--text-dim)", fontWeight: 600, textTransform: "capitalize", flexShrink: 0 }}>{org.role}</span>
-                        </button>
-                      ))}
+                      {sharedOrgs.length > 0 ? (
+                        <>
+                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
+                          {sharedOrgs.map(org => {
+                            const isActive = activeSharedOrgKey === org.key;
+                            const role = org.role || "viewer";
+                            const roleColor = role === "admin" ? "var(--jade)" : role === "owner" ? "var(--saffron)" : "var(--sky)";
+                            const initials = (org.orgName || "O").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "O";
+                            return (
+                              <button
+                                key={org.key}
+                                onClick={() => { switchToSharedOrg(org.key); setShowOrgSwitcher(false); }}
+                                style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                              >
+                                <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
+                                <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: "capitalize" }}>{role}</span>
+                                {isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>✓</span>}
+                              </button>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
+                          <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.5 }}>
+                            No shared orgs yet.<br />
+                            <span style={{ color: "var(--text-sec)" }}>Ask the org owner to invite you via Settings → Members.</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
               )}
+
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isMobile ? (isCompactMobile ? 28 : 32) : 36, height: isMobile ? (isCompactMobile ? 28 : 32) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
-                  <Bell size={isMobile ? (isCompactMobile ? 13 : 14) : 16} strokeWidth={2} />
+                <Bell size={isCompactMobile ? 13 : 14} strokeWidth={2} />
                 {inboxReminders.length > 0 && (
-                    <span style={{ position: "absolute", top: isCompactMobile ? -4 : -5, right: isCompactMobile ? -4 : -5, minWidth: isCompactMobile ? 15 : 18, height: isCompactMobile ? 15 : 18, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: isCompactMobile ? 8 : 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px" }}>
+                  <span style={{ position: "absolute", top: -4, right: -4, minWidth: 15, height: 15, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
                     {inboxReminders.length}
                   </span>
                 )}
               </button>
+
               <div style={{ position: "relative" }} ref={headerMenuRef}>
                 <button
                   onClick={() => setShowHeaderMenu(value => !value)}
                   title="More options"
-                  style={{ width: isMobile ? (isCompactMobile ? 28 : 32) : 36, height: isMobile ? (isCompactMobile ? 28 : 32) : 36, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                  style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
                 >
-                  <MoreHorizontal size={isMobile ? (isCompactMobile ? 13 : 14) : 16} strokeWidth={2} />
+                  <MoreHorizontal size={isCompactMobile ? 13 : 14} strokeWidth={2} />
                 </button>
                 {showHeaderMenu && (
                   <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 168, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", overflow: "hidden", zIndex: 220 }}>
-                    <button
-                      onClick={() => {
-                        setShowHeaderMenu(false);
-                        handleNavigate({ tab: "settings", screen: "main" });
-                      }}
-                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                    >
-                      <Settings size={15} strokeWidth={2} />
-                      Settings
+                    <button onClick={() => { setShowHeaderMenu(false); handleNavigate({ tab: "settings", screen: "main" }); }} style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                      <Settings size={15} strokeWidth={2} /> Settings
                     </button>
                     <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
-                    <button
-                      onClick={() => {
-                        setShowHeaderMenu(false);
-                        if (window.confirm("Sign out of EazyKhata?")) logout();
-                      }}
-                      style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                    >
-                      <LogOut size={15} strokeWidth={2} />
-                      Sign out
+                    <button onClick={() => { setShowHeaderMenu(false); if (window.confirm("Sign out of EazyKhata?")) logout(); }} style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
+                      <LogOut size={15} strokeWidth={2} /> Sign out
                     </button>
                   </div>
                 )}
               </div>
             </div>
-          </div>
 
+          </div>
         </div>
 
         {/* Invite banners — shown when pending invitations exist */}
@@ -1167,26 +1346,127 @@ export default function MainApp() {
         className="app-bottom-nav menu-glass"
         style={{ gridTemplateColumns: `repeat(${Math.max(footerTabs.length, 1)}, minmax(0, 1fr))` }}
       >
-          {footerTabs.map(tabItem => {
-            const active = tab === tabItem.id;
-            const activeColor = TAB_COLOR[tabItem.id] || "var(--accent)";
-            const IconComponent = TAB_ICONS[tabItem.id];
+        {footerTabs.map(tabItem => {
+          if (tabItem.id === "__fab__") {
             return (
               <button
-                key={tabItem.id}
+                key="__fab__"
                 type="button"
-                className={`app-bottom-nav-btn${active ? " active" : ""}`}
-                onClick={() => (tabItem.id === "org" || tabItem.id === "settings") ? handleNavigate({ tab: tabItem.id, screen: "main" }) : setTab(tabItem.id)}
-                style={active ? { color: activeColor } : undefined}
+                onClick={() => setShowFab(v => !v)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "0 0 2px",
+                  position: "relative",
+                }}
               >
-                <span className="app-bottom-nav-icon" style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 40%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 12%, var(--surface-high))` } : undefined}>
-                  {IconComponent ? <IconComponent size={14} strokeWidth={active ? 2.5 : 2} /> : "•"}
-                </span>
-                <span className="app-bottom-nav-label">{tabItem.label}</span>
+                <motion.span
+                  animate={showFab ? { rotate: 45, scale: 1.1 } : { rotate: 0, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    background: "var(--saffron)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 24,
+                    fontWeight: 300,
+                    color: "#0C0908",
+                    boxShadow: "0 4px 16px color-mix(in srgb, var(--saffron) 50%, transparent)",
+                    marginBottom: 2,
+                  }}
+                >
+                  +
+                </motion.span>
               </button>
             );
-          })}
+          }
+
+          const active = tab === tabItem.id;
+          const activeColor = TAB_COLOR[tabItem.id] || "var(--accent)";
+          const IconComponent = TAB_ICONS[tabItem.id];
+
+          return (
+            <button
+              key={tabItem.id}
+              type="button"
+              className={`app-bottom-nav-btn${active ? " active" : ""}`}
+              onClick={() =>
+                tabItem.id === "org" || tabItem.id === "settings"
+                  ? handleNavigate({ tab: tabItem.id, screen: "main" })
+                  : handleNavigate({ tab: tabItem.id })
+              }
+              style={active ? { color: activeColor } : undefined}
+            >
+              <span style={{ width: 3, height: 3, borderRadius: "50%", background: activeColor, display: "block", opacity: active ? 1 : 0, transition: "opacity 0.2s ease", marginBottom: 1 }} />
+              <motion.span
+                className="app-bottom-nav-icon"
+                animate={active ? { scale: 1.1 } : { scale: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 22 }}
+                style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 35%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 13%, var(--surface-high))`, boxShadow: `0 0 10px color-mix(in srgb, ${activeColor} 26%, transparent)`, borderRadius: 8 } : { color: "var(--text-dim)", background: "transparent", border: "1px solid transparent", borderRadius: 8 }}
+              >
+                {IconComponent ? <IconComponent size={active ? 15 : 14} strokeWidth={active ? 2.4 : 1.8} /> : "•"}
+              </motion.span>
+              <span className="app-bottom-nav-label" style={{ fontSize: active ? 9 : 8, fontWeight: active ? 800 : 600, color: active ? activeColor : "var(--text-dim)", transition: "color 0.2s, font-size 0.15s" }}>
+                {tabItem.label}
+              </span>
+            </button>
+          );
+        })}
       </div>
+
+      {/* FAB quick-add sheet */}
+      <AnimatePresence>
+        {showFab && (
+          <>
+            <motion.div
+              key="fab-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              onClick={() => setShowFab(false)}
+              style={{ position: "fixed", inset: 0, background: "rgba(12,9,8,0.65)", zIndex: 130 }}
+            />
+            <motion.div
+              key="fab-sheet"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 340, damping: 34 }}
+              style={{
+                position: "fixed",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                zIndex: 131,
+                maxWidth: 520,
+                margin: "0 auto",
+              }}
+            >
+              <QuickAddSheet
+                onClose={() => setShowFab(false)}
+                isPersonalOrg={isPersonalOrg}
+                isApartmentOrg={isApartmentOrg}
+                isFreelancerOrg={isFreelancerOrg}
+                isReadOnlyFreeMode={isReadOnlyFreeMode}
+                isViewerMode={isViewerMode}
+                addIncome={data.addIncome}
+                addExpense={data.addExpense}
+                currentMonth={month}
+                currentYear={year}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {readOnlyNotice && (
         <div style={{ position: "fixed", left: 16, right: 16, bottom: bottomNoticeBase, zIndex: 140, display: "flex", justifyContent: "center" }}>

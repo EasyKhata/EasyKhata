@@ -176,6 +176,12 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     setShowForm(true);
   }
 
+  useEffect(() => {
+    function handleOpenAdd() { openNew(); }
+    window.addEventListener("ledger:open-add", handleOpenAdd);
+    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function openEdit(record) {
     setEditId(record.id);
     setForm({
@@ -247,7 +253,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     <div className="ledger-screen">
       <WorkflowActionStrip
         title="Track home loan, vehicle loan, and other monthly EMI commitments."
-        actions={hasHouseholdPeople ? [{ label: "+ Add EMI", onClick: openNew, tone: "accent", dot: true }] : []}
+        actions={[]}
       />
       <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--gold)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>

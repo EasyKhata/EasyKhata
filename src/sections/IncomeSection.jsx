@@ -568,6 +568,12 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     setShowForm(true);
   }
 
+  useEffect(() => {
+    function handleOpenAdd() { openNew(); }
+    window.addEventListener("ledger:open-add", handleOpenAdd);
+    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function openEdit(income) {
     if (isReadOnlyFreeMode) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate", orgType));
@@ -1012,7 +1018,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       <div className="ledger-block">
         <WorkflowActionStrip
           title={isPersonalOrg ? "Track household earnings for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
-          actions={!isViewerMode ? [{ label: `+ Add ${isApartmentOrg ? "Collection" : config.incomeEntryLabel}`, onClick: openNew, tone: "accent", dot: true }] : []}
+          actions={[]}
         />
         <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>

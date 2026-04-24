@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
+import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEntry } from "../components/ui/reimagined";
 import { logError } from "../utils/logger";
 import {
   getPersonalEmiDueDay,
@@ -596,77 +597,401 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   );
 
   if (isApartmentOrg) {
-    const selectedMonthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
-    const monthCollections = (data.income || []).filter(item => (item.collectionMonth || item.month || item.date?.slice(0, 7) || "") === selectedMonthKey);
-    const openingBalanceCollectionsForMonth = monthCollections.reduce((sum, item) => (
-      String(item?.collectionType || "").trim().toLowerCase() === "opening balance"
-        ? sum + Number(item?.amount || 0)
-        : sum
-    ), 0);
-    const openingBalanceCollectionsForYear = (data.income || []).reduce((sum, item) => {
-      const itemMonth = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
-      if (!itemMonth.startsWith(String(year))) return sum;
-      return String(item?.collectionType || "").trim().toLowerCase() === "opening balance"
-        ? sum + Number(item?.amount || 0)
-        : sum;
-    }, 0);
     const overallBalance = Number(stats.totalReserve || 0);
-    const monthlyBalance = Number(stats.monthlyReserve || 0);
-    const openingBalance = viewMode === "month"
-      ? (overallBalance - monthlyBalance + openingBalanceCollectionsForMonth)
-      : openingBalanceCollectionsForYear;
-    const formatSignedMoney = value => `${value < 0 ? "-" : ""}${fmtMoney(Math.abs(value), sym)}`;
-    const apartmentHeroSub = viewMode === "month"
-      ? `Overall balance till ${MONTHS[month]} ${year}.`
-      : `Overall balance for ${year}.`;
+    const paidFlats = Math.max(0, (stats.flatsCount || 0) - (stats.unpaidFlats?.length || 0));
+    const totalFlats = stats.flatsCount || 0;
+    const collectionRate = totalFlats > 0 ? Math.round((paidFlats / totalFlats) * 100) : 0;
+    const pendingCount = stats.unpaidFlats?.length || 0;
+    const healthColor = collectionRate >= 85 ? "var(--jade)" : collectionRate >= 60 ? "var(--saffron)" : "var(--ember)";
+
+    const recentIncomes = (data.income || [])
+      .slice(0, 3)
+      .map(item => ({ label: item.description || item.collectionType || "Collection", amount: Number(item.amount || 0), type: "in", category: item.category || "Maintenance", date: item.date || "" }));
+    const recentExpenses = (data.expenses || [])
+      .slice(0, 3)
+      .map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
+    const recentTxns = [...recentIncomes, ...recentExpenses]
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+      .slice(0, 5);
+
+    const trendData = (stats.monthlyBreakdown || stats.cashFlow || []).map(item => item.income || 0).filter(v => v > 0);
 
     return (
       <div className="ledger-screen">
         <div className="ledger-block">
-          <WorkflowActionStrip title={apartmentSummary.title} subtitle={apartmentSummary.subtitle} actions={apartmentActions} />
 
-          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)", ...statsStyle }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                  Society Summary · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+          {/* Hero card */}
+          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="section-eyebrow" style={{ marginBottom: 6 }}>
+                  {MONTHS[month]} {year} · Society Fund
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
-                  {overallBalance < 0 ? "-" : ""}{fmtMoney(Math.abs(overallBalance), sym)}
+                <div style={{ marginBottom: 4 }}>
+                  <RupeeDisplay amount={overallBalance} color={overallBalance >= 0 ? "var(--orchid)" : "var(--ember)"} size={48} animate />
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{apartmentHeroSub}</div>
+                <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
+                  {overallBalance >= 0 ? "Society fund surplus" : "Fund in deficit"}
+                </div>
               </div>
-              {headerDatePicker && <div>{headerDatePicker}</div>}
+              <HealthArc pct={collectionRate} size={84} color={healthColor} />
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>
+                  Collection rate · {paidFlats}/{totalFlats} flats
+                </span>
+                <span style={{ fontSize: 10, color: healthColor, fontWeight: 700 }}>{collectionRate}%</span>
+              </div>
+              <ProgressLine value={paidFlats} max={Math.max(totalFlats, 1)} color={healthColor} />
             </div>
           </div>
-          <div className="ledger-summary-grid">
-            <Tile label={viewMode === "month" ? "Money Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Maintenance payments received this month" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={!isViewerMode ? () => onNav("income") : undefined} />
-            <Tile label={viewMode === "month" ? "Money Spent" : "Total Spent"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Bills, repairs, utilities, and services" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={!isViewerMode ? () => onNav("expenses") : undefined} />
-            <Tile label="Opening Balance" value={formatSignedMoney(openingBalance)} color={openingBalance >= 0 ? "var(--accent)" : "var(--danger)"} sub={viewMode === "month" ? `Balance at start of ${MONTHS[month]} ${year}` : `Balance brought into ${year}`} />
-            <Tile
-              label="Flats"
-              value={String(stats.flatsCount || 0)}
-              color="var(--gold)"
-              sub={`${stats.unpaidFlats?.length || 0} pending in ${viewMode === "month" ? "this month" : "the latest month"} · open Org flats`}
-              onClick={!isViewerMode ? () => onNav({ tab: "org", screen: "customers" }) : undefined}
+
+          {/* Pending alert */}
+          {pendingCount > 0 && !isViewerMode && (
+            <div
+              className="anim-fade-up-2"
+              onClick={() => onNav({ tab: "org", screen: "customers" })}
+              style={{
+                background: "color-mix(in srgb, var(--ember) 7%, var(--canvas))",
+                border: "1px solid color-mix(in srgb, var(--ember) 20%, var(--line-2))",
+                borderRadius: 14,
+                padding: "12px 16px",
+                marginBottom: 14,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                cursor: "pointer",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ember)", marginBottom: 2 }}>
+                  ⚠ {pendingCount} flat{pendingCount !== 1 ? "s" : ""} pending
+                </div>
+                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                  {sym}{(pendingCount * (stats.totalIncome > 0 ? Math.round(stats.totalIncome / Math.max(paidFlats, 1)) : 0)).toLocaleString("en-IN")} estimated outstanding
+                </div>
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ember)", background: "color-mix(in srgb, var(--ember) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--ember) 25%, transparent)", borderRadius: 8, padding: "6px 12px" }}>
+                View →
+              </span>
+            </div>
+          )}
+
+          {/* Stat chips */}
+          <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <StatChip
+              label={viewMode === "month" ? "Collected" : "Total Collected"}
+              value={fmtMoney(stats.totalIncome, sym)}
+              color="var(--orchid)"
+              sub={viewMode === "month" ? "This month" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
+              onClick={!isViewerMode ? () => onNav("income") : undefined}
+            />
+            <StatChip
+              label={viewMode === "month" ? "Expenses" : "Total Expenses"}
+              value={fmtMoney(stats.totalExpense, sym)}
+              color="var(--ember)"
+              sub={viewMode === "month" ? "Maintenance costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
+              onClick={!isViewerMode ? () => onNav("expenses") : undefined}
             />
           </div>
 
-          <ApartmentUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
+          {/* Trend sparkline */}
+          {trendData.length >= 3 && (
+            <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <div className="section-eyebrow">Collection Trend</div>
+                {headerDatePicker && <div>{headerDatePicker}</div>}
+              </div>
+              <Sparkline data={trendData} color="var(--orchid)" height={40} />
+            </div>
+          )}
+          {trendData.length < 3 && headerDatePicker && (
+            <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>
+          )}
 
-          <div style={{ padding: "0 18px" }}>
-            <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-              <div className="card">
-                {top5Expenses.length === 0 ? (
-                  <WorkflowSetupCard title="No expenses this period" description="Add society expense entries to see the biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
-                ) : (
-                  top5Expenses.map((expense, index) => (
+          {/* Recent transactions */}
+          <div className="anim-fade-up-4">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div className="section-eyebrow">Recent Activity</div>
+              {!isViewerMode && (
+                <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--orchid)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>
+                  All →
+                </button>
+              )}
+            </div>
+            {recentTxns.length > 0 ? (
+              <div className="card-leather" style={{ padding: "0 16px" }}>
+                {recentTxns.map((tx, i) => (
+                  <TimelineEntry key={i} {...tx} isLast={i === recentTxns.length - 1} delay={i * 50} />
+                ))}
+              </div>
+            ) : (
+              <WorkflowSetupCard title="No entries yet" description="Add maintenance collections and society expenses to see recent activity here." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+            )}
+          </div>
+
+          {/* Top Expenses collapsible */}
+          {top5Expenses.length > 0 && (
+            <div className="anim-fade-up-5" style={{ marginTop: 14 }}>
+              <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--ember)" count={top5Expenses.length} defaultOpen={false}>
+                <div className="card">
+                  {top5Expenses.map((expense, index) => (
                     <div key={expense.id || index} className="ledger-feed-row">
                       <div className="ledger-feed-main" style={{ minWidth: 0 }}>
                         <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                         <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                       </div>
-                      <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                      <span className="ledger-feed-amount" style={{ color: "var(--ember)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                    </div>
+                  ))}
+                </div>
+              </Collapsible>
+            </div>
+          )}
+
+        </div>
+        {onboardingGuide}
+      </div>
+    );
+  }
+
+  if (isPersonalOrg) {
+    const netAfterEmi = Number(stats.netAfterEmi || 0);
+    const spendPct = Math.min(100, Math.round(stats.spendingRatio || 0));
+    const savingsGoal = Object.values(data.goals || {}).find(g => g.goalType === "savings" || g.type === "savings");
+    const savingsPct = savingsGoal ? Math.min(100, Math.round((Number(savingsGoal.currentAmount || 0) / Math.max(Number(savingsGoal.targetAmount || 1), 1)) * 100)) : 0;
+    const healthColor = savingsPct >= 80 ? "var(--jade)" : savingsPct >= 40 ? "var(--saffron)" : spendPct >= 90 ? "var(--ember)" : "var(--saffron)";
+
+    const recentIncomes = (data.income || []).slice(0, 3).map(item => ({ label: item.description || item.source || "Income", amount: Number(item.amount || 0), type: "in", category: item.category || "Income", date: item.date || "" }));
+    const recentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Spending", date: item.date || "" }));
+    const recentTxns = [...recentIncomes, ...recentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+    const trendData = (stats.monthlyBreakdown || stats.cashFlow || []).map(item => item.income || 0).filter(v => v > 0);
+
+    return (
+      <div className="ledger-screen">
+        <div className="ledger-block">
+
+          {/* Hero card */}
+          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="section-eyebrow" style={{ marginBottom: 6 }}>
+                  {MONTHS[month]} {year} · Household Hisaab
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <RupeeDisplay amount={netAfterEmi} color={netAfterEmi >= 0 ? "var(--jade)" : "var(--ember)"} size={48} animate />
+                </div>
+                <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
+                  {netAfterEmi >= 0 ? "Net after EMI obligations" : "Household cash flow under pressure"}
+                </div>
+              </div>
+              {savingsGoal ? (
+                <HealthArc pct={savingsPct} size={84} color={healthColor} />
+              ) : (
+                headerDatePicker && <div>{headerDatePicker}</div>
+              )}
+            </div>
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>
+                  Spending {spendPct}% of earnings
+                </span>
+                <span style={{ fontSize: 10, color: "var(--cream-3)" }}>
+                  {sym}{(Number(stats.totalExpense || 0) / 1000).toFixed(1)}k / {sym}{(Number(stats.totalIncome || 0) / 1000).toFixed(1)}k
+                </span>
+              </div>
+              <ProgressLine value={Number(stats.totalExpense || 0)} max={Math.max(Number(stats.totalIncome || 0), 1)} color={spendPct < 65 ? "var(--jade)" : spendPct < 85 ? "var(--saffron)" : "var(--ember)"} />
+            </div>
+          </div>
+
+          {/* Stat chips */}
+          <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <StatChip label={viewMode === "month" ? "Earnings" : "Total Earned"} value={fmtMoney(stats.totalIncome, sym)} color="var(--jade)" sub={viewMode === "month" ? "All household income" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`} onClick={() => onNav("income")} />
+            <StatChip label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--saffron)" sub={`${stats.activeLoansCount || 0} active loan(s)`} onClick={() => onNav("emi")} />
+          </div>
+
+          {/* Trend sparkline */}
+          {trendData.length >= 3 && (
+            <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <div className="section-eyebrow">Income Trend</div>
+                {savingsGoal && headerDatePicker && <div>{headerDatePicker}</div>}
+              </div>
+              <Sparkline data={trendData} color="var(--jade)" height={40} />
+            </div>
+          )}
+
+          {/* EMI alert */}
+          {stats.upcomingEmis?.length > 0 && (
+            <div
+              className="anim-fade-up-3"
+              onClick={() => onNav("emi")}
+              style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
+                  {stats.upcomingEmis.length} EMI{stats.upcomingEmis.length !== 1 ? "s" : ""} due
+                </div>
+                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                  {stats.upcomingEmis[0]?.loanName || "EMI"} · Due {getPersonalEmiDueDay(stats.upcomingEmis[0]) || "this month"}
+                </div>
+              </div>
+              <RupeeDisplay amount={Number(stats.totalEmi || 0)} color="var(--saffron)" size={20} />
+            </div>
+          )}
+
+          {/* Recent transactions */}
+          <div className="anim-fade-up-4">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div className="section-eyebrow">Aaj Ka Hisaab</div>
+              <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--saffron)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>See all →</button>
+            </div>
+            {recentTxns.length > 0 ? (
+              <div className="card-leather" style={{ padding: "0 16px" }}>
+                {recentTxns.map((tx, i) => (
+                  <TimelineEntry key={i} {...tx} isLast={i === recentTxns.length - 1} delay={i * 50} />
+                ))}
+              </div>
+            ) : (
+              <WorkflowSetupCard title="No entries yet" description="Add salary, expenses, or EMIs to see your household cashflow here." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
+            )}
+          </div>
+
+          {/* Savings goal */}
+          <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
+
+
+        </div>
+        {onboardingGuide}
+      </div>
+    );
+  }
+
+  if (isFreelancerOrg) {
+    const netEarnings = Number(stats.profit || 0);
+    const collected = Number(stats.totalIncome || 0);
+    const expenses = Number(stats.totalExpense || 0);
+    const earningsPct = Math.min(100, Math.round((collected / Math.max(collected + expenses, 1)) * 100));
+    const freelancerTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
+
+    const freelancerRecentIncomes = (data.income || []).slice(0, 3).map(item => ({ label: item.description || item.source || "Payment", amount: Number(item.amount || 0), type: "in", category: item.category || "Income", date: item.date || "" }));
+    const freelancerRecentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
+    const freelancerRecentTxns = [...freelancerRecentIncomes, ...freelancerRecentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+
+    return (
+      <div className="ledger-screen">
+        <div className="ledger-block">
+
+          {/* Hero card */}
+          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="section-eyebrow" style={{ marginBottom: 6 }}>
+                  {MONTHS[month]} {year} · Freelancer Earnings
+                </div>
+                <div style={{ marginBottom: 4 }}>
+                  <RupeeDisplay amount={netEarnings} color={netEarnings >= 0 ? "var(--sky)" : "var(--ember)"} size={48} animate />
+                </div>
+                <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
+                  {netEarnings >= 0 ? "Net after expenses" : "Expenses ahead of collected work"}
+                </div>
+              </div>
+              <HealthArc pct={earningsPct} size={84} color="var(--sky)" />
+            </div>
+            {headerDatePicker && <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>Collected vs Expenses</span>
+                <span style={{ fontSize: 10, color: "var(--cream-3)" }}>{sym}{(collected / 1000).toFixed(1)}k in · {sym}{(expenses / 1000).toFixed(1)}k out</span>
+              </div>
+              <ProgressLine value={collected} max={Math.max(collected + expenses, 1)} color="var(--sky)" />
+            </div>
+          </div>
+
+          {/* Outstanding invoices callout */}
+          {stats.pendingInvoiceTotal > 0 && (
+            <div
+              className="anim-fade-up"
+              onClick={() => onNav("invoices")}
+              style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
+                  {stats.pendingInvoices.length} invoice{stats.pendingInvoices.length !== 1 ? "s" : ""} awaiting payment
+                </div>
+                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                  {stats.overdueInvoices?.length > 0 ? `${stats.overdueInvoices.length} overdue · ` : ""}Tap to follow up
+                </div>
+              </div>
+              <RupeeDisplay amount={Number(stats.pendingInvoiceTotal || 0)} color="var(--saffron)" size={20} />
+            </div>
+          )}
+
+          {/* Stat chips */}
+          <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+            <StatChip
+              label={viewMode === "month" ? "Collected" : "Total Collected"}
+              value={fmtMoney(stats.totalIncome, sym)}
+              color="var(--sky)"
+              sub={viewMode === "month" ? "Payments & paid invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
+              onClick={!isViewerMode ? () => onNav("income") : undefined}
+            />
+            <StatChip
+              label={viewMode === "month" ? "Expenses" : "Total Expenses"}
+              value={fmtMoney(stats.totalExpense, sym)}
+              color="var(--ember)"
+              sub={viewMode === "month" ? "Tools, travel, subscriptions" : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
+              onClick={!isViewerMode ? () => onNav("expenses") : undefined}
+            />
+          </div>
+
+          {/* Trend sparkline */}
+          {freelancerTrendData.length >= 3 && (
+            <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
+              <div className="section-eyebrow" style={{ marginBottom: 10 }}>Earnings Trend</div>
+              <Sparkline data={freelancerTrendData} color="var(--sky)" height={40} />
+            </div>
+          )}
+
+          {/* Recent transactions */}
+          <div className="anim-fade-up-4">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div className="section-eyebrow">Recent Activity</div>
+              {!isViewerMode && (
+                <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--sky)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>All →</button>
+              )}
+            </div>
+            {freelancerRecentTxns.length > 0 ? (
+              <div className="card-leather" style={{ padding: "0 16px" }}>
+                {freelancerRecentTxns.map((tx, i) => (
+                  <TimelineEntry key={i} {...tx} isLast={i === freelancerRecentTxns.length - 1} delay={i * 50} />
+                ))}
+              </div>
+            ) : (
+              <WorkflowSetupCard title="No entries yet" description="Add client payments and work expenses to see your freelancer cashflow here." actionLabel={!isViewerMode ? "Log Payment" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+            )}
+          </div>
+
+          {/* Invoice Follow-up */}
+          <div className="anim-fade-up-5" style={{ marginTop: 14 }}>
+            <Collapsible title="Invoice Follow-up" icon="◎" color="var(--sky)" count={(stats.overdueInvoices?.length || 0) + (stats.dueSoonInvoices?.length || 0)} defaultOpen>
+              <div className="card">
+                {(stats.overdueInvoices?.length || 0) === 0 && (stats.dueSoonInvoices?.length || 0) === 0 ? (
+                  <WorkflowSetupCard title="No invoice follow-up right now" description="Your open client invoices are either paid or not near their due date yet." tone="success" />
+                ) : (
+                  [...(stats.overdueInvoices || []), ...(stats.dueSoonInvoices || []).filter(inv => !(stats.overdueInvoices || []).some(o => o.id === inv.id))].slice(0, 6).map(invoice => (
+                    <div key={invoice.id} className="ledger-feed-row">
+                      <div className="ledger-feed-main">
+                        <div className="ledger-feed-title">{invoice.number || "Invoice"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                          {[invoice.customer?.name || invoice.billTo?.name || "No client", invoice.dueDate ? `Due ${invoice.dueDate}` : "No due date"].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                      <div className="ledger-feed-side">
+                        <div className="ledger-feed-amount" style={{ color: getInvoiceStatusColor(invoice.status || invoice.computedStatus || "pending") }}>{fmtMoney(invoice.total || 0, sym)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{getInvoiceStatusLabel(invoice.status || invoice.computedStatus || "pending")}</div>
+                      </div>
                     </div>
                   ))
                 )}
@@ -674,285 +999,26 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </Collapsible>
           </div>
 
-        </div>
-
-        {onboardingGuide}
-      </div>
-    );
-  }
-
-  if (isPersonalOrg) {
-    const personalHeroSub = viewMode === "month"
-      ? (stats.netAfterEmi >= 0 ? "Your earnings are covering spending and EMI commitments this month." : "Household cash flow is under pressure this month.")
-      : (stats.netAfterEmi >= 0 ? "Your household stayed ahead of spending and EMI commitments this year." : "Household cash flow is under pressure this year.");
-    return (
-      <div className="ledger-screen">
-        <div className="ledger-block">
-          <WorkflowActionStrip title={personalSummary.title} subtitle={personalSummary.subtitle} actions={personalActions} />
-          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--gold)", ...statsStyle }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                  Household Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: stats.netAfterEmi >= 0 ? "var(--accent)" : "var(--danger)" }}>
-                  {stats.netAfterEmi < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{personalHeroSub}</div>
-              </div>
-              {headerDatePicker && <div>{headerDatePicker}</div>}
-            </div>
-          </div>
-          <div className="ledger-summary-grid">
-            <Tile label={viewMode === "month" ? "Earnings" : "Total Earnings"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "All household earnings" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
-            <Tile label={viewMode === "month" ? "Spending" : "Total Spending"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Household spending entries" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
-            <Tile label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--gold)" sub={viewMode === "month" ? `${stats.activeLoansCount || 0} active loan(s)` : `Avg ${fmtMoney(stats.avgMonthlyEmi, sym)}/month`} onClick={() => onNav("emi")} />
-            <Tile label="Spending Ratio" value={`${Math.round(stats.spendingRatio || 0)}%`} color={(stats.spendingRatio || 0) >= 100 ? "var(--danger)" : "var(--gold)"} sub="Spending as a share of earnings" />
-          </div>
-
-          <PersonalUsagePie stats={stats} sym={sym} viewMode={viewMode} isMobile={isMobile} />
-
-          <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
-
-          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="card">
-              {top5Expenses.length === 0 ? (
-                <WorkflowSetupCard title="No expenses this period" description="Add spending entries to see your biggest expenses here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
-              ) : (
-                top5Expenses.map((expense, index) => (
-                  <div key={expense.id || index} className="ledger-feed-row">
-                    <div className="ledger-feed-main" style={{ minWidth: 0 }}>
-                      <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="EMI Tracker" icon="◎" color="var(--gold)" count={stats.upcomingEmis.length} defaultOpen>
-            <div className="card">
-              {stats.upcomingEmis.length === 0 ? (
-                <WorkflowSetupCard title="No EMI records yet" description="Add your active EMIs to track due dates and balances." actionLabel="Go to EMIs" onAction={() => onNav("emi")} tone="warning" />
-              ) : (
-                stats.upcomingEmis.map(emi => (
-                  <div key={emi.id || emi.loanName} className="ledger-feed-row">
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>{emi.loanName || "EMI"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[emi.lender || "", getPersonalEmiDueDay(emi) ? `Due on ${getPersonalEmiDueDay(emi)}` : "No due date", emi.endDate ? `Ends ${emi.endDate}` : ""].filter(Boolean).join(" · ")}</div>
-                    </div>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(emi.monthlyEmi, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Spending Mix" icon="💸" color="var(--danger)" count={stats.topExpenseCategories.length} defaultOpen={stats.topExpenseCategories.length > 0}>
-            <div className="card">
-              {stats.topExpenseCategories.length === 0 ? (
-                <WorkflowSetupCard title="No spending tracked yet" description="Add spending entries to see where the household budget is going." actionLabel="Go to Spending" onAction={() => onNav("expenses")} tone="danger" />
-              ) : (
-                stats.topExpenseCategories.map(category => (
-                  <div key={category.category} className="ledger-feed-row">
-                    <span style={{ fontSize: 15, color: "var(--text)" }}>{category.category}</span>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(category.amount, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Smart Suggestions" icon="◎" color="var(--blue)" count={stats.actionTips.length} defaultOpen>
-            <div className="card">
-              {stats.actionTips.map((tip, index) => (
-                <div key={`${tip.title}-${index}`} className="ledger-feed-row">
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--blue)" }}>{tip.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{tip.message}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Collapsible>
-        </div>
-
-        {onboardingGuide}
-      </div>
-    );
-  }
-
-  if (isFreelancerOrg) {
-    const freelancerHeroSub = viewMode === "month"
-      ? (stats.pendingInvoiceTotal > 0
-        ? `You have ${fmtMoney(stats.pendingInvoiceTotal, sym)} awaiting from clients this month.`
-        : stats.profit >= 0
-          ? "Collected work is covering freelancer costs this month."
-          : "Expenses are ahead of collected work this month.")
-      : (stats.pendingInvoiceTotal > 0
-        ? `You still have ${fmtMoney(stats.pendingInvoiceTotal, sym)} open across this year's invoices.`
-        : stats.profit >= 0
-          ? "Your freelance work stayed cash-positive this year."
-          : "Expenses are ahead of collected work this year.");
-    const freelancerCashFlow = viewMode === "month" ? (stats.cashFlow || []) : (stats.monthlyBreakdown || []);
-    const freelancerMaxCashFlow = Math.max(1, ...freelancerCashFlow.map(item => Math.max(item.income, item.expenses)));
-
-    return (
-      <div className="ledger-screen">
-        <div className="ledger-block">
-          <WorkflowActionStrip title={freelancerSummary.title} subtitle={freelancerSummary.subtitle} actions={freelancerActions} />
-
-          <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--blue)", ...statsStyle }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                  Freelancer Dashboard · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
-                </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
-                  {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{freelancerHeroSub}</div>
-              </div>
-              {headerDatePicker && <div>{headerDatePicker}</div>}
-            </div>
-          </div>
-          <div className="ledger-summary-grid">
-            <Tile label={viewMode === "month" ? "Collected" : "Total Collected"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={viewMode === "month" ? "Payments logged plus paid client invoices" : `Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} onClick={() => onNav("income")} />
-            <Tile label={viewMode === "month" ? "Expenses" : "Total Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={viewMode === "month" ? "Tools, travel, subscriptions, and delivery costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} onClick={() => onNav("expenses")} />
-            <Tile label="Awaiting Payments" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} client invoice(s) still open`} onClick={() => onNav("invoices")} />
-            <Tile label="Overdue Invoices" value={String(stats.overdueInvoices.length || 0)} color="var(--blue)" sub="Client invoices that need immediate follow-up" onClick={() => onNav("invoices")} />
-            <Tile label="Billable Costs" value={fmtMoney(stats.billableExpenseTotal || 0, sym)} color="var(--purple)" sub="Expenses marked to recharge to clients" onClick={() => onNav("expenses")} />
-            <Tile label="Clients" value={String(stats.trackedClientsCount || 0)} color="var(--blue)" sub="Across client records, payments, and invoices" onClick={() => onNav("settings")} />
-          </div>
-
-          <Collapsible title="Invoice Follow-up" icon="◎" color="var(--blue)" count={(stats.overdueInvoices.length || 0) + (stats.dueSoonInvoices.length || 0)} defaultOpen>
-            <div className="card">
-              {stats.overdueInvoices.length === 0 && stats.dueSoonInvoices.length === 0 ? (
-                <WorkflowSetupCard title="No invoice follow-up right now" description="Your open client invoices are either paid or not near their due date yet." tone="success" />
-              ) : (
-                [...stats.overdueInvoices, ...stats.dueSoonInvoices.filter(invoice => !stats.overdueInvoices.some(overdue => overdue.id === invoice.id))].slice(0, 6).map(invoice => (
-                  <div key={invoice.id} className="ledger-feed-row">
-                    <div className="ledger-feed-main">
-                      <div className="ledger-feed-title">{invoice.number || "Invoice"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                        {[invoice.customer?.name || invoice.billTo?.name || "No client", invoice.dueDate ? `Due ${invoice.dueDate}` : "No due date"].filter(Boolean).join(" · ")}
+          {/* Top Expenses */}
+          {top5Expenses.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--ember)" count={top5Expenses.length} defaultOpen={false}>
+                <div className="card">
+                  {top5Expenses.map((expense, index) => (
+                    <div key={expense.id || index} className="ledger-feed-row">
+                      <div className="ledger-feed-main" style={{ minWidth: 0 }}>
+                        <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                       </div>
-                    </div>
-                    <div className="ledger-feed-side">
-                      <div className="ledger-feed-amount" style={{ color: getInvoiceStatusColor(invoice.status || invoice.computedStatus || "pending") }}>{fmtMoney(invoice.total || 0, sym)}</div>
-                      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>{getInvoiceStatusLabel(invoice.status || invoice.computedStatus || "pending")}</div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Client Snapshot" icon="⭐" color="var(--blue)" count={showAdvanced ? stats.topCustomers.length : 0} defaultOpen={showAdvanced && stats.topCustomers.length > 0}>
-            <div className="card">
-              {!showAdvanced ? (
-                <WorkflowSetupCard title="Client insights are on Pro" description="Upgrade to Pro to see your strongest clients and outstanding balances in one place." tone="info" />
-              ) : stats.topCustomers.length === 0 ? (
-                <WorkflowSetupCard title="No client billing yet" description="Create invoices or log client payments to see who brings in the most work." actionLabel="Go to Invoices" onAction={() => onNav("invoices")} tone="info" />
-              ) : (
-                stats.topCustomers.map(client => (
-                  <div key={client.name} className="ledger-feed-row">
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <Avatar name={client.name} size={38} fontSize={13} />
-                      <div className="ledger-feed-main">
-                        <div className="ledger-feed-title">{client.name}</div>
-                        <div className="ledger-feed-meta">Open balance {fmtMoney(client.balance, sym)}</div>
-                      </div>
-                    </div>
-                    <span className="ledger-feed-amount" style={{ color: "var(--blue)" }}>{fmtMoney(client.revenue, sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
-
-          <Collapsible title="Freelancer Alerts" icon="🚨" color="var(--gold)" count={showAdvanced ? stats.alertItems.length : 0} defaultOpen={showAdvanced && stats.alertItems.length > 0}>
-            {!showAdvanced ? (
-              <div className="card">
-                <WorkflowSetupCard title="Freelancer alerts are on Pro" description="Upgrade to Pro for overdue invoice alerts, spending spikes, and payment follow-up reminders." tone="warning" />
-              </div>
-            ) : stats.alertItems.length === 0 ? (
-              <div className="card">
-                <WorkflowSetupCard title="No freelancer alerts right now" description="Payments, open invoices, and spending look steady for the selected period." tone="success" />
-              </div>
-            ) : (
-              <div className="card">
-                {stats.alertItems.map((alert, index) => {
-                  const color = alert.tone === "danger" ? "var(--danger)" : "var(--gold)";
-                  return (
-                    <div key={`${alert.title}-${index}`} className="ledger-feed-row">
-                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginTop: 6, flexShrink: 0 }} />
-                      <div className="ledger-feed-main">
-                        <div className="ledger-feed-title" style={{ color }}>{alert.title}</div>
-                        <div className="ledger-feed-meta">{alert.message}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Collapsible>
-
-          <Collapsible title="Cash Flow Trend" icon="📊" color="var(--blue)" defaultOpen={false}>
-            <div className="card" style={{ padding: "18px" }}>
-              {!showAdvanced ? (
-                <WorkflowSetupCard title="Cash flow trend is on Pro" description={viewMode === "month" ? "Upgrade to Pro to see your six-month freelancer cash flow trend." : "Upgrade to Pro to see your yearly freelancer cash flow trend."} tone="info" />
-              ) : viewMode === "month" ? (
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
-                  {stats.cashFlow.map(item => (
-                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                      <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
-                        <div style={{ width: 12, height: `${Math.max(10, (item.income / freelancerMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                        <div style={{ width: 12, height: `${Math.max(10, (item.expenses / freelancerMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)" }}>{item.shortLabel}</div>
-                      <div style={{ fontSize: 11, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
+                      <span className="ledger-feed-amount" style={{ color: "var(--ember)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(12, minmax(28px, 1fr))" : "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
-                  {stats.monthlyBreakdown.map(item => (
-                    <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                      <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
-                        <div style={{ width: 8, height: `${Math.max(8, (item.income / freelancerMaxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                        <div style={{ width: 8, height: `${Math.max(8, (item.expenses / freelancerMaxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                      </div>
-                      <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
-                      <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              </Collapsible>
             </div>
-          </Collapsible>
+          )}
 
-          <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
-            <div className="card">
-              {top5Expenses.length === 0 ? (
-                <WorkflowSetupCard title="No expenses this period" description="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
-              ) : (
-                top5Expenses.map((expense, index) => (
-                  <div key={expense.id || index} className="ledger-feed-row">
-                    <div className="ledger-feed-main" style={{ minWidth: 0 }}>
-                      <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
-                    </div>
-                    <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </Collapsible>
         </div>
-
         {onboardingGuide}
       </div>
     );
@@ -961,110 +1027,163 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   return (
     <div className="ledger-screen">
       <div className="ledger-block">
-        <WorkflowActionStrip title={businessSummary.title} subtitle={businessSummary.subtitle} actions={businessActions} />
-        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: `4px solid ${heroTone}`, ...statsStyle }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: heroTone, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                {isSmallBusinessOrg ? "Small Business Dashboard" : "Smart Dashboard"} · {viewMode === "month" ? `${MONTHS[month]} ${year}` : `${year}`}
+
+        {/* Hero card */}
+        <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="section-eyebrow" style={{ marginBottom: 6 }}>
+                {MONTHS[month]} {year} · {isSmallBusinessOrg ? "Business Overview" : "Smart Dashboard"}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: heroTone }}>
-                {stats.profit < 0 ? "-" : ""}{fmtMoney(Math.abs(stats.profit), sym)}
+              <div style={{ marginBottom: 4 }}>
+                <RupeeDisplay amount={Number(stats.profit || 0)} color={Number(stats.profit || 0) >= 0 ? "var(--jade)" : "var(--ember)"} size={48} animate />
               </div>
-              <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{heroSub}</div>
+              <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
+                {Number(stats.profit || 0) >= 0 ? "Net business profit" : "Expenses ahead of revenue"}
+              </div>
             </div>
-            {headerDatePicker && <div>{headerDatePicker}</div>}
+            <HealthArc pct={Math.min(100, Math.round((Number(stats.totalIncome || 0) / Math.max(Number(stats.totalIncome || 0) + Number(stats.totalExpense || 0), 1)) * 100))} size={84} color="var(--jade)" />
+          </div>
+          {headerDatePicker && <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>Revenue vs Expenses</span>
+              <span style={{ fontSize: 10, color: "var(--cream-3)" }}>{sym}{(Number(stats.totalIncome || 0) / 1000).toFixed(1)}k in · {sym}{(Number(stats.totalExpense || 0) / 1000).toFixed(1)}k out</span>
+            </div>
+            <ProgressLine value={Number(stats.totalIncome || 0)} max={Math.max(Number(stats.totalIncome || 0) + Number(stats.totalExpense || 0), 1)} color={Number(stats.profit || 0) >= 0 ? "var(--jade)" : "var(--ember)"} />
           </div>
         </div>
+
+        {/* Plan / review access banner */}
         {!activeSharedOrgKey && (reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (
-          <div style={{ marginBottom: 18, padding: "12px 14px", background: reviewAccessEnabled ? "var(--blue-deep)" : currentPlan === PLANS.FREE ? "var(--gold-deep)" : "var(--accent-deep)", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div style={{ marginBottom: 14, padding: "12px 14px", background: reviewAccessEnabled ? "color-mix(in srgb, var(--sky) 8%, var(--canvas))" : currentPlan === PLANS.FREE ? "color-mix(in srgb, var(--saffron) 8%, var(--canvas))" : "color-mix(in srgb, var(--jade) 8%, var(--canvas))", borderRadius: 14, border: `1px solid color-mix(in srgb, ${reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)"} 22%, var(--line-2))`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
                 {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Upgrade to Pro" : "Pro Trial Active"}
               </div>
-              <div style={{ fontSize: 12, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold-text)" : "var(--accent-text)", marginTop: 2 }}>
-                {reviewAccessEnabled ? "All premium features are unlocked right now and upgrade prompts are turned off." : currentPlan === PLANS.FREE ? "Unlock reports, PDF exports, alerts, and a 30-day free trial" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
+              <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Unlock reports, PDF exports, alerts, and a 30-day free trial" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
               </div>
             </div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--blue)" : currentPlan === PLANS.FREE ? "var(--gold)" : "var(--accent)", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", whiteSpace: "nowrap" }}>
               {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "Rs 69/mo" : ""}
             </div>
           </div>
         )}
 
-        <div className="ledger-summary-grid">
-          {viewMode === "month" ? (
-            <>
-          <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash In" : "Sales"} value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={isSmallBusinessOrg && !hasPosSystem ? "Payments and collections received" : isSmallBusinessOrg ? "Customer payments, advances, and paid invoices" : "Manual + invoice sales"} onClick={() => onNav("income")} />
-              <Tile label={isSmallBusinessOrg && !hasPosSystem ? "Cash Out" : "Expenses"} value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={isSmallBusinessOrg && !hasPosSystem ? "Supplies, rent, and bills" : "Recurring and one-time costs"} onClick={() => onNav("expenses")} />
-              {isSmallBusinessOrg && !hasPosSystem ? (
-                <>
-                  <Tile label="Paisa Baaki — Owed to Me" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending collection(s)`} onClick={() => onNav("income")} />
-                  <Tile label="I Owe" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--blue)" sub={`${(stats.partnersWithBalance || []).length} supplier / vendor due`} onClick={() => onNav("settings")} />
-                </>
-              ) : isSmallBusinessOrg ? (
-                <>
-                  <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} pending sale(s)`} onClick={() => onNav("income")} />
-                  <Tile label="Refunds Issued" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
-                  <Tile label="Low Stock (<threshold)" value={String((stats.lowStockProducts || []).length)} color={(stats.lowStockProducts || []).length ? "var(--gold)" : "var(--accent)"} sub={`${stats.totalProductsCount || 0} product(s) tracked`} onClick={() => onNav("settings")} />
-                </>
-              ) : (
-                <>
-                  <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-                  {showAdvanced ? (
-                    <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${stats.burnRateDays} days`} color="var(--blue)" sub={stats.burnRateDays === null ? "Add expenses to unlock this metric" : "Estimated runway from this month's free cash"} />
-                  ) : (
-                    <Tile label="Advanced Metrics" value="Pro" color="var(--blue)" sub="Upgrade to unlock burn rate & more" onClick={() => {}} />
-                  )}
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <Tile label="Total Sales" value={fmtMoney(stats.totalIncome, sym)} color="var(--accent)" sub={`Avg ${fmtMoney(stats.avgMonthlyIncome, sym)}/month`} />
-              <Tile label="Total Expenses" value={fmtMoney(stats.totalExpense, sym)} color="var(--danger)" sub={`Avg ${fmtMoney(stats.avgMonthlyExpense, sym)}/month`} />
-              {isSmallBusinessOrg && !hasPosSystem ? (
-                <>
-                  <Tile label="Pending Collections" value={fmtMoney(stats.pendingSalesTotal || 0, sym)} color="var(--gold)" sub={`${stats.pendingSalesCount || 0} awaiting payment this year`} onClick={() => onNav("income")} />
-                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--blue)" sub={`${(stats.partnersWithBalance || []).length} supplier(s) outstanding`} onClick={() => onNav("settings")} />
-                </>
-              ) : isSmallBusinessOrg ? (
-                <>
-                  <Tile label="Partner Dues" value={fmtMoney(stats.partnerBalanceTotal || 0, sym)} color="var(--gold)" sub={`${(stats.partnersWithBalance || []).length} partner account(s) still open`} onClick={() => onNav("settings")} />
-                  <Tile label="Refunded Sales" value={fmtMoney(stats.refundedSalesTotal || 0, sym)} color="var(--danger)" sub={`${stats.refundedSalesCount || 0} refunded sale(s)`} onClick={() => onNav("income")} />
-                </>
-              ) : (
-                <>
-                  <Tile label="Pending Invoices" value={fmtMoney(stats.pendingInvoiceTotal, sym)} color="var(--gold)" sub={`${stats.pendingInvoices.length} awaiting payment`} onClick={() => onNav("invoices")} />
-                  <Tile label="Burn Rate" value={stats.burnRateDays === null ? "--" : `${Math.floor(stats.burnRateDays / 12)} months`} color="var(--blue)" sub="Estimated yearly runway" />
-                </>
-              )}
-            </>
-          )}
+        {/* Stat chips */}
+        <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <StatChip
+            label={isSmallBusinessOrg && !hasPosSystem ? (viewMode === "month" ? "Cash In" : "Total Cash In") : (viewMode === "month" ? "Sales" : "Total Sales")}
+            value={fmtMoney(stats.totalIncome, sym)}
+            color="var(--jade)"
+            sub={viewMode === "month" ? (isSmallBusinessOrg && !hasPosSystem ? "Payments received" : "Revenue collected") : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
+            onClick={!isViewerMode ? () => onNav("income") : undefined}
+          />
+          <StatChip
+            label={isSmallBusinessOrg && !hasPosSystem ? (viewMode === "month" ? "Cash Out" : "Total Cash Out") : (viewMode === "month" ? "Expenses" : "Total Expenses")}
+            value={fmtMoney(stats.totalExpense, sym)}
+            color="var(--ember)"
+            sub={viewMode === "month" ? (isSmallBusinessOrg && !hasPosSystem ? "Supplies, rent, bills" : "Recurring and one-time costs") : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
+            onClick={!isViewerMode ? () => onNav("expenses") : undefined}
+          />
         </div>
+
+        {/* Trend sparkline */}
+        {(() => {
+          const bizTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
+          return bizTrendData.length >= 3 ? (
+            <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
+              <div className="section-eyebrow" style={{ marginBottom: 10 }}>Revenue Trend</div>
+              <Sparkline data={bizTrendData} color="var(--jade)" height={40} />
+            </div>
+          ) : null;
+        })()}
+
+        {/* Pending dues callout */}
+        {isSmallBusinessOrg && !hasPosSystem && (stats.pendingSalesTotal || 0) > 0 && (
+          <div
+            className="anim-fade-up-3"
+            onClick={() => onNav("income")}
+            style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+          >
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
+                {stats.pendingSalesCount || 0} collection{(stats.pendingSalesCount || 0) !== 1 ? "s" : ""} pending
+              </div>
+              <div style={{ fontSize: 11, color: "var(--cream-3)" }}>Tap to see and follow up</div>
+            </div>
+            <RupeeDisplay amount={Number(stats.pendingSalesTotal || 0)} color="var(--saffron)" size={20} />
+          </div>
+        )}
+
+        {/* Pending invoices callout for non-small-business */}
+        {!isSmallBusinessOrg && (stats.pendingInvoiceTotal || 0) > 0 && (
+          <div
+            className="anim-fade-up-3"
+            onClick={() => onNav("invoices")}
+            style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+          >
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
+                {stats.pendingInvoices?.length || 0} invoice{(stats.pendingInvoices?.length || 0) !== 1 ? "s" : ""} awaiting payment
+              </div>
+              <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                {stats.overdueInvoices?.length > 0 ? `${stats.overdueInvoices.length} overdue · ` : ""}Tap to follow up
+              </div>
+            </div>
+            <RupeeDisplay amount={Number(stats.pendingInvoiceTotal || 0)} color="var(--saffron)" size={20} />
+          </div>
+        )}
+
+        {/* Recent transactions */}
+        {(() => {
+          const bizRecentIncomes = (data.income || []).slice(0, 3).map(item => ({ label: item.description || item.source || "Income", amount: Number(item.amount || 0), type: "in", category: item.category || "Sales", date: item.date || "" }));
+          const bizRecentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
+          const bizRecentTxns = [...bizRecentIncomes, ...bizRecentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+          return (
+            <div className="anim-fade-up-4">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div className="section-eyebrow">Recent Activity</div>
+                {!isViewerMode && (
+                  <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--jade)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>All →</button>
+                )}
+              </div>
+              {bizRecentTxns.length > 0 ? (
+                <div className="card-leather" style={{ padding: "0 16px" }}>
+                  {bizRecentTxns.map((tx, i) => (
+                    <TimelineEntry key={i} {...tx} isLast={i === bizRecentTxns.length - 1} delay={i * 50} />
+                  ))}
+                </div>
+              ) : (
+                <WorkflowSetupCard title="No entries yet" description="Add sales and expenses to see your business cashflow here." actionLabel={!isViewerMode ? "Add Entry" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              )}
+            </div>
+          );
+        })()}
 
         {isSmallBusinessOrg && !hasPosSystem && (
           <Collapsible
             title="Paisa Baaki"
             icon="🪙"
-            color="var(--gold)"
+            color="var(--saffron)"
             count={(stats.pendingCustomers || []).length + (stats.partnersWithBalance || []).length}
             defaultOpen={(stats.pendingCustomers || []).length > 0 || (stats.partnersWithBalance || []).length > 0}
           >
             <div className="card">
               {(stats.pendingCustomers || []).length > 0 && (
                 <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--saffron)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
                     Owed to Me
                   </div>
                   {stats.pendingCustomers.slice(0, 5).map(customer => (
-                    <FeedRow key={customer.name} title={customer.name} amount={fmtMoney(customer.amount, sym)} amountColor="var(--gold)" />
+                    <FeedRow key={customer.name} title={customer.name} amount={fmtMoney(customer.amount, sym)} amountColor="var(--saffron)" />
                   ))}
                 </>
               )}
               {(stats.partnersWithBalance || []).length > 0 && (
                 <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sky)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
                     I Owe
                   </div>
                   {stats.partnersWithBalance.slice(0, 5).map(partner => (
@@ -1073,52 +1192,49 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                       title={partner.partnerName}
                       meta={partner.contact || "No contact added"}
                       amount={fmtMoney(partner.balanceDue, sym)}
-                      amountColor="var(--blue)"
+                      amountColor="var(--sky)"
                     />
                   ))}
                 </>
               )}
               {(stats.pendingCustomers || []).length === 0 && (stats.partnersWithBalance || []).length === 0 && (
-                  <WorkflowSetupCard title="All clear" description="No pending collections and no outstanding dues to suppliers or vendors this month." tone="success" />
+                <WorkflowSetupCard title="All clear" description="No pending collections and no outstanding dues to suppliers or vendors this month." tone="success" />
               )}
             </div>
           </Collapsible>
         )}
 
         {isSmallBusinessOrg && hasPosSystem && (
-          <>
-            <Collapsible
-              title="Partner Balances"
-              icon="🏷"
-              color="var(--gold)"
-              count={stats.partnersWithBalance.length || 0}
-              defaultOpen={stats.partnersWithBalance.length > 0}
-            >
-              <div className="card">
-                {stats.partnersCount === 0 ? (
-                  <WorkflowSetupCard title="No partners added yet" description="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} tone="warning" />
-                ) : stats.partnersWithBalance.length === 0 ? (
-                  <WorkflowSetupCard title="Partner balances are clear" description="No outstanding partner or vendor dues are recorded right now." tone="success" />
-                ) : (
-                  stats.partnersWithBalance.slice(0, 5).map(partner => (
-                    <FeedRow
-                      key={partner.partnerName}
-                      title={partner.partnerName}
-                      meta={partner.contact || "No contact added"}
-                      amount={fmtMoney(partner.balanceDue, sym)}
-                      amountColor="var(--gold)"
-                    />
-                  ))
-                )}
-              </div>
-            </Collapsible>
-          </>
+          <Collapsible
+            title="Partner Balances"
+            icon="🏷"
+            color="var(--saffron)"
+            count={stats.partnersWithBalance.length || 0}
+            defaultOpen={stats.partnersWithBalance.length > 0}
+          >
+            <div className="card">
+              {stats.partnersCount === 0 ? (
+                <WorkflowSetupCard title="No partners added yet" description="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} tone="warning" />
+              ) : stats.partnersWithBalance.length === 0 ? (
+                <WorkflowSetupCard title="Partner balances are clear" description="No outstanding partner or vendor dues are recorded right now." tone="success" />
+              ) : (
+                stats.partnersWithBalance.slice(0, 5).map(partner => (
+                  <FeedRow
+                    key={partner.partnerName}
+                    title={partner.partnerName}
+                    meta={partner.contact || "No contact added"}
+                    amount={fmtMoney(partner.balanceDue, sym)}
+                    amountColor="var(--saffron)"
+                  />
+                ))
+              )}
+            </div>
+          </Collapsible>
         )}
 
-
-        <Collapsible 
-          title="Smart Alerts" 
-          icon="🚨" 
+        <Collapsible
+          title="Smart Alerts"
+          icon="🚨"
           count={showAdvanced ? stats.alertItems.length : 0}
           defaultOpen={showAdvanced && stats.alertItems.length > 0}
         >
@@ -1148,126 +1264,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           )}
         </Collapsible>
 
-        <Collapsible 
-          title="Cash Flow Trend" 
-          icon="📊" 
-          color="var(--blue)"
-          defaultOpen={false}
-        >
-          <div className="card" style={{ padding: "18px" }}>
-            {!showAdvanced ? (
-              <WorkflowSetupCard title="Cash flow trend is on Pro" description={viewMode === "month" ? "Upgrade to Pro to see your six-month cash flow trend and business runway insights." : "Upgrade to Pro to see your yearly cash flow trend and business runway insights."} tone="info" />
-            ) : viewMode === "month" ? (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(6, minmax(42px, 1fr))" : "repeat(6, 1fr)", gap: 8, alignItems: "end", height: 180 }}>
-              {stats.cashFlow.map(item => (
-                <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  <div style={{ display: "flex", alignItems: "end", gap: 4, height: 132 }}>
-                    <div style={{ width: 12, height: `${Math.max(10, (item.income / maxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                    <div style={{ width: 12, height: `${Math.max(10, (item.expenses / maxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                  </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)" }}>{item.shortLabel}</div>
-                  <div style={{ fontSize: 11, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                </div>
-              ))}
-            </div>
-            ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(12, minmax(28px, 1fr))" : "repeat(12, 1fr)", gap: 6, alignItems: "end", height: 180 }}>
-              {stats.monthlyBreakdown.map(item => (
-                <div key={item.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                  <div style={{ display: "flex", alignItems: "end", gap: 2, height: 132 }}>
-                    <div style={{ width: 8, height: `${Math.max(8, (item.income / maxCashFlow) * 120)}px`, background: "var(--accent)", borderRadius: 999 }} />
-                    <div style={{ width: 8, height: `${Math.max(8, (item.expenses / maxCashFlow) * 120)}px`, background: "var(--danger)", borderRadius: 999 }} />
-                  </div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-dim)" }}>{item.label.slice(0, 1)}</div>
-                  <div style={{ fontSize: 10, color: item.net >= 0 ? "var(--accent)" : "var(--danger)" }}>{item.net >= 0 ? "+" : "-"}{fmtMoney(Math.abs(item.net), sym)}</div>
-                </div>
-              ))}
-            </div>
-            )}
-          </div>
-        </Collapsible>
-
-        <Collapsible 
-          title="Top Expense Categories" 
-          icon="💰" 
-          color="var(--danger)"
-          count={showAdvanced ? stats.topExpenseCategories.length : 0}
-          defaultOpen={showAdvanced && stats.topExpenseCategories.length > 0}
-        >
-          <div className="card">
-            {!showAdvanced ? (
-              <WorkflowSetupCard title="Category insights are on Pro" description="Upgrade to Pro to see top expense categories and smarter spending analysis." tone="danger" />
-            ) : stats.topExpenseCategories.length === 0 ? (
-              <WorkflowSetupCard title="No expenses yet" description="Add your first expense entry to unlock category insights and spending trends." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
-            ) : (
-              stats.topExpenseCategories.map(category => (
-                <FeedRow key={category.category} title={category.category} amount={fmtMoney(category.amount, sym)} amountColor="var(--danger)" />
-              ))
-            )}
-          </div>
-        </Collapsible>
-
-        {!isSmallBusinessOrg && (
-        <Collapsible 
-          title="High-Risk Customers" 
-          icon="⚠️" 
-          color="var(--gold)"
-          count={showAdvanced ? stats.highRiskCustomers.length : 0}
-          defaultOpen={false}
-        >
-          <div className="card">
-            {!showAdvanced ? (
-              <WorkflowSetupCard title="Risk scoring is on Pro" description="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
-            ) : stats.highRiskCustomers.length === 0 ? (
-              <WorkflowSetupCard title="Healthy payment behaviour" description="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
-            ) : (
-              stats.highRiskCustomers.map(customer => (
-                <FeedRow
-                  key={customer.name}
-                  title={customer.name}
-                  meta={`${customer.overdueCount} overdue invoice(s)`}
-                  amount={`${Math.round(customer.lateRatio * 100)}% late`}
-                  amountColor="var(--danger)"
-                />
-              ))
-            )}
-          </div>
-        </Collapsible>
-        )}
-
-        {!isSmallBusinessOrg && (
-        <Collapsible 
-          title="Pending Invoice Queue" 
-          icon="⏰" 
-          color="var(--gold)"
-          count={stats.pendingInvoices.length}
-          defaultOpen={stats.pendingInvoices.length > 0}
-        >
-          <div className="card">
-            {stats.pendingInvoices.length === 0 ? (
-              <WorkflowSetupCard title="Nothing pending" description="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
-            ) : (
-              stats.pendingInvoices.slice(0, 4).map(invoice => {
-                const color = getInvoiceStatusColor(invoice.computedStatus);
-                return (
-                  <div key={invoice.id} className="ledger-feed-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
-                    <div className="ledger-feed-main">
-                      <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
-                    </div>
-                    <div className="ledger-feed-side">
-                      <div className="ledger-feed-amount" style={{ color: "var(--blue)" }}>{fmtMoney(invoice.total, sym)}</div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Collapsible>
-        )}
-
-        <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--danger)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
+        <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--ember)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
           <div className="card">
             {top5Expenses.length === 0 ? (
               <WorkflowSetupCard title="No expenses this period" description="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
@@ -1278,12 +1275,73 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                     <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
                     <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
                   </div>
-                  <span className="ledger-feed-amount" style={{ color: "var(--danger)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
+                  <span className="ledger-feed-amount" style={{ color: "var(--ember)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
                 </div>
               ))
             )}
           </div>
         </Collapsible>
+
+        {!isSmallBusinessOrg && (
+          <Collapsible
+            title="High-Risk Customers"
+            icon="⚠️"
+            color="var(--saffron)"
+            count={showAdvanced ? stats.highRiskCustomers.length : 0}
+            defaultOpen={false}
+          >
+            <div className="card">
+              {!showAdvanced ? (
+                <WorkflowSetupCard title="Risk scoring is on Pro" description="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
+              ) : stats.highRiskCustomers.length === 0 ? (
+                <WorkflowSetupCard title="Healthy payment behaviour" description="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
+              ) : (
+                stats.highRiskCustomers.map(customer => (
+                  <FeedRow
+                    key={customer.name}
+                    title={customer.name}
+                    meta={`${customer.overdueCount} overdue invoice(s)`}
+                    amount={`${Math.round(customer.lateRatio * 100)}% late`}
+                    amountColor="var(--danger)"
+                  />
+                ))
+              )}
+            </div>
+          </Collapsible>
+        )}
+
+        {!isSmallBusinessOrg && (
+          <Collapsible
+            title="Pending Invoice Queue"
+            icon="⏰"
+            color="var(--saffron)"
+            count={stats.pendingInvoices.length}
+            defaultOpen={stats.pendingInvoices.length > 0}
+          >
+            <div className="card">
+              {stats.pendingInvoices.length === 0 ? (
+                <WorkflowSetupCard title="Nothing pending" description="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
+              ) : (
+                stats.pendingInvoices.slice(0, 4).map(invoice => {
+                  const color = getInvoiceStatusColor(invoice.computedStatus);
+                  return (
+                    <div key={invoice.id} className="ledger-feed-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
+                      <div className="ledger-feed-main">
+                        <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
+                      </div>
+                      <div className="ledger-feed-side">
+                        <div className="ledger-feed-amount" style={{ color: "var(--sky)" }}>{fmtMoney(invoice.total, sym)}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </Collapsible>
+        )}
+
       </div>
 
       {onboardingGuide}
