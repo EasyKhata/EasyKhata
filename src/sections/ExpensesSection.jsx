@@ -91,6 +91,15 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
+  const showExpenseNote = isSmallBusinessOrg;
+  const visibleExpenseFields = useMemo(
+    () => (config.expenseFields || []).filter(field => {
+      if (isPersonalOrg && field.key === "necessityType") return false;
+      if (isApartmentOrg && field.key === "expenseType") return false;
+      return true;
+    }),
+    [config.expenseFields, isApartmentOrg, isPersonalOrg]
+  );
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
   const categoryOptions = useMemo(() => {
@@ -234,7 +243,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   useEffect(() => {
-    function handleOpenAdd() { openNew(); }
+    function handleOpenAdd(event) {
+      if (event?.detail?.section && event.detail.section !== "expenses") return;
+      openNew();
+    }
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -259,7 +271,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     next.note = expense.note || "";
     next.teamMemberName = expense.teamMemberName || "";
     next.partnerName = expense.partnerName || "";
-    (config.expenseFields || []).forEach(field => {
+    visibleExpenseFields.forEach(field => {
       next[field.key] = expense[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
     setEditId(expense.id);
@@ -333,14 +345,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       label: form.label.trim(),
       amount: Number(form.amount),
       category: form.category,
-      note: form.note.trim(),
+      ...(showExpenseNote ? { note: form.note.trim() } : {}),
       date: form.date,
       recurring: isPersonalOrg ? false : form.recurring,
       teamMemberName: String(form.teamMemberName || "").trim(),
       partnerName: String(form.partnerName || "").trim()
     };
 
-    (config.expenseFields || []).forEach(field => {
+    visibleExpenseFields.forEach(field => {
       payload[field.key] = String(form[field.key] || "").trim();
     });
 
@@ -378,7 +390,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function expenseMeta(expense) {
-    const extras = (config.expenseFields || [])
+    const extras = visibleExpenseFields
       .map(field => expense[field.key])
       .filter(Boolean)
       .join(" - ");
@@ -690,7 +702,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             </div>
             <div className="ledger-form-group compact">
               <div className="ledger-form-group-title">Entry details</div>
-              {(config.expenseFields || []).map(field => (
+              {visibleExpenseFields.map(field => (
               <Field key={field.key} label={field.label} error={field.key === "personName" ? errors.personName : undefined}>
                 {isPersonalOrg && field.key === "personName"
                   ? (
@@ -758,9 +770,11 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             </div>
             <div className="ledger-form-group compact">
               <div className="ledger-form-group-title">Optional</div>
-              <Field label="Note">
-                <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
-              </Field>
+              {showExpenseNote && (
+                <Field label="Note">
+                  <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
+                </Field>
+              )}
             </div>
           </div>
         </Modal>

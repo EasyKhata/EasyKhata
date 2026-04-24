@@ -79,13 +79,12 @@ export const ORG_TYPE_CONFIGS = {
         key: "loans",
         label: "Loans & EMI",
         entryLabel: "EMI",
-        empty: () => ({ loanName: "", personName: "", lender: "", monthlyEmi: "", startDate: "", dueDay: "1", endDate: "" }),
+        empty: () => ({ loanName: "", personName: "", lender: "", monthlyEmi: "", dueDay: "1", endDate: "" }),
         fields: [
           { key: "loanName", label: "Loan / EMI Name", type: "text", required: true, placeholder: "Home loan" },
           { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
           { key: "lender", label: "Lender", type: "text", required: true, placeholder: "Bank or person name" },
           { key: "monthlyEmi", label: "Monthly EMI", type: "number", required: true, placeholder: "0.00" },
-          { key: "startDate", label: "Start Date", type: "date" },
           { key: "dueDay", label: "Due Date", type: "select", required: true, options: Array.from({ length: 31 }, (_, index) => String(index + 1)) },
           { key: "endDate", label: "End Date", type: "date", required: true }
         ]

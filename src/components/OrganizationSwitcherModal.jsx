@@ -14,7 +14,7 @@ export default function OrganizationSwitcherModal({
   const canDelete = organizations.length > 1;
 
   return (
-    <Modal title="Switch Khata" onClose={onClose}>
+    <Modal title="Manage Khatas" onClose={onClose}>
       <div className="ledger-feed-card">
         {organizations.map(org => {
           const isActiveOrg = org.id === activeOrgId;

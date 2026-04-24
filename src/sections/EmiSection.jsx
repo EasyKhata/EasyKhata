@@ -122,12 +122,12 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   }, []);
 
   useEffect(() => {
-    if (!showForm || !form.startDate || !form.endDate) return;
-    const minEnd = nextMonthStart(form.startDate);
+    if (!showForm || !form.endDate) return;
+    const minEnd = nextMonthStart(CURRENT_MONTH_START);
     if (form.endDate < minEnd) {
       setForm(current => ({ ...current, endDate: "" }));
     }
-  }, [form.startDate, form.endDate, showForm]);
+  }, [form.endDate, showForm]);
 
   const peopleOptions = useMemo(() => getPeopleOptions(d.customers), [d.customers]);
   const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => getPersonalEmiDueDay(a) - getPersonalEmiDueDay(b));
@@ -177,7 +177,10 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   }
 
   useEffect(() => {
-    function handleOpenAdd() { openNew(); }
+    function handleOpenAdd(event) {
+      if (event?.detail?.section && event.detail.section !== "emi") return;
+      openNew();
+    }
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -188,7 +191,6 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
       ...buildBlankForm(emiSection),
       ...record,
       monthlyEmi: String(record.monthlyEmi ?? record.emiAmount ?? ""),
-      startDate: record.startDate || "",
       dueDay: String(getPersonalEmiDueDay(record) || "1"),
       endDate: record.endDate || ""
     });
@@ -216,18 +218,12 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     const dueDay = Number(form.dueDay);
     if (!Number.isFinite(dueDay) || dueDay < 1 || dueDay > 31) nextErrors.dueDay = "Enter a day between 1 and 31.";
     if (!form.endDate || !isValidDateValue(form.endDate)) nextErrors.endDate = "Choose a valid end date.";
-    if (form.startDate && !isValidDateValue(form.startDate)) {
-      nextErrors.startDate = "Choose a valid start date or leave it empty.";
-    } else if (form.startDate && form.startDate > TODAY) {
-      nextErrors.startDate = "Start date cannot be in the future.";
-    }
-
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       return;
     }
 
-    const effectiveStartDate = form.startDate || CURRENT_MONTH_START;
+    const effectiveStartDate = CURRENT_MONTH_START;
     const minimumEndDate = nextMonthStart(effectiveStartDate);
     if (form.endDate < minimumEndDate) {
       setErrors({ endDate: "End date must start from the month after the start date." });
@@ -240,9 +236,10 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
     const payload = {};
     emiSection.fields.forEach(field => {
+      if (field.key === "startDate") return;
       payload[field.key] = String(form[field.key] || "").trim();
     });
-    payload.startDate = payload.startDate || CURRENT_MONTH_START;
+    payload.startDate = CURRENT_MONTH_START;
 
     if (editId) d.updateOrgRecord("loans", { ...payload, id: editId });
     else d.addOrgRecord("loans", payload);
@@ -331,9 +328,6 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
                 </Select>
               </Field>
               <div className="ledger-form-split">
-                <Field label="Start Date" error={errors.startDate}>
-                  <DateSelectInput value={form.startDate || ""} onChange={value => updateField("startDate", value)} max={TODAY} yearOrder="asc" />
-                </Field>
                 <Field label="Due Date" required error={errors.dueDay}>
                   <Select value={form.dueDay || "1"} onChange={e => updateField("dueDay", e.target.value)} error={errors.dueDay}>
                     {Array.from({ length: 31 }, (_, index) => String(index + 1)).map(day => (
@@ -343,7 +337,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
                 </Field>
               </div>
               <Field label="End Date" required error={errors.endDate}>
-                <DateSelectInput value={form.endDate || ""} onChange={value => updateField("endDate", value)} min={nextMonthStart(form.startDate || CURRENT_MONTH_START)} max={EMI_END_DATE_MAX} yearOrder="asc" />
+                <DateSelectInput value={form.endDate || ""} onChange={value => updateField("endDate", value)} min={nextMonthStart(CURRENT_MONTH_START)} max={EMI_END_DATE_MAX} yearOrder="asc" />
               </Field>
             </div>
           </div>

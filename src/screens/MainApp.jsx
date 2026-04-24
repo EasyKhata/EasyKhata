@@ -2,8 +2,8 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, MoreHorizontal, Settings,
-  TrendingDown, TrendingUp, Users
+  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Power, Settings,
+  TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
 import { useAuth } from "../context/AuthContext";
@@ -13,7 +13,7 @@ import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import PendingInviteBanner from "../components/PendingInviteBanner";
 import { societyApi } from "../lib/api";
-import { APP_UPGRADE_URL } from "../utils/brand";
+import { APP_NAME, APP_UPGRADE_URL } from "../utils/brand";
 import {
   buildReminders,
   filterRemindersByPrefs,
@@ -244,6 +244,399 @@ function QuickAddSheet({ onClose, isPersonalOrg, isApartmentOrg, isFreelancerOrg
         style={{ width: "100%", padding: "15px", borderRadius: 14, border: "none", background: accentColor, color: "#fff", fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, fontFamily: "var(--font)" }}
       >
         {saving ? "Saving…" : `Save ${entryType === "income" ? "Income" : "Expense"}`}
+      </button>
+    </div>
+  );
+}
+
+function QuickActionSheet({ onClose, actions = [], isReadOnlyFreeMode, isViewerMode }) {
+  const blocked = isViewerMode || isReadOnlyFreeMode;
+
+  return (
+    <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
+        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>×</button>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
+        Choose the type below. The full original form opens immediately with all its fields.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(actions.length || 1, 3)}, minmax(0, 1fr))`, gap: 10 }}>
+        {actions.map(action => (
+          <button
+            key={action.key}
+            type="button"
+            onClick={() => {
+              if (blocked) return;
+              action.onClick?.();
+            }}
+            disabled={blocked}
+            style={{
+              width: "100%",
+              textAlign: "center",
+              border: `1px solid color-mix(in srgb, ${action.color} 34%, var(--border))`,
+              background: `color-mix(in srgb, ${action.color} 10%, var(--surface-high))`,
+              color: blocked ? "var(--text-dim)" : "var(--text)",
+              borderRadius: 14,
+              padding: "14px 12px",
+              cursor: blocked ? "not-allowed" : "pointer",
+              opacity: blocked ? 0.65 : 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 800, color: action.color }}>{action.label}</div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.35 }}>{action.description}</div>
+          </button>
+        ))}
+      </div>
+      {blocked && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, textAlign: "center" }}>Your current access does not allow creating new records here.</div>}
+    </div>
+  );
+}
+
+function QuickEntrySheet({
+  onClose,
+  orgType,
+  customers = [],
+  currencySymbol = "Rs",
+  currentMonth,
+  currentYear,
+  isReadOnlyFreeMode,
+  isViewerMode,
+  addIncome,
+  addExpense,
+  addOrgRecord
+}) {
+  const resolvedOrgType = getOrgType(orgType);
+  const config = getOrgConfig(resolvedOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
+  const isPersonalOrg = resolvedOrgType === ORG_TYPES.PERSONAL;
+  const isFreelancerOrg = resolvedOrgType === ORG_TYPES.FREELANCER;
+  const isApartmentOrg = resolvedOrgType === ORG_TYPES.APARTMENT;
+  const tabs = [
+    { key: "income", label: isApartmentOrg ? "Collection" : config.incomeEntryLabel, color: "var(--accent)" },
+    { key: "expense", label: config.expensesEntryLabel, color: "var(--danger)" },
+    ...(isPersonalOrg ? [{ key: "emi", label: "EMI", color: "var(--gold)" }] : [])
+  ];
+  const [entryType, setEntryType] = useState(tabs[0]?.key || "income");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const amountRef = useRef(null);
+  const today = new Date().toISOString().split("T")[0];
+  const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
+  const currentMonthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`;
+  const sym = currencySymbol === "Rs" ? "₹" : currencySymbol;
+  const expenseCategories = config.expenseCategories || ["Other"];
+  const householdPeople = useMemo(() => customers.map(item => String(item?.name || item?.ownerName || item?.personName || "").trim()).filter(Boolean), [customers]);
+  const freelancerClients = useMemo(() => customers.map(item => String(item?.name || item?.company || item?.clientName || "").trim()).filter(Boolean), [customers]);
+  const apartmentFlats = useMemo(() => customers.map(item => ({ flat: String(item?.name || item?.flatNumber || "").trim(), resident: String(item?.ownerName || item?.residentName || "").trim() })).filter(item => item.flat), [customers]);
+  const [form, setForm] = useState({
+    description: "",
+    amount: "",
+    date: today,
+    category: expenseCategories[0] || "Other",
+    personName: "",
+    incomeType: "Salary",
+    clientName: "",
+    billable: "No",
+    flatNumber: "",
+    residentName: "",
+    collectionType: "Monthly Maintenance",
+    collectionMonth: monthStr,
+    serviceProvider: "",
+    billReference: "",
+    lender: "",
+    dueDay: "1",
+    endDate: ""
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => amountRef.current?.focus(), 70);
+    return () => clearTimeout(timer);
+  }, [entryType]);
+
+  function updateField(key, value) {
+    if (isApartmentOrg && key === "flatNumber") {
+      const matchedFlat = apartmentFlats.find(item => item.flat === value);
+      setForm(current => ({
+        ...current,
+        [key]: value,
+        residentName: matchedFlat?.resident || current.residentName
+      }));
+      setError("");
+      return;
+    }
+    setForm(current => ({ ...current, [key]: value }));
+    setError("");
+  }
+
+  function switchType(nextType) {
+    setEntryType(nextType);
+    setError("");
+    setForm(current => ({
+      ...current,
+      description: "",
+      amount: "",
+      date: today,
+      category: expenseCategories[0] || "Other",
+      collectionMonth: monthStr
+    }));
+  }
+
+  function validate() {
+    if (isViewerMode || isReadOnlyFreeMode) return "Your current access does not allow creating new records here.";
+    if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
+    if (!String(form.description || "").trim()) return "Enter a description.";
+    if (entryType === "income") {
+      if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
+      if (isFreelancerOrg && !String(form.clientName || "").trim()) return "Select a client.";
+      if (isApartmentOrg && !String(form.flatNumber || "").trim()) return "Enter a flat number.";
+    }
+    if (entryType === "expense") {
+      if (!String(form.category || "").trim()) return "Choose a category.";
+      if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
+    }
+    if (entryType === "emi") {
+      if (!String(form.lender || "").trim()) return "Enter the lender name.";
+      if (!String(form.endDate || "").trim()) return "Choose an end date.";
+    }
+    return "";
+  }
+
+  function handleSave() {
+    const nextError = validate();
+    if (nextError) {
+      setError(nextError);
+      return;
+    }
+    setSaving(true);
+    try {
+      if (entryType === "income") {
+        const payload = {
+          description: String(form.description || "").trim(),
+          label: String(form.description || "").trim(),
+          source: String(form.description || "").trim(),
+          amount: Number(form.amount),
+          category: isApartmentOrg ? String(form.collectionType || "Monthly Maintenance").trim() : String(form.incomeType || "Other").trim(),
+          date: form.date || today,
+          month: monthStr
+        };
+        if (isPersonalOrg) {
+          payload.personName = String(form.personName || "").trim();
+          payload.incomeType = String(form.incomeType || "Salary").trim();
+        } else if (isFreelancerOrg) {
+          payload.clientName = String(form.clientName || "").trim();
+        } else if (isApartmentOrg) {
+          payload.flatNumber = String(form.flatNumber || "").trim();
+          payload.residentName = String(form.residentName || "").trim();
+          payload.collectionType = String(form.collectionType || "Monthly Maintenance").trim();
+          payload.collectionMonth = form.collectionMonth || monthStr;
+        }
+        addIncome?.(payload);
+      } else if (entryType === "expense") {
+        const payload = {
+          label: String(form.description || "").trim(),
+          amount: Number(form.amount),
+          category: String(form.category || expenseCategories[0] || "Other").trim(),
+          date: form.date || today,
+          month: monthStr,
+          note: "",
+          recurring: false,
+          teamMemberName: "",
+          partnerName: "",
+          startMonth: "",
+          endDate: "",
+          endMonth: ""
+        };
+        if (isPersonalOrg) payload.personName = String(form.personName || "").trim();
+        if (isFreelancerOrg) {
+          payload.clientName = String(form.clientName || "").trim();
+          payload.billable = String(form.billable || "No").trim();
+        }
+        if (isApartmentOrg) {
+          payload.serviceProvider = String(form.serviceProvider || "").trim();
+          payload.billReference = String(form.billReference || "").trim();
+        }
+        addExpense?.(payload);
+      } else if (entryType === "emi") {
+        addOrgRecord?.("loans", {
+          loanName: String(form.description || "").trim(),
+          personName: String(form.personName || "").trim(),
+          lender: String(form.lender || "").trim(),
+          monthlyEmi: String(form.amount || "").trim(),
+          dueDay: String(form.dueDay || "1").trim(),
+          endDate: String(form.endDate || "").trim(),
+          startDate: currentMonthStart
+        });
+      }
+      onClose();
+    } catch (saveError) {
+      setError(saveError?.message || "Failed to save. Try again.");
+      setSaving(false);
+    }
+  }
+
+  const activeTab = tabs.find(item => item.key === entryType) || tabs[0];
+  const accentColor = activeTab?.color || "var(--accent)";
+
+  return (
+    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)" }}>
+      <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 2px" }} />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
+        <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8 }}>
+        {tabs.map(option => {
+          const selected = option.key === entryType;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => switchType(option.key)}
+              style={{
+                borderRadius: 14,
+                border: `1px solid ${selected ? `color-mix(in srgb, ${option.color} 40%, var(--border))` : "var(--border)"}`,
+                background: selected ? `color-mix(in srgb, ${option.color} 14%, var(--surface-high))` : "var(--surface-high)",
+                color: selected ? option.color : "var(--text-dim)",
+                fontSize: 13,
+                fontWeight: 800,
+                padding: "12px 10px",
+                cursor: "pointer"
+              }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px" }}>
+        <span style={{ fontSize: 28, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
+        <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Description</div>
+          <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+        </div>
+        {entryType !== "emi" && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Date</div>
+              <input type="date" value={form.date} onChange={event => updateField("date", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>{entryType === "income" && !isApartmentOrg ? "Type" : "Category"}</div>
+              {entryType === "income" && !isApartmentOrg ? (
+                <select value={form.incomeType} onChange={event => updateField("incomeType", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>
+                  {(config.incomeFields?.find(field => field.key === "incomeType")?.options || ["Salary", "Other"]).map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+              ) : (
+                <select value={entryType === "income" && isApartmentOrg ? form.collectionType : form.category} onChange={event => updateField(entryType === "income" && isApartmentOrg ? "collectionType" : "category", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>
+                  {(entryType === "income" && isApartmentOrg ? (config.incomeFields?.find(field => field.key === "collectionType")?.options || ["Monthly Maintenance", "Other"]) : expenseCategories).map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+        )}
+        {entryType === "income" && isPersonalOrg && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
+            <input list="quickadd-household-people" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            <datalist id="quickadd-household-people">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+          </div>
+        )}
+        {entryType === "income" && isFreelancerOrg && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
+            <input list="quickadd-freelancer-clients" value={form.clientName} onChange={event => updateField("clientName", event.target.value)} placeholder="Select client" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            <datalist id="quickadd-freelancer-clients">{freelancerClients.map(option => <option key={option} value={option} />)}</datalist>
+          </div>
+        )}
+        {entryType === "income" && isApartmentOrg && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Flat Number</div>
+                <input list="quickadd-apartment-flats" value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} placeholder="A-101" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+                <datalist id="quickadd-apartment-flats">{apartmentFlats.map(item => <option key={item.flat} value={item.flat} />)}</datalist>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Resident Name</div>
+                <input value={form.residentName} onChange={event => updateField("residentName", event.target.value)} placeholder="Resident name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Collection Month</div>
+              <input type="month" value={form.collectionMonth} onChange={event => updateField("collectionMonth", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            </div>
+          </>
+        )}
+        {entryType === "expense" && isPersonalOrg && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
+            <input list="quickadd-household-people-expense" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            <datalist id="quickadd-household-people-expense">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+          </div>
+        )}
+        {entryType === "expense" && isFreelancerOrg && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
+              <input list="quickadd-freelancer-clients-expense" value={form.clientName} onChange={event => updateField("clientName", event.target.value)} placeholder="Select client" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              <datalist id="quickadd-freelancer-clients-expense">{freelancerClients.map(option => <option key={option} value={option} />)}</datalist>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Billable</div>
+              <select value={form.billable} onChange={event => updateField("billable", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}><option value="No">No</option><option value="Yes">Yes</option></select>
+            </div>
+          </div>
+        )}
+        {entryType === "expense" && isApartmentOrg && (
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Service Provider</div>
+              <input value={form.serviceProvider} onChange={event => updateField("serviceProvider", event.target.value)} placeholder="Vendor or contractor name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Bill Reference</div>
+              <input value={form.billReference} onChange={event => updateField("billReference", event.target.value)} placeholder="Invoice or receipt number" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+            </div>
+          </div>
+        )}
+        {entryType === "emi" && (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Lender</div>
+                <input value={form.lender} onChange={event => updateField("lender", event.target.value)} placeholder="Bank or person name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
+                <input list="quickadd-household-emi" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+                <datalist id="quickadd-household-emi">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Due Day</div>
+                <select value={form.dueDay} onChange={event => updateField("dueDay", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map(option => <option key={option} value={option}>{option}</option>)}</select>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>End Date</div>
+                <input type="date" value={form.endDate} onChange={event => updateField("endDate", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      {error && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 700, textAlign: "center" }}>{error}</div>}
+      <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)` }}>
+        {saving ? "Saving..." : `Save ${activeTab?.label || "Entry"} →`}
       </button>
     </div>
   );
@@ -543,14 +936,29 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 export default function MainApp() {
   const { user, logout } = useAuth();
   const data = useData();
-  const { account, isReadOnlyFreeMode, isViewerMode, activeSharedOrgRole, sharedOrgs, activeSharedOrgKey, switchToSharedOrg, switchToOwnOrg } = data;
+  const {
+    account,
+    isReadOnlyFreeMode,
+    isViewerMode,
+    activeSharedOrgRole,
+    sharedOrgs,
+    activeSharedOrgKey,
+    switchToSharedOrg,
+    switchToOwnOrg,
+    organizations = [],
+    switchOrganization,
+    activeOrgId,
+    addIncome,
+    addExpense,
+    addOrgRecord,
+    customers = [],
+    currency
+  } = data;
   const ownOrgNameRef = useRef(null);
   if (!activeSharedOrgKey && account?.name) ownOrgNameRef.current = account.name;
   const ownOrgName = ownOrgNameRef.current || account?.name || "My Organization";
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
-  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
-  const headerMenuRef = useRef(null);
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [trialBannerVisible, setTrialBannerVisible] = useState(true);
@@ -784,21 +1192,6 @@ export default function MainApp() {
     setDismissedIds(getDismissedReminderIds(user?.id));
   }, [user?.id]);
 
-  useEffect(() => {
-    function handleDocumentClick(event) {
-      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target)) {
-        setShowHeaderMenu(false);
-      }
-    }
-
-    document.addEventListener("mousedown", handleDocumentClick);
-    document.addEventListener("touchstart", handleDocumentClick);
-    return () => {
-      document.removeEventListener("mousedown", handleDocumentClick);
-      document.removeEventListener("touchstart", handleDocumentClick);
-    };
-  }, []);
-
   const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
 
   const liveReminders = useMemo(() => {
@@ -869,6 +1262,52 @@ export default function MainApp() {
   const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
+
+  const handleQuickAddAction = useCallback((target) => {
+    setShowFab(false);
+    handleNavigate({ tab: target.tab });
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("ledger:open-add", { detail: { section: target.tab, kind: target.kind } }));
+    }, 70);
+  }, [handleNavigate]);
+
+  const quickAddActions = useMemo(() => {
+    if (isAdmin) return [];
+    const actions = [
+      {
+        key: "income",
+        label: orgConfig.incomeActionLabel,
+        description: `Open the full ${orgConfig.incomeLabel.toLowerCase()} form.`,
+        color: "var(--jade)",
+        tab: "income",
+        kind: "income"
+      },
+      {
+        key: "expense",
+        label: orgConfig.expensesActionLabel,
+        description: `Open the full ${orgConfig.expensesLabel.toLowerCase()} form.`,
+        color: "var(--ember)",
+        tab: "expenses",
+        kind: "expense"
+      }
+    ];
+
+    if (isPersonalOrg) {
+      actions.push({
+        key: "emi",
+        label: "Add EMI",
+        description: "Open the EMI form with all loan fields.",
+        color: "var(--gold)",
+        tab: "emi",
+        kind: "emi"
+      });
+    }
+
+    return actions.map(action => ({
+      ...action,
+      onClick: () => handleQuickAddAction(action)
+    }));
+  }, [handleQuickAddAction, isAdmin, isPersonalOrg, orgConfig.expensesActionLabel, orgConfig.expensesLabel, orgConfig.incomeActionLabel, orgConfig.incomeLabel]);
   const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
@@ -1173,41 +1612,24 @@ export default function MainApp() {
 
             {/* Left: OrgAvatar + Org Name + Type badge — tappable to go to dashboard */}
             <button
-              onClick={() => { setTab("dashboard"); setShowOrgSwitcher(false); }}
-              title="Go to dashboard"
-              style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}
+              onClick={() => handleNavigate({ tab: "settings", screen: "profile" })}
+              title="Open profile"
+              style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >
-              {/* OrgAvatar */}
-              {(() => {
-                const orgName = isAdmin ? "Admin" : (activeSharedOrgKey ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Org") : (account?.name || "K"));
-                const initials = orgName.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
-                const avatarColor = isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)";
-                const sz = isCompactMobile ? 30 : 34;
-                return (
-                  <span style={{ width: sz, height: sz, borderRadius: sz * 0.28, background: `color-mix(in srgb, ${avatarColor} 22%, var(--raised))`, border: `1.5px solid color-mix(in srgb, ${avatarColor} 35%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: sz * 0.36, fontWeight: 800, color: avatarColor, flexShrink: 0, fontFamily: "var(--font)" }}>
-                    {initials}
-                  </span>
-                );
-              })()}
-              {/* Org name + type badge */}
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
-                  <span style={{ fontSize: isCompactMobile ? 13 : 15, fontWeight: 700, color: "var(--text)", lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--serif)" }}>
-                    {isAdmin ? "Admin" : (activeSharedOrgKey ? (sharedOrgs.find(o => o.key === activeSharedOrgKey)?.orgName || "Organization") : (account?.name || currentOrgLabel || "My Khata"))}
-                  </span>
-                  {!isAdmin && (
-                    <span style={{ fontSize: 9, fontWeight: 700, color: isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)", background: `color-mix(in srgb, ${isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)"} 14%, var(--raised))`, border: `1px solid color-mix(in srgb, ${isApartmentOrg ? "var(--orchid)" : isFreelancerOrg ? "var(--sky)" : isPersonalOrg ? "var(--saffron)" : "var(--jade)"} 30%, transparent)`, borderRadius: 6, padding: "2px 6px", flexShrink: 0, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      {isApartmentOrg ? "Apartment" : isFreelancerOrg ? "Freelance" : isPersonalOrg ? "Household" : "Business"}
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: isCompactMobile ? 9 : 10, color: "var(--text-dim)", marginTop: 1, fontWeight: 500 }}>
-                  {MONTHS[month]} {year} {activeSharedOrgKey ? `· ${(activeSharedOrgRole ?? sharedOrgs.find(o => o.key === activeSharedOrgKey)?.role ?? "viewer")}` : ""}
-                </div>
-              </div>
+              <User size={isCompactMobile ? 14 : 16} strokeWidth={2.1} />
+            </button>
+            <button
+              onClick={() => { handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
+              title="Go to dashboard"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              <BrandMark size={isCompactMobile ? 22 : 26} />
+              <span style={{ fontSize: isCompactMobile ? 14 : 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)", whiteSpace: "nowrap" }}>
+                {APP_NAME}
+              </span>
             </button>
 
-            {/* Right: Org switcher (always when multiple orgs) + Bell + More */}
+            {/* Right: Org switcher (always when multiple orgs) + Bell + Sign out */}
             <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8, flexShrink: 0 }}>
               {/* Org switcher — always shown for non-admin users */}
               {!isAdmin && (
@@ -1224,7 +1646,7 @@ export default function MainApp() {
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>
                       {/* Own org row */}
                       <button
-                        onClick={() => { switchToOwnOrg(); setShowOrgSwitcher(false); }}
+                        onClick={() => { switchToOwnOrg(); handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
                         style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: !activeSharedOrgKey ? "color-mix(in srgb, var(--jade) 8%, var(--raised))" : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
                       >
                         <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
@@ -1234,6 +1656,25 @@ export default function MainApp() {
                         <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
                         {!activeSharedOrgKey && <span style={{ fontSize: 12, color: "var(--jade)", flexShrink: 0 }}>✓</span>}
                       </button>
+                      {organizations.filter(org => org.id !== activeOrgId).map(org => (
+                        <React.Fragment key={org.id}>
+                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
+                          <button
+                            onClick={async () => {
+                              await switchOrganization(org.id);
+                              handleNavigate({ tab: "dashboard" });
+                              setShowOrgSwitcher(false);
+                            }}
+                            style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                          >
+                            <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
+                              {(org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
+                            </span>
+                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name || "My Organization"}</span>
+                            <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
+                          </button>
+                        </React.Fragment>
+                      ))}
                       {sharedOrgs.length > 0 ? (
                         <>
                           <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
@@ -1283,26 +1724,13 @@ export default function MainApp() {
                 )}
               </button>
 
-              <div style={{ position: "relative" }} ref={headerMenuRef}>
-                <button
-                  onClick={() => setShowHeaderMenu(value => !value)}
-                  title="More options"
-                  style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                >
-                  <MoreHorizontal size={isCompactMobile ? 13 : 14} strokeWidth={2} />
-                </button>
-                {showHeaderMenu && (
-                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 168, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "0 10px 24px rgba(0,0,0,0.18)", overflow: "hidden", zIndex: 220 }}>
-                    <button onClick={() => { setShowHeaderMenu(false); handleNavigate({ tab: "settings", screen: "main" }); }} style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                      <Settings size={15} strokeWidth={2} /> Settings
-                    </button>
-                    <div style={{ height: 1, background: "var(--border)", margin: "0 12px" }} />
-                    <button onClick={() => { setShowHeaderMenu(false); if (window.confirm("Sign out of EazyKhata?")) logout(); }} style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text)", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}>
-                      <LogOut size={15} strokeWidth={2} /> Sign out
-                    </button>
-                  </div>
-                )}
-              </div>
+              <button
+                onClick={() => { if (window.confirm("Sign out of EazyKhata?")) logout(); }}
+                title="Sign out"
+                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--danger)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+              >
+                <Power size={isCompactMobile ? 13 : 14} strokeWidth={2} />
+              </button>
             </div>
 
           </div>
@@ -1422,6 +1850,33 @@ export default function MainApp() {
         })}
       </div>
 
+      {tab !== "dashboard" && !showFab && (
+        <button
+          type="button"
+          onClick={() => handleNavigate({ tab: "dashboard" })}
+          title="Back to dashboard"
+          style={{
+            position: "fixed",
+            right: isCompactMobile ? 12 : 16,
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
+            zIndex: 132,
+            width: isCompactMobile ? 44 : 48,
+            height: isCompactMobile ? 44 : 48,
+            borderRadius: 16,
+            border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))",
+            background: "color-mix(in srgb, var(--accent) 12%, var(--surface))",
+            color: "var(--accent)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
+            cursor: "pointer"
+          }}
+        >
+          <LayoutDashboard size={20} strokeWidth={2.2} />
+        </button>
+      )}
+
       {/* FAB quick-add sheet */}
       <AnimatePresence>
         {showFab && (
@@ -1445,23 +1900,24 @@ export default function MainApp() {
                 position: "fixed",
                 left: 0,
                 right: 0,
-                bottom: 0,
-                zIndex: 131,
+                bottom: "calc(env(safe-area-inset-bottom, 0px) + 74px)",
+                zIndex: 180,
                 maxWidth: 520,
                 margin: "0 auto",
               }}
             >
-              <QuickAddSheet
+              <QuickEntrySheet
                 onClose={() => setShowFab(false)}
-                isPersonalOrg={isPersonalOrg}
-                isApartmentOrg={isApartmentOrg}
-                isFreelancerOrg={isFreelancerOrg}
-                isReadOnlyFreeMode={isReadOnlyFreeMode}
-                isViewerMode={isViewerMode}
-                addIncome={data.addIncome}
-                addExpense={data.addExpense}
+                orgType={currentOrgType}
+                customers={customers}
+                currencySymbol={currency?.symbol || "Rs"}
                 currentMonth={month}
                 currentYear={year}
+                isReadOnlyFreeMode={isReadOnlyFreeMode}
+                isViewerMode={isViewerMode}
+                addIncome={addIncome}
+                addExpense={addExpense}
+                addOrgRecord={addOrgRecord}
               />
             </motion.div>
           </>
