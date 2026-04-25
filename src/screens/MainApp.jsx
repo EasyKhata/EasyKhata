@@ -482,9 +482,20 @@ function QuickEntrySheet({
 
   const activeTab = tabs.find(item => item.key === entryType) || tabs[0];
   const accentColor = activeTab?.color || "var(--accent)";
+  const sheetSelectStyle = {
+    width: "100%",
+    boxSizing: "border-box",
+    borderRadius: 12,
+    border: "1px solid var(--border)",
+    background: "var(--surface-high)",
+    color: "var(--text)",
+    padding: "12px 14px",
+    fontSize: 14,
+    outline: "none"
+  };
 
   return (
-    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)" }}>
+    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(84dvh, 760px)", overflowY: "auto", overscrollBehavior: "contain" }}>
       <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 2px" }} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
@@ -546,15 +557,19 @@ function QuickEntrySheet({
         {entryType === "income" && isPersonalOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <input list="quickadd-household-people" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-            <datalist id="quickadd-household-people">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
+              <option value="">Select family member</option>
+              {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
           </div>
         )}
         {entryType === "income" && isFreelancerOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
-            <input list="quickadd-freelancer-clients" value={form.clientName} onChange={event => updateField("clientName", event.target.value)} placeholder="Select client" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-            <datalist id="quickadd-freelancer-clients">{freelancerClients.map(option => <option key={option} value={option} />)}</datalist>
+            <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
+              <option value="">Select client</option>
+              {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
           </div>
         )}
         {entryType === "income" && isApartmentOrg && (
@@ -562,8 +577,10 @@ function QuickEntrySheet({
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Flat Number</div>
-                <input list="quickadd-apartment-flats" value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} placeholder="A-101" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-                <datalist id="quickadd-apartment-flats">{apartmentFlats.map(item => <option key={item.flat} value={item.flat} />)}</datalist>
+                <select value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} style={sheetSelectStyle}>
+                  <option value="">Select flat</option>
+                  {apartmentFlats.map(item => <option key={item.flat} value={item.flat}>{item.flat}</option>)}
+                </select>
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Resident Name</div>
@@ -579,16 +596,20 @@ function QuickEntrySheet({
         {entryType === "expense" && isPersonalOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <input list="quickadd-household-people-expense" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-            <datalist id="quickadd-household-people-expense">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
+              <option value="">Select family member</option>
+              {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
           </div>
         )}
         {entryType === "expense" && isFreelancerOrg && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
-              <input list="quickadd-freelancer-clients-expense" value={form.clientName} onChange={event => updateField("clientName", event.target.value)} placeholder="Select client" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-              <datalist id="quickadd-freelancer-clients-expense">{freelancerClients.map(option => <option key={option} value={option} />)}</datalist>
+              <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
+                <option value="">Select client</option>
+                {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
+              </select>
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Billable</div>
@@ -617,8 +638,10 @@ function QuickEntrySheet({
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-                <input list="quickadd-household-emi" value={form.personName} onChange={event => updateField("personName", event.target.value)} placeholder="Select family member" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
-                <datalist id="quickadd-household-emi">{householdPeople.map(option => <option key={option} value={option} />)}</datalist>
+                <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
+                  <option value="">Select family member</option>
+                  {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
@@ -1467,16 +1490,23 @@ export default function MainApp() {
     // No "dashboard" — navigated via header logo. Invoices hidden from apartment nav.
     const baseTabOrder = isAdmin
       ? ["users", "__fab__", "adminSupport"]
-      : isApartmentOrg
-        ? ["income", "expenses", "__fab__", "discussions", "org"]
-        : isPersonalOrg
-          ? ["income", "expenses", "__fab__", "emi", "org"]
-          : ["income", "expenses", "__fab__", "invoices", "org"];
+      : isViewerMode
+        ? isApartmentOrg
+          ? ["dashboard", "income", "expenses", "discussions", "org"]
+          : isPersonalOrg
+            ? ["dashboard", "income", "expenses", "emi", "org"]
+            : ["dashboard", "income", "expenses", ...(hideInvoices ? [] : ["invoices"]), "org"]
+        : isApartmentOrg
+          ? ["income", "expenses", "__fab__", "discussions", "org"]
+          : isPersonalOrg
+            ? ["income", "expenses", "__fab__", "emi", "org"]
+            : ["income", "expenses", "__fab__", "invoices", "org"];
     return baseTabOrder.map(tabId => {
       if (tabId === "__fab__") return { id: "__fab__", label: "", icon: null };
       const found = TABS.find(item => item.id === tabId);
       if (!found) return null;
       const label =
+        tabId === "dashboard" ? "Home" :
         tabId === "income" && isApartmentOrg ? "Maint." :
         tabId === "income" && isFreelancerOrg ? "Payments" :
         tabId === "expenses" ? "Spend" :
@@ -1488,7 +1518,7 @@ export default function MainApp() {
         found.label;
       return { ...found, label };
     }).filter(Boolean);
-  }, [TABS, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg]);
+  }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg, isViewerMode]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
@@ -1770,6 +1800,7 @@ export default function MainApp() {
         </div>
       </div>
 
+      {!showFab && (
       <div
         className="app-bottom-nav menu-glass"
         style={{ gridTemplateColumns: `repeat(${Math.max(footerTabs.length, 1)}, minmax(0, 1fr))` }}
@@ -1849,8 +1880,9 @@ export default function MainApp() {
           );
         })}
       </div>
+      )}
 
-      {tab !== "dashboard" && !showFab && (
+      {tab !== "dashboard" && !showFab && tab !== "discussions" && !isViewerMode && (
         <button
           type="button"
           onClick={() => handleNavigate({ tab: "dashboard" })}
@@ -1900,10 +1932,11 @@ export default function MainApp() {
                 position: "fixed",
                 left: 0,
                 right: 0,
-                bottom: "calc(env(safe-area-inset-bottom, 0px) + 74px)",
+                bottom: 0,
                 zIndex: 180,
-                maxWidth: 520,
+                maxWidth: 560,
                 margin: "0 auto",
+                maxHeight: "calc(100dvh - env(safe-area-inset-top, 0px) - 8px)",
               }}
             >
               <QuickEntrySheet

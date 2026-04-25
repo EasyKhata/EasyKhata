@@ -1033,7 +1033,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
             </div>
-            {headerDatePicker && <div>{headerDatePicker}</div>}
+            {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>
         </div>
         {isApartmentOrg && !isViewerMode && (

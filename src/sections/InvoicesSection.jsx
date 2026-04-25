@@ -722,7 +722,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          {headerDatePicker && <div>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
         </div>
       </div>
 

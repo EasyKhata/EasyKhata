@@ -265,7 +265,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
                 : "No active EMIs this month"}
             </div>
           </div>
-          {headerDatePicker && <div>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
         </div>
       </div>
 

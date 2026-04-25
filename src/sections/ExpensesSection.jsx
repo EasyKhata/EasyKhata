@@ -449,7 +449,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
             </div>
-            {headerDatePicker && <div>{headerDatePicker}</div>}
+            {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>
         </div>
         {isPersonalOrg ? (
