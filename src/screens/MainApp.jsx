@@ -334,6 +334,9 @@ function QuickEntrySheet({
   const householdPeople = useMemo(() => customers.map(item => String(item?.name || item?.ownerName || item?.personName || "").trim()).filter(Boolean), [customers]);
   const freelancerClients = useMemo(() => customers.map(item => String(item?.name || item?.company || item?.clientName || "").trim()).filter(Boolean), [customers]);
   const apartmentFlats = useMemo(() => customers.map(item => ({ flat: String(item?.name || item?.flatNumber || "").trim(), resident: String(item?.ownerName || item?.residentName || "").trim() })).filter(item => item.flat), [customers]);
+  const hasHouseholdPeople = householdPeople.length > 0;
+  const hasFreelancerClients = freelancerClients.length > 0;
+  const hasApartmentFlats = apartmentFlats.length > 0;
   const [form, setForm] = useState({
     description: "",
     amount: "",
@@ -392,15 +395,21 @@ function QuickEntrySheet({
     if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
     if (!String(form.description || "").trim()) return "Enter a description.";
     if (entryType === "income") {
+      if (isPersonalOrg && !hasHouseholdPeople) return "Add a household member in Khata first.";
       if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
+      if (isFreelancerOrg && !hasFreelancerClients) return "Add a client in Khata first.";
       if (isFreelancerOrg && !String(form.clientName || "").trim()) return "Select a client.";
+      if (isApartmentOrg && !hasApartmentFlats) return "Add a flat in Khata first.";
       if (isApartmentOrg && !String(form.flatNumber || "").trim()) return "Enter a flat number.";
     }
     if (entryType === "expense") {
       if (!String(form.category || "").trim()) return "Choose a category.";
+      if (isPersonalOrg && !hasHouseholdPeople) return "Add a household member in Khata first.";
       if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
+      if (isFreelancerOrg && !hasFreelancerClients) return "Add a client in Khata first.";
     }
     if (entryType === "emi") {
+      if (!hasHouseholdPeople) return "Add a household member in Khata first.";
       if (!String(form.lender || "").trim()) return "Enter the lender name.";
       if (!String(form.endDate || "").trim()) return "Choose an end date.";
     }
@@ -482,6 +491,9 @@ function QuickEntrySheet({
 
   const activeTab = tabs.find(item => item.key === entryType) || tabs[0];
   const accentColor = activeTab?.color || "var(--accent)";
+  const showPeopleSetupHint = (entryType === "income" || entryType === "expense" || entryType === "emi") && isPersonalOrg && !hasHouseholdPeople;
+  const showClientSetupHint = (entryType === "income" || entryType === "expense") && isFreelancerOrg && !hasFreelancerClients;
+  const showFlatSetupHint = entryType === "income" && isApartmentOrg && !hasApartmentFlats;
   const sheetSelectStyle = {
     width: "100%",
     boxSizing: "border-box",
@@ -530,6 +542,24 @@ function QuickEntrySheet({
         <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
       </div>
       <div style={{ display: "grid", gap: 12 }}>
+        {showPeopleSetupHint && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a household member in Khata before creating this entry.</div>
+            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)", flexShrink: 0 }}>Open People</button>
+          </div>
+        )}
+        {showClientSetupHint && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--blue) 26%, var(--border))", background: "color-mix(in srgb, var(--blue) 10%, var(--surface-high))" }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a client in Khata before recording freelance payments or expenses.</div>
+            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--blue)", flexShrink: 0 }}>Open Clients</button>
+          </div>
+        )}
+        {showFlatSetupHint && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--gold) 26%, var(--border))", background: "color-mix(in srgb, var(--gold) 10%, var(--surface-high))" }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a flat in Khata before recording apartment collections.</div>
+            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--gold)", flexShrink: 0 }}>Open Flats</button>
+          </div>
+        )}
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Description</div>
           <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -557,8 +587,8 @@ function QuickEntrySheet({
         {entryType === "income" && isPersonalOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
-              <option value="">Select family member</option>
+            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
+              <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
               {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
@@ -566,8 +596,8 @@ function QuickEntrySheet({
         {entryType === "income" && isFreelancerOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
-            <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
-              <option value="">Select client</option>
+            <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle} disabled={!hasFreelancerClients}>
+              <option value="">{hasFreelancerClients ? "Select client" : "Add client first"}</option>
               {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
@@ -577,8 +607,8 @@ function QuickEntrySheet({
             <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Flat Number</div>
-                <select value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} style={sheetSelectStyle}>
-                  <option value="">Select flat</option>
+                <select value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} style={sheetSelectStyle} disabled={!hasApartmentFlats}>
+                  <option value="">{hasApartmentFlats ? "Select flat" : "Add flat first"}</option>
                   {apartmentFlats.map(item => <option key={item.flat} value={item.flat}>{item.flat}</option>)}
                 </select>
               </div>
@@ -596,8 +626,8 @@ function QuickEntrySheet({
         {entryType === "expense" && isPersonalOrg && (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
-              <option value="">Select family member</option>
+            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
+              <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
               {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
@@ -606,8 +636,8 @@ function QuickEntrySheet({
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
-              <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
-                <option value="">Select client</option>
+              <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle} disabled={!hasFreelancerClients}>
+                <option value="">{hasFreelancerClients ? "Select client" : "Add client first"}</option>
                 {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
@@ -638,8 +668,8 @@ function QuickEntrySheet({
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-                <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle}>
-                  <option value="">Select family member</option>
+                <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
+                  <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
                   {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
               </div>
@@ -1489,7 +1519,7 @@ export default function MainApp() {
   const footerTabs = useMemo(() => {
     // No "dashboard" — navigated via header logo. Invoices hidden from apartment nav.
     const baseTabOrder = isAdmin
-      ? ["users", "__fab__", "adminSupport"]
+      ? ["dashboard", "users", "adminSupport"]
       : isViewerMode
         ? isApartmentOrg
           ? ["dashboard", "income", "expenses", "discussions", "org"]

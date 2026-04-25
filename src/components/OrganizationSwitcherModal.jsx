@@ -41,13 +41,13 @@ export default function OrganizationSwitcherModal({
                   style={{
                     padding: "8px 12px",
                     fontSize: 12,
-                    opacity: canDelete ? 1 : 0.45,
-                    cursor: canDelete ? "pointer" : "not-allowed",
-                    color: canDelete ? "var(--danger)" : "var(--text-dim)"
+                    opacity: canDelete && org.organizationType !== "personal" ? 1 : 0.45,
+                    cursor: canDelete && org.organizationType !== "personal" ? "pointer" : "not-allowed",
+                    color: canDelete && org.organizationType !== "personal" ? "var(--danger)" : "var(--text-dim)"
                   }}
-                  disabled={!canDelete}
+                  disabled={!canDelete || org.organizationType === "personal"}
                   onClick={async () => {
-                    if (!canDelete) return;
+                    if (!canDelete || org.organizationType === "personal") return;
                     if (window.confirm(`Delete ${org.name}? This will remove that Khata and its data.`)) {
                       await onDelete?.(org.id);
                     }

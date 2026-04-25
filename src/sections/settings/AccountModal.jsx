@@ -44,7 +44,11 @@ export default function AccountModal({
         onSave={onSave}
         canSave={!!form.name?.trim()}
       >
-        <Field label="Usage Type" required hint={!canChangeOrgType ? "Upgrade to Pro to change your Khata type." : undefined}>
+        <Field
+          label="Usage Type"
+          required
+          hint={!canChangeOrgType ? (orgType === "personal" ? "Household stays as your permanent default Khata." : "Upgrade to Pro to change your Khata type.") : undefined}
+        >
           <Select
             value={form.organizationType || orgType}
             onChange={e => canChangeOrgType && onFormChange(f => ({ ...f, organizationType: e.target.value }))}

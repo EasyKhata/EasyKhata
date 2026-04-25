@@ -20,7 +20,7 @@ import { signInWithCredential } from "firebase/auth";
 const AuthContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
 
-function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.SMALL_BUSINESS } = {}) {
+function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.PERSONAL } = {}) {
   const cleanOrganizationType = getOrgType(organizationType);
   return {
     id: DEFAULT_ORG_ID,
@@ -102,7 +102,7 @@ export function AuthProvider({ children }) {
     const baseDateOfBirth = normalizedOverrides.dateOfBirth || existing?.dateOfBirth || "";
     const baseAgeGroup = getAgeGroupFromDateOfBirth(baseDateOfBirth) || normalizedOverrides.ageGroup || existing?.ageGroup || "";
     const baseGender = normalizedOverrides.gender || existing?.gender || "";
-    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
+    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.PERSONAL);
 
     if (!existing?.id) {
       const created = await usersApi.create({
@@ -295,14 +295,14 @@ async function signInWithGoogle() {
   }
 }
   // Called from the first-time setup modal after org type + phone are collected
-  async function completeSetup({ organizationType, phone, phoneCountryCode }) {
+  async function completeSetup({ phone, phoneCountryCode }) {
     if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
     setupInProgressRef.current = true;
     try {
       const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
         name: pendingSetup.name,
         email: pendingSetup.email,
-        organizationType,
+        organizationType: ORG_TYPES.PERSONAL,
         phone,
         phoneCountryCode
       });

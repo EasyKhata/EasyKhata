@@ -1,9 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { Field, Input, PhoneNumberInput, Select, Modal } from "../components/UI";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
-import { ORG_TYPES, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 import { LEGAL_PATHS } from "../utils/legal";
 import {
   DEFAULT_PHONE_COUNTRY_CODE,
@@ -31,17 +30,10 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
 
   // First-time setup form state
-  const [orgType, setOrgType] = useState(ORG_TYPES.PERSONAL);
   const [phoneCountryCode, setPhoneCountryCode] = useState(DEFAULT_PHONE_COUNTRY_CODE);
   const [phoneNumber, setPhoneNumber] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupLoading, setSetupLoading] = useState(false);
-
-  const orgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(orgType), [orgType]);
-  const selectedOrgDesc = useMemo(
-    () => orgTypeOptions.find(o => o.value === orgType)?.description || "",
-    [orgType, orgTypeOptions]
-  );
 
   async function handleGoogleSignIn() {
     setError("");
@@ -63,7 +55,7 @@ export default function AuthScreen() {
     }
     setSetupLoading(true);
     try {
-      const res = await completeSetup({ organizationType: orgType, phone: cleanPhone, phoneCountryCode });
+      const res = await completeSetup({ phone: cleanPhone, phoneCountryCode });
       if (res?.error) setSetupError(res.error);
     } finally {
       setSetupLoading(false);
@@ -82,16 +74,8 @@ export default function AuthScreen() {
           canSave={!setupLoading}
         >
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
-            Signed in as <b>{pendingSetup.email}</b>. Tell us how you'll use EazyKhata.
+            Signed in as <b>{pendingSetup.email}</b>. We&apos;ll first create your default Household Khata. Right after this, onboarding will help you add either a Freelancer or Apartment Khata as your second workspace.
           </div>
-
-          <Field label="How will you use EazyKhata?" required hint={selectedOrgDesc}>
-            <Select value={orgType} onChange={e => setOrgType(e.target.value)}>
-              {orgTypeOptions.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </Select>
-          </Field>
 
           <Field label="Phone Number" required hint="Used for payment receipts and support.">
             <PhoneNumberInput

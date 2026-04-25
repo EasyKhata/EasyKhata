@@ -45,6 +45,16 @@ export function getSelectableOrgTypeOptions(currentType = "") {
   return ORG_TYPE_OPTIONS;
 }
 
+export function getSecondaryOrgTypeOptions(currentType = "") {
+  const normalizedCurrent = getOrgType(currentType);
+  const secondaryTypes = new Set([ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT]);
+  return ORG_TYPE_OPTIONS.filter(option => {
+    const optionType = getOrgType(option.value);
+    if (secondaryTypes.has(optionType)) return true;
+    return normalizedCurrent && optionType === normalizedCurrent && optionType !== ORG_TYPES.PERSONAL;
+  });
+}
+
 export const ORG_TYPE_CONFIGS = {
   [ORG_TYPES.PERSONAL]: {
     ...BASE_CONFIG,

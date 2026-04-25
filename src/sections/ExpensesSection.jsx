@@ -219,10 +219,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {
       openFlatManager();
@@ -250,6 +246,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openBudgetEditor() {
     if (!canUseFeature(user, "budgets")) {

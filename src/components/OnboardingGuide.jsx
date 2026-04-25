@@ -1,48 +1,66 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Field, Input, Select } from "./UI";
-import { ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgConfig, getOrgType, getSecondaryOrgTypeOptions } from "../utils/orgTypes";
 
-function buildAccountFormState(account, user) {
+function buildAccountFormState(account) {
   return {
     name: account?.name || "",
-    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    secondaryOrgType: ORG_TYPES.FREELANCER,
+    secondaryOrgName: ""
   };
 }
 
-export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, account, onUpdateAccount }) {
+export default function OnboardingGuide({ isOpen, onComplete, onNavigate, account, onUpdateAccount, onCreateOrganization }) {
   const [step, setStep] = useState(1);
-  const [accountForm, setAccountForm] = useState(buildAccountFormState(account, user));
-  const orgType = getOrgType(accountForm.organizationType || user?.organizationType || account?.organizationType);
-  const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
-  const selectableOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(orgType), [orgType]);
+  const [accountForm, setAccountForm] = useState(buildAccountFormState(account));
+  const orgConfig = useMemo(() => getOrgConfig(ORG_TYPES.PERSONAL), []);
+  const secondaryOrgType = getOrgType(accountForm.secondaryOrgType || ORG_TYPES.FREELANCER);
+  const secondaryOrgConfig = useMemo(() => getOrgConfig(secondaryOrgType), [secondaryOrgType]);
+  const selectableOrgTypeOptions = useMemo(() => getSecondaryOrgTypeOptions(secondaryOrgType), [secondaryOrgType]);
   const totalSteps = 3;
   const isLastStep = step === totalSteps;
-  const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
-  const primaryQuickstartAction = orgType === ORG_TYPES.APARTMENT ? "first-dues" : orgConfig.hideInvoices ? "first-income" : "first-invoice";
-  const quickstartTarget = orgType === ORG_TYPES.APARTMENT
-    ? { tab: "income", quickstart: "first-dues" }
-    : orgConfig.hideInvoices
-      ? { tab: "income", quickstart: "first-income" }
-      : { tab: "invoices", quickstart: "first-invoice" };
 
   useEffect(() => {
-    setAccountForm(buildAccountFormState(account, user));
-  }, [account?.name, account?.organizationType, user?.organizationType]);
+    setAccountForm(current => ({
+      ...buildAccountFormState(account),
+      secondaryOrgType: current?.secondaryOrgType || ORG_TYPES.FREELANCER,
+      secondaryOrgName: current?.secondaryOrgName || ""
+    }));
+  }, [account?.name]);
 
   async function completeOnboarding() {
+    const secondaryName = String(accountForm.secondaryOrgName || "").trim();
+    if (!secondaryName) {
+      alert(`Please enter a name for your ${secondaryOrgConfig.orgLabel || "second"} Khata.`);
+      return false;
+    }
+    const result = await onCreateOrganization?.({
+      organizationType: secondaryOrgType,
+      name: secondaryName
+    });
+    if (result?.error) {
+      alert(result.error);
+      return false;
+    }
     await onComplete?.();
+    return true;
+  }
+
+  async function skipSecondaryKhata() {
+    await onComplete?.();
+    onNavigate?.({ tab: "dashboard" });
   }
 
   const stepTitles = [
-    `Set Your ${orgConfig.profileNameLabel}`,
-    `Review Your ${orgConfig.orgLabel || "Khata"} Setup`,
-    orgType === ORG_TYPES.APARTMENT ? "Create First Dues Entry" : orgConfig.hideInvoices ? `Create First ${orgConfig.incomeEntryLabel}` : `Create First ${orgConfig.invoiceEntryLabel}`
+    "Choose Your Second Khata",
+    "Review Both Khatas",
+    `Create Your ${secondaryOrgConfig.orgLabel || "Second"} Workspace`
   ];
 
   async function handleNext() {
     if (isLastStep) {
-      await completeOnboarding();
-      onNavigate?.(quickstartTarget);
+      const success = await completeOnboarding();
+      if (success) onNavigate?.({ tab: "dashboard" });
       return;
     }
     setStep(step + 1);
@@ -57,13 +75,25 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
       alert(`Please enter your ${orgConfig.profileNameLabel.toLowerCase()}.`);
       return;
     }
-    const nextAccount = {
+    onUpdateAccount?.({
       ...account,
       name: String(accountForm.name || "").trim(),
-      organizationType: accountForm.organizationType
-    };
-    onUpdateAccount?.(nextAccount);
+      organizationType: ORG_TYPES.PERSONAL
+    });
     setStep(2);
+  }
+
+  async function saveAccountAndSkip() {
+    if (!String(accountForm.name || "").trim()) {
+      alert(`Please enter your ${orgConfig.profileNameLabel.toLowerCase()}.`);
+      return;
+    }
+    onUpdateAccount?.({
+      ...account,
+      name: String(accountForm.name || "").trim(),
+      organizationType: ORG_TYPES.PERSONAL
+    });
+    await skipSecondaryKhata();
   }
 
   function renderStepContent() {
@@ -72,29 +102,37 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Choose how you want to use EazyKhata and set the name you want shown across the app. You can fill the remaining details later from Khata.
+              Every account gets one permanent Household Khata by default. You can add one extra workspace alongside it now, or skip and create it later from New Khata.
             </div>
-            <Field label="Usage Type" required hint="Choose the setup that matches how you plan to use EazyKhata.">
-              <Select value={orgType} onChange={e => setAccountForm(current => ({ ...current, organizationType: e.target.value }))}>
-                {selectableOrgTypeOptions.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <div style={{ marginBottom: 16, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              {selectableOrgTypeOptions.find(option => option.value === orgType)?.description}
-            </div>
-            <Field label={orgConfig.profileNameLabel} required>
+            <Field label={orgConfig.profileNameLabel} required hint="This default Household Khata always stays with your account.">
               <Input
                 placeholder={orgConfig.profileNamePlaceholder}
                 value={accountForm.name || ""}
                 onChange={e => setAccountForm(current => ({ ...current, name: e.target.value }))}
               />
             </Field>
+            <Field label="Second Khata Type" required hint="Pick the extra workspace you want beyond Household.">
+              <Select
+                value={secondaryOrgType}
+                onChange={e => setAccountForm(current => ({ ...current, secondaryOrgType: e.target.value }))}
+              >
+                {selectableOrgTypeOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Select>
+            </Field>
+            <div style={{ marginBottom: 16, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+              {selectableOrgTypeOptions.find(option => option.value === secondaryOrgType)?.description}
+            </div>
+            <Field label={`${secondaryOrgConfig.orgLabel || "Second"} Khata Name`} required>
+              <Input
+                placeholder={secondaryOrgConfig.profileNamePlaceholder}
+                value={accountForm.secondaryOrgName || ""}
+                onChange={e => setAccountForm(current => ({ ...current, secondaryOrgName: e.target.value }))}
+              />
+            </Field>
             <div style={{ padding: 14, borderRadius: 12, background: "var(--surface-high)", fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              The rest of your profile details like phone, email, address, GST, and invoice preferences can be updated later from the Org tab.
+              Household cannot be deleted or changed later. Your second Khata is optional, and if you create it, it can later switch between Freelancer and Apartment.
             </div>
           </div>
         );
@@ -102,28 +140,20 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              Here is the first thing to set up after this guide so the rest of the app has the right base data.
+              Here is how your account will be organized after onboarding.
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>
-                {isSmallBusinessOrg
-                  ? "Add a service or package"
-                  : `Add your first ${orgConfig.customerEntryLabel.toLowerCase()}`}
+                Household + {secondaryOrgConfig.orgLabel || "Second Khata"}
               </div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6, marginBottom: 12 }}>
-                {orgType === ORG_TYPES.APARTMENT
-                  ? "Create a flat or resident record first so collections and pending units are attached to actual homes."
-                  : orgType === ORG_TYPES.PERSONAL
-                    ? "Create at least one person first so earnings, spendings, and EMI entries can be linked correctly."
-                    : orgType === ORG_TYPES.FREELANCER
-                      ? "Create a client first so invoices and payment follow-up have a real customer record behind them."
-                      : isSmallBusinessOrg
-                        ? "Create a service first so khata, invoices, and work pricing stay consistent."
-                        : `Create a ${orgConfig.customerEntryLabel.toLowerCase()} first so records stay organized from day one.`}
+                <div>• Household stays permanent as your personal/home workspace.</div>
+                <div>• {secondaryOrgConfig.orgLabel || "Second Khata"} becomes your flexible second workspace.</div>
+                <div>• You can skip this now and add that second Khata later from New Khata.</div>
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              After finishing this guide, open Org to complete that setup when you are ready.
+              You can manage both Khatas from the header switcher and Org settings.
             </div>
           </div>
         );
@@ -131,42 +161,18 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
         return (
           <div>
             <div style={{ marginBottom: 16, fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
-              {orgType === ORG_TYPES.APARTMENT
-                ? "Finish setup and we'll open a ready dues form so you can record the first monthly collection in one step."
-                : orgConfig.hideInvoices
-                  ? `Finish setup and we'll open a ready ${orgConfig.incomeEntryLabel.toLowerCase()} form so you can add your first live record immediately.`
-                  : `Finish setup and we'll open a ready ${orgConfig.invoiceEntryLabel.toLowerCase()} form so your first bill is created right away.`}
+              Finish setup and we’ll create your second Khata automatically, or skip and start with Household only.
             </div>
             <div style={{ padding: 16, background: "var(--surface-high)", borderRadius: 12, marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Guided quickstart</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>What happens next</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.8, marginBottom: 12 }}>
-                {primaryQuickstartAction === "first-dues" ? (
-                  <>
-                    <div>• Open Income with a dues draft form</div>
-                    <div>• Pick a flat and amount</div>
-                    <div>• Save your first monthly maintenance entry</div>
-                  </>
-                ) : primaryQuickstartAction === "first-invoice" ? (
-                  <>
-                    <div>• Open Invoices with a new invoice draft</div>
-                    <div>• Choose customer and add line items</div>
-                    <div>• Save your first invoice in minutes</div>
-                  </>
-                ) : (
-                  <>
-                    <div>• Open Income with a new earning draft</div>
-                    <div>• Fill amount and date</div>
-                    <div>• Save your first entry</div>
-                  </>
-                )}
+                <div>• Your Household Khata stays as the permanent default.</div>
+                <div>• A new {secondaryOrgConfig.orgLabel || "second"} Khata is created with the name you entered.</div>
+                <div>• You can switch between both workspaces anytime from the header.</div>
               </div>
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              {primaryQuickstartAction === "first-dues"
-                ? "Tap finish and you will be taken straight to the first dues form."
-                : primaryQuickstartAction === "first-invoice"
-                  ? "Tap finish and you will be taken straight to the first invoice form."
-                  : "Tap finish and you will be taken straight to the first income form."}
+              Tap finish to create your second Khata and complete onboarding.
             </div>
           </div>
         );
@@ -250,17 +256,32 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, user, 
             </button>
           )}
           {step === 1 ? (
-            <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={saveAccountAndContinue}>
-              Continue
-            </button>
+            <>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={saveAccountAndSkip}>
+                Skip for now
+              </button>
+              <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={saveAccountAndContinue}>
+                Continue
+              </button>
+            </>
           ) : isLastStep ? (
-            <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={handleNext}>
-              {primaryQuickstartAction === "first-dues" ? "Finish & Add First Dues" : primaryQuickstartAction === "first-invoice" ? "Finish & Create First Invoice" : "Finish & Add First Entry"}
-            </button>
+            <>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={skipSecondaryKhata}>
+                Skip for now
+              </button>
+              <button className="btn-primary" style={{ flex: 1, background: "var(--accent)", color: "#fff", border: "none" }} onClick={handleNext}>
+                Finish & Create Second Khata
+              </button>
+            </>
           ) : (
-            <button className="btn-secondary" style={{ flex: 1 }} onClick={handleNext}>
-              Next
-            </button>
+            <>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={skipSecondaryKhata}>
+                Skip for now
+              </button>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={handleNext}>
+                Next
+              </button>
+            </>
           )}
         </div>
       </div>

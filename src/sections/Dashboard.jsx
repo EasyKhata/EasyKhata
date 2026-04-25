@@ -309,9 +309,16 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
   // Never show the setup guide when viewing a shared org — it belongs to the member's own account
   useEffect(() => {
-    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) return;
-    setShowSetupGuide(true);
-  }, [activeSharedOrgKey, data.loaded, user?.id, user?.onboardingSeenAt]);
+    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) {
+      setShowSetupGuide(false);
+      return;
+    }
+    const ownedOrganizations = Array.isArray(data.organizations) ? data.organizations : [];
+    const shouldShowGuide =
+      ownedOrganizations.length === 1 &&
+      getOrgType(ownedOrganizations[0]?.organizationType) === ORG_TYPES.PERSONAL;
+    setShowSetupGuide(shouldShowGuide);
+  }, [activeSharedOrgKey, data.loaded, data.organizations, user?.id, user?.onboardingSeenAt]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -577,22 +584,21 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         setShowSetupGuide(false);
         await updateProfile({ onboardingSeenAt: new Date().toISOString() });
       }}
-      data={data}
       onNavigate={onNav}
-      user={user}
       account={data.account}
       onUpdateAccount={async (accountInfo) => {
         try {
           data.saveAccount({
             ...data.account,
             ...accountInfo,
-            organizationType: accountInfo.organizationType || data.account?.organizationType || user?.organizationType
+            organizationType: data.account?.organizationType || user?.organizationType || ORG_TYPES.PERSONAL
           });
         } catch (err) {
           logError("Account update error", err);
           alert("Failed to save account details. Please try again.");
         }
       }}
+      onCreateOrganization={data.createOrganization}
     />
   );
 
