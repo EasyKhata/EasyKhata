@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
 import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType, isSubscriptionActive } from "../utils/subscription";
-import { getOrgType } from "../utils/orgTypes";
+import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
 import { orgsApi, usersApi, membersApi } from "../lib/api";
@@ -44,7 +44,7 @@ function fromApiOrg(apiOrg, collections = {}) {
       address: apiOrg.address || "",
       gstin: apiOrg.gstin || "",
       showHSN: apiOrg.showHsn || false,
-      organizationType: apiOrg.organizationType || "small_business"
+      organizationType: apiOrg.organizationType || ORG_TYPES.PERSONAL
     },
     currency: {
       code: apiOrg.currencyCode || "INR",
@@ -86,7 +86,7 @@ function toApiOrgUpdate(orgData) {
     address: acc.address || "",
     gstin: acc.gstin || "",
     showHsn: Boolean(acc.showHSN),
-    organizationType: acc.organizationType || "small_business",
+    organizationType: acc.organizationType || ORG_TYPES.PERSONAL,
     currencyCode: cur.code || "INR",
     currencySymbol: cur.symbol || "Rs",
     currencyName: cur.name || "Indian Rupee",
@@ -221,7 +221,7 @@ const EMPTY_ORG_DATA = {
     address: "",
     gstin: "",
     showHSN: false,
-    organizationType: "small_business"
+    organizationType: ORG_TYPES.PERSONAL
   },
   goals: { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
   budgets: {},
@@ -316,11 +316,15 @@ function normalizeOrgData(source = {}, fallback = {}) {
         address: normalizedAddress,
         gstin: source.gstin || fallbackAccount.gstin || "",
         showHSN: source.showHSN || fallbackAccount.showHSN || false,
-        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || "small_business"
+        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || ORG_TYPES.PERSONAL
       }
     )
   };
   return ensureHouseholdPrimaryPerson(normalizedOrg);
+}
+
+function isHouseholdOrgType(type) {
+  return getOrgType(type) === ORG_TYPES.PERSONAL;
 }
 
 function normalizeOrgCollection(source = {}, fallback = {}) {
@@ -746,7 +750,7 @@ export function DataProvider({ children }) {
       const orgId = nextState.activeOrgId;
       orgsApi.update(user.id, orgId, toApiOrgUpdate(nextState)).catch(err => logError("org update failed", err));
       syncActiveOrgCollections(nextState).catch(err => logError("collection sync failed", err));
-      usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || "small_business" })
+      usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || ORG_TYPES.PERSONAL })
         .catch(err => logError("user update failed", err));
 
       setUser(prev =>
@@ -782,7 +786,7 @@ export function DataProvider({ children }) {
         // collections (income, expenses, invoices) until the user navigates to them.
         // This cuts the initial payload from potentially thousands of rows down to just
         // org settings + orgRecords + customers.
-        const activeOrgId = user.activeOrgId || DEFAULT_ORG_ID;
+        const requestedActiveOrgId = user.activeOrgId || DEFAULT_ORG_ID;
 
         // Reset per-session collection fetch flags for this load
         const freshFetched = { income: false, expenses: false, invoices: false, customers: false };
@@ -791,13 +795,38 @@ export function DataProvider({ children }) {
 
         // Read local cache — income/expenses/invoices come from here until lazily refreshed
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
-        const localOrg  = localData.orgs?.[activeOrgId] || {};
+        let allOrgs = await orgsApi.list(user.id);
+        let effectiveActiveOrgId = requestedActiveOrgId;
 
-        const [allOrgs, activeOrgMeta, customersPage, summary] = await Promise.all([
-          orgsApi.list(user.id),
-          orgsApi.getFull(user.id, activeOrgId, null, { metaOnly: true }),
-          orgsApi.getCollection(user.id, activeOrgId, "customers").catch(() => null),
-          orgsApi.getSummary(user.id, activeOrgId).catch(() => EMPTY_SUMMARY)
+        const hasHouseholdOrg = (allOrgs || []).some(org => isHouseholdOrgType(org.organizationType));
+        if ((allOrgs || []).length === 0 || (!hasHouseholdOrg && (allOrgs || []).length < 2)) {
+          const householdOrgId = (allOrgs || []).length === 0
+            ? (requestedActiveOrgId || DEFAULT_ORG_ID)
+            : `org_${uid()}${uid()}`;
+          try {
+            await orgsApi.create(user.id, householdOrgId, {
+              organizationType: ORG_TYPES.PERSONAL,
+              email: user.email || "",
+              phone: user.phone || ""
+            });
+            allOrgs = await orgsApi.list(user.id);
+            if ((allOrgs || []).length === 1) {
+              effectiveActiveOrgId = householdOrgId;
+            }
+          } catch (migrationErr) {
+            logError("default household creation failed", migrationErr);
+          }
+        }
+
+        const resolvedActiveOrgId = (allOrgs || []).some(org => org.id === effectiveActiveOrgId)
+          ? effectiveActiveOrgId
+          : (allOrgs?.[0]?.id || DEFAULT_ORG_ID);
+        const localOrg = localData.orgs?.[resolvedActiveOrgId] || {};
+
+        const [activeOrgMeta, customersPage, summary] = await Promise.all([
+          orgsApi.getFull(user.id, resolvedActiveOrgId, null, { metaOnly: true }).catch(() => null),
+          orgsApi.getCollection(user.id, resolvedActiveOrgId, "customers").catch(() => null),
+          orgsApi.getSummary(user.id, resolvedActiveOrgId).catch(() => EMPTY_SUMMARY)
         ]);
 
         // getCollection returns { records, hasMore, nextCursor } — unwrap the first page.
@@ -812,7 +841,7 @@ export function DataProvider({ children }) {
         if (activeOrgMeta) {
           // Org settings + orgRecords come from server; large collections from local cache.
           // Customers are fresh from server (usually small, always needed for dropdowns).
-          orgsMap[activeOrgId] = normalizeOrgData(fromApiOrg(activeOrgMeta, {
+          orgsMap[resolvedActiveOrgId] = normalizeOrgData(fromApiOrg(activeOrgMeta, {
             income:     localOrg.income    || [],
             expenses:   localOrg.expenses  || [],
             invoices:   localOrg.invoices  || [],
@@ -821,13 +850,13 @@ export function DataProvider({ children }) {
           }));
         }
 
-        if (!orgsMap[activeOrgId]) {
+        if (!orgsMap[resolvedActiveOrgId]) {
           orgsMap[DEFAULT_ORG_ID] = normalizeOrgData({});
         }
 
         const nextState = buildStateFromOrganizations({
           orgs: orgsMap,
-          activeOrgId: activeOrgMeta?.id || activeOrgId,
+          activeOrgId: activeOrgMeta?.id || resolvedActiveOrgId,
           sharedLedger: null
         });
 
@@ -835,7 +864,7 @@ export function DataProvider({ children }) {
 
         // Establish delta-write baseline for customers (fetched fresh above).
         // income/expenses/invoices baselines are set when lazily loaded.
-        const loadedOrgId = activeOrgMeta?.id || activeOrgId;
+        const loadedOrgId = activeOrgMeta?.id || resolvedActiveOrgId;
         if (!lastSyncedRef.current[loadedOrgId]) lastSyncedRef.current[loadedOrgId] = {};
         if (customers !== null) {
           lastSyncedRef.current[loadedOrgId].customers = buildBaseline(customers);
@@ -891,7 +920,7 @@ export function DataProvider({ children }) {
                 orgId: m.orgId,
                 orgName: m.orgName || "",
                 ownerName: m.owner?.name || "",
-                organizationType: m.organizationType || "small_business",
+                organizationType: m.organizationType || ORG_TYPES.PERSONAL,
                 role: m.role || "viewer",
                 acceptedAt: m.acceptedAt || ""
               };
@@ -1233,8 +1262,9 @@ export function DataProvider({ children }) {
 
     const orgCount = Object.keys(data.orgs || {}).length;
     const maxOrganizations = getMaxOrganizations(user);
+    const hasHouseholdOrg = organizations.some(org => isHouseholdOrgType(org.organizationType));
     if (orgCount >= maxOrganizations) {
-      return { error: `Your account can use up to ${maxOrganizations} Khatas (one of each type).` };
+      return { error: `Your account can use up to ${maxOrganizations} Khatas: one permanent Household and one extra work Khata.` };
     }
 
     // Creating a 2nd+ org requires an active paid plan.
@@ -1250,6 +1280,12 @@ export function DataProvider({ children }) {
     if (alreadyHasType) {
       const label = requestedType.replace(/_/g, " ");
       return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
+    }
+    if (requestedType !== ORG_TYPES.PERSONAL && ![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
+      return { error: "The second Khata can only be Freelancer or Apartment." };
+    }
+    if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
+      return { error: "Household is already your default Khata." };
     }
 
     const nextOrgId = `org_${uid()}${uid()}`;
@@ -1303,6 +1339,9 @@ export function DataProvider({ children }) {
     const orgIds = Object.keys(data.orgs || {});
     if (orgIds.length <= 1) {
       return { error: "At least one organization workspace must remain." };
+    }
+    if (isHouseholdOrgType(data.orgs?.[orgId]?.account?.organizationType)) {
+      return { error: "Your default Household Khata cannot be deleted." };
     }
 
     try {

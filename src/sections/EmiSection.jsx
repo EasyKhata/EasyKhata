@@ -161,10 +161,6 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     return null;
   }
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   function openNew() {
     if (!hasHouseholdPeople) {
       openPeopleManager();
@@ -184,6 +180,10 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openEdit(record) {
     setEditId(record.id);
@@ -265,7 +265,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
                 : "No active EMIs this month"}
             </div>
           </div>
-          {headerDatePicker && <div>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
         </div>
       </div>
 

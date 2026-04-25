@@ -219,10 +219,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {
       openFlatManager();
@@ -250,6 +246,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openBudgetEditor() {
     if (!canUseFeature(user, "budgets")) {
@@ -449,7 +449,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
             </div>
-            {headerDatePicker && <div>{headerDatePicker}</div>}
+            {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>
         </div>
         {isPersonalOrg ? (

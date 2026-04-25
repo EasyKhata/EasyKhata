@@ -65,7 +65,7 @@ import {
 } from "../utils/subscription";
 import { APP_SUPPORT_EMAIL, APP_UPGRADE_URL } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
-import { ORG_TYPE_OPTIONS, ORG_TYPES, getOrgConfig, getOrgType, getSelectableOrgTypeOptions } from "../utils/orgTypes";
+import { ORG_TYPE_OPTIONS, ORG_TYPES, getOrgConfig, getOrgType, getSecondaryOrgTypeOptions, getSelectableOrgTypeOptions } from "../utils/orgTypes";
 
 function getCurrentFinancialYearStart(date = new Date()) {
   return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
@@ -354,7 +354,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [createOrgForm, setCreateOrgForm] = useState({
     name: "",
-    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    organizationType: getOrgType(account?.organizationType || user?.organizationType) === ORG_TYPES.PERSONAL
+      ? ORG_TYPES.FREELANCER
+      : getOrgType(account?.organizationType || user?.organizationType)
   });
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
@@ -399,7 +401,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const planSummary = getPlanSummary(user, orgType);
-  const canChangeOrgType = user?.role === "admin" || canChangeOrgTypeFn(user);
+  const isPrimaryHouseholdOrg = orgType === ORG_TYPES.PERSONAL;
+  const canChangeOrgType = (user?.role === "admin" || canChangeOrgTypeFn(user)) && !isPrimaryHouseholdOrg;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const showApartmentWhatsappField = isApartmentOrg;
@@ -417,17 +420,20 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const orgConfig = getOrgConfig(orgType);
   const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
   const selectableOrgTypeOptions = useMemo(() => {
+    if (isPrimaryHouseholdOrg) {
+      return ORG_TYPE_OPTIONS.filter(option => getOrgType(option.value) === ORG_TYPES.PERSONAL);
+    }
     const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
     const usedTypes = new Set(
       organizations
         .filter(org => org.id !== activeOrgId)
         .map(org => getOrgType(org.organizationType))
     );
-    return getSelectableOrgTypeOptions(accForm.organizationType || orgType).filter(
+    return getSecondaryOrgTypeOptions(accForm.organizationType || orgType).filter(
       option => getOrgType(option.value) === currentOrgType || !usedTypes.has(getOrgType(option.value))
     );
-  }, [accForm.organizationType, orgType, organizations, activeOrgId, account?.organizationType, user?.organizationType]);
-  const selectableCreateOrgTypeOptions = useMemo(() => getSelectableOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
+  }, [accForm.organizationType, orgType, organizations, activeOrgId, account?.organizationType, user?.organizationType, isPrimaryHouseholdOrg]);
+  const selectableCreateOrgTypeOptions = useMemo(() => getSecondaryOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const [customerInsights, setCustomerInsights] = useState(customers);
   const CUSTOMER_SCREENS = new Set(["customers", "customer-detail", "customer-form"]);
@@ -574,6 +580,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function confirmOrgTypeChange() {
     if (!pendingOrgTypeChange?.nextAccount) return;
+    if (isPrimaryHouseholdOrg) {
+      setPendingOrgTypeChange(null);
+      showNotice("Household stays as your default Khata and cannot change type.");
+      return;
+    }
     resetForOrgTypeChange(pendingOrgTypeChange.nextAccount);
     setPendingOrgTypeChange(null);
     showNotice("Khata type changed. Existing records were cleared.", "success");
@@ -1883,6 +1894,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
+                  icon="B"
+                  label="Bills / Invoices"
+                  sub="Open apartment receipts and bills"
+                  onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "invoices" } }))}
+                />
+              )}
+              {isApartmentOrg && (
+                <MenuRow
                   icon="I"
                   label="Import Apartment Data"
                   sub="Upload flats, collections, expenses, dues, and opening balances in one CSV"
@@ -2252,7 +2271,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
               {atProMax
-                ? "You have reached the maximum of 2 Khatas on the Pro plan (one per type)."
+                ? "You have reached the maximum of 2 Khatas on the Pro plan: one permanent Household and one extra work Khata."
                 : "Your subscription has ended. Upgrade to Pro to create or manage Khatas."}
             </div>
           </div>
@@ -2266,7 +2285,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your trial includes 1 Khata. Upgrade to Pro for up to 2 Khatas — one per type (Household, Freelancer, Small Business, Apartment).
+              Your trial includes 1 Khata. Upgrade to Pro for 2 Khatas total: one permanent Household plus one Freelancer or Apartment Khata.
             </div>
           </div>
         </Modal>
@@ -2274,8 +2293,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     // Paid (or trial with 0 orgs): show create form filtered to unowned types
-    const ownedTypes = new Set(organizations.map(o => o.organizationType));
-    const availableTypes = ORG_TYPE_OPTIONS.filter(o => !ownedTypes.has(o.value));
+    const ownedTypes = new Set(organizations.map(o => getOrgType(o.organizationType)));
+    const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType).filter(o => !ownedTypes.has(getOrgType(o.value)));
 
     async function handleCreateOrg() {
       if (!createOrgForm.name?.trim()) { showNotice("Please enter a name for the new Khata."); return; }

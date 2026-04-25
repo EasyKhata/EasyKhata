@@ -328,6 +328,18 @@ input, select, textarea, button {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent), var(--card-shadow);
 }
 
+.ledger-card-month-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+  min-width: min(100%, 240px);
+}
+
+.ledger-card-month-picker-inline {
+  margin-bottom: 14px;
+}
+
 .skeleton {
   background: linear-gradient(180deg, var(--surface-high) 0%, var(--surface-pop) 100%);
 }

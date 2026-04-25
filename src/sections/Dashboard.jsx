@@ -309,9 +309,16 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
   // Never show the setup guide when viewing a shared org — it belongs to the member's own account
   useEffect(() => {
-    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) return;
-    setShowSetupGuide(true);
-  }, [activeSharedOrgKey, data.loaded, user?.id, user?.onboardingSeenAt]);
+    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) {
+      setShowSetupGuide(false);
+      return;
+    }
+    const ownedOrganizations = Array.isArray(data.organizations) ? data.organizations : [];
+    const shouldShowGuide =
+      ownedOrganizations.length === 1 &&
+      getOrgType(ownedOrganizations[0]?.organizationType) === ORG_TYPES.PERSONAL;
+    setShowSetupGuide(shouldShowGuide);
+  }, [activeSharedOrgKey, data.loaded, data.organizations, user?.id, user?.onboardingSeenAt]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -577,22 +584,21 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         setShowSetupGuide(false);
         await updateProfile({ onboardingSeenAt: new Date().toISOString() });
       }}
-      data={data}
       onNavigate={onNav}
-      user={user}
       account={data.account}
       onUpdateAccount={async (accountInfo) => {
         try {
           data.saveAccount({
             ...data.account,
             ...accountInfo,
-            organizationType: accountInfo.organizationType || data.account?.organizationType || user?.organizationType
+            organizationType: data.account?.organizationType || user?.organizationType || ORG_TYPES.PERSONAL
           });
         } catch (err) {
           logError("Account update error", err);
           alert("Failed to save account details. Please try again.");
         }
       }}
+      onCreateOrganization={data.createOrganization}
     />
   );
 
@@ -701,13 +707,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                 <div className="section-eyebrow">Collection Trend</div>
-                {headerDatePicker && <div>{headerDatePicker}</div>}
+                {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
               </div>
               <Sparkline data={trendData} color="var(--orchid)" height={40} />
             </div>
           )}
           {trendData.length < 3 && headerDatePicker && (
-            <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>
+            <div className="ledger-card-month-picker ledger-card-month-picker-inline">{headerDatePicker}</div>
           )}
 
           {/* Recent transactions */}
@@ -789,7 +795,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               {savingsGoal ? (
                 <HealthArc pct={savingsPct} size={84} color={healthColor} />
               ) : (
-                headerDatePicker && <div>{headerDatePicker}</div>
+                headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>
               )}
             </div>
             <div>
@@ -816,7 +822,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
                 <div className="section-eyebrow">Income Trend</div>
-                {savingsGoal && headerDatePicker && <div>{headerDatePicker}</div>}
+                {savingsGoal && headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
               </div>
               <Sparkline data={trendData} color="var(--jade)" height={40} />
             </div>
@@ -899,7 +905,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               </div>
               <HealthArc pct={earningsPct} size={84} color="var(--sky)" />
             </div>
-            {headerDatePicker && <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>}
+            {headerDatePicker && <div className="ledger-card-month-picker ledger-card-month-picker-inline">{headerDatePicker}</div>}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>Collected vs Expenses</span>
@@ -1044,7 +1050,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </div>
             <HealthArc pct={Math.min(100, Math.round((Number(stats.totalIncome || 0) / Math.max(Number(stats.totalIncome || 0) + Number(stats.totalExpense || 0), 1)) * 100))} size={84} color="var(--jade)" />
           </div>
-          {headerDatePicker && <div style={{ marginBottom: 14 }}>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-card-month-picker ledger-card-month-picker-inline">{headerDatePicker}</div>}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>Revenue vs Expenses</span>

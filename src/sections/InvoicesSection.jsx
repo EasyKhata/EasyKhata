@@ -240,6 +240,10 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter)
   ), [paymentRequests, requestFilter]);
 
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
+
   const DocumentCard = ({ invoice }) => (
     <WorkflowRecordCard
       avatar={<Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={40} fontSize={14} />}
@@ -350,10 +354,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
 
   function openNew() {
     if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
@@ -722,7 +722,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>
           </div>
-          {headerDatePicker && <div>{headerDatePicker}</div>}
+          {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
         </div>
       </div>
 

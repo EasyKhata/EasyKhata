@@ -201,6 +201,12 @@ export default function AdminPanel({ year, month }) {
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
 
+  function toArray(payload, key) {
+    if (Array.isArray(payload)) return payload;
+    if (payload && Array.isArray(payload[key])) return payload[key];
+    return [];
+  }
+
   async function fetchAdminData() {
     setLoading(true);
     setAdminError("");
@@ -211,12 +217,12 @@ export default function AdminPanel({ year, month }) {
         adminApi.listSupportTickets().catch(() => [])
       ]);
 
-      setUsers(usersResult.users || []);
+      setUsers(toArray(usersResult, "users"));
       setPaymentRequests(
-        (requests || []).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+        toArray(requests, "requests").sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
       );
       setSupportTickets(
-        (tickets || []).map(t => ({
+        toArray(tickets, "tickets").map(t => ({
           ...t,
           messages: Array.isArray(t.messages) ? t.messages : (t.message ? [{
             id: `${t.id}-initial`, senderRole: "user", senderId: t.userId || "",
@@ -497,6 +503,7 @@ export default function AdminPanel({ year, month }) {
 
     while (insights.length < 4) {
       insights.push({
+        id: `strategy-${insights.length + 1}`,
         eyebrow: "Strategy",
         title: "More insight quality will come from better profile completion",
         body: "The dashboard now exposes product usage and org depth. To unlock stronger audience segmentation, continue driving users to complete location, age group, and gender in their personal profile.",
@@ -828,8 +835,8 @@ export default function AdminPanel({ year, month }) {
 
       <div className="section-label">Strategic Signals</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 18, marginBottom: 18 }}>
-        {analytics.insights.map(insight => (
-          <InsightCard key={`${insight.eyebrow}-${insight.title}`} eyebrow={insight.eyebrow} title={insight.title} body={insight.body} tone={insight.tone} />
+        {analytics.insights.map((insight, index) => (
+          <InsightCard key={insight.id || `${insight.eyebrow}-${insight.title}-${index}`} eyebrow={insight.eyebrow} title={insight.title} body={insight.body} tone={insight.tone} />
         ))}
       </div>
 
