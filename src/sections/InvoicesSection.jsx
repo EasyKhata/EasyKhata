@@ -20,6 +20,7 @@ import {
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
+import { RupeeDisplay } from "../components/ui/reimagined";
 import { UpgradeModal } from "../components/UI";
 import { useAuth } from "../context/AuthContext";
 import { downloadInvoice } from "../utils/invoiceGen";
@@ -717,7 +718,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
               {isAdmin ? "Subscription Invoices" : documentCollectionLabel} · {MONTHS[month]} {year}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--blue)" }}>{fmtMoney(total, sym)}</div>
+            <div style={{ marginTop: 2 }}>
+              <RupeeDisplay amount={total} color="var(--blue)" size={40} animate />
+            </div>
             <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
               {monthInv.length} {documentLabel.toLowerCase()}(s){!isApartmentOrg ? ` · ${pendingCount} ${isQuote ? "open" : "pending"}` : ""}
             </div>

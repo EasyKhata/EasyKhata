@@ -65,16 +65,16 @@ export default function AuthScreen() {
   // First-time setup modal
   if (pendingSetup) {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 20 }}>
+      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg)) 0%, var(--bg) 100%)", padding: 20 }}>
         <Modal
-          title="Welcome to EazyKhata"
+          title="Set Up Your Household"
           onClose={null}
           onSave={handleCompleteSetup}
           saveLabel={setupLoading ? "Setting up..." : "Get Started"}
           canSave={!setupLoading}
         >
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
-            Signed in as <b>{pendingSetup.email}</b>. We&apos;ll first create your default Household Khata. Right after this, onboarding will help you add either a Freelancer or Apartment Khata as your second workspace.
+            Signed in as <b>{pendingSetup.email}</b>. We’ll first create your permanent Household Khata. Right after this, onboarding can help you add one extra Freelancer or Apartment Khata.
           </div>
 
           <Field label="Phone Number" required hint="Used for payment receipts and support.">
@@ -105,36 +105,44 @@ export default function AuthScreen() {
 
   // Main sign-in screen
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 360 }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 40 }}>
-          <BrandLogo size={56} style={{ marginBottom: 16 }} />
+    <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg)) 0%, var(--bg) 100%)", padding: "24px 20px" }}>
+      <div style={{ width: "100%", maxWidth: 420 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
+          <BrandLogo size={64} style={{ marginBottom: 18 }} />
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Continue to EazyKhata</div>
+          <div style={{ fontSize: 14, color: "var(--text-sec)", textAlign: "center", lineHeight: 1.7, maxWidth: 320 }}>
+            Track income, expenses, invoices, and EMIs for your household, freelance work, or apartment society from one account.
+          </div>
         </div>
-
-        <button
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-          style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-            padding: "14px 20px",
-            background: "var(--surface-high)",
-            border: "1.5px solid var(--border)",
-            borderRadius: 14,
-            fontSize: 15,
-            fontWeight: 600,
-            color: "var(--text)",
-            cursor: loading ? "not-allowed" : "pointer",
-            opacity: loading ? 0.7 : 1,
-            transition: "background 0.15s"
-          }}
-        >
-          <GoogleIcon />
-          {loading ? "Signing in..." : "Continue with Google"}
-        </button>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 24, padding: 20, boxShadow: "0 18px 40px rgba(12, 20, 38, 0.08)" }}>
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              padding: "16px 20px",
+              background: "var(--surface-high)",
+              border: "1.5px solid var(--border)",
+              borderRadius: 16,
+              fontSize: 16,
+              fontWeight: 700,
+              color: "var(--text)",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.7 : 1,
+              transition: "background 0.15s"
+            }}
+          >
+            <GoogleIcon />
+            {loading ? "Signing in..." : "Continue with Google"}
+          </button>
+          <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.7 }}>
+            Household Khata is free forever. Add one extra Freelancer or Apartment workspace later if you need it.
+          </div>
+        </div>
 
         {error && (
           <div style={{ marginTop: 16, fontSize: 13, color: "var(--danger)", textAlign: "center", lineHeight: 1.5 }}>

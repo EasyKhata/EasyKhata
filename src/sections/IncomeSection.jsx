@@ -24,6 +24,7 @@ import {
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
+import { RupeeDisplay } from "../components/ui/reimagined";
 import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
@@ -1031,7 +1032,9 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
                 Total {config.incomeLabel} · {MONTHS[month]} {year}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
+            <div style={{ marginTop: 2 }}>
+              <RupeeDisplay amount={totalIncome} color="var(--accent)" size={40} animate />
+            </div>
             </div>
             {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>

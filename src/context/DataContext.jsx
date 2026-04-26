@@ -159,35 +159,53 @@ function withId(record = {}) {
   return { ...record, id: record.id || uid() };
 }
 
-function ensureHouseholdPrimaryPerson(orgData = {}) {
+function ensureHouseholdPrimaryPerson(orgData = {}, profileDefaults = {}) {
   const orgType = getOrgType(orgData?.account?.organizationType);
   if (orgType !== "personal") return orgData;
 
   const account = orgData?.account || {};
-  const primaryName = String(account.name || "").trim();
-  if (!primaryName) return orgData;
-
   const customers = Array.isArray(orgData.customers) ? orgData.customers : [];
   const existingPrimary = customers.find(customer => customer?.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer?.isPrimaryProfile);
+  const promotedCustomer = !existingPrimary
+    ? customers.find(customer => customer?.id && String(customer?.name || "").trim())
+    : null;
+  const primarySource = existingPrimary || promotedCustomer || {};
+  const primaryName = String(
+    primarySource?.name ||
+    account.primaryProfileName ||
+    profileDefaults.name ||
+    ""
+  ).trim();
+  const primaryEmail = String(primarySource?.email || profileDefaults.email || "").trim();
+  const primaryPhone = String(primarySource?.phone || profileDefaults.phone || "").trim();
+  const primaryPhoneCountryCode = String(primarySource?.phoneCountryCode || profileDefaults.phoneCountryCode || "").trim();
+  const primaryPhoneNumber = String(primarySource?.phoneNumber || profileDefaults.phoneNumber || "").trim();
+  if (!primaryName && !primaryEmail && !primaryPhone && !primaryPhoneNumber) return orgData;
+
   const primaryRecord = {
-    ...(existingPrimary || {}),
+    ...primarySource,
     id: HOUSEHOLD_PRIMARY_PERSON_ID,
     isPrimaryProfile: true,
     isLockedProfile: true,
     name: primaryName,
-    email: String(account.email || existingPrimary?.email || "").trim(),
-    phone: String(account.phone || existingPrimary?.phone || "").trim(),
-    phoneCountryCode: String(account.phoneCountryCode || existingPrimary?.phoneCountryCode || "").trim(),
-    phoneNumber: String(account.phoneNumber || existingPrimary?.phoneNumber || "").trim(),
-    addressLine: String(account.addressLine || existingPrimary?.addressLine || "").trim(),
-    city: String(account.city || existingPrimary?.city || "").trim(),
-    state: String(account.state || existingPrimary?.state || "").trim(),
-    country: String(account.country || existingPrimary?.country || "").trim(),
-    location: String(account.location || existingPrimary?.location || "").trim(),
-    address: String(account.address || existingPrimary?.address || "").trim()
+    email: primaryEmail,
+    phone: primaryPhone,
+    phoneCountryCode: primaryPhoneCountryCode,
+    phoneNumber: primaryPhoneNumber,
+    addressLine: String(primarySource?.addressLine || "").trim(),
+    city: String(primarySource?.city || "").trim(),
+    state: String(primarySource?.state || "").trim(),
+    country: String(primarySource?.country || "").trim(),
+    location: String(primarySource?.location || "").trim(),
+    address: String(primarySource?.address || "").trim()
   };
 
-  const otherCustomers = customers.filter(customer => customer?.id !== HOUSEHOLD_PRIMARY_PERSON_ID && !customer?.isPrimaryProfile);
+  const promotedId = primarySource?.id;
+  const otherCustomers = customers.filter(customer =>
+    customer?.id !== HOUSEHOLD_PRIMARY_PERSON_ID &&
+    !customer?.isPrimaryProfile &&
+    customer?.id !== promotedId
+  );
   return {
     ...orgData,
     customers: [primaryRecord, ...otherCustomers]
@@ -265,7 +283,7 @@ function createEmptyAccount(overrides = {}) {
   };
 }
 
-function normalizeOrgData(source = {}, fallback = {}) {
+function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
   const sourceGoals = source.goals || {};
   const fallbackAccount = fallback.account || {};
   const sourceAccount = source.account || {};
@@ -320,7 +338,7 @@ function normalizeOrgData(source = {}, fallback = {}) {
       }
     )
   };
-  return ensureHouseholdPrimaryPerson(normalizedOrg);
+  return ensureHouseholdPrimaryPerson(normalizedOrg, profileDefaults);
 }
 
 function isHouseholdOrgType(type) {
@@ -329,10 +347,10 @@ function isHouseholdOrgType(type) {
 
 function normalizeOrgCollection(source = {}, fallback = {}) {
   if (source.orgs && typeof source.orgs === "object" && Object.keys(source.orgs).length > 0) {
-    return Object.entries(source.orgs).reduce((acc, [orgId, orgValue]) => {
-      acc[orgId] = normalizeOrgData(orgValue, fallback);
-      return acc;
-    }, {});
+      return Object.entries(source.orgs).reduce((acc, [orgId, orgValue]) => {
+        acc[orgId] = normalizeOrgData(orgValue, fallback);
+        return acc;
+      }, {});
   }
 
   return {
@@ -1290,17 +1308,20 @@ export function DataProvider({ children }) {
 
     const nextOrgId = `org_${uid()}${uid()}`;
     const nextOrg = normalizeOrgData(
-      {
-        account: {
-          ...createEmptyAccount({
-            email: accountInput.email || user.email || "",
-            phone: accountInput.phone || user.phone || "",
-            organizationType: accountInput.organizationType || user.organizationType
-          }),
-          ...accountInput,
-          organizationType: getOrgType(accountInput.organizationType || user.organizationType)
-        }
-      },
+        {
+          account: {
+            ...createEmptyAccount({
+              email: accountInput.email || user.email || "",
+              phone: accountInput.phone || user.phone || "",
+              organizationType: accountInput.organizationType || user.organizationType
+            }),
+            ...accountInput,
+            primaryProfileName: isHouseholdOrgType(accountInput.organizationType || user.organizationType)
+              ? String(user?.name || "").trim()
+              : "",
+            organizationType: getOrgType(accountInput.organizationType || user.organizationType)
+          }
+        },
       {
         account: {
           email: user.email || "",
