@@ -397,13 +397,13 @@ export default function LandingScreen({ onGetStarted }) {
 
       <div
         id="ek-landing-scroll"
-        style={{ minHeight: "100dvh", overflowY: "auto", overflowX: "hidden", background: "var(--bg)", position: "relative" }}
+        style={{ minHeight: "100dvh", overflowY: "auto", overflowX: "hidden", background: "var(--bg)", position: "relative", paddingTop: "env(safe-area-inset-top, 0px)" }}
       >
         {/* NAV */}
         <nav style={{
           position: "sticky", top: 0, zIndex: 100,
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "12px 24px",
+          padding: "calc(env(safe-area-inset-top, 0px) + 12px) 24px 12px",
           background: scrolled ? "color-mix(in srgb, var(--bg) 90%, transparent)" : "transparent",
           backdropFilter: scrolled ? "blur(14px)" : "none",
           borderBottom: scrolled ? "1px solid var(--border)" : "1px solid transparent",

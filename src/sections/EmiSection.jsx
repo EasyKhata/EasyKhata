@@ -4,6 +4,7 @@ import { Modal, Field, Input, Select, DateSelectInput, fmtMoney, fmtDate, MONTHS
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
+import { RupeeDisplay } from "../components/ui/reimagined";
 
 const INDIAN_BANKS = [
   "State Bank of India (SBI)", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank",
@@ -258,7 +259,9 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
               EMI Commitments · {MONTHS[month]} {year}
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: "var(--gold)" }}>{fmtMoney(monthlyEmi, sym)}</div>
+            <div style={{ marginTop: 2 }}>
+              <RupeeDisplay amount={monthlyEmi} color="var(--gold)" size={40} animate />
+            </div>
             <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>
               {activeLoans.length
                 ? `${activeLoans.length} active EMI ${activeLoans.length === 1 ? "entry" : "entries"} this month`

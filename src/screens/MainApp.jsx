@@ -326,6 +326,8 @@ function QuickEntrySheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const amountRef = useRef(null);
+  const isCompactSheet = typeof window !== "undefined" ? window.innerWidth <= 440 : false;
+  const twoColLayout = isCompactSheet ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)";
   const today = new Date().toISOString().split("T")[0];
   const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
   const currentMonthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`;
@@ -507,13 +509,13 @@ function QuickEntrySheet({
   };
 
   return (
-    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(84dvh, 760px)", overflowY: "auto", overscrollBehavior: "contain" }}>
+    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 14px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(84dvh, 760px)", overflow: "hidden", overscrollBehavior: "contain" }}>
       <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 2px" }} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
         <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8, flexShrink: 0 }}>
         {tabs.map(option => {
           const selected = option.key === entryType;
           return (
@@ -537,11 +539,11 @@ function QuickEntrySheet({
           );
         })}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px", flexShrink: 0 }}>
         <span style={{ fontSize: 28, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
         <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
       </div>
-      <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 12, overflowY: "auto", paddingRight: 2 }}>
         {showPeopleSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
             <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a household member in Khata before creating this entry.</div>
@@ -565,7 +567,7 @@ function QuickEntrySheet({
           <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
         </div>
         {entryType !== "emi" && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Date</div>
               <input type="date" value={form.date} onChange={event => updateField("date", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -604,7 +606,7 @@ function QuickEntrySheet({
         )}
         {entryType === "income" && isApartmentOrg && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Flat Number</div>
                 <select value={form.flatNumber} onChange={event => updateField("flatNumber", event.target.value)} style={sheetSelectStyle} disabled={!hasApartmentFlats}>
@@ -633,7 +635,7 @@ function QuickEntrySheet({
           </div>
         )}
         {entryType === "expense" && isFreelancerOrg && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
               <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle} disabled={!hasFreelancerClients}>
@@ -648,7 +650,7 @@ function QuickEntrySheet({
           </div>
         )}
         {entryType === "expense" && isApartmentOrg && (
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Service Provider</div>
               <input value={form.serviceProvider} onChange={event => updateField("serviceProvider", event.target.value)} placeholder="Vendor or contractor name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -661,7 +663,7 @@ function QuickEntrySheet({
         )}
         {entryType === "emi" && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Lender</div>
                 <input value={form.lender} onChange={event => updateField("lender", event.target.value)} placeholder="Bank or person name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -674,7 +676,7 @@ function QuickEntrySheet({
                 </select>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Due Day</div>
                 <select value={form.dueDay} onChange={event => updateField("dueDay", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map(option => <option key={option} value={option}>{option}</option>)}</select>
@@ -688,7 +690,7 @@ function QuickEntrySheet({
         )}
       </div>
       {error && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 700, textAlign: "center" }}>{error}</div>}
-      <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)` }}>
+      <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)`, flexShrink: 0 }}>
         {saving ? "Saving..." : `Save ${activeTab?.label || "Entry"} →`}
       </button>
     </div>

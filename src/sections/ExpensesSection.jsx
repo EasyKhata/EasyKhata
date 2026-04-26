@@ -20,6 +20,7 @@ import {
   WorkflowSetupCard,
   WorkflowRecordCard
 } from "../components/UI";
+import { RupeeDisplay } from "../components/ui/reimagined";
 import Collapsible from "../components/Collapsible";
 import { getPersonalMemberOptions } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
@@ -447,7 +448,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               <div style={{ fontSize: 11, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
                 Total {config.expensesLabel} · {MONTHS[month]} {year}
               </div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(total, sym)}</div>
+            <div style={{ marginTop: 2 }}>
+              <RupeeDisplay amount={total} color="var(--danger)" size={40} animate />
+            </div>
             </div>
             {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>
