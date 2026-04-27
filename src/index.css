@@ -140,6 +140,7 @@
 html {
   /* Smooth theme switching */
   transition: background-color var(--transition-base), color var(--transition-base);
+  overflow-x: hidden; /* Prevent Android WebView horizontal scroll shifting fixed elements */
 }
 
 html, body {

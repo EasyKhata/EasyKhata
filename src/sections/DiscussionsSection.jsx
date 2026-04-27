@@ -10,6 +10,10 @@ const MAX_POLL_OPT = 80;
 const MAX_POLL_OPTIONS = 4;
 const POLL_INTERVAL = 8000;
 
+// Module-level cache — survives component unmounts within the same session.
+// Keyed by `${ownerId}_${orgId}` so switching orgs gets the right messages.
+const _msgCache = new Map();
+
 const MT = {
   CHAT: "chat",
   ANNOUNCEMENT: "announcement",
@@ -299,13 +303,14 @@ export default function DiscussionsSection() {
   const ownerId = sharedInfo?.ownerId || user?.id;
   const orgId = sharedInfo?.orgId || activeOrgId;
 
-  const [messages, setMessages] = useState([]);
+  const cacheKey = ownerId && orgId ? `${ownerId}_${orgId}` : null;
+  const [messages, setMessages] = useState(() => (cacheKey ? (_msgCache.get(cacheKey) || []) : []));
   const [text, setText] = useState("");
   const [mode, setMode] = useState("chat"); // "chat" | "announcement" | "poll"
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cacheKey || !_msgCache.has(cacheKey));
 
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -320,6 +325,13 @@ export default function DiscussionsSection() {
   const senderRole = isOwner ? "owner" : isAdmin ? "admin" : "member";
   const myId = String(user?.id || "");
 
+  // Persist non-pending messages to module cache so they survive tab navigation.
+  useEffect(() => {
+    if (!cacheKey) return;
+    const toCache = messages.filter(m => !m._pending);
+    if (toCache.length > 0) _msgCache.set(cacheKey, toCache);
+  }, [messages, cacheKey]);
+
   // ── Fetch / poll ─────────────────────────────────────────────────────────
 
   const fetchMessages = useCallback(async (after) => {
@@ -328,10 +340,25 @@ export default function DiscussionsSection() {
       const rows = await messagesApi.list(ownerId, orgId, after || undefined);
       if (!Array.isArray(rows) || rows.length === 0) return;
       setMessages(prev => {
-        const existingIds = new Set(prev.map(m => m.id));
-        const fresh = rows.filter(m => !existingIds.has(m.id));
-        if (fresh.length === 0) return prev;
-        return [...prev, ...fresh].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
+        if (after) {
+          // Incremental fetch — only append genuinely new messages, never drop existing ones.
+          const existingIds = new Set(prev.map(m => m.id));
+          const fresh = rows.filter(m => !existingIds.has(m.id));
+          if (fresh.length === 0) return prev;
+          return [...prev, ...fresh].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
+        }
+        // Full load — merge server data with local state so local fields (messageType,
+        // senderId) survive even if the server response omits them.
+        const localById = new Map(prev.map(m => [m.id, m]));
+        const merged = rows.map(m => {
+          const local = localById.get(m.id);
+          if (!local) return m;
+          // Server data wins for fields it actually provides; local fills any gaps.
+          return { ...local, ...m, messageType: m.messageType || local.messageType };
+        });
+        const serverIds = new Set(rows.map(m => m.id));
+        const pending = prev.filter(m => m._pending && !serverIds.has(m.id));
+        return [...merged, ...pending].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
       });
       const newest = rows.reduce((max, m) => (String(m.sentAt) > String(max) ? String(m.sentAt) : max), latestSentAtRef.current || "");
       latestSentAtRef.current = newest;
@@ -343,9 +370,11 @@ export default function DiscussionsSection() {
 
   useEffect(() => {
     if (!ownerId || !orgId) return;
-    setLoading(true);
+    // If we have a cache hit, skip the loading spinner — just silently refresh.
+    const hasCached = cacheKey && _msgCache.has(cacheKey);
+    if (!hasCached) setLoading(true);
     fetchMessages(null).finally(() => setLoading(false));
-  }, [fetchMessages, orgId, ownerId]);
+  }, [fetchMessages, orgId, ownerId, cacheKey]);
 
   useEffect(() => {
     if (!ownerId || !orgId) return () => {};
@@ -417,12 +446,14 @@ export default function DiscussionsSection() {
     try {
       const saved = await messagesApi.send(ownerId, orgId, {
         id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        senderId: myId,
         senderName,
         senderRole,
         sentAt: optimistic.sentAt,
         ...payload,
       });
-      setMessages(prev => prev.map(m => (m.id === optimistic.id ? { ...saved } : m)));
+      // Merge with optimistic so fields like senderId survive if server omits them
+      setMessages(prev => prev.map(m => (m.id === optimistic.id ? { ...optimistic, ...saved, _pending: false } : m)));
       latestSentAtRef.current = String(saved.sentAt);
       return saved;
     } catch {
