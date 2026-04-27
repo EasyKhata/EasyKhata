@@ -14,6 +14,47 @@ const POLL_INTERVAL = 8000;
 // Keyed by `${ownerId}_${orgId}` so switching orgs gets the right messages.
 const _msgCache = new Map();
 
+// Poll options store — persisted to localStorage so polls survive app restarts.
+// The server strips pollOptions when listing messages, so we keep our own copy.
+const _pollOptsCache = new Map(); // pollId → pollOptions[]
+const _POLL_LS = "ek_po_";
+
+function _loadPollOpts(storeKey) {
+  try {
+    const data = JSON.parse(localStorage.getItem(_POLL_LS + storeKey) || "{}");
+    Object.entries(data).forEach(([id, opts]) => _pollOptsCache.set(id, opts));
+  } catch {}
+}
+function _savePollOpts(storeKey) {
+  try {
+    const out = {};
+    _pollOptsCache.forEach((v, k) => { out[k] = v; });
+    localStorage.setItem(_POLL_LS + storeKey, JSON.stringify(out));
+  } catch {}
+}
+function _storePoll(storeKey, pollId, opts) {
+  if (!pollId || !opts?.length) return;
+  _pollOptsCache.set(pollId, opts);
+  _savePollOpts(storeKey);
+}
+function _getPollOpts(pollId) { return _pollOptsCache.get(pollId); }
+
+// Normalize a message received from the server, filling gaps from local cache and
+// the poll options store. Always call this before putting a server row into state.
+function _normalizeMsg(m, local, storeKey) {
+  // Resolve poll options: server → local → localStorage cache
+  const opts = (m.pollOptions?.length ? m.pollOptions : null)
+    || (local?.pollOptions?.length ? local.pollOptions : null)
+    || _getPollOpts(m.id);
+  if (opts?.length && storeKey) _storePoll(storeKey, m.id, opts);
+
+  // Resolve messageType: server → local → infer from opts
+  const type = m.messageType || local?.messageType || (opts?.length ? MT.POLL : MT.CHAT);
+
+  const base = local ? { ...local, ...m } : { ...m };
+  return { ...base, messageType: type, ...(opts ? { pollOptions: opts } : {}) };
+}
+
 const MT = {
   CHAT: "chat",
   ANNOUNCEMENT: "announcement",
@@ -39,6 +80,24 @@ function formatTime(isoOrDate) {
 function getInitials(name) {
   if (!name) return "?";
   return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+}
+
+// Votes and pins are stored as regular chat messages with a special text prefix
+// because the server only accepts messageType "chat"|"announcement"|"poll".
+// Vote format: __vote__:<pollId>:<optionId>:<senderId>
+// Pin  format: __pin__:<msgId>:<1|0>
+function decodeActionText(text) {
+  if (typeof text !== "string") return null;
+  if (text.startsWith("__vote__:")) {
+    const p = text.split(":");
+    // p[0]="__vote__", p[1]=pollId, p[2]=optionId, p[3]=senderId
+    return (p[1] && p[2]) ? { type: "vote", refPollId: p[1], optionId: p[2], senderId: p[3] || null } : null;
+  }
+  if (text.startsWith("__pin__:")) {
+    const p = text.split(":");
+    return p[1] ? { type: "pin", refMessageId: p[1], pinned: p[2] === "1" } : null;
+  }
+  return null;
 }
 
 function Av({ name, tone = "member", size = 34 }) {
@@ -105,7 +164,7 @@ function AnnouncementCard({ message, canDelete, canPin, onDelete, onPin, isPinne
   const ac = isOwner ? "var(--accent)" : "var(--gold)";
   const acDeep = isOwner ? "var(--accent-deep)" : "color-mix(in srgb, var(--gold) 14%, var(--surface))";
   return (
-    <div style={{ margin: "4px 0", borderRadius: 14, border: `1px solid color-mix(in srgb, ${ac} 30%, var(--border))`, background: acDeep, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
+    <div style={{ margin: "4px 0", flexShrink: 0, borderRadius: 14, border: `1px solid color-mix(in srgb, ${ac} 30%, var(--border))`, background: acDeep, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
       <div style={{ padding: "8px 12px 6px", borderBottom: `1px solid color-mix(in srgb, ${ac} 20%, var(--border))`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <span style={{ fontSize: 10, fontWeight: 800, color: ac, textTransform: "uppercase", letterSpacing: 0.7, padding: "3px 7px", borderRadius: 999, background: `color-mix(in srgb, ${ac} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${ac} 28%, transparent)` }}>
@@ -141,7 +200,7 @@ function PollCard({ message, myVote, voteCountsForPoll, totalVoters, onVote, can
   const hasVoted = Boolean(myVote);
 
   return (
-    <div style={{ margin: "4px 0", borderRadius: 14, border: "1.5px solid color-mix(in srgb, var(--blue) 35%, var(--border))", background: "color-mix(in srgb, var(--blue) 8%, var(--surface-high))", overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
+    <div style={{ margin: "4px 0", flexShrink: 0, borderRadius: 14, border: "1.5px solid color-mix(in srgb, var(--blue) 35%, var(--border))", background: "color-mix(in srgb, var(--blue) 8%, var(--surface-high))", overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
       {/* Header */}
       <div style={{ padding: "8px 12px 7px", borderBottom: "1px solid color-mix(in srgb, var(--blue) 18%, var(--border))", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -312,6 +371,11 @@ export default function DiscussionsSection() {
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(!cacheKey || !_msgCache.has(cacheKey));
 
+  // Load persisted poll options from localStorage on mount so polls survive app restarts.
+  useEffect(() => {
+    if (cacheKey) _loadPollOpts(cacheKey);
+  }, [cacheKey]);
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const latestSentAtRef = useRef(null);
@@ -336,26 +400,22 @@ export default function DiscussionsSection() {
 
   const fetchMessages = useCallback(async (after) => {
     if (!ownerId || !orgId) return;
+    const storeKey = `${ownerId}_${orgId}`;
     try {
       const rows = await messagesApi.list(ownerId, orgId, after || undefined);
       if (!Array.isArray(rows) || rows.length === 0) return;
       setMessages(prev => {
+        const localById = new Map(prev.map(m => [m.id, m]));
         if (after) {
-          // Incremental fetch — only append genuinely new messages, never drop existing ones.
-          const existingIds = new Set(prev.map(m => m.id));
-          const fresh = rows.filter(m => !existingIds.has(m.id));
+          // Incremental — append only genuinely new messages; never drop existing.
+          const fresh = rows
+            .filter(m => !localById.has(m.id))
+            .map(m => _normalizeMsg(m, null, storeKey));
           if (fresh.length === 0) return prev;
           return [...prev, ...fresh].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
         }
-        // Full load — merge server data with local state so local fields (messageType,
-        // senderId) survive even if the server response omits them.
-        const localById = new Map(prev.map(m => [m.id, m]));
-        const merged = rows.map(m => {
-          const local = localById.get(m.id);
-          if (!local) return m;
-          // Server data wins for fields it actually provides; local fills any gaps.
-          return { ...local, ...m, messageType: m.messageType || local.messageType };
-        });
+        // Full load — merge server rows with local, preserving fields the server omits.
+        const merged = rows.map(m => _normalizeMsg(m, localById.get(m.id), storeKey));
         const serverIds = new Set(rows.map(m => m.id));
         const pending = prev.filter(m => m._pending && !serverIds.has(m.id));
         return [...merged, ...pending].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
@@ -393,21 +453,37 @@ export default function DiscussionsSection() {
     let latestPin = null;
 
     messages.forEach(m => {
-      if (m.messageType === MT.VOTE) {
-        if (!votes[m.refPollId]) votes[m.refPollId] = {};
-        // later vote by same user for same poll overwrites earlier
-        if (!votes[m.refPollId][m.senderId] || String(m.sentAt) > String(votes[m.refPollId][m.senderId]?.sentAt || "")) {
-          votes[m.refPollId][m.senderId] = { optionId: m.optionId, sentAt: m.sentAt };
+      // Detect encoded actions by text pattern (server may return any messageType or none).
+      const action = decodeActionText(m.text);
+
+      if (m.messageType === MT.VOTE || action?.type === "vote") {
+        const pollId  = action ? action.refPollId : m.refPollId;
+        const optId   = action ? action.optionId  : m.optionId;
+        // senderId from encoded text (reliable) > from server field (may be missing)
+        const voterId = (action?.senderId) || m.senderId;
+        if (pollId && optId && voterId) {
+          if (!votes[pollId]) votes[pollId] = {};
+          if (!votes[pollId][voterId] || String(m.sentAt) > String(votes[pollId][voterId]?.sentAt || "")) {
+            votes[pollId][voterId] = { optionId: optId, sentAt: m.sentAt };
+          }
         }
       }
-      if (m.messageType === MT.PIN) {
-        if (!latestPin || String(m.sentAt) > String(latestPin.sentAt)) latestPin = m;
+
+      if (m.messageType === MT.PIN || action?.type === "pin") {
+        const pin = action ? { ...m, refMessageId: action.refMessageId, pinned: action.pinned } : m;
+        if (!latestPin || String(pin.sentAt) > String(latestPin.sentAt)) latestPin = pin;
       }
     });
 
     const pinnedId = latestPin?.pinned ? latestPin.refMessageId : null;
     const pinned = pinnedId ? messages.find(m => m.id === pinnedId) : null;
-    const visible = messages.filter(m => !HIDDEN.has(m.messageType));
+
+    // Hide MT.VOTE, MT.PIN (optimistic) and any encoded-action messages (any messageType).
+    const visible = messages.filter(m => {
+      if (HIDDEN.has(m.messageType)) return false;
+      if (decodeActionText(m.text)) return false;
+      return true;
+    });
 
     return { visibleMessages: visible, votesByPoll: votes, pinnedMessage: pinned };
   }, [messages]);
@@ -452,9 +528,22 @@ export default function DiscussionsSection() {
         sentAt: optimistic.sentAt,
         ...payload,
       });
-      // Merge with optimistic so fields like senderId survive if server omits them
-      setMessages(prev => prev.map(m => (m.id === optimistic.id ? { ...optimistic, ...saved, _pending: false } : m)));
-      latestSentAtRef.current = String(saved.sentAt);
+      // Merge: server wins for fields it provides; optimistic fills every gap.
+      const merged = {
+        ...optimistic,
+        ...saved,
+        messageType: saved.messageType || optimistic.messageType,
+        // Server never returns pollOptions — keep the ones we sent.
+        pollOptions: saved.pollOptions?.length ? saved.pollOptions : optimistic.pollOptions,
+        senderId: saved.senderId || optimistic.senderId,
+        _pending: false,
+      };
+      // Persist poll options to localStorage so they survive app restarts.
+      if (merged.messageType === MT.POLL && merged.pollOptions?.length && cacheKey) {
+        _storePoll(cacheKey, merged.id, merged.pollOptions);
+      }
+      setMessages(prev => prev.map(m => (m.id === optimistic.id ? merged : m)));
+      latestSentAtRef.current = String(saved.sentAt || optimistic.sentAt);
       return saved;
     } catch {
       setMessages(prev => prev.filter(m => m.id !== optimistic.id));
@@ -501,12 +590,12 @@ export default function DiscussionsSection() {
   async function handleVote(pollMessage, optionId) {
     if (getMyVote(pollMessage.id) || sending) return;
     try {
-      await sendMessage({
-        messageType: MT.VOTE,
-        text: "",
-        refPollId: pollMessage.id,
-        optionId,
-      });
+      // Server only accepts messageType "chat". Encode vote+voter in text so
+      // attribution is self-contained even if server strips senderId.
+      await sendMessage(
+        { messageType: MT.CHAT, text: `__vote__:${pollMessage.id}:${optionId}:${myId}` },
+        { messageType: MT.VOTE, refPollId: pollMessage.id, optionId }
+      );
     } catch {
       setError("Vote failed. Try again.");
     }
@@ -515,13 +604,13 @@ export default function DiscussionsSection() {
   async function handlePin(message) {
     if (!canPin) return;
     const alreadyPinned = pinnedMessage?.id === message.id;
+    const pinning = !alreadyPinned;
     try {
-      await sendMessage({
-        messageType: MT.PIN,
-        text: "",
-        refMessageId: message.id,
-        pinned: !alreadyPinned,
-      });
+      // Server only accepts messageType "chat". Encode pin in text; decode locally.
+      await sendMessage(
+        { messageType: MT.CHAT, text: `__pin__:${message.id}:${pinning ? "1" : "0"}` },
+        { messageType: MT.PIN, refMessageId: message.id, pinned: pinning }
+      );
     } catch {
       setError("Could not pin message.");
     }
@@ -530,7 +619,10 @@ export default function DiscussionsSection() {
   async function handleUnpin() {
     if (!pinnedMessage || !canPin) return;
     try {
-      await sendMessage({ messageType: MT.PIN, text: "", refMessageId: pinnedMessage.id, pinned: false });
+      await sendMessage(
+        { messageType: MT.CHAT, text: `__pin__:${pinnedMessage.id}:0` },
+        { messageType: MT.PIN, refMessageId: pinnedMessage.id, pinned: false }
+      );
     } catch {
       setError("Could not unpin.");
     }
@@ -583,7 +675,7 @@ export default function DiscussionsSection() {
       )}
 
       {/* Message feed */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px 6px", display: "flex", flexDirection: "column", gap: 6, background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)" }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "10px 10px 6px", display: "flex", flexDirection: "column", gap: 6, background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)" }}>
         {loading && <div style={{ textAlign: "center", padding: "28px 20px", color: "var(--text-dim)", fontSize: 13 }}>Loading messages...</div>}
         {!loading && loadError && <div style={{ textAlign: "center", padding: "18px", color: "var(--danger)", fontSize: 12 }}>{loadError}</div>}
         {!loading && !loadError && feedMessages.length === 0 && (
@@ -647,19 +739,17 @@ export default function DiscussionsSection() {
                         {message.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>· Admin</span>}
                       </div>
                     )}
-                    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
+                    <div>
                       <div style={{ background: message._pending ? "color-mix(in srgb, var(--accent) 70%, var(--surface))" : isMe ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)" : "color-mix(in srgb, var(--surface) 92%, white)", color: isMe ? "#fff" : "var(--text)", borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px", padding: "10px 14px 9px", fontSize: 14, lineHeight: 1.5, border: isMe ? "none" : "1px solid var(--border)", wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: message._pending ? 0.7 : 1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
                         {message.text}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
-                        {canPin && !message._pending && (
-                          <button type="button" onClick={() => handlePin(message)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: isPinned ? 1 : 0.3, padding: "2px", lineHeight: 1 }} title={isPinned ? "Unpin" : "Pin"}>📌</button>
-                        )}
-                        {canDelete(message) && <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.35 }} />}
-                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
-                      {message._pending ? "Sending..." : formatTime(message.sentAt)}
+                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, display: "flex", alignItems: "center", gap: 5, flexDirection: isMe ? "row-reverse" : "row", paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
+                      <span>{message._pending ? "Sending..." : formatTime(message.sentAt)}</span>
+                      {canPin && !message._pending && (
+                        <button type="button" onClick={() => handlePin(message)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, opacity: isPinned ? 1 : 0.4, padding: 0, lineHeight: 1, display: "flex", alignItems: "center" }} title={isPinned ? "Unpin" : "Pin"}>📌</button>
+                      )}
+                      {canDelete(message) && <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.35 }} />}
                     </div>
                   </div>
                   {showSender && isMe ? <Av name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
