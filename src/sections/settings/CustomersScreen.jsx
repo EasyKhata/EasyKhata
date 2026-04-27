@@ -53,6 +53,8 @@ export default function CustomersScreen({
   allExpenses,
   allIncome,
   isApartmentOrg,
+  expensesLoaded,
+  incomeLoaded,
 }) {
   const confirm = useConfirm();
   const sym = currency?.symbol || "Rs";
@@ -63,9 +65,19 @@ export default function CustomersScreen({
   }
 
   function HouseholdBrief({ customer }) {
-    const personExpenses = (allExpenses || []).filter(e =>
-      (e.personName || "").trim().toLowerCase() === (customer.name || "").trim().toLowerCase()
-    );
+    const personName = (customer.name || "").trim().toLowerCase();
+
+    if (!expensesLoaded) {
+      return (
+        <div style={{ padding: "10px 14px 12px", fontSize: 12, color: "var(--text-dim)" }}>
+          Loading expenses…
+        </div>
+      );
+    }
+
+    const personExpenses = personName
+      ? (allExpenses || []).filter(e => (e.personName || "").trim().toLowerCase() === personName)
+      : [];
     const totalSpent = personExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
     const byCategory = {};
     personExpenses.forEach(e => {
@@ -115,6 +127,13 @@ export default function CustomersScreen({
   }
 
   function ApartmentBrief({ customer }) {
+    if (!incomeLoaded) {
+      return (
+        <div style={{ padding: "10px 14px 12px", fontSize: 12, color: "var(--text-dim)" }}>
+          Loading collection history…
+        </div>
+      );
+    }
     const flatIncome = (allIncome || []).filter(e =>
       e.flatNumber === customer.name &&
       (e.collectionType || "").toLowerCase().includes("maintenance")
@@ -250,7 +269,9 @@ export default function CustomersScreen({
     const isProtectedProfile = Boolean(customer?.isPrimaryProfile || customer?.isLockedProfile);
     const isExpanded = expandedId === customer.id;
     const meta = orgConfig.showCustomerFinancials === false
-      ? [customer.ownerName, customer.phone].filter(Boolean).join(" · ") || (isApartmentOrg ? "Flat record" : "Household member")
+      ? isApartmentOrg
+        ? [customer.ownerName, customer.phone].filter(Boolean).join(" · ") || "Flat record"
+        : [customer.phone, customer.email].filter(Boolean).join(" · ") || "Household member"
       : `Balance ${fmtMoney(customer.outstanding, sym)} · Revenue ${fmtMoney(customer.totalRevenue, sym)}`;
 
     return (

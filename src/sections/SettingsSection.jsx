@@ -304,7 +304,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     deleteOrganization,
     maxOrganizations,
     canCreateOrganization,
-    ensureCollectionLoaded
+    ensureCollectionLoaded,
+    collectionFetched
   } = useData();
   useTheme();
 
@@ -2400,6 +2401,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         allExpenses={expenses}
         allIncome={income}
         isApartmentOrg={isApartmentOrg}
+        expensesLoaded={collectionFetched?.expenses ?? false}
+        incomeLoaded={collectionFetched?.income ?? false}
       />
     );
   }

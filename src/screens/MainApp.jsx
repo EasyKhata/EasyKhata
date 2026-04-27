@@ -1974,12 +1974,10 @@ export default function MainApp() {
               transition={{ type: "spring", stiffness: 340, damping: 34 }}
               style={{
                 position: "fixed",
-                left: 0,
-                right: 0,
+                left: "max(0px, calc(50% - 280px))",
+                right: "max(0px, calc(50% - 280px))",
                 bottom: 0,
                 zIndex: 180,
-                maxWidth: 560,
-                margin: "0 auto",
                 maxHeight: "calc(100dvh - env(safe-area-inset-top, 0px) - 8px)",
               }}
             >

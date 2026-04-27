@@ -58,6 +58,7 @@ export function getSecondaryOrgTypeOptions(currentType = "") {
 export const ORG_TYPE_CONFIGS = {
   [ORG_TYPES.PERSONAL]: {
     ...BASE_CONFIG,
+    showCustomerFinancials: false,
     incomeLabel: "Income",
     incomeEntryLabel: "Income",
     incomeActionLabel: "Add Income",
