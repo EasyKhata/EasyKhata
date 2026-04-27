@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { membersApi } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
+import { useConfirm } from "../../context/DialogContext";
 import { Input, Field, LoadingButton } from "../../components/UI";
 
 const BASE_ROLES = [
@@ -15,6 +16,7 @@ function validateEmail(email) {
 
 export default function OrgMembersScreen({ onBack }) {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const data = useData();
   const orgId = data.activeOrgId || "org_primary";
   const orgName = data.account?.name || "Your Organization";
@@ -97,7 +99,7 @@ export default function OrgMembersScreen({ onBack }) {
   }, [orgId, user?.id]);
 
   const handleRemove = useCallback(async member => {
-    if (!window.confirm(`Remove ${member.email} from this organization?`)) return;
+    if (!await confirm(`Remove ${member.email} from this organization?`, { title: "Remove Member", confirmLabel: "Remove" })) return;
     if (!user?.id) return;
     try {
       await membersApi.remove(user.id, orgId, member.id);

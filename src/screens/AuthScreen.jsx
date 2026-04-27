@@ -74,7 +74,7 @@ export default function AuthScreen() {
           canSave={!setupLoading}
         >
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
-            Signed in as <b>{pendingSetup.email}</b>. We’ll first create your permanent Household Khata. Right after this, onboarding can help you add one extra Freelancer or Apartment Khata.
+            Signed in as <b>{pendingSetup.email}</b>. Let’s set up your Household Khata to get started.
           </div>
 
           <Field label="Phone Number" required hint="Used for payment receipts and support.">

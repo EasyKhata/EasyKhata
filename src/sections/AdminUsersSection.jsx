@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
+import { useConfirm } from "../context/DialogContext";
 import { Avatar, SectionSkeleton, WorkflowSetupCard } from "../components/UI";
 import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import {
@@ -14,6 +15,7 @@ import {
 
 export default function AdminUsersSection() {
   const { user } = useAuth();
+  const confirm = useConfirm();
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
@@ -94,7 +96,7 @@ export default function AdminUsersSection() {
 
   async function toggleBlock(id, blocked) {
     if (id === user.id) {
-      alert("You cannot block your own account.");
+      setAdminError("You cannot block your own account.");
       return;
     }
     setAdminError("");
@@ -109,10 +111,10 @@ export default function AdminUsersSection() {
 
   async function deleteUserRecord(member) {
     if (member.id === user.id) {
-      alert("You cannot delete your own admin account.");
+      setAdminError("You cannot delete your own admin account.");
       return;
     }
-    const confirmed = window.confirm(`Delete ${member.name || member.email}? This will permanently remove their account and all data.`);
+    const confirmed = await confirm(`Delete ${member.name || member.email}? This will permanently remove their account and all data.`, { title: "Delete User", confirmLabel: "Delete Permanently" });
     if (!confirmed) return;
 
     setAdminError("");

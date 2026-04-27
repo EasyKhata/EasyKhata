@@ -8,6 +8,7 @@ import {
 import { isNative } from "../utils/native";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
+import { useConfirm } from "../context/DialogContext";
 import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
@@ -509,41 +510,45 @@ function QuickEntrySheet({
   };
 
   return (
-    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 14px)", display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(84dvh, 760px)", overflow: "hidden", overscrollBehavior: "contain" }}>
-      <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 2px" }} />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-        <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
+    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", display: "flex", flexDirection: "column", boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(88dvh, 780px)", overflow: "hidden", overscrollBehavior: "contain" }}>
+      {/* Fixed header — drag handle + title + tabs + amount */}
+      <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
+        <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 12px" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
+          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8, marginBottom: 12 }}>
+          {tabs.map(option => {
+            const selected = option.key === entryType;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => switchType(option.key)}
+                style={{
+                  borderRadius: 14,
+                  border: `1px solid ${selected ? `color-mix(in srgb, ${option.color} 40%, var(--border))` : "var(--border)"}`,
+                  background: selected ? `color-mix(in srgb, ${option.color} 14%, var(--surface-high))` : "var(--surface-high)",
+                  color: selected ? option.color : "var(--text-dim)",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  padding: "12px 10px",
+                  cursor: "pointer"
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px", marginBottom: 12 }}>
+          <span style={{ fontSize: 28, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
+          <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
+        </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8, flexShrink: 0 }}>
-        {tabs.map(option => {
-          const selected = option.key === entryType;
-          return (
-            <button
-              key={option.key}
-              type="button"
-              onClick={() => switchType(option.key)}
-              style={{
-                borderRadius: 14,
-                border: `1px solid ${selected ? `color-mix(in srgb, ${option.color} 40%, var(--border))` : "var(--border)"}`,
-                background: selected ? `color-mix(in srgb, ${option.color} 14%, var(--surface-high))` : "var(--surface-high)",
-                color: selected ? option.color : "var(--text-dim)",
-                fontSize: 13,
-                fontWeight: 800,
-                padding: "12px 10px",
-                cursor: "pointer"
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px", flexShrink: 0 }}>
-        <span style={{ fontSize: 28, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
-        <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
-      </div>
-      <div style={{ display: "grid", gap: 12, overflowY: "auto", paddingRight: 2 }}>
+      {/* Scrollable fields */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 4px", WebkitOverflowScrolling: "touch" }}><div style={{ display: "grid", gap: 12 }}>
         {showPeopleSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
             <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a household member in Khata before creating this entry.</div>
@@ -689,10 +694,14 @@ function QuickEntrySheet({
           </>
         )}
       </div>
-      {error && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 700, textAlign: "center" }}>{error}</div>}
-      <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)`, flexShrink: 0 }}>
-        {saving ? "Saving..." : `Save ${activeTab?.label || "Entry"} →`}
-      </button>
+      </div>
+      {/* Fixed footer */}
+      <div style={{ padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 14px)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
+        {error && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 700, textAlign: "center" }}>{error}</div>}
+        <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)` }}>
+          {saving ? "Saving..." : `Save ${activeTab?.label || "Entry"} →`}
+        </button>
+      </div>
     </div>
   );
 }
@@ -990,6 +999,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
 
 export default function MainApp() {
   const { user, logout } = useAuth();
+  const confirm = useConfirm();
   const data = useData();
   const {
     account,
@@ -1787,7 +1797,7 @@ export default function MainApp() {
               </button>
 
               <button
-                onClick={() => { if (window.confirm("Sign out of EazyKhata?")) logout(); }}
+                onClick={async () => { if (await confirm("Are you sure you want to sign out?", { title: "Sign Out", confirmLabel: "Sign Out" })) logout(); }}
                 title="Sign out"
                 style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--danger)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
@@ -1857,21 +1867,23 @@ export default function MainApp() {
                 }}
               >
                 <motion.span
-                  animate={showFab ? { rotate: 45, scale: 1.1 } : { rotate: 0, scale: 1 }}
-                  transition={{ type: "spring", stiffness: 380, damping: 22 }}
+                  animate={showFab ? { rotate: 45, scale: 1.08 } : { rotate: 0, scale: 1 }}
+                  transition={{ type: "spring", stiffness: 420, damping: 24 }}
                   style={{
-                    width: 44,
-                    height: 44,
+                    width: 52,
+                    height: 52,
                     borderRadius: "50%",
                     background: "var(--saffron)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    fontSize: 24,
-                    fontWeight: 300,
+                    fontSize: 28,
+                    fontWeight: 700,
+                    lineHeight: 1,
                     color: "#0C0908",
-                    boxShadow: "0 4px 16px color-mix(in srgb, var(--saffron) 50%, transparent)",
-                    marginBottom: 2,
+                    boxShadow: "0 6px 20px color-mix(in srgb, var(--saffron) 60%, transparent), 0 2px 6px rgba(0,0,0,0.18)",
+                    marginBottom: 0,
+                    marginTop: -6,
                   }}
                 >
                   +

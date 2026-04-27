@@ -1,57 +1,46 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { messagesApi } from "../lib/api";
 import { DeleteBtn } from "../components/UI";
 
 const MAX_MSG_LEN = 500;
+const MAX_POLL_Q = 180;
+const MAX_POLL_OPT = 80;
+const MAX_POLL_OPTIONS = 4;
 const POLL_INTERVAL = 8000;
+
+const MT = {
+  CHAT: "chat",
+  ANNOUNCEMENT: "announcement",
+  POLL: "poll",
+  VOTE: "vote",
+  PIN: "pin_action",
+};
+const HIDDEN = new Set([MT.VOTE, MT.PIN]);
 
 function formatTime(isoOrDate) {
   if (!isoOrDate) return "";
   const d = new Date(isoOrDate);
   if (isNaN(d)) return "";
   const today = new Date();
-  const isToday = d.toDateString() === today.toDateString();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  const isYesterday = d.toDateString() === yesterday.toDateString();
   const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-  if (isToday) return time;
-  if (isYesterday) return `Yesterday ${time}`;
+  if (d.toDateString() === today.toDateString()) return time;
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`;
   return `${d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })} ${time}`;
 }
 
 function getInitials(name) {
   if (!name) return "?";
-  return name.trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+  return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 }
 
-function Avatar({ name, tone = "member", size = 34 }) {
-  const colors = {
-    owner: "var(--accent)",
-    admin: "var(--gold)",
-    me: "var(--accent)",
-    member: "var(--blue)"
-  };
-  const background = colors[tone] || colors.member;
+function Av({ name, tone = "member", size = 34 }) {
+  const bg = { owner: "var(--accent)", admin: "var(--gold)", me: "var(--accent)", member: "var(--blue)" }[tone] || "var(--blue)";
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.36,
-        fontWeight: 700,
-        color: "#fff",
-        flexShrink: 0,
-        boxShadow: "0 8px 18px rgba(0,0,0,0.12)"
-      }}
-    >
+    <div style={{ width: size, height: size, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: size * 0.36, fontWeight: 700, color: "#fff", flexShrink: 0, boxShadow: "0 4px 12px rgba(0,0,0,0.14)" }}>
       {getInitials(name)}
     </div>
   );
@@ -64,80 +53,243 @@ function roleTone(role, isMe) {
   return "member";
 }
 
-function AnnouncementCard({ message, canDeleteMsg, onDelete }) {
-  const isOwner = message.senderRole === "owner";
-  const accentColor = isOwner ? "var(--accent)" : "var(--gold)";
-  const accentDeep = isOwner ? "var(--accent-deep)" : "color-mix(in srgb, var(--gold) 14%, var(--surface))";
+// ── Pinned banner ────────────────────────────────────────────────────────────
 
+function PinnedBanner({ message, canPin, onUnpin }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = (message.text || message.pollQuestion || "").slice(0, 80);
+  const full = message.text || message.pollQuestion || "";
   return (
     <div
       style={{
-        margin: "4px 0",
-        borderRadius: 14,
-        border: `1px solid color-mix(in srgb, ${accentColor} 30%, var(--border))`,
-        background: accentDeep,
-        overflow: "hidden",
-        boxShadow: "0 4px 16px rgba(0,0,0,0.07)",
-        opacity: message._pending ? 0.7 : 1
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "7px 12px",
+        background: "color-mix(in srgb, var(--gold) 12%, var(--surface-high))",
+        borderBottom: "1px solid color-mix(in srgb, var(--gold) 25%, var(--border))",
+        cursor: "pointer"
       }}
+      onClick={() => setExpanded(e => !e)}
     >
-      <div
-        style={{
-          padding: "8px 12px 6px",
-          borderBottom: `1px solid color-mix(in srgb, ${accentColor} 20%, var(--border))`,
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          justifyContent: "space-between"
-        }}
-      >
+      <div style={{ fontSize: 14, color: "var(--gold)", flexShrink: 0 }}>📌</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--gold)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 1 }}>Pinned message</div>
+        <div style={{ fontSize: 12, color: "var(--text-sec)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: expanded ? "normal" : "nowrap" }}>
+          {expanded ? full : preview}{!expanded && full.length > 80 ? "…" : ""}
+        </div>
+      </div>
+      {canPin && (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onUnpin(); }}
+          style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 16, cursor: "pointer", padding: "2px 4px", flexShrink: 0 }}
+          title="Unpin"
+        >
+          ✕
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Announcement card ────────────────────────────────────────────────────────
+
+function AnnouncementCard({ message, canDelete, canPin, onDelete, onPin, isPinned }) {
+  const isOwner = message.senderRole === "owner";
+  const ac = isOwner ? "var(--accent)" : "var(--gold)";
+  const acDeep = isOwner ? "var(--accent-deep)" : "color-mix(in srgb, var(--gold) 14%, var(--surface))";
+  return (
+    <div style={{ margin: "4px 0", borderRadius: 14, border: `1px solid color-mix(in srgb, ${ac} 30%, var(--border))`, background: acDeep, overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
+      <div style={{ padding: "8px 12px 6px", borderBottom: `1px solid color-mix(in srgb, ${ac} 20%, var(--border))`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 800,
-              color: accentColor,
-              textTransform: "uppercase",
-              letterSpacing: 0.7,
-              padding: "3px 7px",
-              borderRadius: 999,
-              background: `color-mix(in srgb, ${accentColor} 18%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${accentColor} 28%, transparent)`
-            }}
-          >
+          <span style={{ fontSize: 10, fontWeight: 800, color: ac, textTransform: "uppercase", letterSpacing: 0.7, padding: "3px 7px", borderRadius: 999, background: `color-mix(in srgb, ${ac} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${ac} 28%, transparent)` }}>
             Announcement
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: accentColor }}>
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: ac }}>
             {message.senderName || "Management"}
-            {message.senderRole === "owner" && <span style={{ marginLeft: 4, fontWeight: 600, color: "var(--text-dim)" }}>· Owner</span>}
-            {message.senderRole === "admin" && <span style={{ marginLeft: 4, fontWeight: 600, color: "var(--text-dim)" }}>· Admin</span>}
+            {message.senderRole === "owner" && <span style={{ marginLeft: 4, fontWeight: 500, color: "var(--text-dim)" }}>· Owner</span>}
+            {message.senderRole === "admin" && <span style={{ marginLeft: 4, fontWeight: 500, color: "var(--text-dim)" }}>· Admin</span>}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {message._pending ? "Sending..." : formatTime(message.sentAt)}
-          </span>
-          {canDeleteMsg && !message._pending && (
-            <DeleteBtn onDelete={onDelete} style={{ opacity: 0.45 }} />
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{message._pending ? "Sending..." : formatTime(message.sentAt)}</span>
+          {canPin && !message._pending && (
+            <button type="button" onClick={onPin} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: isPinned ? 1 : 0.45, padding: "2px" }} title={isPinned ? "Unpin" : "Pin"}>
+              📌
+            </button>
           )}
+          {canDelete && !message._pending && <DeleteBtn onDelete={onDelete} style={{ opacity: 0.45 }} />}
         </div>
       </div>
-      <div
-        style={{
-          padding: "10px 14px 12px",
-          fontSize: 14,
-          lineHeight: 1.6,
-          color: "var(--text)",
-          fontWeight: 500,
-          wordBreak: "break-word",
-          whiteSpace: "pre-wrap"
-        }}
-      >
+      <div style={{ padding: "10px 14px 12px", fontSize: 14, lineHeight: 1.6, color: "var(--text)", fontWeight: 500, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
         {message.text}
       </div>
     </div>
   );
 }
+
+// ── Poll card ────────────────────────────────────────────────────────────────
+
+function PollCard({ message, myVote, voteCountsForPoll, totalVoters, onVote, canDelete, canPin, onDelete, onPin, isPinned }) {
+  const options = message.pollOptions || [];
+  const hasVoted = Boolean(myVote);
+
+  return (
+    <div style={{ margin: "4px 0", borderRadius: 14, border: "1.5px solid color-mix(in srgb, var(--blue) 35%, var(--border))", background: "color-mix(in srgb, var(--blue) 8%, var(--surface-high))", overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.07)", opacity: message._pending ? 0.7 : 1 }}>
+      {/* Header */}
+      <div style={{ padding: "8px 12px 7px", borderBottom: "1px solid color-mix(in srgb, var(--blue) 18%, var(--border))", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.7, padding: "3px 7px", borderRadius: 999, background: "color-mix(in srgb, var(--blue) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--blue) 28%, transparent)" }}>
+            Poll
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)" }}>
+            {message.senderName || "Owner"}
+            {message.senderRole === "owner" && <span style={{ marginLeft: 4, fontWeight: 500, color: "var(--text-dim)" }}>· Owner</span>}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{message._pending ? "Sending..." : formatTime(message.sentAt)}</span>
+          {canPin && !message._pending && (
+            <button type="button" onClick={onPin} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: isPinned ? 1 : 0.45, padding: "2px" }} title={isPinned ? "Unpin" : "Pin"}>📌</button>
+          )}
+          {canDelete && !message._pending && <DeleteBtn onDelete={onDelete} style={{ opacity: 0.45 }} />}
+        </div>
+      </div>
+
+      {/* Question */}
+      <div style={{ padding: "12px 14px 10px", fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.5, wordBreak: "break-word" }}>
+        {message.text}
+      </div>
+
+      {/* Options */}
+      <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {options.map(opt => {
+          const votes = voteCountsForPoll?.[opt.id] || 0;
+          const pct = totalVoters > 0 ? Math.round((votes / totalVoters) * 100) : 0;
+          const isMyChoice = myVote === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              disabled={hasVoted || message._pending}
+              onClick={() => onVote(message, opt.id)}
+              style={{
+                width: "100%",
+                padding: 0,
+                border: `1.5px solid ${isMyChoice ? "var(--blue)" : "color-mix(in srgb, var(--blue) 25%, var(--border))"}`,
+                borderRadius: 10,
+                background: "transparent",
+                cursor: hasVoted ? "default" : "pointer",
+                overflow: "hidden",
+                position: "relative",
+                textAlign: "left"
+              }}
+            >
+              {hasVoted && (
+                <div style={{ position: "absolute", inset: 0, background: `color-mix(in srgb, var(--blue) ${Math.max(pct, 2)}%, transparent)`, borderRadius: 9, transition: "width 0.4s ease" }} />
+              )}
+              <div style={{ position: "relative", padding: "9px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: isMyChoice ? 700 : 500, color: "var(--text)" }}>
+                  {isMyChoice && <span style={{ color: "var(--blue)", marginRight: 6 }}>✓</span>}
+                  {opt.text}
+                </span>
+                {hasVoted && (
+                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 700, color: isMyChoice ? "var(--blue)" : "var(--text-dim)" }}>
+                    {pct}%
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
+          {totalVoters} {totalVoters === 1 ? "vote" : "votes"}{!hasVoted && " · Tap an option to vote"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Poll creator ─────────────────────────────────────────────────────────────
+
+function PollCreator({ onSubmit, onCancel, disabled }) {
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+
+  function addOption() {
+    if (options.length < MAX_POLL_OPTIONS) setOptions(o => [...o, ""]);
+  }
+  function removeOption(idx) {
+    if (options.length <= 2) return;
+    setOptions(o => o.filter((_, i) => i !== idx));
+  }
+  function setOption(idx, val) {
+    setOptions(o => o.map((v, i) => (i === idx ? val : v)));
+  }
+
+  const cleanOpts = options.map(o => o.trim()).filter(Boolean);
+  const canSubmit = question.trim().length > 0 && cleanOpts.length >= 2 && !disabled;
+
+  function handleSubmit() {
+    if (!canSubmit) return;
+    onSubmit(question.trim(), cleanOpts);
+    setQuestion("");
+    setOptions(["", ""]);
+  }
+
+  return (
+    <div style={{ padding: "10px 12px", background: "color-mix(in srgb, var(--blue) 7%, var(--surface-high))", borderRadius: 14, border: "1px solid color-mix(in srgb, var(--blue) 25%, var(--border))", marginBottom: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "var(--blue)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Create Poll</div>
+      <textarea
+        className="input-field"
+        placeholder="Ask a question…"
+        value={question}
+        maxLength={MAX_POLL_Q}
+        onChange={e => setQuestion(e.target.value)}
+        rows={2}
+        style={{ width: "100%", resize: "none", fontSize: 13, marginBottom: 8, borderRadius: 10, padding: "8px 10px", boxSizing: "border-box" }}
+      />
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+        {options.map((opt, idx) => (
+          <div key={idx} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              className="input-field"
+              placeholder={`Option ${idx + 1}`}
+              value={opt}
+              maxLength={MAX_POLL_OPT}
+              onChange={e => setOption(idx, e.target.value)}
+              style={{ flex: 1, fontSize: 13, borderRadius: 10, padding: "7px 10px" }}
+            />
+            {options.length > 2 && (
+              <button type="button" onClick={() => removeOption(idx)} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 16, cursor: "pointer", flexShrink: 0, padding: "4px" }}>✕</button>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+        {options.length < MAX_POLL_OPTIONS && (
+          <button type="button" onClick={addOption} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", background: "none", border: "1px solid color-mix(in srgb, var(--blue) 30%, var(--border))", borderRadius: 8, padding: "5px 10px", cursor: "pointer" }}>
+            + Add option
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        <button type="button" onClick={onCancel} style={{ fontSize: 12, fontWeight: 700, color: "var(--text-dim)", background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>Cancel</button>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          style={{ fontSize: 12, fontWeight: 800, color: "#fff", background: canSubmit ? "var(--blue)" : "var(--text-dim)", border: "none", borderRadius: 8, padding: "5px 14px", cursor: canSubmit ? "pointer" : "not-allowed", transition: "background 0.15s" }}
+        >
+          Post Poll
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function DiscussionsSection() {
   const { user } = useAuth();
@@ -149,7 +301,7 @@ export default function DiscussionsSection() {
 
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
-  const [messageType, setMessageType] = useState("chat");
+  const [mode, setMode] = useState("chat"); // "chat" | "announcement" | "poll"
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -163,45 +315,41 @@ export default function DiscussionsSection() {
   const isOwner = String(ownerId || "") === String(user?.id || "");
   const isAdmin = user?.role === "admin";
   const canAnnounce = isOwner || isAdmin;
+  const canPin = isOwner || isAdmin;
   const senderName = user?.name || user?.displayName || user?.email?.split("@")[0] || "Resident";
   const senderRole = isOwner ? "owner" : isAdmin ? "admin" : "member";
+  const myId = String(user?.id || "");
+
+  // ── Fetch / poll ─────────────────────────────────────────────────────────
 
   const fetchMessages = useCallback(async (after) => {
     if (!ownerId || !orgId) return;
     try {
       const rows = await messagesApi.list(ownerId, orgId, after || undefined);
       if (!Array.isArray(rows) || rows.length === 0) return;
-
       setMessages(prev => {
-        const existingIds = new Set(prev.map(message => message.id));
-        const fresh = rows.filter(message => !existingIds.has(message.id));
+        const existingIds = new Set(prev.map(m => m.id));
+        const fresh = rows.filter(m => !existingIds.has(m.id));
         if (fresh.length === 0) return prev;
         return [...prev, ...fresh].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt)));
       });
-
-      const newest = rows.reduce(
-        (max, message) => (String(message.sentAt) > String(max) ? String(message.sentAt) : max),
-        latestSentAtRef.current || ""
-      );
+      const newest = rows.reduce((max, m) => (String(m.sentAt) > String(max) ? String(m.sentAt) : max), latestSentAtRef.current || "");
       latestSentAtRef.current = newest;
       setLoadError("");
-    } catch (err) {
+    } catch {
       if (!after) setLoadError("Could not load messages. Retrying...");
     }
   }, [orgId, ownerId]);
 
   useEffect(() => {
-    if (!ownerId || !orgId) return undefined;
+    if (!ownerId || !orgId) return;
     setLoading(true);
     fetchMessages(null).finally(() => setLoading(false));
-    return undefined;
   }, [fetchMessages, orgId, ownerId]);
 
   useEffect(() => {
-    if (!ownerId || !orgId) return undefined;
-    pollTimerRef.current = setInterval(() => {
-      fetchMessages(latestSentAtRef.current);
-    }, POLL_INTERVAL);
+    if (!ownerId || !orgId) return () => {};
+    pollTimerRef.current = setInterval(() => fetchMessages(latestSentAtRef.current), POLL_INTERVAL);
     return () => clearInterval(pollTimerRef.current);
   }, [fetchMessages, orgId, ownerId]);
 
@@ -209,46 +357,91 @@ export default function DiscussionsSection() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  async function handleSend() {
-    const trimmed = text.trim();
-    if (!trimmed || sending) return;
-    if (trimmed.length > MAX_MSG_LEN) {
-      setError(`Message too long (max ${MAX_MSG_LEN} chars).`);
-      return;
-    }
+  // ── Derived data ─────────────────────────────────────────────────────────
 
-    setError("");
-    setSending(true);
+  const { visibleMessages, votesByPoll, pinnedMessage } = useMemo(() => {
+    const votes = {};
+    let latestPin = null;
 
-    const type = canAnnounce ? messageType : "chat";
+    messages.forEach(m => {
+      if (m.messageType === MT.VOTE) {
+        if (!votes[m.refPollId]) votes[m.refPollId] = {};
+        // later vote by same user for same poll overwrites earlier
+        if (!votes[m.refPollId][m.senderId] || String(m.sentAt) > String(votes[m.refPollId][m.senderId]?.sentAt || "")) {
+          votes[m.refPollId][m.senderId] = { optionId: m.optionId, sentAt: m.sentAt };
+        }
+      }
+      if (m.messageType === MT.PIN) {
+        if (!latestPin || String(m.sentAt) > String(latestPin.sentAt)) latestPin = m;
+      }
+    });
 
+    const pinnedId = latestPin?.pinned ? latestPin.refMessageId : null;
+    const pinned = pinnedId ? messages.find(m => m.id === pinnedId) : null;
+    const visible = messages.filter(m => !HIDDEN.has(m.messageType));
+
+    return { visibleMessages: visible, votesByPoll: votes, pinnedMessage: pinned };
+  }, [messages]);
+
+  function getVoteCounts(pollMsgId, options) {
+    const pollVotes = votesByPoll[pollMsgId] || {};
+    const counts = {};
+    Object.values(pollVotes).forEach(({ optionId }) => {
+      counts[optionId] = (counts[optionId] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function getMyVote(pollMsgId) {
+    return votesByPoll[pollMsgId]?.[myId]?.optionId || null;
+  }
+
+  function getTotalVoters(pollMsgId) {
+    return Object.keys(votesByPoll[pollMsgId] || {}).length;
+  }
+
+  // ── Send handlers ─────────────────────────────────────────────────────────
+
+  async function sendMessage(payload, optimisticExtra = {}) {
     const optimistic = {
       id: `temp_${Date.now()}`,
-      senderId: user?.id || "",
+      senderId: myId,
       senderName,
       senderRole,
-      text: trimmed,
-      messageType: type,
       sentAt: new Date().toISOString(),
-      _pending: true
+      _pending: true,
+      ...payload,
+      ...optimisticExtra,
     };
-
     setMessages(prev => [...prev, optimistic]);
-    setText("");
-
     try {
       const saved = await messagesApi.send(ownerId, orgId, {
         id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-        text: trimmed,
         senderName,
         senderRole,
-        messageType: type,
-        sentAt: optimistic.sentAt
+        sentAt: optimistic.sentAt,
+        ...payload,
       });
-      setMessages(prev => prev.map(message => (message.id === optimistic.id ? { ...saved } : message)));
+      setMessages(prev => prev.map(m => (m.id === optimistic.id ? { ...saved } : m)));
       latestSentAtRef.current = String(saved.sentAt);
-    } catch (err) {
-      setMessages(prev => prev.filter(message => message.id !== optimistic.id));
+      return saved;
+    } catch {
+      setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+      throw new Error("Failed to send.");
+    }
+  }
+
+  async function handleSend() {
+    const trimmed = text.trim();
+    if (!trimmed || sending) return;
+    if (trimmed.length > MAX_MSG_LEN) { setError(`Message too long (max ${MAX_MSG_LEN} chars).`); return; }
+    setError("");
+    setSending(true);
+    setText("");
+    const type = canAnnounce && mode === "announcement" ? MT.ANNOUNCEMENT : MT.CHAT;
+    try {
+      await sendMessage({ messageType: type, text: trimmed });
+    } catch {
       setText(trimmed);
       setError("Failed to send. Please try again.");
     } finally {
@@ -257,10 +450,58 @@ export default function DiscussionsSection() {
     }
   }
 
-  function handleKeyDown(event) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSend();
+  async function handlePollSubmit(question, options) {
+    setSending(true);
+    setError("");
+    try {
+      await sendMessage({
+        messageType: MT.POLL,
+        text: question,
+        pollOptions: options.map((text, i) => ({ id: `opt_${i}`, text })),
+      });
+      setMode("chat");
+    } catch {
+      setError("Failed to post poll. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleVote(pollMessage, optionId) {
+    if (getMyVote(pollMessage.id) || sending) return;
+    try {
+      await sendMessage({
+        messageType: MT.VOTE,
+        text: "",
+        refPollId: pollMessage.id,
+        optionId,
+      });
+    } catch {
+      setError("Vote failed. Try again.");
+    }
+  }
+
+  async function handlePin(message) {
+    if (!canPin) return;
+    const alreadyPinned = pinnedMessage?.id === message.id;
+    try {
+      await sendMessage({
+        messageType: MT.PIN,
+        text: "",
+        refMessageId: message.id,
+        pinned: !alreadyPinned,
+      });
+    } catch {
+      setError("Could not pin message.");
+    }
+  }
+
+  async function handleUnpin() {
+    if (!pinnedMessage || !canPin) return;
+    try {
+      await sendMessage({ messageType: MT.PIN, text: "", refMessageId: pinnedMessage.id, pinned: false });
+    } catch {
+      setError("Could not unpin.");
     }
   }
 
@@ -269,93 +510,68 @@ export default function DiscussionsSection() {
     setMessages(prev => prev.filter(item => item.id !== message.id));
     try {
       await messagesApi.delete(ownerId, orgId, message.id);
-    } catch (err) {
+    } catch {
       setMessages(prev => [...prev, message].sort((a, b) => String(a.sentAt).localeCompare(String(b.sentAt))));
     }
   }
 
   function canDelete(message) {
     if (message._pending) return false;
-    return isAdmin || isOwner || String(message.senderId || "") === String(user?.id || "");
+    return isAdmin || isOwner || String(message.senderId || "") === myId;
   }
 
-  const isAnnounceMode = canAnnounce && messageType === "announcement";
+  function handleKeyDown(e) {
+    if (e.key === "Enter" && !e.shiftKey && mode !== "poll") {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  const isAnnounceMode = canAnnounce && mode === "announcement";
+  const feedMessages = visibleMessages;
+  const chatCount = feedMessages.filter(m => m.messageType === MT.CHAT || m.messageType === MT.ANNOUNCEMENT || m.messageType === MT.POLL).length;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-        background: "var(--surface)"
-      }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--surface)" }}>
+
       {/* Header */}
-      <div
-        style={{
-          flexShrink: 0,
-          padding: "10px 12px",
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          background: "linear-gradient(180deg, color-mix(in srgb, var(--blue) 18%, var(--surface-high)) 0%, var(--surface) 100%)",
-          borderBottom: "1px solid var(--border)"
-        }}
-      >
-        <Avatar name="Community" tone="member" size={32} />
+      <div style={{ flexShrink: 0, padding: "10px 12px", display: "flex", alignItems: "center", gap: 9, background: "linear-gradient(180deg, color-mix(in srgb, var(--blue) 18%, var(--surface-high)) 0%, var(--surface) 100%)", borderBottom: "1px solid var(--border)" }}>
+        <Av name="Community" tone="member" size={32} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>Apartment Group Chat</div>
           <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 1 }}>
-            Residents and management updates · {messages.length} message{messages.length !== 1 ? "s" : ""}
+            Residents and management updates · {chatCount} message{chatCount !== 1 ? "s" : ""}
           </div>
         </div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", padding: "5px 9px", borderRadius: 999, background: "var(--accent-deep)" }}>
-          Live
-        </div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", padding: "5px 9px", borderRadius: 999, background: "var(--accent-deep)" }}>Live</div>
       </div>
 
+      {/* Pinned banner */}
+      {pinnedMessage && (
+        <PinnedBanner message={pinnedMessage} canPin={canPin} onUnpin={handleUnpin} />
+      )}
+
       {/* Message feed */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "10px 10px 6px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 6,
-          background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)"
-        }}
-      >
-        {loading && (
-          <div style={{ textAlign: "center", padding: "28px 20px", color: "var(--text-dim)", fontSize: 13 }}>
-            Loading messages...
-          </div>
-        )}
-
-        {!loading && loadError && (
-          <div style={{ textAlign: "center", padding: "18px", color: "var(--danger)", fontSize: 12 }}>{loadError}</div>
-        )}
-
-        {!loading && !loadError && messages.length === 0 && (
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px 6px", display: "flex", flexDirection: "column", gap: 6, background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg)) 0%, var(--bg) 100%)" }}>
+        {loading && <div style={{ textAlign: "center", padding: "28px 20px", color: "var(--text-dim)", fontSize: 13 }}>Loading messages...</div>}
+        {!loading && loadError && <div style={{ textAlign: "center", padding: "18px", color: "var(--danger)", fontSize: 12 }}>{loadError}</div>}
+        {!loading && !loadError && feedMessages.length === 0 && (
           <div style={{ padding: "32px 20px", textAlign: "center" }}>
             <div style={{ fontSize: 28, marginBottom: 10 }}>💬</div>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>No messages yet</div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, maxWidth: 260, margin: "0 auto" }}>
-              {canAnnounce
-                ? "Post an announcement to share important updates with all residents, or send a message to start the conversation."
-                : "Management will post announcements here. You can also send messages to the group."}
+              {canAnnounce ? "Post an announcement, create a poll, or send a message to get started." : "Management will post announcements and polls here. You can also send messages."}
             </div>
           </div>
         )}
 
-        {messages.map((message, index) => {
-          const isMe = String(message.senderId || "") === String(user?.id || "");
-          const prevMessage = messages[index - 1];
-          const showDate = !prevMessage || new Date(message.sentAt).toDateString() !== new Date(prevMessage.sentAt).toDateString();
-          const showSender = !prevMessage || prevMessage.senderId !== message.senderId || showDate;
+        {feedMessages.map((message, index) => {
+          const isMe = String(message.senderId || "") === myId;
+          const prev = feedMessages[index - 1];
+          const showDate = !prev || new Date(message.sentAt).toDateString() !== new Date(prev.sentAt).toDateString();
+          const showSender = !prev || prev.senderId !== message.senderId || showDate;
           const tone = roleTone(message.senderRole, isMe);
-          const isAnnouncement = message.messageType === "announcement";
+          const isPinned = pinnedMessage?.id === message.id;
 
           return (
             <React.Fragment key={message.id || index}>
@@ -367,68 +583,55 @@ export default function DiscussionsSection() {
                 </div>
               )}
 
-              {isAnnouncement ? (
+              {message.messageType === MT.ANNOUNCEMENT ? (
                 <AnnouncementCard
                   message={message}
-                  canDeleteMsg={canDelete(message)}
+                  canDelete={canDelete(message)}
+                  canPin={canPin}
                   onDelete={() => handleDelete(message)}
+                  onPin={() => handlePin(message)}
+                  isPinned={isPinned}
+                />
+              ) : message.messageType === MT.POLL ? (
+                <PollCard
+                  message={message}
+                  myVote={getMyVote(message.id)}
+                  voteCountsForPoll={getVoteCounts(message.id, message.pollOptions)}
+                  totalVoters={getTotalVoters(message.id)}
+                  onVote={handleVote}
+                  canDelete={canDelete(message)}
+                  canPin={canPin}
+                  onDelete={() => handleDelete(message)}
+                  onPin={() => handlePin(message)}
+                  isPinned={isPinned}
                 />
               ) : (
                 <div style={{ display: "flex", flexDirection: isMe ? "row-reverse" : "row", gap: 10, alignItems: "flex-end" }}>
-                  {showSender && !isMe ? <Avatar name={message.senderName} tone={tone} size={30} /> : !isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
-
+                  {showSender && !isMe ? <Av name={message.senderName} tone={tone} size={30} /> : !isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
                   <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}>
                     {showSender && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: isMe ? "var(--accent)" : message.senderRole === "owner" ? "var(--accent)" : message.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)",
-                          marginBottom: 3,
-                          paddingLeft: isMe ? 0 : 2,
-                          paddingRight: isMe ? 2 : 0
-                        }}
-                      >
+                      <div style={{ fontSize: 11, fontWeight: 700, color: isMe ? "var(--accent)" : message.senderRole === "owner" ? "var(--accent)" : message.senderRole === "admin" ? "var(--gold)" : "var(--text-sec)", marginBottom: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
                         {isMe ? "You" : message.senderName || "Resident"}
                         {message.senderRole === "owner" && !isMe && <span style={{ color: "var(--accent)", marginLeft: 4 }}>· Owner</span>}
                         {message.senderRole === "admin" && !isMe && <span style={{ color: "var(--gold)", marginLeft: 4 }}>· Admin</span>}
                       </div>
                     )}
-
                     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, flexDirection: isMe ? "row-reverse" : "row" }}>
-                      <div
-                        style={{
-                          background: message._pending
-                            ? "color-mix(in srgb, var(--accent) 70%, var(--surface))"
-                            : isMe
-                              ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)"
-                              : "color-mix(in srgb, var(--surface) 92%, white)",
-                          color: isMe ? "#fff" : "var(--text)",
-                          borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px",
-                          padding: "10px 14px 9px",
-                          fontSize: 14,
-                          lineHeight: 1.5,
-                          border: isMe ? "none" : "1px solid var(--border)",
-                          wordBreak: "break-word",
-                          whiteSpace: "pre-wrap",
-                          opacity: message._pending ? 0.7 : 1,
-                          boxShadow: "0 10px 24px rgba(0,0,0,0.08)"
-                        }}
-                      >
+                      <div style={{ background: message._pending ? "color-mix(in srgb, var(--accent) 70%, var(--surface))" : isMe ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white) 0%, var(--accent) 100%)" : "color-mix(in srgb, var(--surface) 92%, white)", color: isMe ? "#fff" : "var(--text)", borderRadius: isMe ? "20px 20px 6px 20px" : "20px 20px 20px 6px", padding: "10px 14px 9px", fontSize: 14, lineHeight: 1.5, border: isMe ? "none" : "1px solid var(--border)", wordBreak: "break-word", whiteSpace: "pre-wrap", opacity: message._pending ? 0.7 : 1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
                         {message.text}
                       </div>
-
-                      {canDelete(message) && (
-                        <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.45 }} />
-                      )}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+                        {canPin && !message._pending && (
+                          <button type="button" onClick={() => handlePin(message)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 13, opacity: isPinned ? 1 : 0.3, padding: "2px", lineHeight: 1 }} title={isPinned ? "Unpin" : "Pin"}>📌</button>
+                        )}
+                        {canDelete(message) && <DeleteBtn onDelete={() => handleDelete(message)} style={{ opacity: 0.35 }} />}
+                      </div>
                     </div>
-
                     <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, paddingLeft: isMe ? 0 : 2, paddingRight: isMe ? 2 : 0 }}>
                       {message._pending ? "Sending..." : formatTime(message.sentAt)}
                     </div>
                   </div>
-
-                  {showSender && isMe ? <Avatar name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
+                  {showSender && isMe ? <Av name={senderName} tone="me" size={30} /> : isMe ? <div style={{ width: 30, flexShrink: 0 }} /> : null}
                 </div>
               )}
             </React.Fragment>
@@ -440,91 +643,54 @@ export default function DiscussionsSection() {
 
       {/* Input area */}
       <div style={{ flexShrink: 0, padding: "8px 10px 10px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
-        {/* Announcement mode toggle — only for owner/admin */}
+        {/* Mode toggle — owner/admin only */}
         {canAnnounce && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
-            <button
-              onClick={() => setMessageType("chat")}
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: `1px solid ${messageType === "chat" ? "var(--accent)" : "var(--border)"}`,
-                background: messageType === "chat" ? "var(--accent-deep)" : "transparent",
-                color: messageType === "chat" ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                transition: "all 0.15s ease"
-              }}
-            >
-              Message
-            </button>
-            <button
-              onClick={() => setMessageType("announcement")}
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: `1px solid ${messageType === "announcement" ? "var(--accent)" : "var(--border)"}`,
-                background: messageType === "announcement" ? "var(--accent-deep)" : "transparent",
-                color: messageType === "announcement" ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                transition: "all 0.15s ease"
-              }}
-            >
-              Announcement
-            </button>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            {[["chat", "Message"], ["announcement", "Announcement"], ["poll", "Poll"]].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMode(key)}
+                style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, border: `1px solid ${mode === key ? "var(--accent)" : "var(--border)"}`, background: mode === key ? "var(--accent-deep)" : "transparent", color: mode === key ? "var(--accent)" : "var(--text-dim)", cursor: "pointer", transition: "all 0.15s" }}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         )}
 
         {error && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 6 }}>{error}</div>}
 
-        <div
-          style={{
-            display: "flex",
-            gap: 7,
-            alignItems: "center",
-            background: "var(--bg)",
-            border: `1px solid ${isAnnounceMode ? "color-mix(in srgb, var(--accent) 50%, var(--border))" : "var(--border)"}`,
-            borderRadius: 15,
-            padding: "6px 6px 6px 9px",
-            transition: "border-color 0.15s ease"
-          }}
-        >
-          <input
-            ref={inputRef}
-            className="input-field"
-            placeholder={isAnnounceMode ? "Write an announcement for all residents..." : "Message group"}
-            value={text}
-            onChange={event => {
-              setText(event.target.value);
-              if (error) setError("");
-            }}
-            onKeyDown={handleKeyDown}
-            style={{ flex: 1, border: "none", background: "transparent", padding: 0, minHeight: 20, fontSize: 14 }}
+        {mode === "poll" && canAnnounce ? (
+          <PollCreator
+            onSubmit={handlePollSubmit}
+            onCancel={() => setMode("chat")}
+            disabled={sending}
           />
-          <button
-            className="btn-primary"
-            style={{
-              height: 38,
-              borderRadius: 999,
-              padding: "0 14px",
-              fontSize: 11,
-              fontWeight: 800,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-              opacity: !text.trim() || sending ? 0.5 : 1
-            }}
-            onClick={handleSend}
-            disabled={!text.trim() || sending}
-          >
-            {isAnnounceMode ? "Post" : "Send"}
-          </button>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5, textAlign: "right" }}>
-          {text.length}/{MAX_MSG_LEN}
-        </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 7, alignItems: "center", background: "var(--bg)", border: `1px solid ${isAnnounceMode ? "color-mix(in srgb, var(--accent) 50%, var(--border))" : "var(--border)"}`, borderRadius: 15, padding: "6px 6px 6px 9px", transition: "border-color 0.15s" }}>
+              <input
+                ref={inputRef}
+                className="input-field"
+                placeholder={isAnnounceMode ? "Write an announcement for all residents..." : "Message group"}
+                value={text}
+                onChange={e => { setText(e.target.value); if (error) setError(""); }}
+                onKeyDown={handleKeyDown}
+                style={{ flex: 1, border: "none", background: "transparent", padding: 0, minHeight: 20, fontSize: 14 }}
+              />
+              <button
+                className="btn-primary"
+                style={{ height: 38, borderRadius: 999, padding: "0 14px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, opacity: !text.trim() || sending ? 0.5 : 1 }}
+                onClick={handleSend}
+                disabled={!text.trim() || sending}
+              >
+                {isAnnounceMode ? "Post" : "Send"}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 5, textAlign: "right" }}>{text.length}/{MAX_MSG_LEN}</div>
+          </>
+        )}
       </div>
     </div>
   );

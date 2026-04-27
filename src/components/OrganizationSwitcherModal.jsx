@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, LoadingButton } from "./UI";
+import { useConfirm } from "../context/DialogContext";
 
 export default function OrganizationSwitcherModal({
   open,
@@ -9,6 +10,7 @@ export default function OrganizationSwitcherModal({
   onSwitch,
   onDelete
 }) {
+  const confirm = useConfirm();
   if (!open) return null;
 
   const canDelete = organizations.length > 1;
@@ -48,7 +50,7 @@ export default function OrganizationSwitcherModal({
                   disabled={!canDelete || org.organizationType === "personal"}
                   onClick={async () => {
                     if (!canDelete || org.organizationType === "personal") return;
-                    if (window.confirm(`Delete ${org.name}? This will remove that Khata and its data.`)) {
+                    if (await confirm(`Delete ${org.name}? This will permanently remove that Khata and all its data.`, { title: "Delete Khata", confirmLabel: "Delete" })) {
                       await onDelete?.(org.id);
                     }
                   }}
