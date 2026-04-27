@@ -9,7 +9,8 @@ import { useAuth } from "../context/AuthContext";
 export default function PendingInviteBanner() {
   const { user, setUser } = useAuth();
   const [pendingInvites, setPendingInvites] = useState([]);
-  const [processing, setProcessing] = useState({}); // inviteId → true while saving
+  const [processing, setProcessing] = useState({});
+  const [inviteError, setInviteError] = useState({});
 
   useEffect(() => {
     if (!user?.email) return;
@@ -48,7 +49,7 @@ export default function PendingInviteBanner() {
       setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
     } catch {
       setProcessing(prev => ({ ...prev, [invite.id]: false }));
-      alert("Could not accept invite. Please try again.");
+      setInviteError(prev => ({ ...prev, [invite.id]: "Could not accept invite. Please try again." }));
     }
   }
 
@@ -87,6 +88,9 @@ export default function PendingInviteBanner() {
               <strong>{invite.orgName || "an organization"}</strong> as{" "}
               <strong style={{ textTransform: "capitalize" }}>{invite.role}</strong>
             </span>
+            {inviteError[invite.id] && (
+              <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 2 }}>{inviteError[invite.id]}</div>
+            )}
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <button

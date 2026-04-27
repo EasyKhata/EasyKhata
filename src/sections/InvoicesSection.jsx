@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
+import { useConfirm } from "../context/DialogContext";
 import {
   DateSelectInput,
   Modal,
@@ -149,6 +150,7 @@ function renderDynamicField(field, value, onChange) {
 
 export default function InvoicesSection({ year, month, documentType = "invoice", orgType, headerDatePicker }) {
   const d = useData();
+  const confirm = useConfirm();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
 
@@ -1005,7 +1007,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             </div>
 
             {!isViewerMode && (
-              <button onClick={() => { if (window.confirm(`Delete this ${documentLabel.toLowerCase()}?`)) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
+              <button onClick={async () => { if (await confirm(`Delete this ${documentLabel.toLowerCase()}?`, { title: "Delete", confirmLabel: "Delete" })) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
                 Delete {documentLabel}
               </button>
             )}

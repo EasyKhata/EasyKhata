@@ -2,6 +2,7 @@ import React, { Suspense, lazy, useEffect, useRef } from "react";
 import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
+import { DialogProvider } from "./context/DialogContext";
 import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -107,9 +108,11 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider>
         <AuthProvider>
-          <ErrorBoundary>
-            <AppRouter />
-          </ErrorBoundary>
+          <DialogProvider>
+            <ErrorBoundary>
+              <AppRouter />
+            </ErrorBoundary>
+          </DialogProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

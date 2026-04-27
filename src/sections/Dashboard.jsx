@@ -293,6 +293,451 @@ function SavingsGoalCard({ goals, sym, onNav }) {
   );
 }
 
+function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
+  const [expandedFlat, setExpandedFlat] = useState(null);
+  const [showPaid, setShowPaid] = useState(false);
+
+  if (!flats.length) return null;
+
+  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+
+  const incomeByMonth = {};
+  (income || []).forEach(item => {
+    if (String(item.collectionType || "Monthly Maintenance").trim().toLowerCase() !== "monthly maintenance") return;
+    const itemMk = item.collectionMonth || item.month || (item.date ? item.date.slice(0, 7) : "");
+    const flatNum = String(item.flatNumber || "").trim().toLowerCase();
+    if (!itemMk || !flatNum) return;
+    if (!incomeByMonth[itemMk]) incomeByMonth[itemMk] = new Set();
+    incomeByMonth[itemMk].add(flatNum);
+  });
+
+  const paidSet = incomeByMonth[mk] || new Set();
+
+  const last12 = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(year, month - (11 - i), 1);
+    return {
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      label: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]
+    };
+  });
+
+  // Only flats with monthlyMaintenance > 0 are tracked as pending/paid (matches API logic)
+  const flatData = flats.map(flat => {
+    const flatKey = String(flat.name || "").trim().toLowerCase();
+    const hasMaintenance = Number(flat.monthlyMaintenance || 0) > 0;
+    const isPaid = hasMaintenance && paidSet.has(flatKey);
+    const isPending = hasMaintenance && !isPaid;
+    let missedRecent = 0;
+    if (isPending) {
+      for (let i = 1; i <= 3; i++) {
+        const d = new Date(year, month - i, 1);
+        const pastMk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (!incomeByMonth[pastMk]?.has(flatKey)) missedRecent++;
+      }
+    }
+    const isChronic = isPending && missedRecent >= 2;
+    return { flat, flatKey, isPaid, isPending, isChronic, hasMaintenance };
+  });
+
+  const chronic = flatData.filter(f => f.isChronic);
+  const pending = flatData.filter(f => f.isPending && !f.isChronic);
+  const paid = flatData.filter(f => f.isPaid);
+  const noAmount = flatData.filter(f => !f.hasMaintenance);
+  const expandedData = expandedFlat ? flatData.find(f => f.flatKey === expandedFlat) : null;
+
+  function FlatChip({ fd }) {
+    const { flat, flatKey, isPaid, isChronic } = fd;
+    const isExpanded = expandedFlat === flatKey;
+    const dotColor = isChronic ? "var(--danger)" : isPaid ? "var(--jade)" : "var(--ember)";
+    return (
+      <button
+        type="button"
+        onClick={() => setExpandedFlat(isExpanded ? null : flatKey)}
+        style={{
+          display: "flex", alignItems: "center", gap: 5,
+          padding: "5px 9px", borderRadius: 8, cursor: "pointer",
+          border: `1px solid ${isExpanded ? "var(--accent)" : "var(--border)"}`,
+          background: isExpanded ? "color-mix(in srgb, var(--accent) 8%, var(--bg))"
+            : isPaid ? "color-mix(in srgb, var(--jade) 5%, var(--bg))"
+            : isChronic ? "color-mix(in srgb, var(--danger) 6%, var(--bg))"
+            : "color-mix(in srgb, var(--ember) 5%, var(--bg))"
+        }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{flat.name || "—"}</span>
+        {isChronic && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--danger)", lineHeight: 1 }}>!</span>}
+      </button>
+    );
+  }
+
+  return (
+    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Collection Status · {MONTHS[month]}</div>
+          <div style={{ fontSize: 11, marginTop: 3 }}>
+            <span style={{ color: "var(--jade)", fontWeight: 700 }}>{paid.length} paid</span>
+            {(pending.length + chronic.length) > 0 && <span style={{ color: "var(--ember)", fontWeight: 700 }}> · {pending.length + chronic.length} pending</span>}
+            {chronic.length > 0 && <span style={{ color: "var(--danger)", fontWeight: 800 }}> · {chronic.length} chronic</span>}
+            {noAmount.length > 0 && <span style={{ color: "var(--text-dim)" }}> · {noAmount.length} no amount set</span>}
+          </div>
+        </div>
+        <button type="button" onClick={() => onNav("income")}
+          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
+          Manage →
+        </button>
+      </div>
+
+      {/* All clear */}
+      {chronic.length === 0 && pending.length === 0 && paid.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--jade)", fontWeight: 700, marginBottom: 10 }}>
+          ✓ All maintenance collected for {MONTHS[month]}
+        </div>
+      )}
+
+      {/* Chronic — always visible */}
+      {chronic.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Chronic</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {chronic.map(fd => <FlatChip key={fd.flatKey} fd={fd} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Pending — always visible */}
+      {pending.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {chronic.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ember)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Pending</div>}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {pending.map(fd => <FlatChip key={fd.flatKey} fd={fd} />)}
+          </div>
+        </div>
+      )}
+
+      {/* Paid — collapsed by default */}
+      {paid.length > 0 && (
+        <div style={{ marginTop: chronic.length === 0 && pending.length === 0 ? 0 : 4 }}>
+          <button type="button" onClick={() => setShowPaid(v => !v)}
+            style={{ background: "none", border: "none", fontSize: 12, color: "var(--text-dim)", cursor: "pointer", padding: "2px 0", fontWeight: 600 }}>
+            {showPaid ? `▴ Hide ${paid.length} paid` : `▾ Show ${paid.length} paid`}
+          </button>
+          {showPaid && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+              {paid.map(fd => <FlatChip key={fd.flatKey} fd={fd} />)}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 12-month history panel */}
+      {expandedData && (
+        <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--surface-high)", borderRadius: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{expandedData.flat.name}</div>
+              {expandedData.flat.ownerName && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{expandedData.flat.ownerName}</div>}
+              {expandedData.isChronic && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", marginTop: 3 }}>Chronic defaulter</div>}
+            </div>
+            {expandedData.flat.monthlyMaintenance && (
+              <div style={{ fontSize: 12, color: "var(--text-dim)", flexShrink: 0 }}>
+                {sym}{Number(expandedData.flat.monthlyMaintenance).toLocaleString("en-IN")}/mo
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {last12.map(({ key, label }) => {
+              const isFuture = key > mk;
+              const wasPaid = !isFuture && incomeByMonth[key]?.has(expandedData.flatKey);
+              return (
+                <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: isFuture ? "var(--border)" : wasPaid ? "var(--jade)" : "var(--ember)", opacity: isFuture ? 0.25 : 1 }} />
+                  <span style={{ fontSize: 9, color: "var(--text-dim)", fontWeight: 600 }}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 14, marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
+        {[["var(--jade)", "Paid"], ["var(--ember)", "Pending"], ["var(--danger)", "Chronic (3+ mo)"]].map(([color, label]) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+            <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const MEMBER_COLORS = ["var(--accent)", "var(--blue)", "var(--gold)", "var(--jade)", "var(--saffron)"];
+
+function MemberSpendingCard({ expenses, sym, month, year, viewMode, onNav }) {
+  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const filtered = (expenses || []).filter(e => {
+    if (viewMode === "month") {
+      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+      return em === mk;
+    }
+    const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
+    return ey === String(year);
+  });
+
+  if (filtered.length === 0) return null;
+
+  const byMember = {};
+  let unassigned = 0;
+  filtered.forEach(e => {
+    const name = String(e.personName || "").trim();
+    const amt = Number(e.amount || 0);
+    if (name) byMember[name] = (byMember[name] || 0) + amt;
+    else unassigned += amt;
+  });
+
+  const entries = Object.entries(byMember).sort((a, b) => b[1] - a[1]);
+  if (!entries.length && unassigned === 0) return null;
+  if (unassigned > 0) entries.push(["—", unassigned]);
+
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+
+  return (
+    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Spending by Member</div>
+        <button type="button" onClick={() => onNav("expenses")}
+          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
+          See all →
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+        {entries.map(([name, amt], i) => {
+          const isUnassigned = name === "—";
+          const pct = Math.round((amt / total) * 100);
+          const color = isUnassigned ? "var(--border)" : MEMBER_COLORS[i % MEMBER_COLORS.length];
+          return (
+            <div key={name}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                    background: isUnassigned ? "var(--surface-high)" : `color-mix(in srgb, ${color} 18%, var(--surface-high))`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11, fontWeight: 800, color: isUnassigned ? "var(--text-dim)" : color
+                  }}>
+                    {isUnassigned ? "?" : name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: isUnassigned ? "var(--text-dim)" : "var(--text)" }}>
+                    {isUnassigned ? "Untagged" : name}
+                  </span>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isUnassigned ? "var(--text-dim)" : "var(--text)" }}>{fmtMoney(amt, sym)}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{pct}%</div>
+                </div>
+              </div>
+              <div style={{ height: 4, borderRadius: 999, background: "var(--surface-high)", overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 999, transition: "width 0.4s ease" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {unassigned > 0 && entries.length > 1 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
+          Tag expenses to family members for a complete breakdown.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BudgetStatusCard({ budgets, expenses, sym, month, year, viewMode, onNav }) {
+  if (viewMode !== "month") return null;
+
+  const budgetEntries = Object.entries(budgets && typeof budgets === "object" ? budgets : {})
+    .filter(([, v]) => Number(v) > 0);
+
+  if (budgetEntries.length === 0) {
+    return (
+      <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Monthly Budgets</div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 10 }}>
+          Set category limits to track where you're on track and where you're overspending.
+        </div>
+        <button type="button" onClick={() => onNav("expenses")}
+          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
+          Set Budgets in Expenses →
+        </button>
+      </div>
+    );
+  }
+
+  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const spent = {};
+  (expenses || []).forEach(e => {
+    const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+    if (em === mk && e.category) spent[e.category] = (spent[e.category] || 0) + Number(e.amount || 0);
+  });
+
+  const items = budgetEntries.map(([category, budget]) => {
+    const s = spent[category] || 0;
+    const limit = Number(budget) || 0;
+    const progress = limit > 0 ? (s / limit) * 100 : 0;
+    const tone = progress >= 100 ? "var(--danger)" : progress >= 80 ? "var(--gold)" : "var(--accent)";
+    return { category, budget: limit, spent: s, remaining: Math.max(0, limit - s), progress, tone };
+  }).sort((a, b) => b.progress - a.progress);
+
+  const overCount = items.filter(i => i.progress >= 100).length;
+  const warnCount = items.filter(i => i.progress >= 80 && i.progress < 100).length;
+  const statusColor = overCount > 0 ? "var(--danger)" : warnCount > 0 ? "var(--gold)" : "var(--accent)";
+  const statusText = overCount > 0
+    ? `${overCount} budget${overCount !== 1 ? "s" : ""} over limit`
+    : warnCount > 0
+    ? `${warnCount} running low`
+    : "All on track";
+
+  return (
+    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Monthly Budgets</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: statusColor, marginTop: 2 }}>{statusText}</div>
+        </div>
+        <button type="button" onClick={() => onNav("expenses")}
+          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
+          Manage →
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+        {items.map(item => (
+          <div key={item.category}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.tone, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{item.category}</span>
+              </div>
+              <span style={{ fontSize: 11, color: item.progress >= 100 ? "var(--danger)" : "var(--text-dim)" }}>
+                {fmtMoney(item.spent, sym)} / {fmtMoney(item.budget, sym)}
+              </span>
+            </div>
+            <div style={{ height: 5, borderRadius: 999, background: "var(--surface-high)", overflow: "hidden" }}>
+              <div style={{ width: `${Math.min(100, item.progress)}%`, height: "100%", background: item.tone, borderRadius: 999, transition: "width 0.4s ease" }} />
+            </div>
+            {item.progress >= 100 && (
+              <div style={{ fontSize: 10, color: "var(--danger)", marginTop: 3, fontWeight: 600 }}>
+                {fmtMoney(item.spent - item.budget, sym)} over
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NeedsWantsCard({ expenses, sym, month, year, viewMode, onNav }) {
+  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const filtered = (expenses || []).filter(e => {
+    if (viewMode === "month") {
+      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
+      return em === mk;
+    }
+    const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
+    return ey === String(year);
+  });
+
+  const tagged = filtered.filter(e => e.necessityType === "Needs" || e.necessityType === "Wants");
+
+  if (tagged.length === 0) {
+    if (filtered.length === 0) return null;
+    return (
+      <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Needs vs Wants</div>
+        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
+          Tag your expenses as <strong>Needs</strong> or <strong>Wants</strong> when adding them to see where your spending goes.
+        </div>
+      </div>
+    );
+  }
+
+  const needsTotal = tagged.filter(e => e.necessityType === "Needs").reduce((s, e) => s + Number(e.amount || 0), 0);
+  const wantsTotal = tagged.filter(e => e.necessityType === "Wants").reduce((s, e) => s + Number(e.amount || 0), 0);
+  const total = needsTotal + wantsTotal;
+  const needsPct = total > 0 ? Math.round((needsTotal / total) * 100) : 0;
+  const wantsPct = 100 - needsPct;
+  const untaggedCount = filtered.length - tagged.length;
+
+  const topCategories = (type) => Object.entries(
+    tagged.filter(e => e.necessityType === type).reduce((acc, e) => {
+      const cat = e.category || "Other";
+      acc[cat] = (acc[cat] || 0) + Number(e.amount || 0);
+      return acc;
+    }, {})
+  ).sort((a, b) => b[1] - a[1]).slice(0, 2);
+
+  const insight = wantsPct > 50
+    ? "More than half your spending this month is discretionary."
+    : wantsPct > 30
+    ? `${wantsPct}% is on wants — room to optimize.`
+    : "Mostly essentials this month — looking healthy.";
+
+  return (
+    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Needs vs Wants</div>
+        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{fmtMoney(total, sym)} tagged</div>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12 }}>{insight}</div>
+
+      {/* Split bar */}
+      <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", marginBottom: 16 }}>
+        <div style={{ width: `${needsPct}%`, background: "var(--jade)", transition: "width 0.5s ease" }} />
+        <div style={{ width: `${wantsPct}%`, background: "var(--saffron)", transition: "width 0.5s ease" }} />
+      </div>
+
+      {/* Two columns */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--jade)", flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--jade)" }}>Needs · {needsPct}%</span>
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>{fmtMoney(needsTotal, sym)}</div>
+          {topCategories("Needs").map(([cat, amt]) => (
+            <div key={cat} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 2 }}>{cat} · {fmtMoney(amt, sym)}</div>
+          ))}
+        </div>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--saffron)", flexShrink: 0 }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--saffron)" }}>Wants · {wantsPct}%</span>
+          </div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>{fmtMoney(wantsTotal, sym)}</div>
+          {topCategories("Wants").map(([cat, amt]) => (
+            <div key={cat} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 2 }}>{cat} · {fmtMoney(amt, sym)}</div>
+          ))}
+        </div>
+      </div>
+
+      {untaggedCount > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
+          {untaggedCount} expense{untaggedCount !== 1 ? "s" : ""} not tagged yet ·{" "}
+          <button type="button" onClick={() => onNav("expenses")} style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: 0 }}>
+            Tag in Expenses
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
   const { activeSharedOrgKey, collectionFetched, isViewerMode } = data;
@@ -301,6 +746,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [viewMode, setViewMode] = useState(propViewMode || "month"); // "month" or "year"
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+
+  // Eagerly load all collections so dashboard cards and analytics reflect real data
+  // without requiring the user to visit each section tab first.
+  useEffect(() => {
+    data.ensureCollectionLoaded?.("income");
+    data.ensureCollectionLoaded?.("expenses");
+    data.ensureCollectionLoaded?.("invoices");
+  }, [data.ensureCollectionLoaded]);
 
   // Show setup guide for normal users on first visit
   useEffect(() => {
@@ -387,6 +840,19 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const hasCustomerRecord = (data.customers || []).length > 0;
   const hasInvoiceRecord = (data.invoices || []).some(item => String(item?.documentType || "invoice") === "invoice");
   const hasIncomeRecord = (data.income || []).length > 0;
+
+  const allEmisPaidThisMonth = useMemo(() => {
+    const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const viewStart = `${mk}-01`;
+    const viewEnd = new Date(year, month + 1, 0).toISOString().slice(0, 10);
+    const loans = data.orgRecords?.loans || [];
+    const active = loans.filter(item => {
+      const sd = item.startDate || viewStart;
+      const ed = item.endDate || "";
+      return (!sd || sd <= viewEnd) && (!ed || ed >= viewStart);
+    });
+    return active.length > 0 && active.every(item => (item.paidMonths || []).includes(mk));
+  }, [data.orgRecords?.loans, month, year]);
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = isSmallBusinessOrg
@@ -595,7 +1061,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           });
         } catch (err) {
           logError("Account update error", err);
-          alert("Failed to save account details. Please try again.");
         }
       }}
       onCreateOrganization={data.createOrganization}
@@ -640,7 +1105,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   {overallBalance >= 0 ? "Society fund surplus" : "Fund in deficit"}
                 </div>
               </div>
-              <HealthArc pct={collectionRate} size={84} color={healthColor} />
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <HealthArc pct={collectionRate} size={84} color={healthColor} />
+                {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
+              </div>
             </div>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -652,37 +1120,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <ProgressLine value={paidFlats} max={Math.max(totalFlats, 1)} color={healthColor} />
             </div>
           </div>
-
-          {/* Pending alert */}
-          {pendingCount > 0 && !isViewerMode && (
-            <div
-              className="anim-fade-up-2"
-              onClick={() => onNav({ tab: "org", screen: "customers" })}
-              style={{
-                background: "color-mix(in srgb, var(--ember) 7%, var(--canvas))",
-                border: "1px solid color-mix(in srgb, var(--ember) 20%, var(--line-2))",
-                borderRadius: 14,
-                padding: "12px 16px",
-                marginBottom: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                cursor: "pointer",
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ember)", marginBottom: 2 }}>
-                  ⚠ {pendingCount} flat{pendingCount !== 1 ? "s" : ""} pending
-                </div>
-                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
-                  {sym}{(pendingCount * (stats.totalIncome > 0 ? Math.round(stats.totalIncome / Math.max(paidFlats, 1)) : 0)).toLocaleString("en-IN")} estimated outstanding
-                </div>
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ember)", background: "color-mix(in srgb, var(--ember) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--ember) 25%, transparent)", borderRadius: 8, padding: "6px 12px" }}>
-                View →
-              </span>
-            </div>
-          )}
 
           {/* Stat chips */}
           <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -702,19 +1139,28 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             />
           </div>
 
+          {/* Collection status grid */}
+          <div className="anim-fade-up-3">
+            <CollectionStatusGrid
+              flats={data.customers || []}
+              income={data.income || []}
+              sym={sym}
+              month={month}
+              year={year}
+              onNav={onNav}
+            />
+          </div>
+
           {/* Trend sparkline */}
           {trendData.length >= 3 && (
             <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <div style={{ marginBottom: 10 }}>
                 <div className="section-eyebrow">Collection Trend</div>
-                {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
               </div>
               <Sparkline data={trendData} color="var(--orchid)" height={40} />
             </div>
           )}
-          {trendData.length < 3 && headerDatePicker && (
-            <div className="ledger-card-month-picker ledger-card-month-picker-inline">{headerDatePicker}</div>
-          )}
+
 
           {/* Recent transactions */}
           <div className="anim-fade-up-4">
@@ -829,7 +1275,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           )}
 
           {/* EMI alert */}
-          {stats.upcomingEmis?.length > 0 && (
+          {stats.upcomingEmis?.length > 0 && !allEmisPaidThisMonth && (
             <div
               className="anim-fade-up-3"
               onClick={() => onNav("emi")}
@@ -846,6 +1292,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <RupeeDisplay amount={Number(stats.totalEmi || 0)} color="var(--saffron)" size={20} />
             </div>
           )}
+
+          {/* Spending by member */}
+          <div className="anim-fade-up-4">
+            <MemberSpendingCard expenses={data.expenses} sym={sym} month={month} year={year} viewMode={viewMode} onNav={onNav} />
+          </div>
 
           {/* Recent transactions */}
           <div className="anim-fade-up-4">

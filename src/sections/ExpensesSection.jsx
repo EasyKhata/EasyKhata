@@ -113,6 +113,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }, [config.expenseCategories, d.budgets, d.expenses]);
   const [showForm, setShowForm] = useState(false);
   const [showBudgetForm, setShowBudgetForm] = useState(false);
+  const [budgetError, setBudgetError] = useState("");
   const [editId, setEditId] = useState(null);
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState({});
@@ -297,9 +298,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     });
 
     if (invalidBudget) {
-      alert(`Please enter a valid budget amount for ${invalidBudget}.`);
+      setBudgetError(`Please enter a valid budget amount for ${invalidBudget}.`);
       return;
     }
+    setBudgetError("");
 
     const nextBudgets = categoryOptions.reduce((map, category) => {
       const amount = Number(budgetDraft[category]) || 0;
@@ -784,10 +786,11 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       )}
 
       {!isPersonalOrg && config.enableBudgets !== false && showBudgetForm && (
-        <Modal title={`${config.expensesLabel} Budgets`} onClose={() => setShowBudgetForm(false)} onSave={saveBudgets} saveLabel="Save" canSave accentColor="var(--danger)">
+        <Modal title={`${config.expensesLabel} Budgets`} onClose={() => { setShowBudgetForm(false); setBudgetError(""); }} onSave={saveBudgets} saveLabel="Save" canSave accentColor="var(--danger)">
+          {budgetError && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, marginBottom: 8 }}>{budgetError}</div>}
           {categoryOptions.map(category => (
             <Field key={category} label={category}>
-              <Input type="number" min="0" step="0.01" placeholder="0.00" value={budgetDraft[category] || ""} onChange={e => setBudgetDraft(current => ({ ...current, [category]: e.target.value }))} />
+              <Input type="number" min="0" step="0.01" placeholder="0.00" value={budgetDraft[category] || ""} onChange={e => { setBudgetDraft(current => ({ ...current, [category]: e.target.value })); setBudgetError(""); }} />
             </Field>
           ))}
         </Modal>

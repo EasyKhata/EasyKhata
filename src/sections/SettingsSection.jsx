@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useConfirm } from "../context/DialogContext";
 import { isNative } from "../utils/native";
 import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
@@ -269,6 +270,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
 }
 
 export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
+  const confirm = useConfirm();
   const { user, logout, updateProfile, setUser } = useAuth();
   const {
     loaded,
@@ -301,7 +303,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     switchOrganization,
     deleteOrganization,
     maxOrganizations,
-    canCreateOrganization
+    canCreateOrganization,
+    ensureCollectionLoaded
   } = useData();
   useTheme();
 
@@ -437,6 +440,19 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   const [customerInsights, setCustomerInsights] = useState(customers);
   const CUSTOMER_SCREENS = new Set(["customers", "customer-detail", "customer-form"]);
+
+  // Ensure the right collections are loaded when the customer directory opens,
+  // so inline briefs and analytics show real data without needing to visit section tabs first.
+  useEffect(() => {
+    if (!CUSTOMER_SCREENS.has(screen)) return;
+    if (isPersonalOrg)   ensureCollectionLoaded?.("expenses");
+    if (isApartmentOrg)  ensureCollectionLoaded?.("income");
+    if (!isPersonalOrg && !isApartmentOrg) {
+      ensureCollectionLoaded?.("income");
+      ensureCollectionLoaded?.("invoices");
+    }
+  }, [isPersonalOrg, isApartmentOrg, screen, ensureCollectionLoaded]);
+
   useEffect(() => {
     // Only fetch when the user actually opens a customer screen — not on settings mount.
     // This prevents triggering a heavy analytics endpoint just by opening settings.
@@ -1884,9 +1900,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             <div className="card">
               <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              {(organizations.length > 1 || canCreateOrganization) && (
-                <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
-              )}
+              <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => setScreen("create-org")} />
               )}
@@ -2022,6 +2036,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </button>
             </Modal>
           )}
+          <OrganizationSwitcherModal
+            open={showOrgSwitcher}
+            onClose={() => setShowOrgSwitcher(false)}
+            organizations={organizations}
+            activeOrgId={activeOrgId}
+            onSwitch={handleSwitchOrganization}
+            onDelete={async (orgId) => { await deleteOrganization(orgId); setShowOrgSwitcher(false); }}
+          />
         </div>
       );
     }
@@ -2140,7 +2162,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
         <div className="ledger-block">
           <div className="card">
-            <MenuRow icon="O" label="Sign Out" danger onClick={() => { if (window.confirm("Sign out?")) logout(); }} />
+            <MenuRow icon="O" label="Sign Out" danger onClick={async () => { if (await confirm("Are you sure you want to sign out?", { title: "Sign Out", confirmLabel: "Sign Out" })) logout(); }} />
           </div>
         </div>
         {showCurrPicker && <CurrencyPicker value={currency} onSelect={cur => { setCurrency(cur); setShowCurrPicker(false); }} onClose={() => setShowCurrPicker(false)} />}
@@ -2375,6 +2397,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onRemoveCustomer={removeCustomer}
         onBackToList={() => setScreen("customers")}
         onClose={() => setScreen("main")}
+        allExpenses={expenses}
+        allIncome={income}
+        isApartmentOrg={isApartmentOrg}
       />
     );
   }
@@ -2534,7 +2559,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   { label: "Edit", onClick: () => openEditOrgRecord(item), tone: "blue" },
                   {
                     label: "Delete",
-                    onClick: () => { if (window.confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`)) removeOrgRecord(activeOrgSection.key, item.id); },
+                    onClick: async () => { if (await confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`, { title: "Delete Record", confirmLabel: "Delete" })) removeOrgRecord(activeOrgSection.key, item.id); },
                     tone: "danger"
                   }
                 ]}

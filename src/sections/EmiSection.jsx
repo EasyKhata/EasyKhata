@@ -81,22 +81,81 @@ function renderField(field, value, onChange, options = {}, error = undefined) {
   return <Input error={error} {...commonProps} type={field.type || "text"} min={field.type === "number" ? "0" : undefined} />;
 }
 
-function EmiCard({ item, sym, onEdit, onDelete }) {
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk }) {
+  const isPaid = (item.paidMonths || []).includes(currentMk);
+  const dueDay = Number(getPersonalEmiDueDay(item) || 1);
+  const endDate = getPersonalEmiEndDate(item);
+  const today = new Date();
+  const realMk = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const isCurrentRealMonth = currentMk === realMk;
+
+  const daysUntilDue = isCurrentRealMonth ? dueDay - today.getDate() : null;
+  const dueBadge = daysUntilDue === null ? null
+    : daysUntilDue < 0 ? { text: `Overdue by ${Math.abs(daysUntilDue)}d`, color: "var(--danger)" }
+    : daysUntilDue === 0 ? { text: "Due today", color: "var(--danger)" }
+    : daysUntilDue <= 3 ? { text: `Due in ${daysUntilDue}d`, color: "var(--gold)" }
+    : { text: `Due ${ordinal(dueDay)}`, color: "var(--text-dim)" };
+
+  let monthsLeft = null;
+  if (endDate) {
+    monthsLeft = Math.max(0, (new Date(endDate).getFullYear() - today.getFullYear()) * 12 + (new Date(endDate).getMonth() - today.getMonth()));
+  }
+
   return (
-    <WorkflowRecordCard
-      title={item.loanName || "EMI"}
-      subtitle={[
-        item.lender || "",
-        getPersonalEmiDueDay(item) ? `Due on ${getPersonalEmiDueDay(item)}` : "No due date",
-        getPersonalEmiEndDate(item) ? `Ends ${fmtDate(getPersonalEmiEndDate(item))}` : ""
-      ].filter(Boolean).join(" · ")}
-      amount={fmtMoney(getPersonalEmiAmount(item), sym)}
-      amountTone="gold"
-      actions={[
-        { label: "Edit", tone: "secondary", onClick: () => onEdit(item) },
-        { label: "Delete", tone: "danger", onClick: () => onDelete(item.id) }
-      ]}
-    />
+    <div style={{ padding: "14px 16px", borderBottom: "1px solid color-mix(in srgb, var(--border) 60%, transparent)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 2 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{item.loanName || "EMI"}</span>
+            {isPaid && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: "color-mix(in srgb, var(--accent) 14%, transparent)", color: "var(--accent)" }}>✓ Paid</span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            {[item.lender, item.personName].filter(Boolean).join(" · ")}
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <RupeeDisplay amount={getPersonalEmiAmount(item)} color={isPaid ? "var(--accent)" : "var(--gold)"} size={20} />
+          {dueBadge && <div style={{ fontSize: 10, fontWeight: 600, color: dueBadge.color, marginTop: 2 }}>{dueBadge.text}</div>}
+        </div>
+      </div>
+
+      {monthsLeft !== null && (
+        <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 8 }}>
+          {monthsLeft === 0 ? "Ends this month" : `${monthsLeft} month${monthsLeft !== 1 ? "s" : ""} left · Ends ${fmtDate(endDate)}`}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => onTogglePaid(item)}
+          style={{
+            padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8, cursor: "pointer",
+            border: `1px solid ${isPaid ? "color-mix(in srgb, var(--accent) 35%, transparent)" : "color-mix(in srgb, var(--gold) 35%, transparent)"}`,
+            background: isPaid ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "color-mix(in srgb, var(--gold) 8%, transparent)",
+            color: isPaid ? "var(--accent)" : "var(--gold)"
+          }}
+        >
+          {isPaid ? "✓ Paid this month · Undo" : "Mark Paid"}
+        </button>
+        <button type="button" onClick={() => onEdit(item)}
+          style={{ padding: "6px 10px", fontSize: 11, fontWeight: 600, borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text-sec)", cursor: "pointer" }}>
+          Edit
+        </button>
+        <button type="button" onClick={() => onDelete(item.id)}
+          style={{ padding: "6px 10px", fontSize: 11, fontWeight: 600, borderRadius: 8, border: "none", background: "transparent", color: "var(--danger)", cursor: "pointer" }}>
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -130,6 +189,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     }
   }, [form.endDate, showForm]);
 
+  const currentMk = `${year}-${String(month + 1).padStart(2, "0")}`;
   const peopleOptions = useMemo(() => getPeopleOptions(d.customers), [d.customers]);
   const loans = (d.orgRecords?.loans || []).slice().sort((a, b) => getPersonalEmiDueDay(a) - getPersonalEmiDueDay(b));
   const peopleCount = (d.customers || []).filter(person => String(person?.name || "").trim()).length;
@@ -209,6 +269,15 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   function updateField(key, value) {
     setForm(current => ({ ...current, [key]: value }));
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: "" }));
+  }
+
+  function togglePaid(item) {
+    const existing = item.paidMonths || [];
+    const isPaid = existing.includes(currentMk);
+    d.updateOrgRecord("loans", {
+      ...item,
+      paidMonths: isPaid ? existing.filter(m => m !== currentMk) : [...existing, currentMk]
+    });
   }
 
   function save() {
@@ -297,7 +366,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
             </div>
           ) : (
             filteredLoans.map(item => (
-              <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} />
+              <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} onTogglePaid={togglePaid} currentMk={currentMk} />
             ))
           )}
         </div>
