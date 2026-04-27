@@ -39,18 +39,46 @@ function _storePoll(storeKey, pollId, opts) {
 }
 function _getPollOpts(pollId) { return _pollOptsCache.get(pollId); }
 
+// Decode display type encoded in message text for cross-device compatibility.
+// Announcements: "__ann__:<text>"
+// Polls:         "__poll__:<question>\x00<opt1>\x00<opt2>..."
+// Server never returns messageType, so we embed it in the text field.
+function enrichFromText(m) {
+  const t = m.text;
+  if (typeof t !== "string") return null;
+  if (t.startsWith("__ann__:")) {
+    return { messageType: MT.ANNOUNCEMENT, text: t.slice(8) };
+  }
+  if (t.startsWith("__poll__:")) {
+    const parts = t.slice(9).split("\x00");
+    if (parts.length < 2) return null;
+    const pollOptions = parts.slice(1).filter(Boolean).map((s, i) => ({ id: `opt_${i}`, text: s }));
+    if (pollOptions.length < 2) return null;
+    return { messageType: MT.POLL, text: parts[0], pollOptions };
+  }
+  return null;
+}
+
 // Normalize a message received from the server, filling gaps from local cache and
 // the poll options store. Always call this before putting a server row into state.
 function _normalizeMsg(m, local, storeKey) {
-  // Resolve poll options: server → local → localStorage cache
+  // First priority: type encoded in the text field (cross-device reliable).
+  const textEnrich = enrichFromText(m);
+  if (textEnrich) {
+    if (textEnrich.messageType === MT.POLL && textEnrich.pollOptions?.length && storeKey) {
+      _storePoll(storeKey, m.id, textEnrich.pollOptions);
+    }
+    const base = local ? { ...local, ...m } : { ...m };
+    return { ...base, ...textEnrich };
+  }
+
+  // Fallback: server-returned messageType / pollOptions / localStorage cache.
   const opts = (m.pollOptions?.length ? m.pollOptions : null)
     || (local?.pollOptions?.length ? local.pollOptions : null)
     || _getPollOpts(m.id);
   if (opts?.length && storeKey) _storePoll(storeKey, m.id, opts);
 
-  // Resolve messageType: server → local → infer from opts
   const type = m.messageType || local?.messageType || (opts?.length ? MT.POLL : MT.CHAT);
-
   const base = local ? { ...local, ...m } : { ...m };
   return { ...base, messageType: type, ...(opts ? { pollOptions: opts } : {}) };
 }
@@ -478,12 +506,15 @@ export default function DiscussionsSection() {
     const pinnedId = latestPin?.pinned ? latestPin.refMessageId : null;
     const pinned = pinnedId ? messages.find(m => m.id === pinnedId) : null;
 
-    // Hide MT.VOTE, MT.PIN (optimistic) and any encoded-action messages (any messageType).
-    const visible = messages.filter(m => {
-      if (HIDDEN.has(m.messageType)) return false;
-      if (decodeActionText(m.text)) return false;
-      return true;
-    });
+    // Enrich any messages not yet processed (safety net for cache-loaded messages).
+    // Then hide hidden types and encoded vote/pin actions.
+    const visible = messages
+      .map(m => { const e = enrichFromText(m); return e ? { ...m, ...e } : m; })
+      .filter(m => {
+        if (HIDDEN.has(m.messageType)) return false;
+        if (decodeActionText(m.text)) return false;
+        return true;
+      });
 
     return { visibleMessages: visible, votesByPoll: votes, pinnedMessage: pinned };
   }, [messages]);
@@ -529,16 +560,17 @@ export default function DiscussionsSection() {
         ...payload,
       });
       // Merge: server wins for fields it provides; optimistic fills every gap.
-      const merged = {
+      const rawMerged = {
         ...optimistic,
         ...saved,
         messageType: saved.messageType || optimistic.messageType,
-        // Server never returns pollOptions — keep the ones we sent.
         pollOptions: saved.pollOptions?.length ? saved.pollOptions : optimistic.pollOptions,
         senderId: saved.senderId || optimistic.senderId,
         _pending: false,
       };
-      // Persist poll options to localStorage so they survive app restarts.
+      // Apply text-encoded enrichment (announcement/poll) so state is always clean.
+      const textEnrich = enrichFromText(rawMerged);
+      const merged = textEnrich ? { ...rawMerged, ...textEnrich } : rawMerged;
       if (merged.messageType === MT.POLL && merged.pollOptions?.length && cacheKey) {
         _storePoll(cacheKey, merged.id, merged.pollOptions);
       }
@@ -558,9 +590,17 @@ export default function DiscussionsSection() {
     setError("");
     setSending(true);
     setText("");
-    const type = canAnnounce && mode === "announcement" ? MT.ANNOUNCEMENT : MT.CHAT;
+    const isAnn = canAnnounce && mode === "announcement";
     try {
-      await sendMessage({ messageType: type, text: trimmed });
+      if (isAnn) {
+        // Encode announcement type in text so server doesn't need to return messageType.
+        await sendMessage(
+          { messageType: MT.CHAT, text: `__ann__:${trimmed}` },
+          { messageType: MT.ANNOUNCEMENT, text: trimmed }
+        );
+      } else {
+        await sendMessage({ messageType: MT.CHAT, text: trimmed });
+      }
     } catch {
       setText(trimmed);
       setError("Failed to send. Please try again.");
@@ -574,11 +614,12 @@ export default function DiscussionsSection() {
     setSending(true);
     setError("");
     try {
-      await sendMessage({
-        messageType: MT.POLL,
-        text: question,
-        pollOptions: options.map((text, i) => ({ id: `opt_${i}`, text })),
-      });
+      // Encode poll data in text (null-byte separated) so any device can reconstruct it.
+      const encodedText = `__poll__:${question}\x00${options.join("\x00")}`;
+      await sendMessage(
+        { messageType: MT.CHAT, text: encodedText },
+        { messageType: MT.POLL, text: question, pollOptions: options.map((t, i) => ({ id: `opt_${i}`, text: t })) }
+      );
       setMode("chat");
     } catch {
       setError("Failed to post poll. Please try again.");
