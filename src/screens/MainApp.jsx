@@ -504,21 +504,21 @@ function QuickEntrySheet({
     border: "1px solid var(--border)",
     background: "var(--surface-high)",
     color: "var(--text)",
-    padding: "12px 14px",
+    padding: "10px 12px",
     fontSize: 14,
     outline: "none"
   };
 
   return (
-    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", display: "flex", flexDirection: "column", boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "min(88dvh, 780px)", overflow: "hidden", overscrollBehavior: "contain" }}>
-      {/* Fixed header — drag handle + title + tabs + amount */}
-      <div style={{ padding: "12px 16px 0", flexShrink: 0 }}>
-        <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 12px" }} />
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
+    <div style={{ background: "var(--card)", borderRadius: "22px 22px 0 0", display: "flex", flexDirection: "column", boxShadow: "0 -12px 36px rgba(0,0,0,0.34)", maxHeight: "85vh", overflow: "hidden", overscrollBehavior: "contain", width: "100%", boxSizing: "border-box" }}>
+      {/* Fixed header — drag handle + title + tabs */}
+      <div style={{ padding: "10px 14px 0", flexShrink: 0 }}>
+        <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 10px" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <span style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
           <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 6, marginBottom: 10 }}>
           {tabs.map(option => {
             const selected = option.key === entryType;
             return (
@@ -527,13 +527,13 @@ function QuickEntrySheet({
                 type="button"
                 onClick={() => switchType(option.key)}
                 style={{
-                  borderRadius: 14,
+                  borderRadius: 12,
                   border: `1px solid ${selected ? `color-mix(in srgb, ${option.color} 40%, var(--border))` : "var(--border)"}`,
                   background: selected ? `color-mix(in srgb, ${option.color} 14%, var(--surface-high))` : "var(--surface-high)",
                   color: selected ? option.color : "var(--text-dim)",
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: 800,
-                  padding: "12px 10px",
+                  padding: "10px 8px",
                   cursor: "pointer"
                 }}
               >
@@ -542,13 +542,13 @@ function QuickEntrySheet({
             );
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 16, border: `1px solid color-mix(in srgb, ${accentColor} 26%, var(--border))`, background: "var(--surface-high)", padding: "12px 14px", marginBottom: 12 }}>
-          <span style={{ fontSize: 28, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
-          <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 30, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
-        </div>
       </div>
-      {/* Scrollable fields */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "0 16px 4px", WebkitOverflowScrolling: "touch" }}><div style={{ display: "grid", gap: 12 }}>
+      {/* Scrollable fields — amount first, then all other fields */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 14px 4px", WebkitOverflowScrolling: "touch" }}><div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface-high)", padding: "10px 14px" }}>
+          <span style={{ fontSize: 22, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
+          <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 26, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
+        </div>
         {showPeopleSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
             <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a household member in Khata before creating this entry.</div>
@@ -569,22 +569,22 @@ function QuickEntrySheet({
         )}
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Description</div>
-          <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+          <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
         </div>
         {entryType !== "emi" && (
           <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Date</div>
-              <input type="date" value={form.date} onChange={event => updateField("date", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              <input type="date" value={form.date} onChange={event => updateField("date", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>{entryType === "income" && !isApartmentOrg ? "Type" : "Category"}</div>
               {entryType === "income" && !isApartmentOrg ? (
-                <select value={form.incomeType} onChange={event => updateField("incomeType", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>
+                <select value={form.incomeType} onChange={event => updateField("incomeType", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
                   {(config.incomeFields?.find(field => field.key === "incomeType")?.options || ["Salary", "Other"]).map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
               ) : (
-                <select value={entryType === "income" && isApartmentOrg ? form.collectionType : form.category} onChange={event => updateField(entryType === "income" && isApartmentOrg ? "collectionType" : "category", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>
+                <select value={entryType === "income" && isApartmentOrg ? form.collectionType : form.category} onChange={event => updateField(entryType === "income" && isApartmentOrg ? "collectionType" : "category", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
                   {(entryType === "income" && isApartmentOrg ? (config.incomeFields?.find(field => field.key === "collectionType")?.options || ["Monthly Maintenance", "Other"]) : expenseCategories).map(option => <option key={option} value={option}>{option}</option>)}
                 </select>
               )}
@@ -621,12 +621,12 @@ function QuickEntrySheet({
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Resident Name</div>
-                <input value={form.residentName} onChange={event => updateField("residentName", event.target.value)} placeholder="Resident name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+                <input value={form.residentName} onChange={event => updateField("residentName", event.target.value)} placeholder="Resident name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
               </div>
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Collection Month</div>
-              <input type="month" value={form.collectionMonth} onChange={event => updateField("collectionMonth", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              <input type="month" value={form.collectionMonth} onChange={event => updateField("collectionMonth", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
           </>
         )}
@@ -650,7 +650,7 @@ function QuickEntrySheet({
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Billable</div>
-              <select value={form.billable} onChange={event => updateField("billable", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}><option value="No">No</option><option value="Yes">Yes</option></select>
+              <select value={form.billable} onChange={event => updateField("billable", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}><option value="No">No</option><option value="Yes">Yes</option></select>
             </div>
           </div>
         )}
@@ -658,11 +658,11 @@ function QuickEntrySheet({
           <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Service Provider</div>
-              <input value={form.serviceProvider} onChange={event => updateField("serviceProvider", event.target.value)} placeholder="Vendor or contractor name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              <input value={form.serviceProvider} onChange={event => updateField("serviceProvider", event.target.value)} placeholder="Vendor or contractor name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Bill Reference</div>
-              <input value={form.billReference} onChange={event => updateField("billReference", event.target.value)} placeholder="Invoice or receipt number" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+              <input value={form.billReference} onChange={event => updateField("billReference", event.target.value)} placeholder="Invoice or receipt number" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
           </div>
         )}
@@ -671,7 +671,7 @@ function QuickEntrySheet({
             <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Lender</div>
-                <input value={form.lender} onChange={event => updateField("lender", event.target.value)} placeholder="Bank or person name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+                <input value={form.lender} onChange={event => updateField("lender", event.target.value)} placeholder="Bank or person name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
@@ -684,11 +684,11 @@ function QuickEntrySheet({
             <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Due Day</div>
-                <select value={form.dueDay} onChange={event => updateField("dueDay", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }}>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map(option => <option key={option} value={option}>{option}</option>)}</select>
+                <select value={form.dueDay} onChange={event => updateField("dueDay", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map(option => <option key={option} value={option}>{option}</option>)}</select>
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>End Date</div>
-                <input type="date" value={form.endDate} onChange={event => updateField("endDate", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "12px 14px", fontSize: 14, outline: "none" }} />
+                <input type="date" value={form.endDate} onChange={event => updateField("endDate", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
               </div>
             </div>
           </>
@@ -698,7 +698,7 @@ function QuickEntrySheet({
       {/* Fixed footer */}
       <div style={{ padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 14px)", flexShrink: 0, display: "flex", flexDirection: "column", gap: 10 }}>
         {error && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 700, textAlign: "center" }}>{error}</div>}
-        <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 16, background: accentColor, color: "#fff", fontSize: 16, fontWeight: 800, padding: "16px 18px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 12px 28px color-mix(in srgb, ${accentColor} 28%, transparent)` }}>
+        <button type="button" onClick={handleSave} disabled={saving} style={{ width: "100%", border: "none", borderRadius: 14, background: accentColor, color: "#fff", fontSize: 15, fontWeight: 800, padding: "14px 16px", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, boxShadow: `0 10px 24px color-mix(in srgb, ${accentColor} 28%, transparent)` }}>
           {saving ? "Saving..." : `Save ${activeTab?.label || "Entry"} →`}
         </button>
       </div>
@@ -1974,11 +1974,10 @@ export default function MainApp() {
               transition={{ type: "spring", stiffness: 340, damping: 34 }}
               style={{
                 position: "fixed",
-                left: Math.max(0, Math.floor((window.innerWidth - 560) / 2)),
-                right: Math.max(0, Math.floor((window.innerWidth - 560) / 2)),
+                left: 0,
+                right: 0,
                 bottom: 0,
                 zIndex: 180,
-                maxHeight: "calc(100dvh - env(safe-area-inset-top, 0px) - 8px)",
               }}
             >
               <QuickEntrySheet

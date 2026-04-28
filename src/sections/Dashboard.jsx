@@ -1331,10 +1331,29 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const expenses = Number(stats.totalExpense || 0);
     const earningsPct = Math.min(100, Math.round((collected / Math.max(collected + expenses, 1)) * 100));
     const freelancerTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
+    const flMk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const flInPeriod = (item) => {
+      if (viewMode === "month") return (item.month || (item.date || "").slice(0, 7)) === flMk;
+      return ((item.month || "").slice(0, 4) || (item.date || "").slice(0, 4)) === String(year);
+    };
+    const flPeriodIncome = (data.income || []).filter(flInPeriod).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const flPeriodExpenses = (data.expenses || []).filter(flInPeriod).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-    const freelancerRecentIncomes = (data.income || []).slice(0, 3).map(item => ({ label: item.description || item.source || "Payment", amount: Number(item.amount || 0), type: "in", category: item.category || "Income", date: item.date || "" }));
-    const freelancerRecentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
+    const freelancerRecentIncomes = flPeriodIncome.slice(0, 3).map(item => ({ label: item.description || item.source || "Payment", amount: Number(item.amount || 0), type: "in", category: item.clientName || item.category || "Income", date: item.date || "" }));
+    const freelancerRecentExpenses = flPeriodExpenses.slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
     const freelancerRecentTxns = [...freelancerRecentIncomes, ...freelancerRecentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+
+    const flClientMap = {};
+    flPeriodIncome.forEach(item => {
+      const client = String(item.clientName || "").trim() || "Unassigned";
+      flClientMap[client] = (flClientMap[client] || 0) + Number(item.amount || 0);
+    });
+    const flTopClients = Object.entries(flClientMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const flBillableTotal = flPeriodExpenses.reduce((sum, e) => sum + (String(e.billable) === "Yes" ? Number(e.amount || 0) : 0), 0);
+    const flBillableCount = flPeriodExpenses.filter(e => String(e.billable) === "Yes").length;
+    const flPaidCount = (data.invoices || []).filter(inv => String(inv.documentType || "invoice") === "invoice" && String(inv.status || "").toLowerCase() === "paid").length;
+    const flPendingCount = (stats.pendingInvoices || []).length;
+    const flOverdueCount = (stats.overdueInvoices || []).length;
 
     return (
       <div className="ledger-screen">
@@ -1403,11 +1422,72 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             />
           </div>
 
+          {/* Invoice status + billable expenses strip */}
+          {(flPaidCount > 0 || flPendingCount > 0 || flBillableCount > 0) && (
+            <div className="anim-fade-up-3" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              {(flPaidCount > 0 || flPendingCount > 0) && (
+                <div style={{ flex: 1, minWidth: 72, padding: "10px 12px", borderRadius: 12, background: "color-mix(in srgb, var(--jade) 9%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--jade) 22%, var(--line-2))" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--jade)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Paid</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--jade)" }}>{flPaidCount}</div>
+                  <div style={{ fontSize: 10, color: "var(--cream-3)" }}>invoice{flPaidCount !== 1 ? "s" : ""}</div>
+                </div>
+              )}
+              {flPendingCount > 0 && (
+                <div onClick={() => onNav("invoices")} style={{ flex: 1, minWidth: 72, padding: "10px 12px", borderRadius: 12, background: "color-mix(in srgb, var(--saffron) 9%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", cursor: "pointer" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--saffron)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Pending</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--saffron)" }}>{flPendingCount}</div>
+                  <div style={{ fontSize: 10, color: "var(--cream-3)" }}>invoice{flPendingCount !== 1 ? "s" : ""}</div>
+                </div>
+              )}
+              {flOverdueCount > 0 && (
+                <div onClick={() => onNav("invoices")} style={{ flex: 1, minWidth: 72, padding: "10px 12px", borderRadius: 12, background: "color-mix(in srgb, var(--ember) 9%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--ember) 22%, var(--line-2))", cursor: "pointer" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--ember)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Overdue</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: "var(--ember)" }}>{flOverdueCount}</div>
+                  <div style={{ fontSize: 10, color: "var(--cream-3)" }}>invoice{flOverdueCount !== 1 ? "s" : ""}</div>
+                </div>
+              )}
+              {flBillableCount > 0 && (
+                <div onClick={() => onNav("expenses")} style={{ flex: 1, minWidth: 96, padding: "10px 12px", borderRadius: 12, background: "color-mix(in srgb, var(--sky) 9%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--sky) 22%, var(--line-2))", cursor: "pointer" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--sky)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Billable</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: "var(--sky)" }}>{fmtMoney(flBillableTotal, sym)}</div>
+                  <div style={{ fontSize: 10, color: "var(--cream-3)" }}>{flBillableCount} exp.</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Trend sparkline */}
           {freelancerTrendData.length >= 3 && (
             <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
               <div className="section-eyebrow" style={{ marginBottom: 10 }}>Earnings Trend</div>
               <Sparkline data={freelancerTrendData} color="var(--sky)" height={40} />
+            </div>
+          )}
+
+          {/* Revenue by client */}
+          {flTopClients.length > 0 && (
+            <div className="anim-fade-up-4" style={{ marginBottom: 14 }}>
+              <Collapsible title="Revenue by Client" icon="◎" color="var(--sky)" count={flTopClients.length} defaultOpen>
+                <div className="card">
+                  {flTopClients.map(([client, revenue]) => {
+                    const pct = collected > 0 ? Math.round((revenue / collected) * 100) : 0;
+                    return (
+                      <div key={client} className="ledger-feed-row">
+                        <div className="ledger-feed-main" style={{ minWidth: 0, flex: 1 }}>
+                          <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client}</div>
+                          <div style={{ marginTop: 5, height: 3, borderRadius: 99, background: "var(--line-2)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, background: "var(--sky)", borderRadius: 99, transition: "width 0.5s ease" }} />
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0, paddingLeft: 10 }}>
+                          <div className="ledger-feed-amount" style={{ color: "var(--sky)" }}>{fmtMoney(revenue, sym)}</div>
+                          <div style={{ fontSize: 10, color: "var(--cream-3)" }}>{pct}%</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Collapsible>
             </div>
           )}
 
