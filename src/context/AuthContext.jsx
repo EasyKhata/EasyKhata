@@ -285,7 +285,7 @@ async function signInWithGoogle() {
     return { success: true };
 
   } catch (err) {
-    console.error("Google sign-in error:", err);
+    logError("Google sign-in error", err);
 
     if (err?.code === "canceled") {
       return { error: null };

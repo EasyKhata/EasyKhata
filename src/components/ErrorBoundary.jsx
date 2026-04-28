@@ -1,4 +1,5 @@
 import React from "react";
+import { logError } from "../utils/logger";
 
 // Chunk-load failures happen when the browser has a cached reference to an old
 // JS bundle that no longer exists after a new deployment. The only fix is a
@@ -129,7 +130,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[EazyKhata] Uncaught error:", error.message);
-    console.error("[EazyKhata] Component stack:", info?.componentStack || "unknown");
+    logError("app_crash", error, { componentStack: (info?.componentStack || "").slice(0, 500) });
   }
 
   handleRetry() {

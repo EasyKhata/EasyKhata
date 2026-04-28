@@ -384,4 +384,10 @@ service cloud.firestore {
       }
     }
   }
+
+  // Production error logs — signed-in users write their own errors only, admin reads all
+  match /app_logs/{logId} {
+    allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+    allow read, delete: if isAdmin();
+  }
 }

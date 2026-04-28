@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, browserSessionPersistence, indexedDBLocalPersistence, initializeAuth, setPersistence } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 import { Capacitor } from "@capacitor/core";
@@ -25,5 +26,6 @@ if (!Capacitor.isNativePlatform()) {
   setPersistence(auth, browserSessionPersistence).catch(() => {});
 }
 
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, "asia-south1");
