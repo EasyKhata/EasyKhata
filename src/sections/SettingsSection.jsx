@@ -446,7 +446,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   // so inline briefs and analytics show real data without needing to visit section tabs first.
   useEffect(() => {
     if (!CUSTOMER_SCREENS.has(screen)) return;
-    if (isPersonalOrg)   ensureCollectionLoaded?.("expenses");
+    if (isPersonalOrg) {
+      ensureCollectionLoaded?.("expenses");
+      ensureCollectionLoaded?.("income");
+    }
     if (isApartmentOrg)  ensureCollectionLoaded?.("income");
     if (!isPersonalOrg && !isApartmentOrg) {
       ensureCollectionLoaded?.("income");

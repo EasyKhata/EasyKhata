@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { societyApi } from "../lib/api";
 import { WorkflowRecordCard, WorkflowSetupCard, fmtMoney, MONTHS } from "../components/UI";
 import { logError } from "../utils/logger";
@@ -80,7 +80,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
             </div>
           </div>
           <div className="card">
-            <WorkflowSetupCard title="Resident access not joined" description="Open Settings and join with your invite code to track common records and your flat dues." tone="info" />
+            <WorkflowSetupCard title="Resident access not joined" message="Open Settings and join with your invite code to track common records and your flat dues." tone="info" />
           </div>
         </div>
       </div>
@@ -112,7 +112,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {!commonRecord ? (
-            <WorkflowSetupCard title="No common records yet" description="The association has not published society records for this month." tone="info" />
+            <WorkflowSetupCard title="No common records yet" message="The association has not published society records for this month." tone="info" />
           ) : (
             <div className="ledger-summary-grid" style={{ padding: "12px 4px" }}>
               <StatCell label="Expected" value={fmtMoney(commonRecord.expectedAmount || 0, commonRecord.currencySymbol || "Rs")} />
@@ -129,7 +129,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {!flatDue ? (
-            <WorkflowSetupCard title="No dues summary found" description="No due summary has been published for your flat in this month." tone="warning" />
+            <WorkflowSetupCard title="No dues summary found" message="No due summary has been published for your flat in this month." tone="warning" />
           ) : (
             <div className="ledger-summary-grid" style={{ padding: "12px 4px" }}>
               <StatCell label="Expected" value={fmtMoney(flatDue.expectedAmount || 0, flatDue.currencySymbol || "Rs")} />
@@ -146,7 +146,7 @@ export default function MemberPortalSection({ user, year, month, headerDatePicke
         </div>
         <div className="card" style={{ marginBottom: 22 }}>
           {noticeItems.length === 0 ? (
-            <WorkflowSetupCard title="No notices this month" description="You are all caught up for the selected period." tone="info" />
+            <WorkflowSetupCard title="No notices this month" message="You are all caught up for the selected period." tone="info" />
           ) : (
             noticeItems.map((notice, index) => <NoticeCard key={`${notice}-${index}`} notice={notice} index={index} />)
           )}

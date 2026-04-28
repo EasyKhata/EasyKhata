@@ -49,7 +49,7 @@ export default function QuickInvoiceModal({
     setItems(current => [
       ...current,
       {
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         desc: template.label,
         subDesc: template.desc,
         qty: 1,

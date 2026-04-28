@@ -5,6 +5,7 @@ import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
 import { orgsApi, usersApi, membersApi } from "../lib/api";
+import { showGlobalToast } from "./ToastContext";
 
 const EMPTY_SUMMARY = {
   currentMonth: "",
@@ -105,7 +106,7 @@ const SESSION_FLUSH_INTERVAL_MS = 30000;
 const SESSION_MIN_FLUSH_MS = 1000;
 
 function uid() {
-  return Math.random().toString(36).slice(2, 9);
+  return crypto.randomUUID();
 }
 
 // ── Incremental load helpers ──────────────────────────────────────────────────
@@ -570,7 +571,11 @@ export function DataProvider({ children }) {
     }
 
     checkMembership();
-    const intervalId = setInterval(checkMembership, 30000);
+    let intervalId = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+        checkMembership();
+      }
+    }, 30000);
     return () => clearInterval(intervalId);
   }, [activeSharedOrgKey, user?.id, user?.sharedOrgs, setUser]);
 
@@ -956,6 +961,7 @@ export function DataProvider({ children }) {
         }
       } catch (err) {
         logError("loadData failed, using local cache", err);
+        showGlobalToast({ tone: "warning", title: "Offline mode", message: "Couldn't reach server — showing locally cached data." });
         const localData = getUserData(user.id, "appData") || EMPTY_DATA;
         const nextState = buildStateFromOrganizations({
           orgs: normalizeOrgCollection(localData, {
@@ -1538,6 +1544,7 @@ export function DataProvider({ children }) {
       }
     } catch (err) {
       logError(`ensureCollectionLoaded(${key}) failed`, err);
+      showGlobalToast({ tone: "danger", title: "Sync error", message: "Some records couldn't be loaded. Check your connection and try again." });
     } finally {
       collectionFetchingRef.current[key] = false;
     }

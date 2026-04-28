@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { useConfirm } from "../context/DialogContext";
 import {
@@ -62,6 +62,19 @@ const REQUEST_FILTERS = [
   ["all", "All"]
 ];
 const TODAY = new Date().toISOString().slice(0, 10);
+
+const INVOICE_CURRENCIES = [
+  { code: "INR", symbol: "₹", label: "Indian Rupee (₹)" },
+  { code: "USD", symbol: "$", label: "US Dollar ($)" },
+  { code: "EUR", symbol: "€", label: "Euro (€)" },
+  { code: "GBP", symbol: "£", label: "British Pound (£)" },
+  { code: "AED", symbol: "د.إ", label: "UAE Dirham (د.إ)" },
+  { code: "SGD", symbol: "S$", label: "Singapore Dollar (S$)" },
+  { code: "AUD", symbol: "A$", label: "Australian Dollar (A$)" },
+  { code: "CAD", symbol: "C$", label: "Canadian Dollar (C$)" },
+  { code: "JPY", symbol: "¥", label: "Japanese Yen (¥)" },
+  { code: "CHF", symbol: "Fr", label: "Swiss Franc (Fr)" },
+];
 
 function emptyItem(defaultTaxRate = 18) {
   return { id: uid(), desc: "", subDesc: "", hsn: "", qty: 1, rate: "", taxRate: defaultTaxRate };
@@ -256,7 +269,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         invoice.date ? fmtDate(invoice.date) : "",
         !isApartmentOrg && invoice.dueMessage ? invoice.dueMessage : ""
       ].filter(Boolean).join(" · ")}
-      amount={fmtMoney(invoice.total, sym)}
+      amount={fmtMoney(invoice.total, invoice.currencySymbol || sym)}
       amountTone="var(--blue)"
       badges={!isApartmentOrg ? [{
         label: getDocumentStatusLabel(invoice.computedStatus, isQuote),
@@ -301,10 +314,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     taxMode: "split",
     items: [emptyItem(showTaxFields ? 18 : 0)],
     notes: isQuote ? "Quote prepared for your review." : isAdmin ? "Invoice for subscription payment." : isApartmentOrg ? "Payment record for society accounting." : "Thanks for your business.",
-    terms: isQuote ? "Pricing is based on the current scope and may be updated if requirements change." : isAdmin ? "Payment processed via UPI." : isApartmentOrg ? "This document is generated for society records." : "Payment is due within the agreed billing cycle."
+    terms: isQuote ? "Pricing is based on the current scope and may be updated if requirements change." : isAdmin ? "Payment processed via UPI." : isApartmentOrg ? "This document is generated for society records." : "Payment is due within the agreed billing cycle.",
+    currencyCode: d.currency?.code || "INR",
+    currencySymbol: d.currency?.symbol || "₹"
   });
 
   const [form, setForm] = useState(null);
+  const formSym = form?.currencySymbol || sym;
+  const detailSym = detail?.currencySymbol || sym;
 
   const monthInv = useMemo(() => (
     d.invoices
@@ -431,7 +448,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       setUpgradeInfo(getUpgradeCopy("invoicePdf"));
       return;
     }
-    await downloadInvoice(invoice, d.account, sym, { isApartment: isApartmentOrg });
+    await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg });
   }
 
   useEffect(() => {
@@ -781,9 +798,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
             <div className="card" style={{ marginBottom: 18 }}>
               {!paymentRequestsEnabled ? (
-                <WorkflowSetupCard title="Payment requests are locked by rules" description="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." tone="warning" />
+                <WorkflowSetupCard title="Payment requests are locked by rules" message="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." tone="warning" />
               ) : filteredRequests.length === 0 ? (
-                <WorkflowSetupCard title="No payment requests" description="Customer UPI payment submissions will appear here for admin verification." tone="info" />
+                <WorkflowSetupCard title="No payment requests" message="Customer UPI payment submissions will appear here for admin verification." tone="info" />
               ) : (
                 filteredRequests.map(request => (
                   <div key={request.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 14 }}>
@@ -898,7 +915,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 18 }}>
               <div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: 38, color: "var(--blue)" }}>{fmtMoney(grandTotal, sym)}</div>
+                <div style={{ fontFamily: "var(--serif)", fontSize: 38, color: "var(--blue)" }}>{fmtMoney(grandTotal, detailSym)}</div>
                 {!isApartmentOrg && dueMessage && <div style={{ fontSize: 13, color: getDocumentStatusColor(computedStatus, isQuote) }}>{dueMessage}</div>}
               </div>
               {!isApartmentOrg && (
@@ -934,11 +951,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     <div className="ledger-feed-title">{item.desc || "Item"}</div>
                     {item.subDesc && <div className="ledger-feed-meta">{item.subDesc}</div>}
                     <div className="ledger-feed-meta" style={{ marginTop: 3 }}>
-                      {showTaxFields ? `${item.hsn ? `HSN ${item.hsn} · ` : ""}${item.qty} × ${fmtMoney(item.rate, sym)} · GST ${Number(item.taxRate ?? item.igst ?? 0)}%` : `${item.qty} × ${fmtMoney(item.rate, sym)}`}
+                      {showTaxFields ? `${item.hsn ? `HSN ${item.hsn} · ` : ""}${item.qty} × ${fmtMoney(item.rate, detailSym)} · GST ${Number(item.taxRate ?? item.igst ?? 0)}%` : `${item.qty} × ${fmtMoney(item.rate, detailSym)}`}
                     </div>
                   </div>
                   <div className="ledger-feed-side">
-                    <span className="ledger-feed-amount">{fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), sym)}</span>
+                    <span className="ledger-feed-amount">{fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), detailSym)}</span>
                   </div>
                 </div>
               ))}
@@ -947,11 +964,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                   <>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span>Subtotal</span>
-                      <span>{fmtMoney(tax.subtotal, sym)}</span>
+                      <span>{fmtMoney(tax.subtotal, detailSym)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span>Discount</span>
-                      <span>-{fmtMoney(getInvoiceDiscount(invoice), sym)}</span>
+                      <span>-{fmtMoney(getInvoiceDiscount(invoice), detailSym)}</span>
                     </div>
                   </>
                 )}
@@ -959,30 +976,30 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                   <>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                       <span>Taxable Value</span>
-                      <span>{fmtMoney(tax.taxable, sym)}</span>
+                      <span>{fmtMoney(tax.taxable, detailSym)}</span>
                     </div>
                     {invoice.taxMode === "split" ? (
                       <>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                           <span>CGST</span>
-                          <span>{fmtMoney(tax.cgst, sym)}</span>
+                          <span>{fmtMoney(tax.cgst, detailSym)}</span>
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                           <span>SGST</span>
-                          <span>{fmtMoney(tax.sgst, sym)}</span>
+                          <span>{fmtMoney(tax.sgst, detailSym)}</span>
                         </div>
                       </>
                     ) : (
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                         <span>IGST</span>
-                        <span>{fmtMoney(tax.igst, sym)}</span>
+                        <span>{fmtMoney(tax.igst, detailSym)}</span>
                       </div>
                     )}
                   </>
                 )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 17, color: "var(--text)" }}>
                   <span>Total</span>
-                  <span style={{ color: "var(--blue)" }}>{fmtMoney(grandTotal, sym)}</span>
+                  <span style={{ color: "var(--blue)" }}>{fmtMoney(grandTotal, detailSym)}</span>
                 </div>
               </div>
             </div>
@@ -1163,6 +1180,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </Field>
             )}
 
+            {!isApartmentOrg && (
+              <Field label="Currency">
+                <Select
+                  value={form.currencyCode || "INR"}
+                  onChange={event => {
+                    const cur = INVOICE_CURRENCIES.find(c => c.code === event.target.value);
+                    setForm(current => ({ ...current, currencyCode: event.target.value, currencySymbol: cur?.symbol || event.target.value }));
+                  }}
+                >
+                  {INVOICE_CURRENCIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.label}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
             <label style={{ fontSize: 12, fontWeight: 700, color: "var(--text-sec)", textTransform: "uppercase", letterSpacing: 0.7, display: "block", marginBottom: 10 }}>
               Line Items
             </label>
@@ -1216,12 +1249,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     <Input type="number" min="1" value={item.qty} onChange={event => setItem(item.id, "qty", event.target.value)} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Rate ({sym})</label>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Rate ({formSym})</label>
                     <Input type="number" min="0" step="0.01" placeholder="0.00" value={item.rate} onChange={event => setItem(item.id, "rate", event.target.value)} />
                   </div>
                 </div>
                 <div style={{ textAlign: "right", marginTop: 10, fontSize: 16, fontWeight: 700, color: "var(--blue)" }}>
-                  {fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), sym)}
+                  {fmtMoney((Number(item.qty) || 0) * (Number(item.rate) || 0), formSym)}
                 </div>
               </div>
             ))}
@@ -1235,11 +1268,11 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                     <span>Subtotal</span>
-                    <span>{fmtMoney(tax.subtotal, sym)}</span>
+                    <span>{fmtMoney(tax.subtotal, formSym)}</span>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                     <span>Discount</span>
-                    <span>-{fmtMoney(getInvoiceDiscount(previewInvoice), sym)}</span>
+                    <span>-{fmtMoney(getInvoiceDiscount(previewInvoice), formSym)}</span>
                   </div>
                 </>
               )}
@@ -1247,30 +1280,30 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                     <span>Taxable Value</span>
-                    <span>{fmtMoney(tax.taxable, sym)}</span>
+                    <span>{fmtMoney(tax.taxable, formSym)}</span>
                   </div>
                   {previewInvoice.taxMode === "split" ? (
                     <>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                         <span>CGST</span>
-                        <span>{fmtMoney(tax.cgst, sym)}</span>
+                        <span>{fmtMoney(tax.cgst, formSym)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                         <span>SGST</span>
-                        <span>{fmtMoney(tax.sgst, sym)}</span>
+                        <span>{fmtMoney(tax.sgst, formSym)}</span>
                       </div>
                     </>
                   ) : (
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 14, color: "var(--text-sec)" }}>
                       <span>IGST</span>
-                      <span>{fmtMoney(tax.igst, sym)}</span>
+                      <span>{fmtMoney(tax.igst, formSym)}</span>
                     </div>
                   )}
                 </>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 17, color: "var(--text)", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border)" }}>
                 <span>Total</span>
-                <span style={{ color: "var(--blue)" }}>{fmtMoney(previewTotal, sym)}</span>
+                <span style={{ color: "var(--blue)" }}>{fmtMoney(previewTotal, formSym)}</span>
               </div>
             </div>
 

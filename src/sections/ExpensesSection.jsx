@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
   DateSelectInput,
@@ -18,7 +18,8 @@ import {
   UpgradeModal,
   WorkflowActionStrip,
   WorkflowSetupCard,
-  WorkflowRecordCard
+  WorkflowRecordCard,
+  PaginatedListControls
 } from "../components/UI";
 import { RupeeDisplay } from "../components/ui/reimagined";
 import Collapsible from "../components/Collapsible";
@@ -118,6 +119,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [expensesPage, setExpensesPage] = useState(1);
+  const EXPENSES_PAGE_SIZE = 50;
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const [form, setForm] = useState(buildBlankForm(year, month, config, categoryOptions));
@@ -193,6 +196,10 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       return fields.some(value => String(value || "").toLowerCase().includes(needle));
     });
   }, [active, searchQuery]);
+  const paginatedExpenses = useMemo(() => {
+    const start = (expensesPage - 1) * EXPENSES_PAGE_SIZE;
+    return filteredExpenses.slice(start, start + EXPENSES_PAGE_SIZE);
+  }, [filteredExpenses, expensesPage]);
 
   // Compute budget progress directly from already-loaded expenses — no full dashboard calculation needed.
   const budgetCards = useMemo(() => {
@@ -220,6 +227,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  useEffect(() => { setExpensesPage(1); }, [mk, searchQuery]);
 
   function openNew() {
     if (isApartmentOrg && !hasApartmentFlats) {
@@ -511,7 +520,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </div>
                 <div className="card" style={{ marginBottom: 22 }}>
                   {budgetCards.length === 0 ? (
-                    <WorkflowSetupCard title="No budgets set yet" description="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} tone="danger" />
+                    <WorkflowSetupCard title="No budgets set yet" message="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} tone="danger" />
                   ) : (
                     budgetCards.map((item, index) => (
                       <div key={item.category} style={{ padding: "12px 14px", borderBottom: index < budgetCards.length - 1 ? "1px solid color-mix(in srgb, var(--border) 68%, transparent)" : "none" }}>
@@ -548,7 +557,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
                   <div className="card">
                     {salaryExpenses.length === 0 ? (
-                      <WorkflowSetupCard title="No team payouts yet" description="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
+                      <WorkflowSetupCard title="No team payouts yet" message="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
                     ) : (
                       salaryExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -558,7 +567,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 <Collapsible title="Partner & Vendor Payments" icon="🏷" color="var(--gold)" count={partnerExpenses.length} defaultOpen={partnerExpenses.length > 0}>
                   <div className="card">
                     {partnerExpenses.length === 0 ? (
-                      <WorkflowSetupCard title="No partner payments yet" description="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
+                      <WorkflowSetupCard title="No partner payments yet" message="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
                     ) : (
                       partnerExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -568,7 +577,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 <Collapsible title="Operating Expenses" icon="•" color="var(--danger)" count={otherExpenses.length} defaultOpen>
                   <div className="card">
                     {otherExpenses.length === 0 ? (
-                      <WorkflowSetupCard title={`No ${config.expensesLabel.toLowerCase()} yet`} description={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} tone="danger" />
+                      <WorkflowSetupCard title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} tone="danger" />
                     ) : (
                       otherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
                     )}
@@ -600,7 +609,31 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     No matching expenses. Try a different search term.
                   </div>
                 ) : (
-                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                  <>
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                    {paginatedExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             ) : recurring.length > 0 && (
@@ -641,7 +674,31 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     No matching expenses. Try a different search term.
                   </div>
                 ) : (
-                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                  <>
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                    {paginatedExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -662,7 +719,31 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     No matching expenses. Try a different search term.
                   </div>
                 ) : (
-                  filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
+                  <>
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                    {paginatedExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)}
+                    {filteredExpenses.length > EXPENSES_PAGE_SIZE && (
+                      <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+                        <PaginatedListControls
+                          totalItems={filteredExpenses.length}
+                          page={expensesPage}
+                          pageSize={EXPENSES_PAGE_SIZE}
+                          onPageChange={setExpensesPage}
+                          itemLabel={config.expensesLabel.toLowerCase()}
+                        />
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}

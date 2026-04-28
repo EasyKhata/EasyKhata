@@ -95,7 +95,8 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
             style={{
               background: "none",
               border: "none",
-              padding: "4px 8px",
+              padding: "10px 12px",
+              margin: "-10px -12px",
               fontSize: 26,
               color: "var(--text-sec)",
               cursor: "pointer",

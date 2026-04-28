@@ -1,5 +1,5 @@
 export function uid() {
-  return Math.random().toString(36).slice(2, 9);
+  return crypto.randomUUID();
 }
 
 export function monthKey(y, m) {
