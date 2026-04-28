@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { useConfirm } from "../context/DialogContext";
 import {
@@ -798,9 +798,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
 
             <div className="card" style={{ marginBottom: 18 }}>
               {!paymentRequestsEnabled ? (
-                <WorkflowSetupCard title="Payment requests are locked by rules" description="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." tone="warning" />
+                <WorkflowSetupCard title="Payment requests are locked by rules" message="The payment_requests collection is not readable yet. Add rules for payment_requests to manage approvals here." tone="warning" />
               ) : filteredRequests.length === 0 ? (
-                <WorkflowSetupCard title="No payment requests" description="Customer UPI payment submissions will appear here for admin verification." tone="info" />
+                <WorkflowSetupCard title="No payment requests" message="Customer UPI payment submissions will appear here for admin verification." tone="info" />
               ) : (
                 filteredRequests.map(request => (
                   <div key={request.id} className="ledger-feed-row" style={{ alignItems: "flex-start", gap: 14 }}>

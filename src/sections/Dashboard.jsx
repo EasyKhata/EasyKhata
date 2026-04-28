@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
 import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEntry } from "../components/ui/reimagined";
@@ -746,6 +746,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [viewMode, setViewMode] = useState(propViewMode || "month"); // "month" or "year"
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+  const dashboardCache = useRef(new Map());
 
   // Eagerly load all collections so dashboard cards and analytics reflect real data
   // without requiring the user to visit each section tab first.
@@ -822,12 +823,24 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     // Reset stale stats when loading starts so old shared-org data doesn't render
     if (!data.loaded) { setStats(EMPTY_STATS); return; }
     if (!user?.id || !data.activeOrgId) return;
-    let cancelled = false;
-    setStatsLoading(true);
     const sharedInfo = data.activeSharedOrgKey ? user?.sharedOrgs?.[data.activeSharedOrgKey] : null;
     const dashboardUserId = sharedInfo?.ownerId || user?.id;
+    const cacheKey = `${dashboardUserId}-${data.activeOrgId}-${year}-${month}-${viewMode}`;
+    const cached = dashboardCache.current.get(cacheKey);
+    if (cached) {
+      setStats(cached);
+      return;
+    }
+    let cancelled = false;
+    setStatsLoading(true);
     orgsApi.getDashboard(dashboardUserId, data.activeOrgId, year, month, viewMode)
-      .then(result => { if (!cancelled) setStats(normalizeStats(result)); })
+      .then(result => {
+        if (!cancelled) {
+          const normalized = normalizeStats(result);
+          dashboardCache.current.set(cacheKey, normalized);
+          setStats(normalized);
+        }
+      })
       .catch(err => logError("dashboard fetch", err))
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };
@@ -1179,7 +1192,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" description="Add maintenance collections and society expenses to see recent activity here." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              <WorkflowSetupCard title="No entries yet" message="Add maintenance collections and society expenses to see recent activity here." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
 
@@ -1219,6 +1232,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const recentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Spending", date: item.date || "" }));
     const recentTxns = [...recentIncomes, ...recentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
     const trendData = (stats.monthlyBreakdown || stats.cashFlow || []).map(item => item.income || 0).filter(v => v > 0);
+    const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0;
 
     return (
       <div className="ledger-screen">
@@ -1262,6 +1276,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <StatChip label={viewMode === "month" ? "Earnings" : "Total Earned"} value={fmtMoney(stats.totalIncome, sym)} color="var(--jade)" sub={viewMode === "month" ? "All household income" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`} onClick={() => onNav("income")} />
             <StatChip label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--saffron)" sub={`${stats.activeLoansCount || 0} active loan(s)`} onClick={() => onNav("emi")} />
           </div>
+
+          {/* First-use onboarding CTA */}
+          {isEmptyOrg && (
+            <div className="anim-fade-up-2">
+              <WorkflowSetupCard
+                eyebrow="Get started"
+                title="Record your first income entry"
+                message="Add this month's salary or any income to see your household cash flow, spending breakdown, and savings progress."
+                actionLabel="Add Income →"
+                onAction={() => onNav("income")}
+                secondaryActionLabel="Add Expense"
+                onSecondaryAction={() => onNav("expenses")}
+                tone="accent"
+              />
+            </div>
+          )}
 
           {/* Trend sparkline */}
           {trendData.length >= 3 && (
@@ -1311,7 +1341,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" description="Add salary, expenses, or EMIs to see your household cashflow here." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
+              <WorkflowSetupCard title="No entries yet" message="Add salary, expenses, or EMIs to see your household cashflow here." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
             )}
           </div>
 
@@ -1329,6 +1359,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const netEarnings = Number(stats.profit || 0);
     const collected = Number(stats.totalIncome || 0);
     const expenses = Number(stats.totalExpense || 0);
+    const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0;
     const earningsPct = Math.min(100, Math.round((collected / Math.max(collected + expenses, 1)) * 100));
     const freelancerTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
     const flMk = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -1422,6 +1453,22 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             />
           </div>
 
+          {/* First-use onboarding CTA */}
+          {isEmptyOrg && (
+            <div className="anim-fade-up-2">
+              <WorkflowSetupCard
+                eyebrow="Get started"
+                title="Log your first payment or create an invoice"
+                message="Record a client payment or raise an invoice to see your freelancer earnings, invoice status, and cash flow."
+                actionLabel="Log Payment →"
+                onAction={() => onNav("income")}
+                secondaryActionLabel="New Invoice"
+                onSecondaryAction={() => onNav("invoices")}
+                tone="info"
+              />
+            </div>
+          )}
+
           {/* Invoice status + billable expenses strip */}
           {(flPaidCount > 0 || flPendingCount > 0 || flBillableCount > 0) && (
             <div className="anim-fade-up-3" style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -1506,7 +1553,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" description="Add client payments and work expenses to see your freelancer cashflow here." actionLabel={!isViewerMode ? "Log Payment" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              <WorkflowSetupCard title="No entries yet" message="Add client payments and work expenses to see your freelancer cashflow here." actionLabel={!isViewerMode ? "Log Payment" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
 
@@ -1515,7 +1562,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <Collapsible title="Invoice Follow-up" icon="◎" color="var(--sky)" count={(stats.overdueInvoices?.length || 0) + (stats.dueSoonInvoices?.length || 0)} defaultOpen>
               <div className="card">
                 {(stats.overdueInvoices?.length || 0) === 0 && (stats.dueSoonInvoices?.length || 0) === 0 ? (
-                  <WorkflowSetupCard title="No invoice follow-up right now" description="Your open client invoices are either paid or not near their due date yet." tone="success" />
+                  <WorkflowSetupCard title="No invoice follow-up right now" message="Your open client invoices are either paid or not near their due date yet." tone="success" />
                 ) : (
                   [...(stats.overdueInvoices || []), ...(stats.dueSoonInvoices || []).filter(inv => !(stats.overdueInvoices || []).some(o => o.id === inv.id))].slice(0, 6).map(invoice => (
                     <div key={invoice.id} className="ledger-feed-row">
@@ -1693,7 +1740,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   ))}
                 </div>
               ) : (
-                <WorkflowSetupCard title="No entries yet" description="Add sales and expenses to see your business cashflow here." actionLabel={!isViewerMode ? "Add Entry" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+                <WorkflowSetupCard title="No entries yet" message="Add sales and expenses to see your business cashflow here." actionLabel={!isViewerMode ? "Add Entry" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
               )}
             </div>
           );
@@ -1735,7 +1782,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 </>
               )}
               {(stats.pendingCustomers || []).length === 0 && (stats.partnersWithBalance || []).length === 0 && (
-                <WorkflowSetupCard title="All clear" description="No pending collections and no outstanding dues to suppliers or vendors this month." tone="success" />
+                <WorkflowSetupCard title="All clear" message="No pending collections and no outstanding dues to suppliers or vendors this month." tone="success" />
               )}
             </div>
           </Collapsible>
@@ -1751,9 +1798,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           >
             <div className="card">
               {stats.partnersCount === 0 ? (
-                <WorkflowSetupCard title="No partners added yet" description="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} tone="warning" />
+                <WorkflowSetupCard title="No partners added yet" message="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} tone="warning" />
               ) : stats.partnersWithBalance.length === 0 ? (
-                <WorkflowSetupCard title="Partner balances are clear" description="No outstanding partner or vendor dues are recorded right now." tone="success" />
+                <WorkflowSetupCard title="Partner balances are clear" message="No outstanding partner or vendor dues are recorded right now." tone="success" />
               ) : (
                 stats.partnersWithBalance.slice(0, 5).map(partner => (
                   <FeedRow
@@ -1777,11 +1824,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         >
           {!showAdvanced ? (
             <div className="card">
-              <WorkflowSetupCard title="Upgrade to unlock smart alerts" description="Pro plan adds due reminders, budget warnings, spending spikes, and stronger financial guidance." tone="warning" />
+              <WorkflowSetupCard title="Upgrade to unlock smart alerts" message="Pro plan adds due reminders, budget warnings, spending spikes, and stronger financial guidance." tone="warning" />
             </div>
           ) : stats.alertItems.length === 0 ? (
             <div className="card">
-              <WorkflowSetupCard title="All clear for now" description="No urgent alerts right now. Your cash flow and collections look steady." tone="success" />
+              <WorkflowSetupCard title="All clear for now" message="No urgent alerts right now. Your cash flow and collections look steady." tone="success" />
             </div>
           ) : (
             <div className="card">
@@ -1804,7 +1851,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--ember)" count={top5Expenses.length} defaultOpen={top5Expenses.length > 0}>
           <div className="card">
             {top5Expenses.length === 0 ? (
-              <WorkflowSetupCard title="No expenses this period" description="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
+              <WorkflowSetupCard title="No expenses this period" message="Add expense entries to see your biggest costs here." actionLabel="Go to Expenses" onAction={() => onNav("expenses")} tone="danger" />
             ) : (
               top5Expenses.map((expense, index) => (
                 <div key={expense.id || index} className="ledger-feed-row">
@@ -1829,9 +1876,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           >
             <div className="card">
               {!showAdvanced ? (
-                <WorkflowSetupCard title="Risk scoring is on Pro" description="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
+                <WorkflowSetupCard title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
               ) : stats.highRiskCustomers.length === 0 ? (
-                <WorkflowSetupCard title="Healthy payment behaviour" description="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
+                <WorkflowSetupCard title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
               ) : (
                 stats.highRiskCustomers.map(customer => (
                   <FeedRow
@@ -1857,7 +1904,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           >
             <div className="card">
               {stats.pendingInvoices.length === 0 ? (
-                <WorkflowSetupCard title="Nothing pending" description="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
+                <WorkflowSetupCard title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
               ) : (
                 stats.pendingInvoices.slice(0, 4).map(invoice => {
                   const color = getInvoiceStatusColor(invoice.computedStatus);

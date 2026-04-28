@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { adminApi } from "../lib/api";
 import { SectionSkeleton, WorkflowSetupCard } from "../components/UI";
 import { logError } from "../utils/logger";
@@ -454,7 +454,7 @@ export default function AdminSupportSection() {
       </div>
     </div>
   ) : (
-    <WorkflowSetupCard title="Select a ticket" description="Choose a ticket from the queue." tone="info" />
+    <WorkflowSetupCard title="Select a ticket" message="Choose a ticket from the queue." tone="info" />
   );
 
   // ── Mobile: show list OR detail, not both ────────────────────────────────
@@ -513,7 +513,7 @@ export default function AdminSupportSection() {
       {error && <div className="card" style={{ marginBottom: 14, color: "var(--danger)", fontSize: 13 }}>{error}</div>}
 
       {!visibleTickets.length ? (
-        <div className="card"><WorkflowSetupCard title="No support tickets" description="No tickets match this filter." tone="info" /></div>
+        <div className="card"><WorkflowSetupCard title="No support tickets" message="No tickets match this filter." tone="info" /></div>
       ) : isMobile ? (
         // Mobile: just the list, tapping opens detail
         <div className="card">{TicketList}</div>

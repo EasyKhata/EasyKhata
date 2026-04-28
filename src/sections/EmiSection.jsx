@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { Modal, Field, Input, Select, DateSelectInput, fmtMoney, fmtDate, MONTHS, SectionSkeleton, WorkflowActionStrip, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
 import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
@@ -355,11 +355,11 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
         <div className="card">
           {!hasHouseholdPeople ? (
-            <WorkflowSetupCard title="Add a person before tracking EMIs" description="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} tone="warning" />
+            <WorkflowSetupCard title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} tone="warning" />
           ) : loans.length === 0 ? (
-            <WorkflowSetupCard title="No EMI records yet" description="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} tone="warning" />
+            <WorkflowSetupCard title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} tone="warning" />
           ) : activeLoans.length === 0 ? (
-            <WorkflowSetupCard title={`No active EMIs for ${MONTHS[month]} ${year}`} description="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} tone="warning" />
+            <WorkflowSetupCard title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} tone="warning" />
           ) : filteredLoans.length === 0 ? (
             <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
               No EMI records match this search.

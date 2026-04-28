@@ -831,6 +831,18 @@ select.input-field {
   border-color: color-mix(in srgb, var(--gold) 24%, var(--border));
 }
 
+.workflow-setup-card.warning {
+  border-color: color-mix(in srgb, var(--gold) 24%, var(--border));
+}
+
+.workflow-setup-card.success {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+}
+
+.workflow-setup-card.info {
+  border-color: color-mix(in srgb, var(--blue) 24%, var(--border));
+}
+
 .workflow-setup-eyebrow {
   font-size: 10px;
   font-weight: 700;

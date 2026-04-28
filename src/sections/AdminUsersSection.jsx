@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
@@ -234,7 +234,7 @@ export default function AdminUsersSection() {
 
       <div className="card">
         {filteredUsers.length === 0 ? (
-          <WorkflowSetupCard title="No matching users" description="Try changing the search or filter to find the account you want." tone="info" />
+          <WorkflowSetupCard title="No matching users" message="Try changing the search or filter to find the account you want." tone="info" />
         ) : (
           filteredUsers.map(member => (
             <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>

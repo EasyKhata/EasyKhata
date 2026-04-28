@@ -299,8 +299,8 @@ service cloud.firestore {
     match /pendingInvites/{inviteId} {
       // Invitee reads their own pending invites
       allow read: if isSignedIn() && resource.data.email == request.auth.token.email;
-      // Owner creates
-      allow create: if isSignedIn();
+      // Owner creates — must be creating for their own org
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       // Invitee updates status (accept / decline); owner deletes on remove
       allow update: if isSignedIn() && resource.data.email == request.auth.token.email;
       allow delete: if isSignedIn() && (

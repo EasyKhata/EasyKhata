@@ -67,7 +67,7 @@ export default function CustomersScreen({
   function HouseholdBrief({ customer }) {
     const personName = (customer.name || "").trim().toLowerCase();
 
-    if (!expensesLoaded) {
+    if (!expensesLoaded || !incomeLoaded) {
       return (
         <div style={{ padding: "10px 14px 12px", fontSize: 12, color: "var(--text-dim)" }}>
           Loading…

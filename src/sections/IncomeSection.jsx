@@ -217,6 +217,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   const [flatStatusFilter, setFlatStatusFilter] = useState("all");
   const [flatPage, setFlatPage] = useState(1);
   const [flatPageSize, setFlatPageSize] = useState(25);
+  const [incomePage, setIncomePage] = useState(1);
+  const INCOME_PAGE_SIZE = 50;
   const [saleItems, setSaleItems] = useState([newSaleItem()]);
   const [saleDiscount, setSaleDiscount] = useState("");
   const [salePhone, setSalePhone] = useState("");
@@ -285,6 +287,10 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       return manualSearch.includes(normalizedSearch);
     })
   ), [config.incomeFields, manualIncome, normalizedSearch]);
+  const paginatedManualIncome = useMemo(() => {
+    const start = (incomePage - 1) * INCOME_PAGE_SIZE;
+    return filteredManualIncome.slice(start, start + INCOME_PAGE_SIZE);
+  }, [filteredManualIncome, incomePage]);
   const apartmentFlats = useMemo(() => (
     (d.customers || []).map(flat => ({
       value: flat.name || "",
@@ -526,6 +532,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     const maxPages = Math.max(1, Math.ceil(visibleApartmentCollectionStatus.length / flatPageSize));
     if (flatPage > maxPages) setFlatPage(maxPages);
   }, [flatPage, flatPageSize, visibleApartmentCollectionStatus.length]);
+
+  useEffect(() => { setIncomePage(1); }, [mk, normalizedSearch]);
 
 
   useEffect(() => {
@@ -1254,8 +1262,33 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               No {config.incomeLabel.toLowerCase()} match this search.
             </div>
           ) : (
-            filteredManualIncome.map(item => (
-              <ManualIncomeCard key={item.id} item={item} />))
+            <>
+              {filteredManualIncome.length > INCOME_PAGE_SIZE && (
+                <div style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+                  <PaginatedListControls
+                    totalItems={filteredManualIncome.length}
+                    page={incomePage}
+                    pageSize={INCOME_PAGE_SIZE}
+                    onPageChange={setIncomePage}
+                    itemLabel={config.incomeLabel.toLowerCase()}
+                  />
+                </div>
+              )}
+              {paginatedManualIncome.map(item => (
+                <ManualIncomeCard key={item.id} item={item} />
+              ))}
+              {filteredManualIncome.length > INCOME_PAGE_SIZE && (
+                <div style={{ padding: "8px 12px", borderTop: "1px solid var(--border)" }}>
+                  <PaginatedListControls
+                    totalItems={filteredManualIncome.length}
+                    page={incomePage}
+                    pageSize={INCOME_PAGE_SIZE}
+                    onPageChange={setIncomePage}
+                    itemLabel={config.incomeLabel.toLowerCase()}
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

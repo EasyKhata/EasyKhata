@@ -152,12 +152,12 @@ function QuickAddSheet({ onClose, isPersonalOrg, isApartmentOrg, isFreelancerOrg
   return (
     <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Drag handle */}
-      <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
+      <div style={{ width: 48, height: 5, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
 
       {/* Title row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>×</button>
+        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "10px 12px", margin: "-10px -12px" }}>×</button>
       </div>
 
       {/* Expense / Income toggle */}
@@ -255,10 +255,10 @@ function QuickActionSheet({ onClose, actions = [], isReadOnlyFreeMode, isViewerM
 
   return (
     <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ width: 36, height: 4, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
+      <div style={{ width: 48, height: 5, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-        <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "2px 6px" }}>×</button>
+        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "10px 12px", margin: "-10px -12px" }}>×</button>
       </div>
       <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
         Choose the type below. The full original form opens immediately with all its fields.
@@ -516,7 +516,7 @@ function QuickEntrySheet({
         <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)", margin: "0 auto 10px" }} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-          <button type="button" onClick={onClose} style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "2px 6px" }}>×</button>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, cursor: "pointer", padding: "10px 12px", margin: "-10px -12px" }}>×</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, gap: 6, marginBottom: 10 }}>
           {tabs.map(option => {

@@ -3,6 +3,7 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 import { DialogProvider } from "./context/DialogContext";
+import { ToastProvider } from "./context/ToastContext";
 import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -109,9 +110,11 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <DialogProvider>
-            <ErrorBoundary>
-              <AppRouter />
-            </ErrorBoundary>
+            <ToastProvider>
+              <ErrorBoundary>
+                <AppRouter />
+              </ErrorBoundary>
+            </ToastProvider>
           </DialogProvider>
         </AuthProvider>
       </ThemeProvider>

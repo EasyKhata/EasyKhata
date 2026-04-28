@@ -265,7 +265,7 @@ export default function DiscussionsSection() {
     setMessages(prev => [...prev, optimistic]);
     try {
       const saved = await messagesApi.send(ownerId, orgId, {
-        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        id: crypto.randomUUID(),
         senderId: myId,
         senderName,
         senderRole,
