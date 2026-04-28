@@ -1493,6 +1493,7 @@ export function DataProvider({ children }) {
 
     collectionFetchingRef.current[key] = true;
     const orgId = data.activeOrgId;
+    if (!orgId) { collectionFetchingRef.current[key] = false; return; }
     // For shared orgs the API path uses the org owner's ID, not the current user's ID
     const apiUserId = activeSharedOrgRef.current?.ownerId || user.id;
 
