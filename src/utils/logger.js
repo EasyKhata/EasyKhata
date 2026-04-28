@@ -1,41 +1,35 @@
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db, auth } from "../firebase";
+
 const isDev = import.meta.env.DEV;
 
-/**
- * Log an error. In development, prints to console.
- * In production this is the integration point for a service like Sentry or Firebase Crashlytics.
- *
- * @param {string} label  - Short description of where the error occurred (e.g. "Invoice load")
- * @param {unknown} error - The caught error object
- * @param {object} [ctx]  - Optional extra context
- */
-export function logError(label, error, ctx) {
-  if (isDev) {
-    if (ctx !== undefined) {
-      console.error(`[${label}]`, error, ctx);
-    } else {
-      console.error(`[${label}]`, error);
-    }
+async function writeLog(level, label, error, ctx) {
+  try {
+    await addDoc(collection(db, "app_logs"), {
+      level,
+      label,
+      message: error instanceof Error ? error.message : String(error ?? ""),
+      errorCode: error?.code ?? null,
+      userId: auth.currentUser?.uid ?? null,
+      ctx: ctx ? JSON.stringify(ctx).slice(0, 500) : null,
+      platform: typeof navigator !== "undefined" ? navigator.platform : null,
+      ts: serverTimestamp()
+    });
+  } catch {
+    // Never let logging break the app
   }
-  // TODO: forward to Sentry / Firebase Crashlytics in production
-  // Example:
-  // if (!isDev && window.Sentry) {
-  //   window.Sentry.withScope(scope => {
-  //     if (label) scope.setTag("label", label);
-  //     if (ctx) scope.setContext("details", ctx);
-  //     window.Sentry.captureException(error instanceof Error ? error : new Error(String(error)));
-  //   });
-  // }
 }
 
-/**
- * Log a warning.
- */
+export function logError(label, error, ctx) {
+  if (isDev) {
+    ctx !== undefined ? console.error(`[${label}]`, error, ctx) : console.error(`[${label}]`, error);
+    return;
+  }
+  writeLog("error", label, error, ctx);
+}
+
 export function logWarn(label, ctx) {
   if (isDev) {
-    if (ctx !== undefined) {
-      console.warn(`[${label}]`, ctx);
-    } else {
-      console.warn(`[${label}]`);
-    }
+    ctx !== undefined ? console.warn(`[${label}]`, ctx) : console.warn(`[${label}]`);
   }
 }
