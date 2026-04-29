@@ -643,202 +643,125 @@ export default function AdminPanel({ year, month }) {
   }
 
   return (
-    <div style={{ padding: "20px 18px 110px" }}>
-      <div className="section-label">Admin Overview</div>
+    <div style={{ padding: "16px 16px 110px" }}>
+
+      {/* Page header — title + action toolbar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div>
+          <div className="section-label" style={{ marginBottom: 2 }}>Admin Overview</div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            {selectedPeriodLabel}
+            {snapshotGeneratedAt ? ` · Updated ${snapshotGeneratedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : " · Live data"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12 }} onClick={fetchAdminData} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12 }}
+            onClick={async () => { setExporting("pdf"); try { await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, "Rs"); } finally { setExporting(""); } }}
+            disabled={Boolean(exporting)}>
+            {exporting === "pdf" ? "Generating…" : "PDF Report"}
+          </button>
+          <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12 }}
+            onClick={() => { setExporting("users"); try { downloadAdminUsersCsv(users); } finally { setExporting(""); } }}
+            disabled={Boolean(exporting) || !users.length}>
+            Users CSV
+          </button>
+          <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12 }}
+            onClick={() => { setExporting("requests"); try { downloadAdminRequestsCsv(paymentRequests); } finally { setExporting(""); } }}
+            disabled={Boolean(exporting) || !paymentRequests.length}>
+            Requests CSV
+          </button>
+        </div>
+      </div>
+
       {adminError && (
-        <div className="card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "var(--danger)" }}>Admin access warning</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>{adminError}</div>
+        <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: "4px solid var(--danger)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>Admin access warning</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.6 }}>{adminError}</div>
         </div>
       )}
 
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 20, borderLeft: "4px solid var(--gold)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>Company intelligence center</div>
-              <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 620 }}>
-                Use this view to understand how subscriptions are converting, which organizations are driving depth, where your strongest markets are, and which user segments deserve retention or marketing attention.
-              </div>
-            </div>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12, minWidth: 140 }}
-              onClick={fetchAdminData}
-              disabled={loading}
-            >
-              {loading ? "Refreshing…" : "Refresh data"}
-            </button>
-          </div>
-
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 }}>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12 }}
-              onClick={async () => {
-                setExporting("pdf");
-                try {
-                  await downloadAdminMonthlyReport({ users, paymentRequests }, year, month, "Rs");
-                } finally {
-                  setExporting("");
-                }
-              }}
-              disabled={Boolean(exporting)}
-            >
-              {exporting === "pdf" ? "Generating report..." : "Download Admin PDF"}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12 }}
-              onClick={() => {
-                setExporting("users");
-                try {
-                  downloadAdminUsersCsv(users);
-                } finally {
-                  setExporting("");
-                }
-              }}
-              disabled={Boolean(exporting) || !users.length}
-            >
-              {exporting === "users" ? "Exporting users..." : "Export Users CSV"}
-            </button>
-            <button
-              className="btn-secondary"
-              type="button"
-              style={{ padding: "10px 14px", fontSize: 12 }}
-              onClick={() => {
-                setExporting("requests");
-                try {
-                  downloadAdminRequestsCsv(paymentRequests);
-                } finally {
-                  setExporting("");
-                }
-              }}
-              disabled={Boolean(exporting) || !paymentRequests.length}
-            >
-              {exporting === "requests" ? "Exporting requests..." : "Export Requests CSV"}
-            </button>
-          </div>
-
-          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
-            {exporting
-              ? "Preparing your export, please wait..."
-              : `Selected period: ${selectedPeriodLabel}. Analytics are based on the latest sampled users, payment requests, and support tickets for fast admin response.`}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 8 }}>
-            {snapshotGeneratedAt
-              ? `Executive totals${areOrgDerivationsReady ? ", workspace counts, and audience distributions," : ""}${isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey ? " plus current-month billing cards" : ""} are sourced from precomputed aggregates (updated ${snapshotGeneratedAt.toLocaleString("en-IN")}).`
-              : "Executive totals currently use sampled live data until the admin aggregate snapshot is generated."}
+      {/* Executive Snapshot + Subscription Funnel */}
+      <div className="desktop-grid-2" style={{ gap: 14, marginBottom: 14 }}>
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>Executive Snapshot</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+            <MetricTile label="Total Users" value={executiveStats.totalUsers} sub={`${executiveStats.activeUsers} active`} color="var(--blue)" />
+            <MetricTile label="Paid Accounts" value={executiveStats.premiumUsers} sub={`${executiveStats.premiumShare}% of base`} color="var(--accent)" />
+            <MetricTile label="Workspaces" value={executiveStats.totalOrganizations} sub={`${executiveStats.multiOrgUsers} multi-org`} color="var(--purple)" />
+            <MetricTile label="Pending Payments" value={executiveStats.pendingRequests} sub={`${analytics.stats.requestBacklog} over 7 days`} color="var(--danger)" />
+            <MetricTile label="Approved" value={fmtMoney(currentPeriodStats.approvedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
+            <MetricTile label="Tracked Time" value={analytics.totalSessionLabel} sub="Foreground session time" color="var(--gold)" />
           </div>
         </div>
 
-        <div className="card" style={{ padding: 18 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10, color: "var(--text)" }}>Executive Snapshot</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Total Users" value={executiveStats.totalUsers} sub={`${executiveStats.activeUsers} currently active accounts`} color="var(--blue)" />
-            <MetricTile label="Paid Accounts" value={executiveStats.premiumUsers} sub={`${executiveStats.premiumShare}% of the user base`} color="var(--accent)" />
-            <MetricTile label="Workspaces" value={executiveStats.totalOrganizations} sub={`${executiveStats.multiOrgUsers} multi-org users`} color="var(--purple)" />
-            <MetricTile label="Tracked Time" value={analytics.totalSessionLabel} sub="True foreground session time" color="var(--gold)" />
-            <MetricTile label="Pending Payments" value={executiveStats.pendingRequests} sub={`${analytics.stats.requestBacklog} older than 7 days`} color="var(--danger)" />
-            <MetricTile label="Approved This Period" value={fmtMoney(currentPeriodStats.approvedAmount, "Rs ")} sub={selectedPeriodLabel} color="var(--accent)" />
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>Subscription Funnel</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+            <MetricTile label="New Users" value={currentPeriodStats.newUsers} sub={selectedPeriodLabel} color="var(--blue)" />
+            <MetricTile label="New Paid" value={currentPeriodStats.newPremiumUsers} sub="New paid signups" color="var(--accent)" />
+            <MetricTile label="Trial Users" value={analytics.stats.trialUsers} sub={`${analytics.stats.expiringSoonCount} ending soon`} color="var(--gold)" />
+            <MetricTile label="Approval Rate" value={`${analytics.stats.paymentApprovalRate}%`} sub={`${analytics.stats.approvedRequests} approved`} color="var(--purple)" />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "10px 12px", background: "var(--surface-high)", borderRadius: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--text-sec)" }}>Next subscription end</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{analytics.nextExpiryLabel}</div>
           </div>
         </div>
       </div>
 
-      <div className="section-label">Subscription Intelligence</div>
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Subscription Funnel</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="New Users" value={currentPeriodStats.newUsers} sub={selectedPeriodLabel} color="var(--blue)" />
-            <MetricTile label="New Premium" value={currentPeriodStats.newPremiumUsers} sub="New paid signups or assignments" color="var(--accent)" />
-            <MetricTile label="Trial Users" value={analytics.stats.trialUsers} sub={`${analytics.stats.expiringSoonCount} ending within 14 days`} color="var(--gold)" />
-            <MetricTile label="Approval Rate" value={`${analytics.stats.paymentApprovalRate}%`} sub={`${analytics.stats.approvedRequests} approved requests`} color="var(--purple)" />
-          </div>
-          <div className="card" style={{ padding: 14, marginTop: 12, marginBottom: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 8 }}>
-              <div style={{ fontSize: 13, color: "var(--text)" }}>Next subscription end date</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{analytics.nextExpiryLabel}</div>
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-              Use this to prioritise trial conversion nudges and manual renewals before accounts fall inactive.
-            </div>
-          </div>
-        </div>
-
+      {/* Plan Mix + Subscription Status */}
+      <div className="desktop-grid-2" style={{ gap: 14, marginBottom: 14 }}>
         <DistributionCard
           title="Plan Mix"
-          subtitle="How the current customer base is distributed across subscription tiers."
           items={distributionStats.planMix}
-          emptyMessage="No user plans have been recorded yet."
+          emptyMessage="No user plans recorded yet."
           accentColor="var(--blue)"
         />
-      </div>
-
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
         <DistributionCard
           title="Subscription Status"
-          subtitle="Useful for separating healthy accounts from trials and paused subscriptions."
           items={distributionStats.statusMix}
-          emptyMessage="No subscription statuses are available yet."
+          emptyMessage="No subscription statuses available yet."
           accentColor="var(--accent)"
         />
-
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Billing Pulse</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-              <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} submissions awaiting review`} color="var(--gold)" />
-              <MetricTile label="Rejected Requests" value={analytics.stats.rejectedRequests} sub="Needs manual follow-up" color="var(--danger)" />
-              <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk in paid users" color="var(--danger)" />
-              <MetricTile label="Resident Portals" value={collaborationStats.residentPortalUsers} sub="Apartment portal adoption signal" color="var(--purple)" />
-            </div>
-        </div>
       </div>
 
-      <div className="section-label">Strategy Playbook</div>
-      <div className="desktop-grid-2" style={{ gap: 18, marginBottom: 18 }}>
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Growth & Product Priorities</div>
-          <div className="card" style={{ padding: 14, marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Acquire better users</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              Focus campaigns on top markets and org types where conversion is strongest. Combine plan-mix + subscription-funnel signals to choose where ad spend should go first.
-            </div>
-          </div>
-          <div className="card" style={{ padding: 14, marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Improve retention</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              Watch inactive paid users and trial users near expiry. Run proactive support + reminder nudges before churn happens.
-            </div>
-          </div>
-          <div className="card" style={{ padding: 14, marginBottom: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Improve user experience</div>
-            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.7 }}>
-              Use support queue aging tickets as UX pain signals. Repeated ticket topics should directly drive feature simplification and onboarding updates.
-            </div>
+      {/* Billing Pulse + Market Signals */}
+      <div className="desktop-grid-2" style={{ gap: 14, marginBottom: 14 }}>
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>Billing Pulse</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+            <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} awaiting review`} color="var(--gold)" />
+            <MetricTile label="Rejected" value={analytics.stats.rejectedRequests} sub="Needs follow-up" color="var(--danger)" />
+            <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk" color="var(--danger)" />
+            <MetricTile label="Resident Portals" value={collaborationStats.residentPortalUsers} sub="Apartment adoption" color="var(--purple)" />
           </div>
         </div>
 
-        <div className="card" style={{ padding: 18, marginBottom: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>Quick Market Signals</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-            <MetricTile label="Top Market Coverage" value={`${readinessStats.locationCoverage}%`} sub="Users with structured location" color="var(--blue)" />
-            <MetricTile label="Activation Rate" value={`${analytics.stats.activationRate}%`} sub="Users with meaningful activity" color="var(--accent)" />
-            <MetricTile label="Dormant Paid Users" value={analytics.stats.paidAtRisk} sub="Highest retention priority" color="var(--danger)" />
-            <MetricTile label="Support Aging" value={analytics.stats.supportAging} sub="Open > 3 days" color="var(--gold)" />
+        <div className="card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 12 }}>Market Signals</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+            <MetricTile label="Location Coverage" value={`${readinessStats.locationCoverage}%`} sub="Users with location" color="var(--blue)" />
+            <MetricTile label="Activation Rate" value={`${analytics.stats.activationRate}%`} sub="Users with activity" color="var(--accent)" />
+            <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention priority" color="var(--danger)" />
+            <MetricTile label="Support Aging" value={analytics.stats.supportAging} sub="Open tickets > 3 days" color="var(--gold)" />
           </div>
         </div>
       </div>
 
-      <div className="section-label">Strategic Signals</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 18, marginBottom: 18 }}>
-        {analytics.insights.map((insight, index) => (
-          <InsightCard key={insight.id || `${insight.eyebrow}-${insight.title}-${index}`} eyebrow={insight.eyebrow} title={insight.title} body={insight.body} tone={insight.tone} />
-        ))}
-      </div>
+      {/* Strategic Signals — only real insights, no filler */}
+      {analytics.insights.filter(i => !i.id?.startsWith("strategy-")).length > 0 && (
+        <>
+          <div className="section-label">Signals & Alerts</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 14 }}>
+            {analytics.insights.filter(i => !i.id?.startsWith("strategy-")).map((insight, index) => (
+              <InsightCard key={insight.id || `${insight.eyebrow}-${insight.title}-${index}`} eyebrow={insight.eyebrow} title={insight.title} body={insight.body} tone={insight.tone} />
+            ))}
+          </div>
+        </>
+      )}
 
     </div>
   );

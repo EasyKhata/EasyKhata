@@ -4,7 +4,7 @@ import { logError } from "../utils/logger";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/DialogContext";
 import { Avatar, SectionSkeleton, WorkflowSetupCard } from "../components/UI";
-import { buildLocationLabel, formatDuration, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
+import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields } from "../utils/profile";
 import {
   PLAN_LABELS,
   PLANS,
@@ -80,20 +80,6 @@ export default function AdminUsersSection() {
     });
   }, [search, userFilter, users]);
 
-  const recentActivity = useMemo(() => {
-    return users
-      .filter(member => member.createdAt)
-      .map(member => ({
-        time: new Date(member.createdAt).getTime(),
-        label: `${member.name || member.email || "Unknown"} joined`,
-        detail: [member.plan || "free", member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE, member.blocked ? "blocked" : "active"]
-          .filter(Boolean)
-          .join(" · ")
-      }))
-      .sort((a, b) => b.time - a.time)
-      .slice(0, 12);
-  }, [users]);
-
   async function toggleBlock(id, blocked) {
     if (id === user.id) {
       setAdminError("You cannot block your own account.");
@@ -159,153 +145,105 @@ export default function AdminUsersSection() {
   }
 
   return (
-    <div style={{ padding: "20px 18px 110px" }}>
-      <div className="section-label">User Activity</div>
+    <div style={{ padding: "16px 16px 110px" }}>
+
+      {/* Page header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <div className="section-label" style={{ marginBottom: 0 }}>Users — {users.length} total</div>
+        <button className="btn-secondary" type="button" style={{ padding: "8px 12px", fontSize: 12 }} onClick={fetchAdminData}>
+          Refresh
+        </button>
+      </div>
+
       {adminError && (
-        <div className="card" style={{ padding: 16, marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "var(--danger)" }}>Admin access warning</div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>{adminError}</div>
+        <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: "4px solid var(--danger)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>Error</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4 }}>{adminError}</div>
         </div>
       )}
 
-      <div className="card" style={{ padding: 18, marginBottom: 18, borderLeft: "4px solid var(--blue)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "var(--text)" }}>Users</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 620 }}>
-              Review signups, adjust plan access, and block or remove user accounts from one place.
-            </div>
-          </div>
-          <button className="btn-secondary" type="button" style={{ padding: "10px 14px", fontSize: 12, minWidth: 140 }} onClick={fetchAdminData}>
-            Refresh activity
-          </button>
-        </div>
-      </div>
-
-      <div className="section-label">Recent User Activity</div>
-      <div className="card" style={{ marginBottom: 18, padding: 14 }}>
-        {recentActivity.length === 0 ? (
-          <div style={{ padding: 18, textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>No recent user activity found yet.</div>
-        ) : (
-          recentActivity.map((event, index) => (
-            <div key={`${event.time}-${index}`} className="card-row" style={{ justifyContent: "space-between", gap: 12, padding: "10px 0" }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{event.label}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>{event.detail}</div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-sec)" }}>{new Date(event.time).toLocaleString("en-IN")}</div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="section-label">User Management</div>
-      <div className="card" style={{ padding: 14, marginBottom: 18 }}>
+      {/* Search + filter bar */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <input
           className="input-field"
           placeholder="Search by name, email, or phone"
           value={search}
           onChange={event => setSearch(event.target.value)}
-          style={{ marginBottom: 12 }}
+          style={{ flex: 1, minWidth: 200 }}
         />
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {[
-            ["all", "All"],
-            ["active", "Unblocked"],
-            ["blocked", "Blocked"],
-            ["premium", "Premium"]
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              className="btn-secondary"
-              style={{
-                padding: "8px 12px",
-                fontSize: 12,
-                background: userFilter === value ? "var(--surface-pop)" : "var(--surface-high)",
-                color: userFilter === value ? "var(--text)" : "var(--text-sec)"
-              }}
-              onClick={() => setUserFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {[["all", "All"], ["active", "Active"], ["blocked", "Blocked"], ["premium", "Premium"]].map(([value, label]) => (
+          <button
+            key={value}
+            className="btn-secondary"
+            style={{ padding: "8px 12px", fontSize: 12, background: userFilter === value ? "var(--surface-pop)" : "var(--surface-high)", color: userFilter === value ? "var(--text)" : "var(--text-sec)", flexShrink: 0 }}
+            onClick={() => setUserFilter(value)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
+      {/* User list */}
       <div className="card">
         {filteredUsers.length === 0 ? (
           <WorkflowSetupCard title="No matching users" message="Try changing the search or filter to find the account you want." tone="info" />
         ) : (
           filteredUsers.map(member => (
-            <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
-              <Avatar name={member.name || member.email || "?"} size={42} fontSize={14} />
+            <div key={member.id} className="card-row" style={{ alignItems: "flex-start", gap: 12, padding: "12px 14px" }}>
+              <Avatar name={member.name || member.email || "?"} size={36} fontSize={13} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
+                {/* Row 1: name + badges */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{member.name || "Unnamed User"}</span>
                   {member.role === "admin" && <span className="pill" style={{ background: "var(--purple-deep)", color: "var(--purple)" }}>Admin</span>}
                   {member.role !== "admin" && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>{PLAN_LABELS[member.plan || PLANS.FREE] || "Free"}</span>}
                   {member.blocked && <span className="pill" style={{ background: "var(--danger-deep)", color: "var(--danger)" }}>Blocked</span>}
                   {member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL && (
                     <span className="pill" style={{ background: "var(--gold-deep)", color: "var(--gold)" }}>
-                      Trial {member.subscriptionEndsAt ? `until ${formatSubscriptionDate(member.subscriptionEndsAt)}` : ""}
+                      Trial{member.subscriptionEndsAt ? ` · ${formatSubscriptionDate(member.subscriptionEndsAt)}` : ""}
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>{member.email || "No email"}</div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3 }}>
-                  {member.phone || "No phone"} - {(member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE)} access
+                {/* Row 2: contact + meta */}
+                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.5 }}>
+                  {member.email || "No email"}
+                  {member.phone ? ` · ${member.phone}` : ""}
+                  {" · "}{member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE}
+                  {member.lastActivityAt ? ` · Active ${new Date(member.lastActivityAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}
+                  {(() => {
+                    const loc = buildLocationLabel({ city: member.city || parseLocationFields(member.location || "").city, state: member.state || parseLocationFields(member.location || "").state, country: member.country || parseLocationFields(member.location || "").country });
+                    return loc ? ` · ${loc}` : "";
+                  })()}
                 </div>
-                <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.6 }}>
-                  {buildLocationLabel({
-                    city: member.city || parseLocationFields(member.location || "").city,
-                    state: member.state || parseLocationFields(member.location || "").state,
-                    country: member.country || parseLocationFields(member.location || "").country
-                  }) || "Location not set"}
-                  {member.gender ? ` · ${member.gender}` : ""}
-                  {(member.ageGroup || getAgeGroupFromDateOfBirth(member.dateOfBirth)) ? ` · ${member.ageGroup || getAgeGroupFromDateOfBirth(member.dateOfBirth)}` : ""}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 3, lineHeight: 1.6 }}>
-                  Time spent: {formatDuration(member.analytics?.totalSessionMs || 0)}
-                  {member.lastActivityAt ? ` · Last active ${new Date(member.lastActivityAt).toLocaleString("en-IN")}` : ""}
-                </div>
+                {/* Row 3: controls (own account has no controls) */}
                 {member.id !== user.id && (
-                  <div className="desktop-grid-3" style={{ marginTop: 12 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <select
                       className="input-field"
                       value={member.plan || PLANS.FREE}
                       onChange={event => updateUserPlan(member, event.target.value)}
-                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
+                      style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, width: "auto" }}
                     >
                       <option value={PLANS.FREE}>Free</option>
                       <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.BUSINESS}>Business (Internal)</option>
+                      <option value={PLANS.BUSINESS}>Business</option>
                     </select>
                     <select
                       className="input-field"
                       value={member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE}
                       onChange={event => updateSubscriptionStatus(member, event.target.value)}
-                      style={{ padding: "10px 12px", fontSize: 13, borderRadius: 10, marginBottom: 8 }}
+                      style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, width: "auto" }}
                     >
                       <option value={SUBSCRIPTION_STATUS.ACTIVE}>Active</option>
                       <option value={SUBSCRIPTION_STATUS.INACTIVE}>Inactive</option>
                       <option value={SUBSCRIPTION_STATUS.TRIAL}>Trial</option>
                     </select>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "8px 12px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }}
-                        onClick={() => toggleBlock(member.id, member.blocked)}
-                      >
-                        {member.blocked ? "Unblock" : "Block"}
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        style={{ padding: "8px 12px", fontSize: 12, color: "var(--danger)", borderColor: "var(--danger)44" }}
-                        onClick={() => deleteUserRecord(member)}
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    <button className="btn-secondary" style={{ padding: "6px 10px", fontSize: 12, color: member.blocked ? "var(--accent)" : "var(--danger)" }} onClick={() => toggleBlock(member.id, member.blocked)}>
+                      {member.blocked ? "Unblock" : "Block"}
+                    </button>
+                    <button className="btn-secondary" style={{ padding: "6px 10px", fontSize: 12, color: "var(--danger)", borderColor: "var(--danger)44" }} onClick={() => deleteUserRecord(member)}>
+                      Delete
+                    </button>
                   </div>
                 )}
               </div>
@@ -314,24 +252,13 @@ export default function AdminUsersSection() {
         )}
       </div>
 
-      <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={() => fetchAdminData({ append: true })}
-          disabled={!hasMoreUsers || loadingMore}
-          style={{ minWidth: 180 }}
-        >
-          {loadingMore ? "Loading more users..." : hasMoreUsers ? "Load More Users" : "No More Users"}
-        </button>
-      </div>
-
-      <div className="card" style={{ marginTop: 18, padding: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>User admin actions</div>
-        <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          Use this section for account-level actions only: review new users, adjust plans, manage trial status, and block or remove accounts when needed.
+      {hasMoreUsers && (
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "center" }}>
+          <button className="btn-secondary" type="button" onClick={() => fetchAdminData({ append: true })} disabled={loadingMore} style={{ minWidth: 160, fontSize: 12 }}>
+            {loadingMore ? "Loading…" : "Load More"}
+          </button>
         </div>
-      </div>
+      )}
     </div>
   );
 }

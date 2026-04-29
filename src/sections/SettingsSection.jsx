@@ -1903,7 +1903,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <div className="ledger-block-caption">Manage your workspace, residents, reports, and records.</div>
             </div>
             <div className="card">
-              <MenuRow icon="B" label="Your Khata" sub={account?.name || `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon="B" label="Your Khata" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => setScreen("create-org")} />

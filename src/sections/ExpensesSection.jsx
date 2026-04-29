@@ -770,11 +770,11 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             <div className="ledger-form-group">
               <div className="ledger-form-group-title">Primary details</div>
               <Field label="Description" required error={errors.label}>
-                <Input error={errors.label} placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }} />
+                <Input error={errors.label} placeholder={`e.g. ${config.expensesEntryLabel}`} value={form.label} onChange={e => { setForm(current => ({ ...current, label: e.target.value })); if (errors.label) setErrors(prev => ({ ...prev, label: "" })); }} onBlur={() => { if (!hasMinLength(form.label, 2)) setErrors(prev => ({ ...prev, label: `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.` })); }} />
               </Field>
               <div className="ledger-form-split">
                 <Field label={`Amount (${sym})`} required hint={`Enter how much you spent for this ${config.expensesEntryLabel.toLowerCase()}.`} error={errors.amount}>
-                  <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} />
+                  <Input error={errors.amount} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount} onChange={e => { setForm(current => ({ ...current, amount: e.target.value })); if (errors.amount) setErrors(prev => ({ ...prev, amount: "" })); }} onBlur={() => { if (form.amount !== "" && !isPositiveAmount(form.amount)) setErrors(prev => ({ ...prev, amount: "Enter an amount greater than 0." })); }} />
                 </Field>
                 <Field label="Expense Date" required error={errors.date}>
                   <DateSelectInput value={form.date} onChange={value => { setForm(current => ({ ...current, date: value })); if (errors.date) setErrors(prev => ({ ...prev, date: "" })); }} max={TODAY} />

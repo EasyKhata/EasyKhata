@@ -584,7 +584,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       return;
     }
     if (!isApartmentOrg && !form.shipSameAsBill && sanitizePhoneDigits(form.shipTo?.phoneNumber || "") && !isValidUserPhoneNumber(sanitizePhoneDigits(form.shipTo?.phoneNumber || ""))) {
-      setFormError("Enter a valid ship-to phone number or leave it empty.");
+      setErrors(prev => ({ ...prev, shipToPhone: "Enter a valid phone number or leave it empty." }));
       return;
     }
     if (!form.customerId && !hasMinLength(form.billTo?.name, 2)) {
@@ -1086,7 +1086,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                         countryCode={form.billTo?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
                         phoneNumber={form.billTo?.phoneNumber || ""}
                         onCountryCodeChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, phoneCountryCode: value } }))}
-                        onPhoneNumberChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, phoneNumber: value } }))}
+                        onPhoneNumberChange={value => { setForm(current => ({ ...current, billTo: { ...current.billTo, phoneNumber: value } })); if (errors.billToPhone) setErrors(prev => ({ ...prev, billToPhone: "" })); }}
+                        onBlur={() => { const digits = sanitizePhoneDigits(form.billTo?.phoneNumber || ""); if (digits && !isValidUserPhoneNumber(digits)) setErrors(prev => ({ ...prev, billToPhone: "Enter a valid phone number or leave it empty." })); }}
+                        error={errors.billToPhone}
                         countryOptions={PHONE_COUNTRY_OPTIONS}
                         phonePlaceholder="9876543210"
                       />
@@ -1139,12 +1141,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                 {!form.shipSameAsBill && (
                   <>
                     <Input placeholder="Ship-to name" value={form.shipTo?.name || ""} onChange={event => setForm(current => ({ ...current, shipTo: { ...current.shipTo, name: event.target.value } }))} style={{ marginBottom: 10 }} />
-                    <Field label="Ship To Phone">
+                    <Field label="Ship To Phone" error={errors.shipToPhone}>
                       <PhoneNumberInput
                         countryCode={form.shipTo?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE}
                         phoneNumber={form.shipTo?.phoneNumber || ""}
                         onCountryCodeChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, phoneCountryCode: value } }))}
-                        onPhoneNumberChange={value => setForm(current => ({ ...current, shipTo: { ...current.shipTo, phoneNumber: value } }))}
+                        onPhoneNumberChange={value => { setForm(current => ({ ...current, shipTo: { ...current.shipTo, phoneNumber: value } })); if (errors.shipToPhone) setErrors(prev => ({ ...prev, shipToPhone: "" })); }}
+                        onBlur={() => { const digits = sanitizePhoneDigits(form.shipTo?.phoneNumber || ""); if (digits && !isValidUserPhoneNumber(digits)) setErrors(prev => ({ ...prev, shipToPhone: "Enter a valid phone number or leave it empty." })); }}
+                        error={errors.shipToPhone}
                         countryOptions={PHONE_COUNTRY_OPTIONS}
                         phonePlaceholder="9876543210"
                       />
