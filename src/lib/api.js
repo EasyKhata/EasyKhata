@@ -214,6 +214,19 @@ export const messagesApi = {
     api.delete(`/users/${ownerId}/orgs/${orgId}/messages/${messageId}`)
 };
 
+// ── Announcements ─────────────────────────────────────────────────────────────
+
+export const announcementsApi = {
+  list: () =>
+    api.get("/admin/announcements"),
+
+  create: (data) =>
+    api.post("/admin/announcements", data),
+
+  delete: (id) =>
+    api.delete(`/admin/announcements/${id}`)
+};
+
 // ── Payments ──────────────────────────────────────────────────────────────────
 
 export const paymentsApi = {

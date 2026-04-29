@@ -13,6 +13,8 @@ import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import PendingInviteBanner from "../components/PendingInviteBanner";
+import { collection, getDocs } from "firebase/firestore";
+import { db } from "../firebase";
 import { societyApi } from "../lib/api";
 import { APP_NAME, APP_UPGRADE_URL } from "../utils/brand";
 import {
@@ -37,6 +39,7 @@ const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
 const AdminUsersSection = lazy(() => import("../sections/AdminUsersSection"));
 const AdminSupportSection = lazy(() => import("../sections/AdminSupportSection"));
+const AdminAnnouncementsSection = lazy(() => import("../sections/AdminAnnouncementsSection"));
 const DiscussionsSection = lazy(() => import("../sections/DiscussionsSection"));
 
 const now = new Date();
@@ -1048,6 +1051,8 @@ export default function MainApp() {
   const [viewMode, setViewMode] = useState("month"); // "month" or "year"
   const [showReminders, setShowReminders] = useState(false);
   const [dismissedIds, setDismissedIds] = useState(() => getDismissedReminderIds(user?.id));
+  const [announcements, setAnnouncements] = useState([]);
+  const [dismissedAnnIds, setDismissedAnnIds] = useState(() => { try { return JSON.parse(localStorage.getItem("ek_dismissed_announcements") || "[]"); } catch { return []; } });
   const [readOnlyNotice, setReadOnlyNotice] = useState(null);
   const [successNotice, setSuccessNotice] = useState(null);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
@@ -1257,6 +1262,26 @@ export default function MainApp() {
     setDismissedIds(getDismissedReminderIds(user?.id));
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!user?.id || user?.role === "admin") return;
+    const now = new Date();
+    const userPlan = user?.plan || "free";
+    getDocs(collection(db, "announcements"))
+      .then(snap => {
+        const active = snap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(ann => {
+            if (!ann.active) return false;
+            if (ann.endsAt && new Date(ann.endsAt) < now) return false;
+            if (ann.targetPlan && ann.targetPlan !== "all" && ann.targetPlan !== userPlan) return false;
+            return true;
+          })
+          .sort((a, b) => (b.createdAt || "") > (a.createdAt || "") ? 1 : -1);
+        setAnnouncements(active);
+      })
+      .catch(() => {});
+  }, [user?.id, user?.plan, user?.role]);
+
   const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
 
   const liveReminders = useMemo(() => {
@@ -1293,6 +1318,23 @@ export default function MainApp() {
     () => liveReminders.filter(item => !dismissedIds.includes(item.id)),
     [dismissedIds, liveReminders]
   );
+
+  const inboxAnnouncements = useMemo(
+    () => announcements.filter(ann => !dismissedAnnIds.includes(ann.id)),
+    [announcements, dismissedAnnIds]
+  );
+
+  function dismissAnnouncement(id) {
+    const next = [...dismissedAnnIds, id];
+    setDismissedAnnIds(next);
+    try { localStorage.setItem("ek_dismissed_announcements", JSON.stringify(next)); } catch {}
+  }
+
+  function clearAllAnnouncements() {
+    const next = [...dismissedAnnIds, ...announcements.map(a => a.id)];
+    setDismissedAnnIds(next);
+    try { localStorage.setItem("ek_dismissed_announcements", JSON.stringify(next)); } catch {}
+  }
 
   useEffect(() => {
     if (!user?.id || typeof window === "undefined" || !("Notification" in window)) return;
@@ -1376,7 +1418,7 @@ export default function MainApp() {
   const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
-    ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }] : []),
+    ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }, { id: "adminAnnounce", icon: "AN", label: "Announce" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "IN", label: orgConfig.incomeLabel },
       { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
@@ -1428,6 +1470,7 @@ export default function MainApp() {
     const nextIds = Array.from(new Set([...dismissedIds, ...liveReminders.map(item => item.id)]));
     setDismissedIds(nextIds);
     saveDismissedReminderIds(user?.id, nextIds);
+    clearAllAnnouncements();
   }
 
   function openReminder(reminder) {
@@ -1501,6 +1544,7 @@ export default function MainApp() {
         {tab === "dashboard" && (isAdmin ? <AdminPanel year={year} month={month} /> : <Dashboard year={year} month={month} viewMode={viewMode} onNav={handleNavigate} headerDatePicker={datePickerNode} />)}
         {tab === "users" && isAdmin && <AdminUsersSection />}
         {tab === "adminSupport" && isAdmin && <AdminSupportSection />}
+        {tab === "adminAnnounce" && isAdmin && <AdminAnnouncementsSection />}
         {tab === "org" && !isAdmin && <OrgSection navigationTarget={settingsNavigation} sectionMode="org" />}
         {tab === "income" && (
           <IncomeSection
@@ -1531,7 +1575,7 @@ export default function MainApp() {
   const footerTabs = useMemo(() => {
     // No "dashboard" — navigated via header logo. Invoices hidden from apartment nav.
     const baseTabOrder = isAdmin
-      ? ["dashboard", "users", "adminSupport"]
+      ? ["dashboard", "users", "adminSupport", "adminAnnounce"]
       : isViewerMode
         ? isApartmentOrg
           ? ["dashboard", "income", "expenses", "discussions", "org"]
@@ -1556,6 +1600,7 @@ export default function MainApp() {
         tabId === "discussions" ? "Chat" :
         tabId === "org" ? "Khata" :
         tabId === "adminSupport" ? "Support" :
+        tabId === "adminAnnounce" ? "Announce" :
         tabId === "users" ? "Users" :
         found.label;
       return { ...found, label };
@@ -1795,12 +1840,12 @@ export default function MainApp() {
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: inboxReminders.length ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: (inboxReminders.length || inboxAnnouncements.length) ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
                 <Bell size={isCompactMobile ? 13 : 14} strokeWidth={2} />
-                {inboxReminders.length > 0 && (
+                {(inboxReminders.length + inboxAnnouncements.length) > 0 && (
                   <span style={{ position: "absolute", top: -4, right: -4, minWidth: 15, height: 15, borderRadius: 9, background: "var(--danger)", color: "#fff", fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
-                    {inboxReminders.length}
+                    {inboxReminders.length + inboxAnnouncements.length}
                   </span>
                 )}
               </button>
@@ -2047,23 +2092,42 @@ export default function MainApp() {
 
 
       {showReminders && (
-        <Modal title="Reminders" onClose={() => setShowReminders(false)} onSave={clearAllReminders} saveLabel="Clear All" canSave={liveReminders.length > 0} accentColor="var(--gold)">
+        <Modal title="Notifications" onClose={() => setShowReminders(false)} onSave={clearAllReminders} saveLabel="Clear All" canSave={liveReminders.length > 0 || inboxAnnouncements.length > 0} accentColor="var(--gold)">
           <div className="card">
-            {inboxReminders.length === 0 ? (
-              <div style={{ padding: "24px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No unread reminders right now.</div>
+            {inboxAnnouncements.length === 0 && inboxReminders.length === 0 ? (
+              <div style={{ padding: "24px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>No notifications right now.</div>
             ) : (
-              inboxReminders.map(reminder => (
-                <div key={reminder.id} className="card-row" style={{ alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => openReminder(reminder)}>
-                  <div style={{ width: 10, height: 10, borderRadius: 999, background: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)", marginTop: 6, flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)" }}>{reminder.title}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.5 }}>{reminder.message}</div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                      <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={event => { event.stopPropagation(); dismissReminder(reminder.id); }}>Dismiss</button>
+              <>
+                {inboxAnnouncements.map(ann => {
+                  const ANN_COLORS = { info: "var(--blue)", offer: "var(--green)", update: "var(--accent)", festival: "var(--gold)" };
+                  const color = ANN_COLORS[ann.type] || "var(--blue)";
+                  return (
+                    <div key={ann.id} className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: 999, background: color, marginTop: 6, flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>From EasyKhata</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color }}>{ann.title}</div>
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.5 }}>{ann.body}</div>
+                        <div style={{ marginTop: 10 }}>
+                          <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => dismissAnnouncement(ann.id)}>Dismiss</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {inboxReminders.map(reminder => (
+                  <div key={reminder.id} className="card-row" style={{ alignItems: "flex-start", gap: 12, cursor: "pointer" }} onClick={() => openReminder(reminder)}>
+                    <div style={{ width: 10, height: 10, borderRadius: 999, background: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)", marginTop: 6, flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: reminder.tone === "danger" ? "var(--danger)" : "var(--gold)" }}>{reminder.title}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4, lineHeight: 1.5 }}>{reminder.message}</div>
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                        <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={event => { event.stopPropagation(); dismissReminder(reminder.id); }}>Dismiss</button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </>
             )}
           </div>
         </Modal>
