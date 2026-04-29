@@ -312,6 +312,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     status: isQuote ? "draft" : isApartmentOrg ? "paid" : "pending",
     paidDate: "",
     taxMode: "split",
+    placeOfSupply: d.account?.state || "",
     items: [emptyItem(showTaxFields ? 18 : 0)],
     notes: isQuote ? "Quote prepared for your review." : isAdmin ? "Invoice for subscription payment." : isApartmentOrg ? "Payment record for society accounting." : "Thanks for your business.",
     terms: isQuote ? "Pricing is based on the current scope and may be updated if requirements change." : isAdmin ? "Payment processed via UPI." : isApartmentOrg ? "This document is generated for society records." : "Payment is due within the agreed billing cycle.",
@@ -678,9 +679,18 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       ? users.find(u => u.id === id)
       : d.customers.find(c => c.id === id);
     const flatRecord = apartmentFlatOptions.find(item => item.id === id);
+    const buyerState = isApartmentOrg ? "" : entity?.state || "";
+    const buyerCountry = isApartmentOrg ? "India" : entity?.country || d.account?.country || "India";
+    const isExport = showTaxFields && buyerCountry && buyerCountry !== "India";
+    const sellerState = d.account?.state || "";
+    const autoTaxMode = !isExport && sellerState && buyerState && sellerState !== buyerState ? "igst" : "split";
+    const autoPlaceOfSupply = isExport ? buyerCountry : (buyerState || sellerState);
     setForm(current => ({
       ...current,
       customerId: id,
+      taxMode: isApartmentOrg ? current.taxMode : autoTaxMode,
+      placeOfSupply: isApartmentOrg ? current.placeOfSupply : (autoPlaceOfSupply || current.placeOfSupply),
+      items: isExport ? current.items.map(item => ({ ...item, taxRate: 0 })) : current.items,
       residentName: isApartmentOrg ? flatRecord?.tenantName || flatRecord?.ownerName || current.residentName || "" : current.residentName,
       flatNumber: isApartmentOrg ? flatRecord?.flatNumber || current.flatNumber || "" : current.flatNumber,
       billTo: (entity || flatRecord)
@@ -1036,6 +1046,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         const previewInvoice = buildInvoicePayload(form);
         const tax = getInvoiceTaxBreakdown(previewInvoice);
         const previewTotal = invoiceGrandTotal(previewInvoice);
+        const billToCountry = form.billTo?.country || d.account?.country || "India";
+        const isExportInvoice = showTaxFields && billToCountry !== "India";
         return (
           <Modal title={editInv ? `Edit ${documentLabel}` : isQuote ? "Create Quote" : config.invoiceActionLabel} onClose={closeForm} onSave={saveInv} canSave={!!(form.customerId || form.billTo?.name)} accentColor="var(--blue)">
             {formError && (
@@ -1086,8 +1098,25 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                       country={form.billTo?.country || d.account?.country || "India"}
                       onAddressLineChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, addressLine: value } }))}
                       onCityChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, city: value } }))}
-                      onStateChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, state: value } }))}
-                      onCountryChange={value => setForm(current => ({ ...current, billTo: { ...current.billTo, country: value } }))}
+                      onStateChange={value => {
+                        const sellerState = d.account?.state || "";
+                        const autoTaxMode = showTaxFields && sellerState && value && sellerState !== value ? "igst" : "split";
+                        setForm(current => ({
+                          ...current,
+                          billTo: { ...current.billTo, state: value },
+                          taxMode: showTaxFields ? autoTaxMode : current.taxMode,
+                          placeOfSupply: value || sellerState || current.placeOfSupply
+                        }));
+                      }}
+                      onCountryChange={value => {
+                        const isExport = showTaxFields && value && value !== "India";
+                        setForm(current => ({
+                          ...current,
+                          billTo: { ...current.billTo, country: value },
+                          items: isExport ? current.items.map(item => ({ ...item, taxRate: 0 })) : current.items,
+                          placeOfSupply: isExport ? value : current.placeOfSupply
+                        }));
+                      }}
                     />
                   </>
                 )}
@@ -1165,12 +1194,26 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     )}
                   </Select>
                 </Field>
-                {showTaxFields && <Field label="GST Type">
+                {showTaxFields && !isExportInvoice && <Field label="GST Type">
                   <Select value={form.taxMode} onChange={event => setForm(current => ({ ...current, taxMode: event.target.value }))}>
-                    <option value="split">CGST + SGST</option>
-                    <option value="igst">IGST</option>
+                    <option value="split">CGST + SGST (Intra-state)</option>
+                    <option value="igst">IGST (Inter-state)</option>
                   </Select>
                 </Field>}
+              </div>
+            )}
+            {showTaxFields && !isApartmentOrg && !isExportInvoice && (
+              <Field label="Place of Supply" hint="Buyer's state — auto-filled when you select a client or enter their state.">
+                <Input
+                  placeholder="e.g. Telangana"
+                  value={form.placeOfSupply || ""}
+                  onChange={event => setForm(current => ({ ...current, placeOfSupply: event.target.value }))}
+                />
+              </Field>
+            )}
+            {isExportInvoice && (
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "color-mix(in srgb, var(--blue) 10%, var(--surface-high))", border: "1px solid color-mix(in srgb, var(--blue) 24%, var(--border))", fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                Export invoice — GST rates set to 0% (Zero Rated Supply). All amounts will be billed in the selected currency without Indian GST.
               </div>
             )}
 

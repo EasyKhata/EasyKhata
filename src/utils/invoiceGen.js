@@ -121,6 +121,8 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
   const isApartment = Boolean(options.isApartment);
+  const billToCountry = invoice.billTo?.country || "";
+  const isExport = !isApartment && billToCountry && billToCountry !== "India";
   const tax = getInvoiceTaxBreakdown(invoice);
   const total = tax.taxable + tax.cgst + tax.sgst + tax.igst;
   const customerName = invoice.billTo?.name || invoice.customer?.name || "--";
@@ -138,7 +140,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   doc.text(safeText(acc.email || acc.phone || "Business invoice"), PAGE.left + 4, y + 17);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
-  doc.text(isQuote ? "QUOTE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
+  doc.text(isQuote ? "QUOTE" : isExport ? "EXPORT INVOICE" : acc.gstin ? "TAX INVOICE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
   doc.setFontSize(10.5);
   doc.setFont("helvetica", "normal");
   doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
@@ -156,7 +158,8 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     `${isQuote ? "Prepared" : "Issued"}: ${invoice.date ? fmtDate(invoice.date) : "--"}`,
     !isApartment ? (invoice.dueDate ? `${isQuote ? "Valid Until" : "Due"}: ${fmtDate(invoice.dueDate)}` : `${isQuote ? "Valid Until" : "Due"}: --`) : "",
     !isApartment ? `Status: ${safeText(invoice.status || "pending").toUpperCase()}` : "",
-    !isApartment && invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : ""
+    !isApartment && invoice.paidDate ? `Paid: ${fmtDate(invoice.paidDate)}` : "",
+    !isApartment && invoice.placeOfSupply ? `Place of Supply: ${safeText(invoice.placeOfSupply)}` : ""
   ];
 
   doc.setDrawColor(225);
@@ -224,10 +227,11 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.text("#", 18, y + 6);
-  doc.text("Description", 28, y + 6);
-  doc.text("Qty", 128, y + 6, { align: "right" });
-  doc.text("Rate", 148, y + 6, { align: "right" });
-  doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 167, y + 6, { align: "right" });
+  doc.text("Description", 26, y + 6);
+  doc.text("HSN/SAC", 116, y + 6, { align: "right" });
+  doc.text("Qty", 130, y + 6, { align: "right" });
+  doc.text("Rate", 150, y + 6, { align: "right" });
+  doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 168, y + 6, { align: "right" });
   doc.text("Amount", 192, y + 6, { align: "right" });
   y += 12;
   doc.setTextColor(20, 20, 28);
@@ -235,7 +239,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   (invoice.items || []).forEach((item, index) => {
     const desc = safeText(item.desc || "Item");
     const sub = safeText(item.subDesc || "");
-    const descriptionLines = doc.splitTextToSize(sub ? `${desc}  ${sub}` : desc, 82);
+    const descriptionLines = doc.splitTextToSize(sub ? `${desc}  ${sub}` : desc, 75);
     const rowHeight = Math.max(10, descriptionLines.length * 5);
     y = ensureSpace(doc, y, rowHeight + 3);
 
@@ -250,10 +254,11 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.8);
     doc.text(String(index + 1), 18, y + 2);
-    doc.text(descriptionLines, 28, y + 2);
-    doc.text(String(toNumber(item.qty)), 128, y + 2, { align: "right" });
-    doc.text(moneyPlain(item.rate), 148, y + 2, { align: "right" });
-    doc.text(`${rate.toFixed(2)}`, 167, y + 2, { align: "right" });
+    doc.text(descriptionLines, 26, y + 2);
+    doc.text(safeText(item.hsn || ""), 116, y + 2, { align: "right" });
+    doc.text(String(toNumber(item.qty)), 130, y + 2, { align: "right" });
+    doc.text(moneyPlain(item.rate), 150, y + 2, { align: "right" });
+    doc.text(`${rate.toFixed(2)}`, 168, y + 2, { align: "right" });
     doc.text(moneyPlain(amount), 192, y + 2, { align: "right" });
     y += rowHeight + 3;
   });
@@ -270,7 +275,10 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   }
   drawLabelValue(doc, y, "Taxable Value", money(tax.taxable, sym));
   y += 7;
-  if ((invoice.taxMode || "split") === "split") {
+  if (isExport) {
+    drawLabelValue(doc, y, "GST", "Zero Rated Supply (Export of Services)");
+    y += 7;
+  } else if ((invoice.taxMode || "split") === "split") {
     drawLabelValue(doc, y, "CGST", money(tax.cgst, sym));
     y += 7;
     drawLabelValue(doc, y, "SGST", money(tax.sgst, sym));
