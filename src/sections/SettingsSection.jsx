@@ -1909,7 +1909,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => setScreen("create-org")} />
               )}
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => setScreen("customers")} />
-              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
+              {!isPersonalOrg && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />}
               {isApartmentOrg && (
                 <MenuRow
                   icon="B"

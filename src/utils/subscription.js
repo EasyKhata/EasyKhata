@@ -171,9 +171,9 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
 
-  // Household is permanently free — all features allowed (except apartment-only ones)
+  // Household is permanently free — all features allowed except apartment-only and reports
   if (isFreeOrgType(orgType)) {
-    if (feature === "apartmentFlatCreate" || feature === "societyInvite" || feature === "sharedLedger") return false;
+    if (feature === "apartmentFlatCreate" || feature === "societyInvite" || feature === "sharedLedger" || feature === "reports") return false;
     return true;
   }
 

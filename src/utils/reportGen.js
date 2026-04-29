@@ -60,65 +60,82 @@ function ensureSpace(doc, y, needed) {
   return PAGE.top;
 }
 
-// Draws the standard dark-band report header.
-// orgName is shown as the main headline; reportType is the sub-label.
+function addPageNumbers(doc) {
+  const total = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    setRgbText(doc, STATEMENT_THEME.textDim);
+    doc.text(`${i} / ${total}`, PAGE.right, PAGE.bottom + 8, { align: "right" });
+  }
+}
+
 function drawReportHeader(doc, y, orgName, reportType) {
-  doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 26, 6, 6, "F");
-  doc.setTextColor(255, 255, 255);
+  setRgbFill(doc, STATEMENT_THEME.header);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 32, 6, 6, "F");
+  setRgbText(doc, [255, 255, 255]);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text(safeText(orgName || "Organization"), PAGE.left + 4, y + 10);
+  const safeName = safeText(orgName || "Organization");
+  doc.setFontSize(safeName.length > 34 ? 14 : 18);
+  doc.text(safeName, PAGE.left + 5, y + 12);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(180, 188, 200);
-  doc.text(safeText(reportType), PAGE.left + 4, y + 19);
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 8, "light");
-  return y + 34;
+  doc.setFontSize(9.5);
+  setRgbText(doc, [180, 200, 225]);
+  doc.text(safeText(reportType), PAGE.left + 5, y + 22);
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + 11, "light");
+  return y + 40;
 }
 
 function sectionTitle(doc, y, title) {
+  setRgbFill(doc, STATEMENT_THEME.header);
+  doc.roundedRect(PAGE.left, y - 5, 3, 9, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(20, 20, 28);
-  doc.text(title, PAGE.left, y);
-  return y + 8;
+  doc.setFontSize(11);
+  setRgbText(doc, STATEMENT_THEME.text);
+  doc.text(title, PAGE.left + 6, y);
+  return y + 9;
 }
 
 function drawMetricGrid(doc, y, items) {
   const cardWidth = 86;
-  const cardHeight = 24;
+  const cardHeight = 26;
   items.forEach((item, index) => {
     const col = index % 2;
     const row = Math.floor(index / 2);
     const x = col === 0 ? PAGE.left : 108;
-    const cy = y + row * (cardHeight + 8);
-    doc.setFillColor(247, 248, 250);
+    const cy = y + row * (cardHeight + 7);
+    setRgbFill(doc, STATEMENT_THEME.row);
     doc.roundedRect(x, cy, cardWidth, cardHeight, 4, 4, "F");
+    setRgbFill(doc, STATEMENT_THEME.header);
+    doc.roundedRect(x, cy, 4, cardHeight, 4, 4, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    setRgbText(doc, STATEMENT_THEME.textDim);
+    doc.text(safeText(item.label), x + 8, cy + 8);
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(9.5);
-    doc.setTextColor(100, 100, 110);
-    doc.text(safeText(item.label), x + 4, cy + 7);
     doc.setFontSize(13);
-    doc.setTextColor(20, 20, 28);
-    doc.text(safeText(item.value), x + 4, cy + 17);
+    setRgbText(doc, STATEMENT_THEME.text);
+    doc.text(safeText(item.value), x + 8, cy + 19);
   });
-  return y + Math.ceil(items.length / 2) * (cardHeight + 8);
+  return y + Math.ceil(items.length / 2) * (cardHeight + 7);
 }
 
 function drawRows(doc, y, rows) {
   rows.forEach((row, index) => {
-    y = ensureSpace(doc, y, 10);
+    y = ensureSpace(doc, y, 11);
     if (index % 2 === 0) {
-      doc.setFillColor(249, 249, 251);
-      doc.rect(PAGE.left, y - 5, PAGE.right - PAGE.left, 9, "F");
+      setRgbFill(doc, STATEMENT_THEME.row);
+      doc.rect(PAGE.left, y - 5.5, PAGE.right - PAGE.left, 10, "F");
     }
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.setTextColor(25, 25, 32);
-    doc.text(safeText(row.label), PAGE.left + 2, y);
-    doc.text(safeText(row.value), PAGE.right - 2, y, { align: "right" });
-    y += 10;
+    doc.setFontSize(10);
+    setRgbText(doc, STATEMENT_THEME.textDim);
+    doc.text(safeText(row.label), PAGE.left + 3, y);
+    doc.setFont("helvetica", "bold");
+    setRgbText(doc, STATEMENT_THEME.text);
+    doc.text(safeText(row.value), PAGE.right - 3, y, { align: "right" });
+    y += 11;
   });
   return y;
 }
@@ -807,6 +824,7 @@ function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
 
   y = ensureSpace(doc, y + 2, 60);
   y = drawApartmentStatementTable(doc, y + 2, "Transaction Statement", statementRows, sym);
+  addPageNumbers(doc);
   doc.save(getFinancialYearFilename(data, startYear));
 }
 
@@ -859,6 +877,7 @@ function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
     })),
     sym
   );
+  addPageNumbers(doc);
   doc.save(`society-report-${stats.monthKey}.pdf`);
 }
 
@@ -1000,6 +1019,7 @@ export async function downloadAdminMonthlyReport(data, year, month, sym) {
     doc.text(`Showing first 22 users of ${users.length}.`, PAGE.left, y);
   }
 
+  addPageNumbers(doc);
   doc.save(`admin-report-${monthKey}.pdf`);
 }
 
@@ -1089,6 +1109,7 @@ export async function downloadFinancialYearReport(data, startYear, sym) {
     );
   }
 
+  addPageNumbers(doc);
   doc.save(getFinancialYearFilename(data, startYear));
 }
 
@@ -1171,6 +1192,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
       (stats.actionTips || []).map(item => ({ label: item.title, value: safeText(item.message) }))
     );
 
+    addPageNumbers(doc);
     doc.save(`household-report-${stats.monthKey}.pdf`);
     return;
   }
@@ -1239,6 +1261,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
         : [{ label: "No active alerts", value: "Payments and freelancer spending look steady right now" }]
     );
 
+    addPageNumbers(doc);
     doc.save(`freelancer-report-${stats.monthKey}.pdf`);
     return;
   }
@@ -1325,6 +1348,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
         : [{ label: "No active alerts", value: "Operations, stock, and collections look steady right now" }]
     );
 
+    addPageNumbers(doc);
     doc.save(`small-business-report-${stats.monthKey}.pdf`);
     return;
   }
@@ -1415,5 +1439,6 @@ export async function downloadMonthlyReport(data, year, month, sym) {
       : [{ label: "No active alerts", value: "Everything looks steady right now" }]
   );
 
+  addPageNumbers(doc);
   doc.save(`ledger-report-${stats.monthKey}.pdf`);
 }
