@@ -79,6 +79,7 @@ export function AuthProvider({ children }) {
   // We keep the firebaseUser in a ref and expose a pendingSetup flag until they complete it.
   const [pendingSetup, setPendingSetup] = useState(null); // { firebaseUser, name, email }
   const setupInProgressRef = useRef(false);
+  const firebaseUserRef = useRef(null);
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
     const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
@@ -190,15 +191,47 @@ export function AuthProvider({ children }) {
   }
 
 
+  async function refreshUserProfile() {
+    const firebaseUser = firebaseUserRef.current;
+    if (!firebaseUser || setupInProgressRef.current) return;
+    try {
+      const fresh = await usersApi.get(firebaseUser.uid);
+      if (fresh?.id) {
+        setUser(prev => prev ? buildSessionUser(firebaseUser, fresh) : prev);
+      }
+    } catch {
+      // silently ignore — network blip or not logged in
+    }
+  }
+
+  useEffect(() => {
+    const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+    const interval = setInterval(refreshUserProfile, REFRESH_INTERVAL_MS);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") refreshUserProfile();
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
+        firebaseUserRef.current = null;
         clearCurrentUser();
         setPendingSetup(null);
         setUser(null);
         setLoading(false);
         return;
       }
+
+      firebaseUserRef.current = firebaseUser;
 
       // If setup is in progress (completing org type selection), don't re-process
       if (setupInProgressRef.current) return;
