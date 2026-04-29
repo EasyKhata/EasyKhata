@@ -79,7 +79,7 @@ const RAZORPAY_WEBHOOK_SECRET = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
 const PLAN_PRICES = {
-  pro: { monthly: 49, yearly: 499 },
+  pro: { monthly: 69, yearly: 699 },
   business: { monthly: 99, yearly: 999 }
 };
 
