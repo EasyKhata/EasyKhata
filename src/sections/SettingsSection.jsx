@@ -2311,7 +2311,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your trial includes 1 Khata. Upgrade to Pro for 2 Khatas total: one permanent Household plus one Freelancer or Apartment Khata.
+              Your trial includes 1 Khata. Upgrade to Pro for 2 Khatas total: one permanent Household plus one Small Business or Apartment Khata.
             </div>
           </div>
         </Modal>
@@ -2345,7 +2345,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         </Field>
         <Field label="Name" required>
           <Input
-            placeholder="e.g. Reddy Freelance, Lake View Society"
+            placeholder="e.g. Reddy Business, Lake View Society"
             value={createOrgForm.name || ""}
             onChange={e => setCreateOrgForm(f => ({ ...f, name: e.target.value }))}
           />

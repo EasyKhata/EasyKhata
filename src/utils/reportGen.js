@@ -243,7 +243,7 @@ function getFinancialYearTitle(data, startYear) {
   const fyLabel = getFinancialYearLabel(startYear);
   if (isApartmentOrgData(data)) return `Society Report - ${fyLabel}`;
   if (isPersonalOrgData(data)) return `Household Report - ${fyLabel}`;
-  if (isFreelancerOrgData(data)) return `Freelancer Report - ${fyLabel}`;
+  if (isFreelancerOrgData(data)) return `Small Business Report - ${fyLabel}`;
   if (isSmallBusinessOrgData(data)) return `Small Business Report - ${fyLabel}`;
   return `Ledger Report - ${fyLabel}`;
 }
@@ -252,7 +252,7 @@ function getFinancialYearFilename(data, startYear) {
   const suffix = `${startYear}-${startYear + 1}`;
   if (isApartmentOrgData(data)) return `society-report-${suffix}.pdf`;
   if (isPersonalOrgData(data)) return `household-report-${suffix}.pdf`;
-  if (isFreelancerOrgData(data)) return `freelancer-report-${suffix}.pdf`;
+  if (isFreelancerOrgData(data)) return `small-business-report-${suffix}.pdf`;
   if (isSmallBusinessOrgData(data)) return `small-business-report-${suffix}.pdf`;
   return `ledger-report-${suffix}.pdf`;
 }

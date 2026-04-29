@@ -557,7 +557,7 @@ function QuickEntrySheet({
         )}
         {showClientSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--blue) 26%, var(--border))", background: "color-mix(in srgb, var(--blue) 10%, var(--surface-high))" }}>
-            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a client in Khata before recording freelance payments or expenses.</div>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a client before recording business payments or expenses.</div>
             <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--blue)", flexShrink: 0 }}>Open Clients</button>
           </div>
         )}
