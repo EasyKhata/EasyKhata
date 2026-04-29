@@ -90,8 +90,10 @@ export function PhoneNumberInput({
   phoneNumber,
   onCountryCodeChange,
   onPhoneNumberChange,
+  onBlur,
   countryOptions = [],
-  phonePlaceholder = "9876543210"
+  phonePlaceholder = "9876543210",
+  error
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(132px, 172px) minmax(0, 1fr)", gap: 10 }}>
@@ -108,6 +110,8 @@ export function PhoneNumberInput({
         placeholder={phonePlaceholder}
         value={phoneNumber}
         onChange={event => onPhoneNumberChange(event.target.value)}
+        onBlur={onBlur}
+        error={error}
       />
     </div>
   );

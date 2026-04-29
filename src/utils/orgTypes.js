@@ -6,6 +6,7 @@ export const ORG_TYPES = {
 };
 
 const BASE_CONFIG = {
+  typeLabel: "Business",
   dashboardLabel: "Home",
   incomeLabel: "Income",
   incomeEntryLabel: "Income",
@@ -58,6 +59,7 @@ export function getSecondaryOrgTypeOptions(currentType = "") {
 export const ORG_TYPE_CONFIGS = {
   [ORG_TYPES.PERSONAL]: {
     ...BASE_CONFIG,
+    typeLabel: "Household",
     showCustomerFinancials: false,
     incomeLabel: "Income",
     incomeEntryLabel: "Income",
@@ -104,6 +106,7 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.FREELANCER]: {
     ...BASE_CONFIG,
+    typeLabel: "Small Business",
     enableBudgets: false,
     incomeLabel: "Payments Received",
     incomeEntryLabel: "Payment",
@@ -134,6 +137,7 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.SMALL_BUSINESS]: {
     ...BASE_CONFIG,
+    typeLabel: "Small Business",
     enableBudgets: false,
     simpleCustomerForm: true,
     incomeLabel: "Sales",
@@ -201,6 +205,7 @@ export const ORG_TYPE_CONFIGS = {
   },
   [ORG_TYPES.APARTMENT]: {
     ...BASE_CONFIG,
+    typeLabel: "Apartment",
     hideInvoices: false,
     enableBudgets: false,
     showSavingsGoal: false,

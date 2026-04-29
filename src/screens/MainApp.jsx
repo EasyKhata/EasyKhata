@@ -1724,7 +1724,10 @@ export default function MainApp() {
                         <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
                           {(ownOrgName || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
                         </span>
-                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
+                          <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{orgConfig.typeLabel}</span>
+                        </span>
                         <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
                         {!activeSharedOrgKey && <span style={{ fontSize: 12, color: "var(--jade)", flexShrink: 0 }}>✓</span>}
                       </button>
@@ -1742,7 +1745,10 @@ export default function MainApp() {
                             <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
                               {(org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
                             </span>
-                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name || "My Organization"}</span>
+                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                              <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name || "My Organization"}</span>
+                              <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
+                            </span>
                             <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
                           </button>
                         </React.Fragment>
@@ -1762,7 +1768,10 @@ export default function MainApp() {
                                 style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
                               >
                                 <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
+                                <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                                  <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
+                                  <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
+                                </span>
                                 <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: "capitalize" }}>{role}</span>
                                 {isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>✓</span>}
                               </button>

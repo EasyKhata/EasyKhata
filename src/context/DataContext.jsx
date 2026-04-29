@@ -955,6 +955,7 @@ export function DataProvider({ children }) {
               const next = { ...(prev.sharedOrgs || {}) };
               invalidKeys.forEach(k => delete next[k]);
               Object.assign(next, newEntries);
+              usersApi.update(user.id, { sharedOrgs: next }).catch(() => {});
               return { ...prev, sharedOrgs: next };
             });
           }
