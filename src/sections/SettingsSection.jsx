@@ -4,6 +4,7 @@ import { isNative } from "../utils/native";
 import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
+import SubscriptionHistoryScreen from "./settings/SubscriptionHistoryScreen";
 import NotificationsModal from "./settings/NotificationsModal";
 import SupportModal, { SUPPORT_TOPIC_OPTIONS } from "./settings/SupportModal";
 import ProfileModal from "./settings/ProfileModal";
@@ -2143,6 +2144,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </>
             )}
           </div>
+          <div className="card" style={{ marginTop: 8 }}>
+            <MenuRow icon="H" label="Billing History" sub="View past subscription payments and download receipts" onClick={() => setScreen("billing-history")} />
+          </div>
           </div>
         )}
 
@@ -2797,6 +2801,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onClose={() => setScreen("main")}
         orgType={orgType}
       />
+    );
+  }
+
+  if (screen === "billing-history" && user?.role !== "admin") {
+    return withNotice(
+      <SubscriptionHistoryScreen onBack={() => setScreen("main")} />
     );
   }
 

@@ -17,8 +17,8 @@ android {
         applicationId "net.easykhata.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 29
-        versionName "4.29.1"
+        versionCode 30
+        versionName "4.30.1"
     }
 
     buildTypes {
