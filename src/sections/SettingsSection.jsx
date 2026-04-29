@@ -1483,7 +1483,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
             setPlanRequestForm({ billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
             setScreen("main");
-            showNotice(`Payment successful! ${PLAN_LABELS[targetPlan] || "Pro"} is now active.`, "success");
+            showNotice(`Payment successful! Pro is now active until ${formatSubscriptionDate(endsAt)}.`, "success");
           } catch (verifyErr) {
             logError("Payment verification error", verifyErr);
             showNotice(verifyErr?.message || "Payment received but activation is pending. Please wait a moment — your plan will update automatically.");
@@ -2066,6 +2066,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
+            {!reviewAccessEnabled && isPaidActive(user) && user?.subscriptionStatus === "active" && user?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>Pro active — renews {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+            )}
           </div>
         </div>
 
@@ -2090,9 +2093,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
                 : reviewAccessEnabled
                 ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
-                : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                  ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
-                  : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders."}
+                : isPaidActive(user) && user?.subscriptionStatus === "active"
+                  ? `Pro plan is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. All features — reports, PDF exports, alerts, and advanced insights — are fully unlocked.`
+                  : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
+                    ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
+                    : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders."}
             </div>
             {!isPersonalOrg && (
               <>
@@ -2116,16 +2121,28 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     </div>
                   </div>
                 </div>
-                <button
-                  className="btn-secondary"
-                  style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
-                  onClick={() => {
-                    if (!reviewAccessEnabled) setScreen("plan-request");
-                  }}
-                  disabled={reviewAccessEnabled}
-                >
-                  {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
-                </button>
+                {isPaidActive(user) && user?.subscriptionStatus === "active" ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface-high)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Pro Plan Active</div>
+                      {user?.subscriptionEndsAt && (
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="btn-secondary"
+                    style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
+                    onClick={() => {
+                      if (!reviewAccessEnabled) setScreen("plan-request");
+                    }}
+                    disabled={reviewAccessEnabled}
+                  >
+                    {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -2763,6 +2780,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "plan-request") {
+    if (isPaidActive(user) && user?.subscriptionStatus === "active") {
+      return withNotice(
+        <Modal title="Pro Plan Active" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done" canSave accentColor="var(--accent)">
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+              Your Pro subscription is already active{user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. All premium features are fully unlocked.
+            </div>
+          </div>
+        </Modal>
+      );
+    }
     return withNotice(
       <PlanRequestModal
         form={planRequestForm}

@@ -1,5 +1,6 @@
 const crypto = require("node:crypto");
 const Razorpay = require("razorpay");
+const { Resend } = require("resend");
 const admin = require("firebase-admin");
 const functionsV1 = require("firebase-functions/v1");
 const { onRequest, HttpsError } = require("firebase-functions/v2/https");
@@ -75,6 +76,7 @@ const db = admin.firestore();
 const RAZORPAY_KEY_ID = defineSecret("RAZORPAY_KEY_ID");
 const RAZORPAY_KEY_SECRET = defineSecret("RAZORPAY_KEY_SECRET");
 const RAZORPAY_WEBHOOK_SECRET = defineSecret("RAZORPAY_WEBHOOK_SECRET");
+const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 
 const PLAN_PRICES = {
   pro: { monthly: 49, yearly: 499 },
@@ -382,15 +384,144 @@ function getMonthWindow(date = new Date()) {
   };
 }
 
+async function getNextInvoiceNumber() {
+  const counterRef = db.collection("billing_counters").doc("invoice_seq");
+  const count = await db.runTransaction(async tx => {
+    const snap = await tx.get(counterRef);
+    const next = (snap.exists ? snap.data().count || 0 : 0) + 1;
+    tx.set(counterRef, { count: next }, { merge: true });
+    return next;
+  });
+  return `EZK-${new Date().getFullYear()}-${String(count).padStart(4, "0")}`;
+}
+
+function buildInvoiceEmailHtml({ invoiceNumber, invoiceDate, userName, userEmail, plan, billingCycle, amount, paymentId }) {
+  const planLabel = `EazyKhata Pro — ${billingCycle === "yearly" ? "Yearly" : "Monthly"} Subscription`;
+  const sym = "Rs";
+  const dateStr = new Date(invoiceDate).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${invoiceNumber}</title></head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:32px 16px;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+
+  <!-- Header -->
+  <tr><td style="background:#16161c;border-radius:14px 14px 0 0;padding:28px 32px;">
+    <table width="100%" cellpadding="0" cellspacing="0"><tr>
+      <td><div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-0.5px;">EazyKhata</div>
+          <div style="font-size:12px;color:#888;margin-top:3px;">easykhata.net</div></td>
+      <td align="right"><div style="font-size:10px;font-weight:700;letter-spacing:1.5px;color:#888;text-transform:uppercase;">Invoice</div>
+          <div style="font-size:18px;font-weight:800;color:#fff;margin-top:4px;">${invoiceNumber}</div></td>
+    </tr></table>
+  </td></tr>
+
+  <!-- Body -->
+  <tr><td style="background:#fff;padding:28px 32px;">
+
+    <!-- Bill To + Date -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;"><tr>
+      <td style="vertical-align:top;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#999;text-transform:uppercase;margin-bottom:6px;">Bill To</div>
+        <div style="font-size:15px;font-weight:700;color:#111;">${userName || "Valued Customer"}</div>
+        <div style="font-size:13px;color:#555;margin-top:2px;">${userEmail}</div>
+      </td>
+      <td align="right" style="vertical-align:top;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#999;text-transform:uppercase;margin-bottom:6px;">Date</div>
+        <div style="font-size:13px;color:#111;">${dateStr}</div>
+      </td>
+    </tr></table>
+
+    <!-- Divider -->
+    <hr style="border:none;border-top:1px solid #eee;margin:0 0 20px;">
+
+    <!-- Line item -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+      <tr>
+        <td style="font-size:13px;font-weight:700;color:#111;padding:10px 0;">${planLabel}</td>
+        <td align="right" style="font-size:13px;font-weight:700;color:#111;padding:10px 0;">${sym} ${Number(amount).toLocaleString("en-IN")}</td>
+      </tr>
+    </table>
+
+    <!-- Divider -->
+    <hr style="border:none;border-top:1px solid #eee;margin:0 0 16px;">
+
+    <!-- Total -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr>
+        <td style="font-size:16px;font-weight:800;color:#111;">Total Paid</td>
+        <td align="right" style="font-size:20px;font-weight:800;color:#111;">${sym} ${Number(amount).toLocaleString("en-IN")}</td>
+      </tr>
+    </table>
+
+    <!-- Transaction ID -->
+    <div style="background:#f8f9fb;border-radius:10px;padding:14px 16px;font-size:12px;color:#666;line-height:1.6;">
+      <span style="font-weight:600;color:#444;">Transaction ID:</span> ${paymentId}<br>
+      <span style="font-weight:600;color:#444;">Payment via:</span> Razorpay (UPI / Card / Netbanking)
+    </div>
+
+  </td></tr>
+
+  <!-- Footer -->
+  <tr><td style="background:#f8f9fb;border-radius:0 0 14px 14px;padding:20px 32px;text-align:center;">
+    <div style="font-size:13px;color:#555;line-height:1.7;">
+      Thank you for subscribing to EazyKhata! 🎉<br>
+      Questions? Reply to this email or write to <a href="mailto:support@easykhata.net" style="color:#4f46e5;">support@easykhata.net</a>
+    </div>
+  </td></tr>
+
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+async function sendSubscriptionInvoiceEmail({ paymentRequestId, requestData, paymentId }) {
+  try {
+    const existing = await db.collection("payment_requests").doc(paymentRequestId).get();
+    if (existing.exists && existing.data()?.invoiceNumber) return;
+
+    const invoiceNumber = await getNextInvoiceNumber();
+    const apiKey = RESEND_API_KEY.value();
+    if (!apiKey) { logger.warn("RESEND_API_KEY not set — skipping invoice email"); return; }
+
+    const resend = new Resend(apiKey);
+    const html = buildInvoiceEmailHtml({
+      invoiceNumber,
+      invoiceDate: requestData.createdAt || new Date().toISOString(),
+      userName: requestData.userName || "",
+      userEmail: requestData.userEmail || "",
+      plan: requestData.requestedPlan || "pro",
+      billingCycle: requestData.billingCycle || "monthly",
+      amount: requestData.amount || 0,
+      paymentId
+    });
+
+    const toEmail = requestData.userEmail;
+    if (!toEmail) {
+      logger.error("Invoice email skipped — userEmail is empty", { paymentRequestId });
+      return;
+    }
+    logger.info("Sending invoice email", { to: toEmail, invoiceNumber });
+    await resend.emails.send({
+      from: "EazyKhata <invoices@eazykhata.in>",
+      to: toEmail,
+      subject: `Invoice ${invoiceNumber} — EazyKhata Pro ${requestData.billingCycle === "yearly" ? "Yearly" : "Monthly"}`,
+      html
+    });
+
+    await db.collection("payment_requests").doc(paymentRequestId).set(
+      { invoiceNumber, invoiceSentAt: new Date().toISOString() },
+      { merge: true }
+    );
+  } catch (err) {
+    logger.error("Failed to send subscription invoice email", err);
+  }
+}
+
 async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, paymentRequestId, paymentId, source }) {
   const userRef = db.collection("users").doc(userId);
   const requestRef = db.collection("payment_requests").doc(paymentRequestId);
 
   await db.runTransaction(async tx => {
     const userSnap = await tx.get(userRef);
-    if (!userSnap.exists) {
-      throw new HttpsError("not-found", "User account not found.");
-    }
 
     const requestSnap = await tx.get(requestRef);
     if (!requestSnap.exists) {
@@ -409,19 +540,19 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     }
 
     const duration = PLAN_DURATION_DAYS[billingCycle];
-    const currentUser = userSnap.data() || {};
+    const currentUser = userSnap.exists ? userSnap.data() || {} : {};
     assertBusinessPlanEligibility(currentUser, requestedPlan);
     const nextEndDate = computeSubscriptionEndDate(currentUser.subscriptionEndsAt || "", duration);
     const nowIso = new Date().toISOString();
 
-    tx.update(userRef, {
+    tx.set(userRef, {
       plan: requestedPlan,
       subscriptionStatus: "active",
       subscriptionEndsAt: nextEndDate,
       trialEligible: false,
       updatedAt: nowIso,
       lastActivityAt: nowIso
-    });
+    }, { merge: true });
 
     tx.set(
       requestRef,
@@ -689,8 +820,8 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
   await db.collection("payment_requests").doc(order.id).set(
     {
       userId,
-      userName: userData.name || "",
-      userEmail: userData.email || "",
+      userName: userData.name || authUser.name || "",
+      userEmail: userData.email || authUser.email || "",
       currentPlan: userData.plan || "free",
       requestedPlan: targetPlan,
       billingCycle,
@@ -714,7 +845,7 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
   res.status(200).json({ data: { keyId, orderId: order.id, amount, currency: order.currency || "INR" } });
 });
 
-exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
+exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY] }, async (req, res) => {
   setCors(req, res);
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
@@ -785,6 +916,8 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
     { merge: true }
   );
 
+  sendSubscriptionInvoiceEmail({ paymentRequestId: orderId, requestData, paymentId }).catch(err => logger.error("Invoice email failed", err));
+
   res.status(200).json({ data: { success: true } });
 });
 
@@ -808,7 +941,7 @@ exports.refreshAdminMetricsNow = onRequest({ region: "asia-south1", invoker: "pu
   }
 });
 
-exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET] }, async (req, res) => {
+exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY] }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method not allowed");
     return;
@@ -870,6 +1003,8 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
         },
         { merge: true }
       );
+
+      sendSubscriptionInvoiceEmail({ paymentRequestId: orderId, requestData, paymentId }).catch(err => logger.error("Invoice email failed", err));
     }
 
     res.status(200).send("OK");
