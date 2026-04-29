@@ -221,7 +221,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   }
 
   y = ensureSpace(doc, y, 22);
-  doc.setFillColor(30, 36, 44);
+  doc.setFillColor(16, 42, 67);
   doc.rect(PAGE.left, y, PAGE.right - PAGE.left, 9, "F");
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
@@ -305,12 +305,16 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     y = ensureSpace(doc, y, 26);
     doc.setFillColor(247, 248, 250);
     doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 18, 4, 4, "F");
+    doc.setFillColor(16, 42, 67);
+    doc.roundedRect(PAGE.left, y, 4, 18, 4, 4, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("Notes", PAGE.left + 4, y + 6);
+    doc.setFontSize(9.5);
+    doc.setTextColor(85, 85, 95);
+    doc.text("Notes", PAGE.left + 8, y + 6);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
-    doc.text(doc.splitTextToSize(safeText(invoice.notes), 168), PAGE.left + 4, y + 12);
+    doc.setTextColor(20, 20, 28);
+    doc.text(doc.splitTextToSize(safeText(invoice.notes), 164), PAGE.left + 8, y + 12);
     y += 24;
   }
 
@@ -318,14 +322,26 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     y = ensureSpace(doc, y, 28);
     doc.setFillColor(247, 248, 250);
     doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 20, 4, 4, "F");
+    doc.setFillColor(96, 120, 160);
+    doc.roundedRect(PAGE.left, y, 4, 20, 4, 4, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.text("Terms", PAGE.left + 4, y + 6);
+    doc.setFontSize(9.5);
+    doc.setTextColor(85, 85, 95);
+    doc.text("Terms & Conditions", PAGE.left + 8, y + 6);
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9.5);
-    doc.text(doc.splitTextToSize(safeText(invoice.terms), 168), PAGE.left + 4, y + 12);
+    doc.setTextColor(20, 20, 28);
+    doc.text(doc.splitTextToSize(safeText(invoice.terms), 164), PAGE.left + 8, y + 12);
   }
 
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(160, 160, 170);
+    doc.text(`${i} / ${pageCount}`, PAGE.right, PAGE.bottom + 8, { align: "right" });
+  }
   drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
   doc.save(`${safeText(invoice.number || "invoice")}.pdf`);
 }
