@@ -1886,7 +1886,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="ledger-overline" style={{ marginBottom: 6 }}>
               Active Khata
             </div>
-            <div style={{ fontSize: "clamp(21px, 7vw, 30px)", fontWeight: 700, color: "var(--text)", lineHeight: 1.03, letterSpacing: "-0.03em", marginBottom: 6, maxWidth: "10ch", overflowWrap: "anywhere" }}>{account?.name || "My Khata"}</div>
+            <div style={{ fontSize: "clamp(11px, 7vw, 15px)", fontWeight: 700, color: "var(--text)", lineHeight: 1.03, letterSpacing: "-0.03em", marginBottom: 6, maxWidth: "15ch", overflowWrap: "anywhere" }}>{account?.name || "My Khata"}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.5 }}>
               {orgConfig.profileNameLabel} profile, directory, and records live here.
             </div>
@@ -2059,10 +2059,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", lineHeight: 1.12 }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 2 }}>{user?.phone}</div>
-            {user?.location && <div className="ledger-inline-note" style={{ marginTop: 5 }}>{user.location}</div>}
-            {user?.dateOfBirth && <div className="ledger-inline-note" style={{ marginTop: 4 }}>DOB {user.dateOfBirth}</div>}
-            <div className="ledger-inline-note" style={{ marginTop: 7 }}>{planSummary.title}</div>
-            <div className="ledger-inline-note" style={{ marginTop: 3 }}>{planSummary.message}</div>
+            <div className="ledger-inline-note" style={{ marginTop: 7, padding: 1 }}>{planSummary.title}, {planSummary.message}</div>
             {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
