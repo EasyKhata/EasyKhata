@@ -1306,7 +1306,7 @@ export function DataProvider({ children }) {
       return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
     }
     if (requestedType !== ORG_TYPES.PERSONAL && ![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
-      return { error: "The second Khata can only be Freelancer or Apartment." };
+      return { error: "The second Khata can only be Small Business or Apartment." };
     }
     if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
       return { error: "Household is already your default Khata." };

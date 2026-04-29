@@ -26,7 +26,7 @@ const PERSONAS = [
     ],
   },
   {
-    id: "freelancer", label: "Freelancer", color: "var(--blue)",
+    id: "freelancer", label: "Small Business", color: "var(--blue)",
     orgName: "Priya Design Co.", badge: "Rs 69/month",
     income: 124000, expense: 18600, net: 105400,
     chart: [40, 80, 55, 95, 60, 110, 75, 120, 85, 105, 124, 98],
@@ -38,29 +38,10 @@ const PERSONAS = [
       { label: "Invoice – Retail Brand", amt: 47000, type: "in", cat: "Invoice" },
     ],
     points: [
-      "Create and send client invoices",
-      "Track project payments & pending dues",
-      "Log billable & non-billable expenses",
+      "Create and send professional invoices",
+      "Track client payments & pending dues",
+      "Log billable & business expenses",
       "Know your monthly net earnings",
-    ],
-  },
-  {
-    id: "business", label: "Small Biz", color: "var(--gold)",
-    orgName: "Karim Stores", badge: "Coming Soon", comingSoon: true,
-    income: 342000, expense: 189000, net: 153000,
-    chart: [220, 280, 310, 260, 340, 295, 380, 342, 360, 310, 342, 320],
-    transactions: [
-      { label: "Walk-in Sales", amt: 24000, type: "in", cat: "Sales" },
-      { label: "Inventory Restock", amt: 45000, type: "out", cat: "Stock" },
-      { label: "Online Orders", amt: 18500, type: "in", cat: "Sales" },
-      { label: "Staff Salary", amt: 62000, type: "out", cat: "Payroll" },
-      { label: "GST Invoice #INV042", amt: 38000, type: "in", cat: "Invoice" },
-    ],
-    points: [
-      "Sales, expenses & GST invoices",
-      "Manage team payouts and vendors",
-      "Customer ledger & payment history",
-      "Profit & loss at a glance",
     ],
   },
   {
@@ -647,7 +628,7 @@ export default function LandingScreen({ onGetStarted }) {
             </div>
             {[
               { n: "1", title: "Sign in with Google", desc: "No passwords, no hassle. One tap and you're in — secure and instant." },
-              { n: "2", title: "Pick your Khata type", desc: "Choose from Household, Freelancer, or Apartment Society. Small Business coming soon." },
+              { n: "2", title: "Pick your Khata type", desc: "Choose from Household, Small Business, or Apartment Society." },
               { n: "3", title: "Start tracking", desc: "Add your first income or expense. Your dashboard updates instantly." },
             ].map((step, i, arr) => (
               <div key={i} className="ekReveal" style={{ display: "flex", gap: 20 }}>

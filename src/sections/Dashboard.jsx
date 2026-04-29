@@ -1395,7 +1395,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="section-eyebrow" style={{ marginBottom: 6 }}>
-                  {MONTHS[month]} {year} · Freelancer Earnings
+                  {MONTHS[month]} {year} · Business Earnings
                 </div>
                 <div style={{ marginBottom: 4 }}>
                   <RupeeDisplay amount={netEarnings} color={netEarnings >= 0 ? "var(--sky)" : "var(--ember)"} size={48} animate />
@@ -1459,7 +1459,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <WorkflowSetupCard
                 eyebrow="Get started"
                 title="Log your first payment or create an invoice"
-                message="Record a client payment or raise an invoice to see your freelancer earnings, invoice status, and cash flow."
+                message="Record a client payment or raise an invoice to see your business earnings, invoice status, and cash flow."
                 actionLabel="Log Payment →"
                 onAction={() => onNav("income")}
                 secondaryActionLabel="New Invoice"
@@ -1553,7 +1553,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" message="Add client payments and work expenses to see your freelancer cashflow here." actionLabel={!isViewerMode ? "Log Payment" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              <WorkflowSetupCard title="No entries yet" message="Add client payments and work expenses to see your business cashflow here." actionLabel={!isViewerMode ? "Log Payment" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
 

@@ -85,7 +85,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, accoun
             </div>
           )}
           <div style={{ padding: "12px 14px", borderRadius: 12, background: "var(--surface-high)", fontSize: 12, color: "var(--text-sec)", lineHeight: 1.7, marginTop: 6 }}>
-            You can add a second Khata (Freelancer or Apartment) anytime from <strong>New Khata</strong> in the settings.
+            You can add a second Khata (Small Business or Apartment) anytime from <strong>New Khata</strong> in the settings.
           </div>
         </div>
 

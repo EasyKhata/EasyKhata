@@ -37,7 +37,7 @@ const BASE_CONFIG = {
 
 export const ORG_TYPE_OPTIONS = [
   { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
-  { value: ORG_TYPES.FREELANCER, label: "Freelancer", description: "Manage clients, payments received, invoices, and business expenses." },
+  { value: ORG_TYPES.FREELANCER, label: "Small Business", description: "Manage clients, invoices, payments received, and business expenses." },
   { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." }
 ];
 
