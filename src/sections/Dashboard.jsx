@@ -1359,7 +1359,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const netEarnings = Number(stats.profit || 0);
     const collected = Number(stats.totalIncome || 0);
     const expenses = Number(stats.totalExpense || 0);
-    const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0;
+    const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0 && (data.invoices || []).length === 0;
     const earningsPct = Math.min(100, Math.round((collected / Math.max(collected + expenses, 1)) * 100));
     const freelancerTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
     const flMk = `${year}-${String(month + 1).padStart(2, "0")}`;
