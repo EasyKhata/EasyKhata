@@ -311,6 +311,10 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
     incomeByMonth[itemMk].add(flatNum);
   });
 
+  // Earliest month any maintenance was collected — months before this are N/A, not defaulted
+  const allMonthKeys = Object.keys(incomeByMonth).sort();
+  const startMonthKey = allMonthKeys[0] || mk;
+
   const paidSet = incomeByMonth[mk] || new Set();
 
   const last12 = Array.from({ length: 12 }, (_, i) => {
@@ -332,6 +336,7 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
       for (let i = 1; i <= 3; i++) {
         const d = new Date(year, month - i, 1);
         const pastMk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        if (pastMk < startMonthKey) continue; // months before collection started don't count as missed
         if (!incomeByMonth[pastMk]?.has(flatKey)) missedRecent++;
       }
     }
@@ -449,11 +454,14 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {last12.map(({ key, label }) => {
               const isFuture = key > mk;
-              const wasPaid = !isFuture && incomeByMonth[key]?.has(expandedData.flatKey);
+              const isBeforeStart = key < startMonthKey;
+              const wasPaid = !isFuture && !isBeforeStart && incomeByMonth[key]?.has(expandedData.flatKey);
+              const dotBg = (isFuture || isBeforeStart) ? "var(--border)" : wasPaid ? "var(--jade)" : "var(--ember)";
+              const dotOpacity = isFuture ? 0.25 : isBeforeStart ? 0.3 : 1;
               return (
                 <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: isFuture ? "var(--border)" : wasPaid ? "var(--jade)" : "var(--ember)", opacity: isFuture ? 0.25 : 1 }} />
-                  <span style={{ fontSize: 9, color: "var(--text-dim)", fontWeight: 600 }}>{label}</span>
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: dotBg, opacity: dotOpacity }} />
+                  <span style={{ fontSize: 9, color: isBeforeStart ? "var(--text-dim)" : "var(--text-dim)", fontWeight: 600, opacity: isBeforeStart ? 0.4 : 1 }}>{label}</span>
                 </div>
               );
             })}
