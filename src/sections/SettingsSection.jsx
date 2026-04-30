@@ -272,7 +272,7 @@ function buildCustomerFormState(customer = {}, orgType = "") {
 
 export default function SettingsSection({ navigationTarget, sectionMode = "settings" }) {
   const confirm = useConfirm();
-  const { user, logout, updateProfile, setUser } = useAuth();
+  const { user, logout, deleteAccount, updateProfile, setUser } = useAuth();
   const {
     loaded,
     account,
@@ -2159,6 +2159,26 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
+            {user?.role !== "admin" && (
+              <MenuRow
+                icon="X"
+                label="Delete Account"
+                sub="Permanently delete your account and all data"
+                danger
+                onClick={async () => {
+                  const confirmed = await confirm(
+                    "This will permanently delete your account, all your financial records, invoices, and data. This cannot be undone.",
+                    { title: "Delete Account", confirmLabel: "Delete Permanently" }
+                  );
+                  if (!confirmed) return;
+                  try {
+                    await deleteAccount();
+                  } catch (err) {
+                    showNotice("Could not delete account. Please try again or contact support.", "error");
+                  }
+                }}
+              />
+            )}
           </div>
         </div>
 
