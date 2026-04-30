@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import {
   GoogleAuthProvider,
   browserPopupRedirectResolver,
+  deleteUser as firebaseDeleteUser,
   onAuthStateChanged,
   signInWithPopup,
   signOut
@@ -404,6 +405,19 @@ async function signInWithGoogle() {
     setPendingSetup(null);
   }
 
+  async function deleteAccount() {
+    const userId = auth.currentUser?.uid;
+    if (!userId) throw new Error("Not signed in.");
+    // Delete server data (Postgres cascade + Firestore user doc)
+    await usersApi.delete(userId);
+    // Delete Firebase Auth account
+    if (auth.currentUser) await firebaseDeleteUser(auth.currentUser);
+    clearCurrentUser();
+    try { localStorage.removeItem(`ledger-session-analytics:${userId}`); } catch {}
+    setUser(null);
+    setPendingSetup(null);
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -413,6 +427,7 @@ async function signInWithGoogle() {
         signInWithGoogle,
         completeSetup,
         logout,
+        deleteAccount,
         setUser,
         updateProfile
       }}

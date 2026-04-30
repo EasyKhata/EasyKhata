@@ -53,7 +53,11 @@ export const usersApi = {
 
   // Update profile fields
   update: (userId, updates) =>
-    api.put(`/users/${userId}`, updates)
+    api.put(`/users/${userId}`, updates),
+
+  // Permanently delete account and all data
+  delete: (userId) =>
+    api.delete(`/users/${userId}`)
 };
 
 // ── Organisations ─────────────────────────────────────────────────────────────
