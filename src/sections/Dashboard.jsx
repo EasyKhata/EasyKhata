@@ -777,10 +777,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       return;
     }
     const ownedOrganizations = Array.isArray(data.organizations) ? data.organizations : [];
-    const shouldShowGuide =
-      ownedOrganizations.length === 1 &&
-      getOrgType(ownedOrganizations[0]?.organizationType) === ORG_TYPES.PERSONAL;
-    setShowSetupGuide(shouldShowGuide);
+    setShowSetupGuide(ownedOrganizations.length === 1);
   }, [activeSharedOrgKey, data.loaded, data.organizations, user?.id, user?.onboardingSeenAt]);
 
   useEffect(() => {
@@ -1060,11 +1057,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       account={data.account}
       onUpdateAccount={async (accountInfo) => {
         try {
-          data.saveAccount({
-            ...data.account,
-            ...accountInfo,
-            organizationType: data.account?.organizationType || user?.organizationType || ORG_TYPES.PERSONAL
-          });
+          const nextAccount = { ...data.account, ...accountInfo };
+          const currentType = getOrgType(data.account?.organizationType || user?.organizationType || ORG_TYPES.PERSONAL);
+          const nextType = getOrgType(accountInfo.organizationType || currentType);
+          if (nextType !== currentType) {
+            data.resetForOrgTypeChange(nextAccount);
+          } else {
+            data.saveAccount(nextAccount);
+          }
         } catch (err) {
           logError("Account update error", err);
         }
@@ -1185,7 +1185,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" message="Add maintenance collections and society expenses to see recent activity here." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              <WorkflowSetupCard title="No entries yet" message="Tap the + button at the bottom to add a maintenance collection or society expense." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
 
@@ -1275,8 +1275,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="anim-fade-up-2">
               <WorkflowSetupCard
                 eyebrow="Get started"
-                title="Record your first income entry"
-                message="Add this month's salary or any income to see your household cash flow, spending breakdown, and savings progress."
+                title="Tap + to record your first entry"
+                message="Use the + button at the bottom to add income or an expense. Or tap below to go directly to the income section."
                 actionLabel="Add Income →"
                 onAction={() => onNav("income")}
                 secondaryActionLabel="Add Expense"
@@ -1334,7 +1334,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" message="Add salary, expenses, or EMIs to see your household cashflow here." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
+              <WorkflowSetupCard title="No entries yet" message="Tap the + button at the bottom to add your first income, expense, or EMI." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
             )}
           </div>
 
@@ -1470,8 +1470,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="anim-fade-up-2">
               <WorkflowSetupCard
                 eyebrow="Get started"
-                title="Log your first payment or create an invoice"
-                message="Record a client payment or raise an invoice to see your business earnings, invoice status, and cash flow."
+                title="Tap + to record your first entry"
+                message="Use the + button at the bottom to log a payment or expense. Or tap below to go to Payments or raise an invoice."
                 actionLabel="Log Payment →"
                 onAction={() => onNav("income")}
                 secondaryActionLabel="New Invoice"

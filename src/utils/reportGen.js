@@ -1,10 +1,21 @@
 import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 import { APP_WEBSITE_HOST } from "./brand";
+import { isNative } from "./native";
 
 let jsPDF = null;
 async function ensureJsPDF() {
   if (!jsPDF) ({ jsPDF } = await import("jspdf"));
+}
+
+async function savePdf(doc, filename) {
+  if (isNative) {
+    const { Browser } = await import("@capacitor/browser");
+    const dataUri = doc.output("datauristring");
+    await Browser.open({ url: dataUri });
+  } else {
+    doc.save(filename);
+  }
 }
 
 const PAGE = {
@@ -71,20 +82,33 @@ function addPageNumbers(doc) {
   }
 }
 
-function drawReportHeader(doc, y, orgName, reportType) {
+function drawReportHeader(doc, y, orgName, reportType, logoBase64 = "", logoRatio = null) {
+  const hasLogo = Boolean(logoBase64);
+  const headerH = hasLogo ? 36 : 32;
   setRgbFill(doc, STATEMENT_THEME.header);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 32, 6, 6, "F");
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, headerH, 6, 6, "F");
+
+  let textX = PAGE.left + 5;
+  if (hasLogo) {
+    try {
+      const logoH = 22;
+      const logoW = Math.min(logoH * (logoRatio || 2.5), 52);
+      doc.addImage(logoBase64, PAGE.left + 5, y + 7, logoW, logoH);
+      textX = PAGE.left + logoW + 9;
+    } catch { /* skip */ }
+  }
+
   setRgbText(doc, [255, 255, 255]);
   doc.setFont("helvetica", "bold");
   const safeName = safeText(orgName || "Organization");
-  doc.setFontSize(safeName.length > 34 ? 14 : 18);
-  doc.text(safeName, PAGE.left + 5, y + 12);
+  doc.setFontSize(hasLogo ? 13 : (safeName.length > 34 ? 14 : 18));
+  doc.text(safeName, textX, y + (hasLogo ? 14 : 12));
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9.5);
   setRgbText(doc, [180, 200, 225]);
-  doc.text(safeText(reportType), PAGE.left + 5, y + 22);
-  drawPdfBrandBadge(doc, PAGE.right - 40, y + 11, "light");
-  return y + 40;
+  doc.text(safeText(reportType), textX, y + (hasLogo ? 24 : 22));
+  drawPdfBrandBadge(doc, PAGE.right - 40, y + (hasLogo ? 14 : 11), "light");
+  return y + headerH + 8;
 }
 
 function sectionTitle(doc, y, title) {
@@ -769,7 +793,7 @@ function drawApartmentExpenseDetailTable(doc, y, title, rows, sym) {
   return y;
 }
 
-function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
+async function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const overview = buildFinancialYearOverview(data, startYear);
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
@@ -800,10 +824,10 @@ function downloadApartmentFinancialYearStatementReport(data, startYear, sym) {
   y = ensureSpace(doc, y + 2, 60);
   y = drawApartmentStatementTable(doc, y + 2, "Transaction Statement", statementRows, sym);
   addPageNumbers(doc);
-  doc.save(getFinancialYearFilename(data, startYear));
+  await savePdf(doc, getFinancialYearFilename(data, startYear));
 }
 
-function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
+async function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const stats = calculateApartmentDashboard(data, year, month);
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
@@ -853,7 +877,7 @@ function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
     sym
   );
   addPageNumbers(doc);
-  doc.save(`society-report-${stats.monthKey}.pdf`);
+  await savePdf(doc, `society-report-${stats.monthKey}.pdf`);
 }
 
 function downloadCsv(filename, rows) {
@@ -946,7 +970,7 @@ export async function downloadAdminMonthlyReport(data, year, month, sym) {
   const removedUsersNote = "Removed users are not tracked in this report.";
 
   let y = PAGE.top;
-  y = drawReportHeader(doc, y, "EazyKhata Admin", title);
+  y = drawReportHeader(doc, y, "EazyKhata Admin", title, "", null);
 
   y = sectionTitle(doc, y, "Admin Summary");
   y = drawMetricGrid(doc, y, [
@@ -995,13 +1019,13 @@ export async function downloadAdminMonthlyReport(data, year, month, sym) {
   }
 
   addPageNumbers(doc);
-  doc.save(`admin-report-${monthKey}.pdf`);
+  await savePdf(doc, `admin-report-${monthKey}.pdf`);
 }
 
 export async function downloadFinancialYearReport(data, startYear, sym) {
   await ensureJsPDF();
   if (isApartmentOrgData(data)) {
-    downloadApartmentFinancialYearStatementReport(data, startYear, sym);
+    await downloadApartmentFinancialYearStatementReport(data, startYear, sym);
     return;
   }
 
@@ -1012,7 +1036,7 @@ export async function downloadFinancialYearReport(data, startYear, sym) {
   const apartmentName = safeText(data?.account?.name || "Apartment / Society");
 
   let y = PAGE.top;
-  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
+  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title, data?.account?.logoBase64 || "", data?.account?.logoRatio || null);
 
   if (isApartmentOrgData(data)) {
     y = sectionTitle(doc, y, "Apartment");
@@ -1085,13 +1109,13 @@ export async function downloadFinancialYearReport(data, startYear, sym) {
   }
 
   addPageNumbers(doc);
-  doc.save(getFinancialYearFilename(data, startYear));
+  await savePdf(doc, getFinancialYearFilename(data, startYear));
 }
 
 export async function downloadMonthlyReport(data, year, month, sym) {
   await ensureJsPDF();
   if (isApartmentOrgData(data)) {
-    downloadApartmentMonthlyStatementReport(data, year, month, sym);
+    await downloadApartmentMonthlyStatementReport(data, year, month, sym);
     return;
   }
 
@@ -1101,7 +1125,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     const title = `Household Report - ${MONTHS[month]} ${year}`;
 
     let y = PAGE.top;
-    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
+    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title, data?.account?.logoBase64 || "", data?.account?.logoRatio || null);
 
     y = sectionTitle(doc, y, "Household Summary");
     y = drawMetricGrid(doc, y, [
@@ -1168,7 +1192,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     );
 
     addPageNumbers(doc);
-    doc.save(`household-report-${stats.monthKey}.pdf`);
+    await savePdf(doc, `household-report-${stats.monthKey}.pdf`);
     return;
   }
 
@@ -1178,7 +1202,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     const title = `Freelancer Report - ${MONTHS[month]} ${year}`;
 
     let y = PAGE.top;
-    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
+    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title, data?.account?.logoBase64 || "", data?.account?.logoRatio || null);
 
     y = sectionTitle(doc, y, "Freelancer Summary");
     y = drawMetricGrid(doc, y, [
@@ -1237,7 +1261,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
     );
 
     addPageNumbers(doc);
-    doc.save(`freelancer-report-${stats.monthKey}.pdf`);
+    await savePdf(doc, `freelancer-report-${stats.monthKey}.pdf`);
     return;
   }
 
@@ -1266,7 +1290,7 @@ export async function downloadMonthlyReport(data, year, month, sym) {
   );
 
   let y = PAGE.top;
-  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
+  y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title, data?.account?.logoBase64 || "", data?.account?.logoRatio || null);
 
   y = sectionTitle(doc, y, "Financial Summary");
   y = drawMetricGrid(doc, y, [
@@ -1328,5 +1352,5 @@ export async function downloadMonthlyReport(data, year, month, sym) {
   );
 
   addPageNumbers(doc);
-  doc.save(`ledger-report-${stats.monthKey}.pdf`);
+  await savePdf(doc, `ledger-report-${stats.monthKey}.pdf`);
 }

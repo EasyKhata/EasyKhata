@@ -2,10 +2,21 @@ import { fmtDate } from "../components/UI";
 import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
 import { APP_WEBSITE_HOST } from "./brand";
 import { buildLocationLabel, parseLocationFields } from "./profile";
+import { isNative } from "./native";
 
 let jsPDF = null;
 async function ensureJsPDF() {
   if (!jsPDF) ({ jsPDF } = await import("jspdf"));
+}
+
+async function savePdf(doc, filename) {
+  if (isNative) {
+    const { Browser } = await import("@capacitor/browser");
+    const dataUri = doc.output("datauristring");
+    await Browser.open({ url: dataUri });
+  } else {
+    doc.save(filename);
+  }
 }
 
 const PAGE = {
@@ -129,15 +140,30 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   const isQuote = String(invoice?.documentType || "invoice").toLowerCase() === "quote";
   let y = PAGE.top;
 
+  const hasLogo = Boolean(acc.logoBase64);
+  const headerH = hasLogo ? 32 : 28;
   doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 28, 6, 6, "F");
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, headerH, 6, 6, "F");
+
+  let textX = PAGE.left + 4;
+  if (hasLogo) {
+    try {
+      const logoH = 20;
+      const logoW = Math.min(logoH * (acc.logoRatio || 2.5), 48);
+      doc.addImage(acc.logoBase64, PAGE.left + 4, y + 6, logoW, logoH);
+      textX = PAGE.left + logoW + 8;
+    } catch { /* skip logo if image fails */ }
+  }
+
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(21);
-  doc.text(safeText(acc.name || "Your Business"), PAGE.left + 4, y + 10);
-  doc.setFontSize(11);
+  const nameY = hasLogo ? y + 12 : y + 10;
+  const subY  = hasLogo ? y + 20 : y + 17;
+  doc.setFontSize(hasLogo ? 16 : 21);
+  doc.text(safeText(acc.name || "Your Business"), textX, nameY);
+  doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(safeText(acc.email || acc.phone || "Business invoice"), PAGE.left + 4, y + 17);
+  doc.text(safeText(acc.email || acc.phone || "Business invoice"), textX, subY);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(18);
   doc.text(isQuote ? "QUOTE" : isExport ? "EXPORT INVOICE" : acc.gstin ? "TAX INVOICE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
@@ -145,8 +171,8 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   doc.setFont("helvetica", "normal");
   doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
   doc.setFontSize(9);
-  doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + 23, { align: "right" });
-  y += 36;
+  doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + (hasLogo ? 26 : 23), { align: "right" });
+  y += headerH + 8;
 
   const businessLines = [
     isApartment ? "" : contactAddress(acc),
@@ -343,7 +369,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     doc.text(`${i} / ${pageCount}`, PAGE.right, PAGE.bottom + 8, { align: "right" });
   }
   drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
-  doc.save(`${safeText(invoice.number || "invoice")}.pdf`);
+  await savePdf(doc, `${safeText(invoice.number || "invoice")}.pdf`);
 }
 
 export async function downloadPayslip(payslip, account, sym) {
@@ -460,5 +486,5 @@ export async function downloadPayslip(payslip, account, sym) {
   y += 26;
 
   drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
-  doc.save(`payslip-${staffName.replace(/\s+/g, "-").toLowerCase()}-${payPeriod || "undated"}.pdf`);
+  await savePdf(doc, `payslip-${staffName.replace(/\s+/g, "-").toLowerCase()}-${payPeriod || "undated"}.pdf`);
 }

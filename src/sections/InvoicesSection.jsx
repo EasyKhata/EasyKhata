@@ -255,10 +255,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     paymentRequests.filter(item => requestFilter === "all" || (item.status || PAYMENT_REQUEST_STATUS.PENDING) === requestFilter)
   ), [paymentRequests, requestFilter]);
 
-  if (!d.loaded) {
-    return <SectionSkeleton rows={4} />;
-  }
-
   const DocumentCard = ({ invoice }) => (
     <WorkflowRecordCard
       avatar={<Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={40} fontSize={14} />}
@@ -324,7 +320,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const detailSym = detail?.currencySymbol || sym;
 
   const monthInv = useMemo(() => (
-    d.invoices
+    (d.invoices || [])
       .filter(invoice => String(invoice.documentType || "invoice") === documentType)
       .filter(invoice => invoice.date?.slice(0, 7) === mk)
       .map(invoice => ({
@@ -338,6 +334,21 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const pendingCount = useMemo(() => (
     isApartmentOrg ? 0 : monthInv.filter(invoice => invoice.computedStatus !== (isQuote ? "approved" : "paid")).length
   ), [isApartmentOrg, isQuote, monthInv]);
+
+  const otherOutstandingInv = useMemo(() => {
+    if (isApartmentOrg || isQuote || isAdmin) return [];
+    return (d.invoices || [])
+      .filter(invoice => String(invoice.documentType || "invoice") === documentType)
+      .filter(invoice => invoice.date?.slice(0, 7) !== mk)
+      .map(invoice => ({
+        ...invoice,
+        computedStatus: getDocumentStatus(invoice, false),
+        dueMessage: getDocumentDueMessage(invoice, false),
+        total: invoiceGrandTotal(invoice),
+      }))
+      .filter(invoice => ["pending", "sent", "overdue"].includes(invoice.computedStatus))
+      .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }, [d.invoices, documentType, isAdmin, isApartmentOrg, isQuote, mk]);
   const filteredMonthInv = useMemo(() => monthInv.filter(invoice => {
     const needle = searchQuery.trim().toLowerCase();
     if (!needle) return true;
@@ -374,6 +385,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // This useEffect uses openNew which is defined after the loaded guard — wire it
+  // through a ref so hook order is stable regardless of d.loaded.
+  const openNewRef = React.useRef(null);
+  useEffect(() => {
+    function handleOpenAdd(event) {
+      if (event?.detail?.section && event.detail.section !== "invoices") return;
+      openNewRef.current?.();
+    }
+    window.addEventListener("ledger:open-add", handleOpenAdd);
+    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
+  }, []);
+
+  if (!d.loaded) {
+    return <SectionSkeleton rows={4} />;
+  }
 
   function openNew() {
     if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
@@ -448,17 +475,14 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       setUpgradeInfo(getUpgradeCopy("invoicePdf"));
       return;
     }
-    await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg });
+    try {
+      await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg });
+    } catch (err) {
+      setFormError("Could not generate PDF. Please try again.");
+    }
   }
 
-  useEffect(() => {
-    function handleOpenAdd(event) {
-      if (event?.detail?.section && event.detail.section !== "invoices") return;
-      openNew();
-    }
-    window.addEventListener("ledger:open-add", handleOpenAdd);
-    return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  openNewRef.current = openNew;
 
   function closeForm() {
     setShowForm(false);
@@ -902,6 +926,17 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             filteredMonthInv.map(invoice => <DocumentCard key={invoice.id} invoice={invoice} />)
           )}
         </div>
+
+        {otherOutstandingInv.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--saffron)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 10, paddingLeft: 2 }}>
+              Pending & Overdue from other months ({otherOutstandingInv.length})
+            </div>
+            <div className="card">
+              {otherOutstandingInv.map(invoice => <DocumentCard key={invoice.id} invoice={invoice} />)}
+            </div>
+          </div>
+        )}
       </div>
 
       {detail && (() => {

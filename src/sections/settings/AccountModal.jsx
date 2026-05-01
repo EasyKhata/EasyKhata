@@ -34,7 +34,8 @@ export default function AccountModal({
   canChangeOrgType = true,
   pendingOrgTypeChange,
   onCancelOrgTypeChange,
-  onConfirmOrgTypeChange
+  onConfirmOrgTypeChange,
+  onLogoChange,
 }) {
   return (
     <>
@@ -144,6 +145,38 @@ export default function AccountModal({
               value={form.email || ""}
               onChange={e => onFormChange(f => ({ ...f, email: e.target.value }))}
             />
+          </Field>
+        )}
+
+        {showOrgBusinessFields && (
+          <Field label="Business Logo" hint="Shown on invoices and reports. PNG or JPG, under 1 MB.">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {form.logoBase64 ? (
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={form.logoBase64}
+                    alt="Business logo"
+                    style={{ maxHeight: 48, maxWidth: 120, objectFit: "contain", borderRadius: 8, border: "1px solid var(--border)", background: "#fff", padding: 4, display: "block" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => onFormChange(f => ({ ...f, logoBase64: "", logoRatio: null }))}
+                    style={{ position: "absolute", top: -7, right: -7, width: 20, height: 20, borderRadius: "50%", background: "var(--danger)", border: "none", color: "#fff", fontSize: 13, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    aria-label="Remove logo"
+                  >×</button>
+                </div>
+              ) : (
+                <div style={{ width: 80, height: 48, borderRadius: 8, border: "1.5px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 11, flexShrink: 0 }}>
+                  No logo
+                </div>
+              )}
+              <label style={{ cursor: "pointer", flex: 1 }}>
+                <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>
+                  {form.logoBase64 ? "Change Logo" : "Upload Logo"}
+                </div>
+                <input type="file" accept="image/png,image/jpeg,image/webp" style={{ display: "none" }} onChange={onLogoChange} />
+              </label>
+            </div>
           </Field>
         )}
 

@@ -10,6 +10,8 @@ import SupportModal, { SUPPORT_TOPIC_OPTIONS } from "./settings/SupportModal";
 import ProfileModal from "./settings/ProfileModal";
 import AccountModal from "./settings/AccountModal";
 import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
+import { useCoachMark } from "../components/CoachMark";
+import BusinessImportScreen from "./settings/BusinessImportScreen";
 import CustomersScreen from "./settings/CustomersScreen";
 import StaffScreen from "./settings/StaffScreen";
 import SocietyPortalScreen from "./settings/SocietyPortalScreen";
@@ -236,7 +238,9 @@ function buildAccountFormState(account, user) {
     address: account?.address || buildLocationLabel({ addressLine, city, state, country }),
     gstin: account?.gstin || "",
     showHSN: account?.showHSN ?? true,
-    organizationType: getOrgType(account?.organizationType || user?.organizationType)
+    organizationType: getOrgType(account?.organizationType || user?.organizationType),
+    logoBase64: account?.logoBase64 || "",
+    logoRatio: account?.logoRatio || null,
   };
 }
 
@@ -293,6 +297,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     expenses,
     addExpense,
     invoices,
+    addInvoice,
     notificationPrefs,
     saveNotificationPrefs,
     orgRecords,
@@ -312,6 +317,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   useTheme();
 
   const [screen, setScreen] = useState("main");
+  const { seen: coachCustSeen, dismiss: dismissCustCoach } = useCoachMark(user?.id, "settings-customers");
+  const { seen: coachStaffSeen, dismiss: dismissStaffCoach } = useCoachMark(user?.id, "settings-staff");
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -843,6 +850,29 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setScreen("main");
   }
 
+  function handleLogoFile(e) {
+    const file = e?.target?.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    if (file.size > 2 * 1024 * 1024) { showNotice("Logo must be under 2 MB."); return; }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX_W = 320, MAX_H = 120;
+        const scale = Math.min(MAX_W / img.width, MAX_H / img.height, 1);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const logoBase64 = canvas.toDataURL("image/jpeg", 0.85);
+        const logoRatio = canvas.width / canvas.height;
+        setAccForm(f => ({ ...f, logoBase64, logoRatio }));
+      };
+      img.src = String(ev.target?.result || "");
+    };
+    reader.readAsDataURL(file);
+  }
+
   const saveAcc = async () => {
     const cleanEmail = showOrgBusinessFields ? normalizeEmail(accForm.email) : "";
     const cleanPhoneNumber = showOrgBusinessFields ? sanitizePhoneDigits(accForm.phoneNumber) : "";
@@ -906,7 +936,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       address: cleanAddress,
       gstin: cleanGstin,
       showHSN: showOrgBusinessFields ? Boolean(accForm.showHSN) : false,
-      organizationType: cleanOrganizationType
+      organizationType: cleanOrganizationType,
+      logoBase64: showOrgBusinessFields ? (accForm.logoBase64 || "") : "",
+      logoRatio: showOrgBusinessFields ? (accForm.logoRatio || null) : null,
     };
 
     if (isOrgTypeChanging && hasExistingOrgTypeData()) {
@@ -1691,7 +1723,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function downloadApartmentImportTemplate() {
     const sampleRows = [
       APARTMENT_IMPORT_TEMPLATE_HEADERS.join(","),
-      "flat,A-101,A-101,Sushma Reddy,9876543210,sushma@example.com,,,,,,,," ,
+      "flat,A-101,A-101,susan ,9876543210,susan@example.com,,,,,,,," ,
       "collection,A-101,,, , ,2026-04-05,2026-04,2500,Monthly Maintenance,upi,UPI-REF-7721,,April collection",
       "expense,,,,,,2026-04-07,,1200,Cleaning,upi,UPI-REF-9102,Cleaning Vendor,Lobby cleaning",
       "opening_balance,A-101,,,,,2026-04-01,,5000,due,,,,Carry-forward due",
@@ -1971,14 +2003,59 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   setScreen("create-org");
                 }} />
               )}
-              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => setScreen("customers")} />
+              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => { setScreen("customers"); dismissCustCoach(); }} />
+              {customers.length === 0 && !coachCustSeen && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "color-mix(in srgb, var(--saffron) 10%, var(--surface-high))", borderTop: "1px solid color-mix(in srgb, var(--saffron) 18%, var(--border))", boxSizing: "border-box" }}>
+                  <span style={{ fontSize: 18 }}>👆</span>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setScreen("customers"); dismissCustCoach(); }}
+                    onKeyDown={e => e.key === "Enter" && (setScreen("customers"), dismissCustCoach())}
+                    style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)" }}>Add your first {orgConfig.customerEntryLabel.toLowerCase()} here</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sec)" }}>Tap to open {orgConfig.customerLabel} →</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={dismissCustCoach}
+                    style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 16, cursor: "pointer", padding: "4px 6px", lineHeight: 1, flexShrink: 0 }}
+                    aria-label="Dismiss"
+                  >×</button>
+                </div>
+              )}
               {isFreelancerOrg && (
                 <MenuRow
                   icon="S"
                   label="Staff"
                   sub={`${(orgRecords?.staff || []).length} staff member(s)`}
-                  onClick={() => setScreen("staff")}
+                  onClick={() => { setScreen("staff"); dismissStaffCoach(); }}
                 />
+              )}
+              {isFreelancerOrg && (orgRecords?.staff || []).length === 0 && !coachStaffSeen && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "color-mix(in srgb, var(--saffron) 10%, var(--surface-high))", borderTop: "1px solid color-mix(in srgb, var(--saffron) 18%, var(--border))", boxSizing: "border-box" }}>
+                  <span style={{ fontSize: 18 }}>👆</span>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setScreen("staff"); dismissStaffCoach(); }}
+                    onKeyDown={e => e.key === "Enter" && (setScreen("staff"), dismissStaffCoach())}
+                    style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)" }}>Add your first staff member here</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sec)" }}>Tap to open Staff →</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={dismissStaffCoach}
+                    style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 16, cursor: "pointer", padding: "4px 6px", lineHeight: 1, flexShrink: 0 }}
+                    aria-label="Dismiss"
+                  >×</button>
+                </div>
+              )}
+              {isFreelancerOrg && (
+                <MenuRow icon="↑" label="Import Data" sub="Import payments, spends, or invoices from a CSV file" onClick={() => setScreen("business-import")} />
               )}
               {!isPersonalOrg && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />}
               {isApartmentOrg && (
@@ -2398,6 +2475,19 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
+  if (screen === "business-import" && isFreelancerOrg) {
+    return withNotice(
+      <BusinessImportScreen
+        onClose={() => setScreen("main")}
+        addIncome={addIncome}
+        addExpense={addExpense}
+        addInvoice={addInvoice}
+        invoices={invoices}
+        currency={currency}
+      />
+    );
+  }
+
   if (screen === "account") {
     if (user?.role === "admin") {
       return null;
@@ -2418,6 +2508,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         pendingOrgTypeChange={pendingOrgTypeChange}
         onCancelOrgTypeChange={() => setPendingOrgTypeChange(null)}
         onConfirmOrgTypeChange={confirmOrgTypeChange}
+        onLogoChange={handleLogoFile}
       />
     );
   }
@@ -2484,7 +2575,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         </Field>
         <Field label="Name" required>
           <Input
-            placeholder="e.g. Reddy Business, Lake View Society"
+            placeholder="e.g. Business, Lake View Society"
             value={createOrgForm.name || ""}
             onChange={e => setCreateOrgForm(f => ({ ...f, name: e.target.value }))}
           />
