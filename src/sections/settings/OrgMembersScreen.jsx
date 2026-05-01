@@ -78,7 +78,7 @@ export default function OrgMembersScreen({ onBack }) {
         email,
         role: inviteRole,
         orgName,
-        orgType: data.account?.organizationType || "small_business"
+        orgType: data.account?.organizationType || "freelancer"
       });
       setMembers(prev => [{ ...invitation, status: "pending" }, ...prev]);
       setInviteEmail("");

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useData } from "../context/DataContext";
 import {
   DateSelectInput,
@@ -43,7 +43,8 @@ function buildBlankForm(year, month, config, categories) {
     endDate: "",
     note: "",
     teamMemberName: "",
-    partnerName: ""
+    partnerName: "",
+    staffMemberName: ""
   };
   (config.expenseFields || []).forEach(field => {
     base[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
@@ -91,9 +92,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
-  const isSmallBusinessOrg = getOrgType(orgType) === ORG_TYPES.SMALL_BUSINESS;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
-  const showExpenseNote = isSmallBusinessOrg;
   const visibleExpenseFields = useMemo(
     () => (config.expenseFields || []).filter(field => {
       if (isPersonalOrg && field.key === "necessityType") return false;
@@ -144,18 +143,15 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       label: customerMeta.get(String(option.value || "").trim().toLowerCase()) || option.label
     }));
   }, [d]);
-  const teamOptions = useMemo(() => (
-    (d.orgRecords?.team || []).map(member => ({ value: member.name || "", label: [member.name || "", member.role || "", member.payout ? `${sym} ${member.payout}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
-  ), [d.orgRecords, sym]);
-  const partnerOptions = useMemo(() => (
-    (d.orgRecords?.partners || []).map(partner => ({ value: partner.partnerName || "", label: [partner.partnerName || "", partner.contact || "", partner.balanceDue ? `${sym} ${partner.balanceDue}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
-  ), [d.orgRecords, sym]);
   const supplierOptions = useMemo(() => (
     (d.orgRecords?.suppliers || []).map(supplier => ({ value: supplier.supplierName || "", label: [supplier.supplierName || "", supplier.contact || "", supplier.creditBalance ? `${sym} ${supplier.creditBalance}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.orgRecords, sym]);
   const clientOptions = useMemo(() => (
     (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.customers]);
+  const staffOptions = useMemo(() => (
+    (d.orgRecords?.staff || []).map(m => ({ value: m.name || "", label: [m.name || "", m.role || m.phone || ""].filter(Boolean).join(" - ") })).filter(o => o.value)
+  ), [d.orgRecords?.staff]);
   const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
   const hasApartmentFlats = !isApartmentOrg || (d.customers || []).some(flat => String(flat?.name || "").trim());
   const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
@@ -169,11 +165,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const total = useMemo(() => active.reduce((sum, expense) => sum + Number(expense.amount), 0), [active]);
   const recurring = useMemo(() => active.filter(expense => expense.recurring), [active]);
   const oneTime = useMemo(() => active.filter(expense => !expense.recurring), [active]);
-  const salaryExpenses = useMemo(() => active.filter(expense => String(expense.expenseType || "").trim() === "Team Payout"), [active]);
-  const partnerExpenses = useMemo(() => active.filter(expense => String(expense.expenseType || "").trim() === "Partner Payment"), [active]);
   const stockExpenses = useMemo(() => active.filter(expense => String(expense.purchaseType || "").trim() === "Stock Purchase"), [active]);
   const supplierPaymentExpenses = useMemo(() => active.filter(expense => String(expense.purchaseType || "").trim() === "Supplier Payment"), [active]);
-  const otherExpenses = useMemo(() => active.filter(expense => !["Team Payout", "Partner Payment"].includes(String(expense.expenseType || "").trim())), [active]);
   const retailOtherExpenses = useMemo(() => active.filter(expense => !["Stock Purchase", "Supplier Payment"].includes(String(expense.purchaseType || "").trim())), [active]);
   const filteredExpenses = useMemo(() => {
     const needle = searchQuery.trim().toLowerCase();
@@ -239,24 +232,23 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       openPeopleManager();
       return;
     }
-    if (isFreelancerOrg && !hasFreelancerClients) {
-      window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
-      return;
-    }
     setEditId(null);
     setForm(buildBlankForm(year, month, config, categoryOptions));
     setFormError(""); setErrors({});
     setShowForm(true);
   }
 
+  const openNewRef = useRef(openNew);
+  useEffect(() => { openNewRef.current = openNew; });
+
   useEffect(() => {
     function handleOpenAdd(event) {
       if (event?.detail?.section && event.detail.section !== "expenses") return;
-      openNew();
+      openNewRef.current();
     }
     window.addEventListener("ledger:open-add", handleOpenAdd);
     return () => window.removeEventListener("ledger:open-add", handleOpenAdd);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
@@ -282,6 +274,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     next.note = expense.note || "";
     next.teamMemberName = expense.teamMemberName || "";
     next.partnerName = expense.partnerName || "";
+    next.staffMemberName = expense.staffMemberName || "";
     visibleExpenseFields.forEach(field => {
       next[field.key] = expense[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
@@ -357,11 +350,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       label: form.label.trim(),
       amount: Number(form.amount),
       category: form.category,
-      ...(showExpenseNote ? { note: form.note.trim() } : {}),
       date: form.date,
       recurring: isPersonalOrg ? false : form.recurring,
-      teamMemberName: String(form.teamMemberName || "").trim(),
-      partnerName: String(form.partnerName || "").trim()
+      staffMemberName: String(form.staffMemberName || "").trim() || undefined,
     };
 
     visibleExpenseFields.forEach(field => {
@@ -412,6 +403,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       expense.recurring && expense.endDate ? `ends ${fmtDate(expense.endDate)}` : "",
       expense.teamMemberName || "",
       expense.partnerName || "",
+      expense.staffMemberName || "",
       extras,
       expense.note || ""
     ].filter(Boolean);
@@ -552,39 +544,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </div>
             )}
 
-            {isSmallBusinessOrg ? (
-              <>
-                <Collapsible title="Salaries & Team Payouts" icon="👥" color="var(--purple)" count={salaryExpenses.length} defaultOpen>
-                  <div className="card">
-                    {salaryExpenses.length === 0 ? (
-                      <WorkflowSetupCard title="No team payouts yet" message="Record salary or payout entries here to keep monthly payroll visible." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
-                    ) : (
-                      salaryExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-
-                <Collapsible title="Partner & Vendor Payments" icon="🏷" color="var(--gold)" count={partnerExpenses.length} defaultOpen={partnerExpenses.length > 0}>
-                  <div className="card">
-                    {partnerExpenses.length === 0 ? (
-                      <WorkflowSetupCard title="No partner payments yet" message="Track amounts due to outside partners, vendors, venues, or freelancers here." actionLabel={config.expensesActionLabel} onAction={openNew} tone="warning" />
-                    ) : (
-                      partnerExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-
-                <Collapsible title="Operating Expenses" icon="•" color="var(--danger)" count={otherExpenses.length} defaultOpen>
-                  <div className="card">
-                    {otherExpenses.length === 0 ? (
-                      <WorkflowSetupCard title={`No ${config.expensesLabel.toLowerCase()} yet`} message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`} actionLabel={config.expensesActionLabel} onAction={openNew} tone="danger" />
-                    ) : (
-                      otherExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-                    )}
-                  </div>
-                </Collapsible>
-              </>
-            ) : isFreelancerOrg ? (
+            {isFreelancerOrg ? (
                 <div className="card">
                   {!hasFreelancerClients ? (
                   <WorkflowSetupCard
@@ -642,12 +602,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
               </Collapsible>
             )}
 
-            {!isApartmentOrg && !isSmallBusinessOrg && !isFreelancerOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
+            {!isApartmentOrg && !isFreelancerOrg && <Collapsible title={`One-Time ${config.expensesLabel}`} icon="•" color="var(--danger)" count={oneTime.length} defaultOpen={oneTime.length > 0}>
               <div className="card">
                 {oneTime.length === 0 ? (
                   <WorkflowSetupCard
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                    description={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
                     tone="danger"
@@ -781,10 +741,18 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Field>
               </div>
               <Field label="Category">
-                <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value }))}>
+                <Select value={form.category} onChange={e => setForm(current => ({ ...current, category: e.target.value, staffMemberName: String(e.target.value).toLowerCase() !== "payroll" ? "" : current.staffMemberName }))}>
                   {categoryOptions.map(category => <option key={category}>{category}</option>)}
                 </Select>
               </Field>
+              {isFreelancerOrg && String(form.category || "").toLowerCase() === "payroll" && (
+                <Field label="Staff Member">
+                  <Select value={form.staffMemberName || ""} onChange={e => setForm(current => ({ ...current, staffMemberName: e.target.value, label: current.label || (e.target.value ? `${e.target.value} Salary` : "") }))}>
+                    <option value="">{staffOptions.length ? "Select staff member" : "No staff added yet — add in Settings"}</option>
+                    {staffOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </Select>
+                </Field>
+              )}
             </div>
             <div className="ledger-form-group compact">
               <div className="ledger-form-group-title">Entry details</div>
@@ -797,12 +765,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                       {peopleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
                   )
-                  : isSmallBusinessOrg && field.key === "expenseType"
-                    ? (
-                      <Select value={form.expenseType || ""} onChange={e => setForm(current => ({ ...current, expenseType: e.target.value, teamMemberName: e.target.value === "Team Payout" ? current.teamMemberName : "", partnerName: e.target.value === "Partner Payment" ? current.partnerName : "", label: current.label || e.target.value }))}>
-                        {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
-                      </Select>
-                    )
                   : isFreelancerOrg && field.key === "clientName"
                     ? (
                       <Select value={form.clientName || ""} onChange={e => setForm(current => ({ ...current, clientName: e.target.value }))}>
@@ -813,22 +775,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
               </Field>
             ))}
-            {isSmallBusinessOrg && form.expenseType === "Team Payout" && (
-              <Field label="Team Member">
-                <Select value={form.teamMemberName || ""} onChange={e => setForm(current => ({ ...current, teamMemberName: e.target.value, label: current.label || `${e.target.value} Payout` }))}>
-                  <option value="">{teamOptions.length ? "Select team member" : "Add team members in Settings first"}</option>
-                  {teamOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </Select>
-              </Field>
-            )}
-            {isSmallBusinessOrg && form.expenseType === "Partner Payment" && (
-              <Field label="Partner / Vendor">
-                <Select value={form.partnerName || ""} onChange={e => setForm(current => ({ ...current, partnerName: e.target.value, label: current.label || `${e.target.value} Payment` }))}>
-                  <option value="">{partnerOptions.length ? "Select partner" : "Add partners in Settings first"}</option>
-                  {partnerOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </Select>
-              </Field>
-            )}
             {!isPersonalOrg && (
               <>
                 <Field label="Type">
@@ -853,14 +799,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 )}
               </>
             )}
-            </div>
-            <div className="ledger-form-group compact">
-              <div className="ledger-form-group-title">Optional</div>
-              {showExpenseNote && (
-                <Field label="Note">
-                  <Input placeholder="Optional note" value={form.note} onChange={e => setForm(current => ({ ...current, note: e.target.value }))} />
-                </Field>
-              )}
             </div>
           </div>
         </Modal>

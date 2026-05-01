@@ -32,7 +32,7 @@ export default function PendingInviteBanner() {
         orgId,
         orgName: invite.orgName || "Organization",
         ownerName: "",
-        organizationType: invite.orgType || "small_business",
+        organizationType: invite.orgType || "freelancer",
         role,
         acceptedAt: new Date().toISOString()
       };

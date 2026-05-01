@@ -6,7 +6,8 @@ import { logError } from "../utils/logger";
 import {
   getPersonalEmiDueDay,
   getInvoiceStatusColor,
-  getInvoiceStatusLabel
+  getInvoiceStatusLabel,
+  invoiceGrandTotal
 } from "../utils/analytics";
 import { orgsApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -794,7 +795,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
-  const isSmallBusinessOrg = orgType === ORG_TYPES.SMALL_BUSINESS;
   const orgConfig = getOrgConfig(orgType);
   const EMPTY_STATS = {
     profit: 0, netAfterEmi: 0, totalIncome: 0, totalExpense: 0,
@@ -854,7 +854,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     return () => { cancelled = true; };
   }, [data.loaded, data.activeOrgId, user?.id, year, month, viewMode]);
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
-  const hasPosSystem = isSmallBusinessOrg && canUseFeature(user, "posSystem");
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
   const reviewAccessEnabled = isReviewAccessEnabled();
@@ -876,21 +875,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   }, [data.orgRecords?.loans, month, year]);
 
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
-  const heroSub = isSmallBusinessOrg
-    ? (viewMode === "month"
-      ? (stats.pendingSalesTotal > 0
-        ? `${fmtMoney(stats.pendingSalesTotal, sym)} is still awaiting collection from customers this month.`
-        : stats.profit >= 0
-          ? hasPosSystem
-            ? "Customer work and collections are staying ahead of business costs this month."
-            : "Cash coming in is ahead of what you are spending this month."
-          : hasPosSystem ? "Expenses are ahead of sales this month." : "You are spending more than you are collecting this month.")
-      : (stats.partnerBalanceTotal > 0
-        ? `${fmtMoney(stats.partnerBalanceTotal, sym)} is still due across partner balances this year.`
-        : stats.profit >= 0
-          ? "The business stayed profitable across the year."
-          : "Expenses are ahead of sales across the year."))
-    : viewMode === "month" 
+  const heroSub = viewMode === "month"
     ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
     : (stats.profit >= 0 ? "You're profitable for the year." : "Expenses exceed receipts for the year.");
   
@@ -1368,7 +1353,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const collected = Number(stats.totalIncome || 0);
     const expenses = Number(stats.totalExpense || 0);
     const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0 && (data.invoices || []).length === 0;
-    const earningsPct = Math.min(100, Math.round((collected / Math.max(collected + expenses, 1)) * 100));
+    const profitMarginPct = collected > 0 ? Math.max(0, Math.min(100, Math.round((netEarnings / collected) * 100))) : 0;
     const freelancerTrendData = (stats.cashFlow || stats.monthlyBreakdown || []).map(item => item.income || 0).filter(v => v > 0);
     const flMk = `${year}-${String(month + 1).padStart(2, "0")}`;
     const flInPeriod = (item) => {
@@ -1378,14 +1363,29 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const flPeriodIncome = (data.income || []).filter(flInPeriod).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const flPeriodExpenses = (data.expenses || []).filter(flInPeriod).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-    const freelancerRecentIncomes = flPeriodIncome.slice(0, 3).map(item => ({ label: item.description || item.source || "Payment", amount: Number(item.amount || 0), type: "in", category: item.clientName || item.category || "Income", date: item.date || "" }));
-    const freelancerRecentExpenses = flPeriodExpenses.slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
-    const freelancerRecentTxns = [...freelancerRecentIncomes, ...freelancerRecentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+    // Paid invoices in the current period
+    const flPeriodPaidInvoices = (data.invoices || []).filter(inv => {
+      if (String(inv.documentType || "invoice") !== "invoice") return false;
+      if (String(inv.status || "").toLowerCase() !== "paid") return false;
+      const paidMk = (inv.paidDate || inv.date || "").slice(0, 7);
+      if (viewMode === "month") return paidMk === flMk;
+      return paidMk.slice(0, 4) === String(year);
+    });
+
+    const freelancerRecentIncomes = flPeriodIncome.map(item => ({ label: item.description || item.source || "Payment", amount: Number(item.amount || 0), type: "in", category: item.clientName || item.category || "Income", date: item.date || "" }));
+    const freelancerRecentInvoices = flPeriodPaidInvoices.map(inv => ({ label: `Invoice ${inv.invoiceNumber || ""}`.trim() || "Invoice paid", amount: Number(inv.grandTotal || invoiceGrandTotal(inv) || 0), type: "in", category: String(inv.customer?.name || inv.billTo?.name || "Client").trim(), date: inv.paidDate || inv.date || "" }));
+    const freelancerRecentExpenses = flPeriodExpenses.map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Operations", date: item.date || "" }));
+    const freelancerRecentTxns = [...freelancerRecentIncomes, ...freelancerRecentInvoices, ...freelancerRecentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
 
     const flClientMap = {};
     flPeriodIncome.forEach(item => {
       const client = String(item.clientName || "").trim() || "Unassigned";
       flClientMap[client] = (flClientMap[client] || 0) + Number(item.amount || 0);
+    });
+    flPeriodPaidInvoices.forEach(inv => {
+      const client = String(inv.customer?.name || inv.billTo?.name || "").trim() || "Unassigned";
+      const amount = Number(inv.grandTotal || invoiceGrandTotal(inv) || 0);
+      flClientMap[client] = (flClientMap[client] || 0) + amount;
     });
     const flTopClients = Object.entries(flClientMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const flBillableTotal = flPeriodExpenses.reduce((sum, e) => sum + (String(e.billable) === "Yes" ? Number(e.amount || 0) : 0), 0);
@@ -1393,6 +1393,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     const flPaidCount = (data.invoices || []).filter(inv => String(inv.documentType || "invoice") === "invoice" && String(inv.status || "").toLowerCase() === "paid").length;
     const flPendingCount = (stats.pendingInvoices || []).length;
     const flOverdueCount = (stats.overdueInvoices || []).length;
+    const flPayrollExpenses = flPeriodExpenses.filter(e => String(e.category || "") === "Payroll");
+    const flPayrollTotal = flPayrollExpenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+    const flPayrollStaffCount = new Set(flPayrollExpenses.map(e => e.staffMemberName).filter(Boolean)).size;
+    const flNonPayrollExpenses = expenses - flPayrollTotal;
 
     return (
       <div className="ledger-screen">
@@ -1409,16 +1413,16 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   <RupeeDisplay amount={netEarnings} color={netEarnings >= 0 ? "var(--sky)" : "var(--ember)"} size={48} animate />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
-                  {netEarnings >= 0 ? "Net after expenses" : "Expenses ahead of collected work"}
+                  {netEarnings >= 0 ? `Net after expenses · ${profitMarginPct}% margin` : "Expenses ahead of collected work"}
                 </div>
               </div>
-              <HealthArc pct={earningsPct} size={84} color="var(--sky)" />
+              <HealthArc pct={profitMarginPct} size={84} color="var(--sky)" />
             </div>
             {headerDatePicker && <div className="ledger-card-month-picker ledger-card-month-picker-inline">{headerDatePicker}</div>}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                 <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>Collected vs Expenses</span>
-                <span style={{ fontSize: 10, color: "var(--cream-3)" }}>{sym}{(collected / 1000).toFixed(1)}k in · {sym}{(expenses / 1000).toFixed(1)}k out</span>
+                <span style={{ fontSize: 10, color: "var(--cream-3)" }}>{sym}{(collected / 1000).toFixed(1)}k in · {sym}{(expenses / 1000).toFixed(1)}k out{flPayrollTotal > 0 ? ` (incl. ${sym}${(flPayrollTotal / 1000).toFixed(1)}k payroll)` : ""}</span>
               </div>
               <ProgressLine value={collected} max={Math.max(collected + expenses, 1)} color="var(--sky)" />
             </div>
@@ -1456,7 +1460,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               label={viewMode === "month" ? "Expenses" : "Total Expenses"}
               value={fmtMoney(stats.totalExpense, sym)}
               color="var(--ember)"
-              sub={viewMode === "month" ? "Tools, travel, subscriptions" : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
+              sub={viewMode === "month" ? (flPayrollTotal > 0 ? "Ops + payroll costs" : "Tools, travel & ops") : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
               onClick={!isViewerMode ? () => onNav("expenses") : undefined}
             />
           </div>
@@ -1474,6 +1478,25 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 onSecondaryAction={() => onNav("invoices")}
                 tone="info"
               />
+            </div>
+          )}
+
+          {/* Payroll summary */}
+          {flPayrollTotal > 0 && (
+            <div
+              className="anim-fade-up-2"
+              onClick={() => onNav("expenses")}
+              style={{ background: "color-mix(in srgb, var(--purple) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--purple) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--purple)", marginBottom: 2 }}>
+                  Payroll · {flPayrollStaffCount > 0 ? `${flPayrollStaffCount} staff` : `${flPayrollExpenses.length} entr${flPayrollExpenses.length === 1 ? "y" : "ies"}`}{flNonPayrollExpenses > 0 ? ` · ${fmtMoney(flNonPayrollExpenses, sym)} ops` : ""}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
+                  {viewMode === "month" ? MONTHS[month] : year} payroll expense · Tap to view
+                </div>
+              </div>
+              <RupeeDisplay amount={flPayrollTotal} color="var(--purple)" size={20} />
             </div>
           )}
 
@@ -1536,6 +1559,36 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0, paddingLeft: 10 }}>
                           <div className="ledger-feed-amount" style={{ color: "var(--sky)" }}>{fmtMoney(revenue, sym)}</div>
+                          <div style={{ fontSize: 10, color: "var(--cream-3)" }}>{pct}%</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Collapsible>
+            </div>
+          )}
+
+          {/* Staff Payroll breakdown */}
+          {flPayrollExpenses.length > 0 && (
+            <div className="anim-fade-up-4" style={{ marginBottom: 14 }}>
+              <Collapsible title="Staff Payroll" icon="◎" color="var(--purple)" count={flPayrollExpenses.length} defaultOpen={false}>
+                <div className="card">
+                  {flPayrollExpenses.map(e => {
+                    const pct = flPayrollTotal > 0 ? Math.round((Number(e.amount || 0) / flPayrollTotal) * 100) : 0;
+                    return (
+                      <div key={e.id} className="ledger-feed-row">
+                        <div className="ledger-feed-main" style={{ minWidth: 0, flex: 1 }}>
+                          <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.staffMemberName || e.label || "—"}</div>
+                          <div style={{ fontSize: 11, color: "var(--cream-3)", marginTop: 2 }}>
+                            {e.date ? new Date(`${e.date}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : ""}
+                          </div>
+                          <div style={{ marginTop: 5, height: 3, borderRadius: 99, background: "var(--line-2)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, background: "var(--purple)", borderRadius: 99, transition: "width 0.5s ease" }} />
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0, paddingLeft: 10 }}>
+                          <div className="ledger-feed-amount" style={{ color: "var(--purple)" }}>{fmtMoney(e.amount || 0, sym)}</div>
                           <div style={{ fontSize: 10, color: "var(--cream-3)" }}>{pct}%</div>
                         </div>
                       </div>
@@ -1625,7 +1678,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="section-eyebrow" style={{ marginBottom: 6 }}>
-                {MONTHS[month]} {year} · {isSmallBusinessOrg ? "Business Overview" : "Smart Dashboard"}
+                {MONTHS[month]} {year} · Smart Dashboard
               </div>
               <div style={{ marginBottom: 4 }}>
                 <RupeeDisplay amount={Number(stats.profit || 0)} color={Number(stats.profit || 0) >= 0 ? "var(--jade)" : "var(--ember)"} size={48} animate />
@@ -1666,17 +1719,17 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         {/* Stat chips */}
         <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           <StatChip
-            label={isSmallBusinessOrg && !hasPosSystem ? (viewMode === "month" ? "Cash In" : "Total Cash In") : (viewMode === "month" ? "Sales" : "Total Sales")}
+            label={viewMode === "month" ? "Sales" : "Total Sales"}
             value={fmtMoney(stats.totalIncome, sym)}
             color="var(--jade)"
-            sub={viewMode === "month" ? (isSmallBusinessOrg && !hasPosSystem ? "Payments received" : "Revenue collected") : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
+            sub={viewMode === "month" ? "Revenue collected" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
             onClick={!isViewerMode ? () => onNav("income") : undefined}
           />
           <StatChip
-            label={isSmallBusinessOrg && !hasPosSystem ? (viewMode === "month" ? "Cash Out" : "Total Cash Out") : (viewMode === "month" ? "Expenses" : "Total Expenses")}
+            label={viewMode === "month" ? "Expenses" : "Total Expenses"}
             value={fmtMoney(stats.totalExpense, sym)}
             color="var(--ember)"
-            sub={viewMode === "month" ? (isSmallBusinessOrg && !hasPosSystem ? "Supplies, rent, bills" : "Recurring and one-time costs") : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
+            sub={viewMode === "month" ? "Recurring and one-time costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
             onClick={!isViewerMode ? () => onNav("expenses") : undefined}
           />
         </div>
@@ -1692,25 +1745,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           ) : null;
         })()}
 
-        {/* Pending dues callout */}
-        {isSmallBusinessOrg && !hasPosSystem && (stats.pendingSalesTotal || 0) > 0 && (
-          <div
-            className="anim-fade-up-3"
-            onClick={() => onNav("income")}
-            style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-          >
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
-                {stats.pendingSalesCount || 0} collection{(stats.pendingSalesCount || 0) !== 1 ? "s" : ""} pending
-              </div>
-              <div style={{ fontSize: 11, color: "var(--cream-3)" }}>Tap to see and follow up</div>
-            </div>
-            <RupeeDisplay amount={Number(stats.pendingSalesTotal || 0)} color="var(--saffron)" size={20} />
-          </div>
-        )}
-
-        {/* Pending invoices callout for non-small-business */}
-        {!isSmallBusinessOrg && (stats.pendingInvoiceTotal || 0) > 0 && (
+        {/* Pending invoices callout */}
+        {(stats.pendingInvoiceTotal || 0) > 0 && (
           <div
             className="anim-fade-up-3"
             onClick={() => onNav("invoices")}
@@ -1753,76 +1789,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             </div>
           );
         })()}
-
-        {isSmallBusinessOrg && !hasPosSystem && (
-          <Collapsible
-            title="Paisa Baaki"
-            icon="🪙"
-            color="var(--saffron)"
-            count={(stats.pendingCustomers || []).length + (stats.partnersWithBalance || []).length}
-            defaultOpen={(stats.pendingCustomers || []).length > 0 || (stats.partnersWithBalance || []).length > 0}
-          >
-            <div className="card">
-              {(stats.pendingCustomers || []).length > 0 && (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--saffron)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
-                    Owed to Me
-                  </div>
-                  {stats.pendingCustomers.slice(0, 5).map(customer => (
-                    <FeedRow key={customer.name} title={customer.name} amount={fmtMoney(customer.amount, sym)} amountColor="var(--saffron)" />
-                  ))}
-                </>
-              )}
-              {(stats.partnersWithBalance || []).length > 0 && (
-                <>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--sky)", textTransform: "uppercase", letterSpacing: 0.8, padding: "8px 14px 4px" }}>
-                    I Owe
-                  </div>
-                  {stats.partnersWithBalance.slice(0, 5).map(partner => (
-                    <FeedRow
-                      key={partner.partnerName}
-                      title={partner.partnerName}
-                      meta={partner.contact || "No contact added"}
-                      amount={fmtMoney(partner.balanceDue, sym)}
-                      amountColor="var(--sky)"
-                    />
-                  ))}
-                </>
-              )}
-              {(stats.pendingCustomers || []).length === 0 && (stats.partnersWithBalance || []).length === 0 && (
-                <WorkflowSetupCard title="All clear" message="No pending collections and no outstanding dues to suppliers or vendors this month." tone="success" />
-              )}
-            </div>
-          </Collapsible>
-        )}
-
-        {isSmallBusinessOrg && hasPosSystem && (
-          <Collapsible
-            title="Partner Balances"
-            icon="🏷"
-            color="var(--saffron)"
-            count={stats.partnersWithBalance.length || 0}
-            defaultOpen={stats.partnersWithBalance.length > 0}
-          >
-            <div className="card">
-              {stats.partnersCount === 0 ? (
-                <WorkflowSetupCard title="No partners added yet" message="Add outside partners, freelancers, venues, or vendors in Settings to track what is still payable." actionLabel="Open Settings" onAction={() => onNav("settings")} tone="warning" />
-              ) : stats.partnersWithBalance.length === 0 ? (
-                <WorkflowSetupCard title="Partner balances are clear" message="No outstanding partner or vendor dues are recorded right now." tone="success" />
-              ) : (
-                stats.partnersWithBalance.slice(0, 5).map(partner => (
-                  <FeedRow
-                    key={partner.partnerName}
-                    title={partner.partnerName}
-                    meta={partner.contact || "No contact added"}
-                    amount={fmtMoney(partner.balanceDue, sym)}
-                    amountColor="var(--saffron)"
-                  />
-                ))
-              )}
-            </div>
-          </Collapsible>
-        )}
 
         <Collapsible
           title="Smart Alerts"
@@ -1874,65 +1840,61 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           </div>
         </Collapsible>
 
-        {!isSmallBusinessOrg && (
-          <Collapsible
-            title="High-Risk Customers"
-            icon="⚠️"
-            color="var(--saffron)"
-            count={showAdvanced ? stats.highRiskCustomers.length : 0}
-            defaultOpen={false}
-          >
-            <div className="card">
-              {!showAdvanced ? (
-                <WorkflowSetupCard title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
-              ) : stats.highRiskCustomers.length === 0 ? (
-                <WorkflowSetupCard title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
-              ) : (
-                stats.highRiskCustomers.map(customer => (
-                  <FeedRow
-                    key={customer.name}
-                    title={customer.name}
-                    meta={`${customer.overdueCount} overdue invoice(s)`}
-                    amount={`${Math.round(customer.lateRatio * 100)}% late`}
-                    amountColor="var(--danger)"
-                  />
-                ))
-              )}
-            </div>
-          </Collapsible>
-        )}
+        <Collapsible
+          title="High-Risk Customers"
+          icon="⚠️"
+          color="var(--saffron)"
+          count={showAdvanced ? stats.highRiskCustomers.length : 0}
+          defaultOpen={false}
+        >
+          <div className="card">
+            {!showAdvanced ? (
+              <WorkflowSetupCard title="Risk scoring is on Pro" message="Upgrade to Pro to flag frequent late payers and reduce collection risk." tone="warning" />
+            ) : stats.highRiskCustomers.length === 0 ? (
+              <WorkflowSetupCard title="Healthy payment behaviour" message="No late-payment risk detected so far. Keep invoices updated to maintain this view." tone="success" />
+            ) : (
+              stats.highRiskCustomers.map(customer => (
+                <FeedRow
+                  key={customer.name}
+                  title={customer.name}
+                  meta={`${customer.overdueCount} overdue invoice(s)`}
+                  amount={`${Math.round(customer.lateRatio * 100)}% late`}
+                  amountColor="var(--danger)"
+                />
+              ))
+            )}
+          </div>
+        </Collapsible>
 
-        {!isSmallBusinessOrg && (
-          <Collapsible
-            title="Pending Invoice Queue"
-            icon="⏰"
-            color="var(--saffron)"
-            count={stats.pendingInvoices.length}
-            defaultOpen={stats.pendingInvoices.length > 0}
-          >
-            <div className="card">
-              {stats.pendingInvoices.length === 0 ? (
-                <WorkflowSetupCard title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
-              ) : (
-                stats.pendingInvoices.slice(0, 4).map(invoice => {
-                  const color = getInvoiceStatusColor(invoice.computedStatus);
-                  return (
-                    <div key={invoice.id} className="ledger-feed-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
-                      <div className="ledger-feed-main">
-                        <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
-                      </div>
-                      <div className="ledger-feed-side">
-                        <div className="ledger-feed-amount" style={{ color: "var(--sky)" }}>{fmtMoney(invoice.total, sym)}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
-                      </div>
+        <Collapsible
+          title="Pending Invoice Queue"
+          icon="⏰"
+          color="var(--saffron)"
+          count={stats.pendingInvoices.length}
+          defaultOpen={stats.pendingInvoices.length > 0}
+        >
+          <div className="card">
+            {stats.pendingInvoices.length === 0 ? (
+              <WorkflowSetupCard title="Nothing pending" message="All invoices are currently paid up. New reminders will appear here automatically." tone="success" />
+            ) : (
+              stats.pendingInvoices.slice(0, 4).map(invoice => {
+                const color = getInvoiceStatusColor(invoice.computedStatus);
+                return (
+                  <div key={invoice.id} className="ledger-feed-row" onClick={() => onNav("invoices")} style={{ cursor: "pointer" }}>
+                    <div className="ledger-feed-main">
+                      <div className="ledger-feed-title">{invoice.customer?.name || invoice.billTo?.name || "Walk-in Customer"}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{invoice.number} · {invoice.dueMessage || "Awaiting payment"}</div>
                     </div>
-                  );
-                })
-              )}
-            </div>
-          </Collapsible>
-        )}
+                    <div className="ledger-feed-side">
+                      <div className="ledger-feed-amount" style={{ color: "var(--sky)" }}>{fmtMoney(invoice.total, sym)}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color }}>{getInvoiceStatusLabel(invoice.computedStatus)}</div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Collapsible>
 
       </div>
 

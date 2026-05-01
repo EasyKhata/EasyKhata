@@ -11,6 +11,7 @@ import ProfileModal from "./settings/ProfileModal";
 import AccountModal from "./settings/AccountModal";
 import OrganizationSwitcherModal from "../components/OrganizationSwitcherModal";
 import CustomersScreen from "./settings/CustomersScreen";
+import StaffScreen from "./settings/StaffScreen";
 import SocietyPortalScreen from "./settings/SocietyPortalScreen";
 import AuditLogScreen from "./settings/AuditLogScreen";
 import OrgMembersScreen from "./settings/OrgMembersScreen";
@@ -314,6 +315,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [staffForm, setStaffForm] = useState(null);
+  const [editStaff, setEditStaff] = useState(null);
   const initialPhoneParts = splitPhoneNumber(user?.phone || "", user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
   const initialLocationParts = parseLocationFields(user?.location || "");
   const initialDobParts = parseDateOfBirthParts(user?.dateOfBirth || "");
@@ -410,6 +413,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const canChangeOrgType = (user?.role === "admin" || canChangeOrgTypeFn(user)) && !isPrimaryHouseholdOrg;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
+  const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const showApartmentWhatsappField = isApartmentOrg;
   const canManageSocietyPortal = Boolean(
     user?.id &&
@@ -712,9 +716,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }, [account, user?.email, user?.organizationType, user?.phone]);
 
   useEffect(() => {
+    const rawType = getOrgType(account?.organizationType || user?.organizationType);
     setCreateOrgForm(current => ({
       ...current,
-      organizationType: getOrgType(account?.organizationType || user?.organizationType)
+      organizationType: rawType === ORG_TYPES.PERSONAL ? ORG_TYPES.FREELANCER : rawType
     }));
   }, [account?.organizationType, user?.organizationType]);
 
@@ -969,6 +974,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter the customer name.");
       return;
     }
+    if (showPersonContactFields && !cleanPhoneNumber) {
+      showNotice("Please enter the client phone number.");
+      return;
+    }
     if (showFullCustomerForm && !isOptionalEmail(cleanEmail)) {
       showNotice("Please enter a valid customer email or leave it empty.");
       return;
@@ -1089,6 +1098,54 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setScreen("org-records");
     setOrgRecordForm(null);
     setEditOrgRecord(null);
+  }
+
+  function openNewStaff() {
+    setEditStaff(null);
+    setStaffForm({
+      name: "",
+      phoneCountryCode: DEFAULT_PHONE_COUNTRY_CODE,
+      phoneNumber: "",
+      phone: "",
+      idCardType: "",
+      idCardNumber: "",
+      email: "",
+      address: ""
+    });
+    setScreen("staff-form");
+  }
+
+  function openEditStaff(member) {
+    setEditStaff(member);
+    const phoneParts = splitPhoneNumber(member.phone || "", member.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
+    setStaffForm({
+      ...member,
+      phoneCountryCode: phoneParts.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+      phoneNumber: phoneParts.phoneNumber || ""
+    });
+    setScreen("staff-form");
+  }
+
+  async function saveStaffMember() {
+    const name = String(staffForm?.name || "").trim();
+    const cleanPhoneNumber = sanitizePhoneDigits(staffForm?.phoneNumber || "");
+    const cleanPhoneCountryCode = staffForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
+    const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
+    if (!name) { showNotice("Please enter the staff member name."); return; }
+    if (!cleanPhoneNumber) { showNotice("Please enter the staff member phone number."); return; }
+    const payload = {
+      name,
+      phone: cleanPhone,
+      phoneNumber: cleanPhoneNumber,
+      phoneCountryCode: cleanPhoneCountryCode,
+      idCardType: String(staffForm?.idCardType || "").trim(),
+      idCardNumber: String(staffForm?.idCardNumber || "").trim(),
+      email: String(staffForm?.email || "").trim(),
+      address: String(staffForm?.address || "").trim()
+    };
+    if (editStaff) updateOrgRecord("staff", { ...editStaff, ...payload });
+    else addOrgRecord("staff", payload);
+    setScreen("staff");
   }
 
   function saveGoalSettings() {
@@ -1907,9 +1964,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="B" label="Your Khata" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
               <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
-                <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => setScreen("create-org")} />
+                <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => {
+                  const ownedSet = new Set(organizations.map(o => getOrgType(o.organizationType)));
+                  const firstAvailable = getSecondaryOrgTypeOptions(ORG_TYPES.FREELANCER).find(o => !ownedSet.has(getOrgType(o.value)));
+                  setCreateOrgForm({ name: "", organizationType: firstAvailable?.value || ORG_TYPES.FREELANCER });
+                  setScreen("create-org");
+                }} />
               )}
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => setScreen("customers")} />
+              {isFreelancerOrg && (
+                <MenuRow
+                  icon="S"
+                  label="Staff"
+                  sub={`${(orgRecords?.staff || []).length} staff member(s)`}
+                  onClick={() => setScreen("staff")}
+                />
+              )}
               {!isPersonalOrg && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />}
               {isApartmentOrg && (
                 <MenuRow
@@ -1977,6 +2047,19 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </div>
               <div className="card">
                 <MenuRow icon="T" label="Resident Members" sub="Invite residents and manage their roles" onClick={() => setScreen("org-members")} />
+                <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
+              </div>
+            </div>
+          )}
+
+          {isFreelancerOrg && (
+            <div className="ledger-block">
+              <div className="ledger-block-header">
+                <div className="ledger-block-title">Team &amp; Access</div>
+                <div className="ledger-block-caption">Invite team members and manage who can view or edit this khata.</div>
+              </div>
+              <div className="card">
+                <MenuRow icon="T" label="Team Members" sub="Invite members and manage admin or viewer access" onClick={() => setScreen("org-members")} />
                 <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
               </div>
             </div>
@@ -2288,6 +2371,24 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   if (screen === "org-members") {
     return withNotice(
       <OrgMembersScreen onBack={() => setScreen("main")} />
+    );
+  }
+
+  if (screen === "staff" || screen === "staff-form") {
+    return withNotice(
+      <StaffScreen
+        screen={screen}
+        items={orgRecords?.staff || []}
+        staffForm={staffForm}
+        onStaffFormChange={setStaffForm}
+        editStaff={editStaff}
+        onOpenNewStaff={openNewStaff}
+        onOpenEditStaff={openEditStaff}
+        onSaveStaff={saveStaffMember}
+        onRemoveStaff={id => removeOrgRecord("staff", id)}
+        onBackToList={() => setScreen("staff")}
+        onClose={() => setScreen("main")}
+      />
     );
   }
 

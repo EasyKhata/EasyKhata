@@ -1,4 +1,4 @@
-import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, calculateSmallBusinessDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData, isSmallBusinessOrgData } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 import { APP_WEBSITE_HOST } from "./brand";
 
@@ -236,7 +236,6 @@ function getReportStatsForMonth(data, year, month) {
   if (isApartmentOrgData(data)) return calculateApartmentDashboard(data, year, month);
   if (isPersonalOrgData(data)) return calculatePersonalDashboard(data, year, month);
   if (isFreelancerOrgData(data)) return calculateFreelancerDashboard(data, year, month);
-  if (isSmallBusinessOrgData(data)) return calculateSmallBusinessDashboard(data, year, month);
   return calculateDashboard(data, year, month);
 }
 
@@ -261,7 +260,6 @@ function getFinancialYearTitle(data, startYear) {
   if (isApartmentOrgData(data)) return `Society Report - ${fyLabel}`;
   if (isPersonalOrgData(data)) return `Household Report - ${fyLabel}`;
   if (isFreelancerOrgData(data)) return `Small Business Report - ${fyLabel}`;
-  if (isSmallBusinessOrgData(data)) return `Small Business Report - ${fyLabel}`;
   return `Ledger Report - ${fyLabel}`;
 }
 
@@ -270,7 +268,6 @@ function getFinancialYearFilename(data, startYear) {
   if (isApartmentOrgData(data)) return `society-report-${suffix}.pdf`;
   if (isPersonalOrgData(data)) return `household-report-${suffix}.pdf`;
   if (isFreelancerOrgData(data)) return `small-business-report-${suffix}.pdf`;
-  if (isSmallBusinessOrgData(data)) return `small-business-report-${suffix}.pdf`;
   return `ledger-report-${suffix}.pdf`;
 }
 
@@ -362,17 +359,6 @@ function getFinancialYearMetricItems(data, overview, sym) {
     ];
   }
 
-  if (isSmallBusinessOrgData(data)) {
-    return [
-      { label: "Sales", value: money(overview.totalIncome, sym) },
-      { label: "Expenses", value: money(overview.totalExpense, sym) },
-      { label: "Net", value: money(overview.totalNet, sym) },
-      { label: "Services", value: String(stats.servicesCount || 0) },
-      { label: "Partner Dues", value: money(stats.partnerBalanceTotal || 0, sym) },
-      { label: "Team", value: String(stats.teamCount || 0) }
-    ];
-  }
-
   return [
     { label: "Receipts", value: money(overview.totalIncome, sym) },
     { label: "Expenses", value: money(overview.totalExpense, sym) },
@@ -415,17 +401,6 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
         { label: "Tracked clients", value: String(stats.trackedClientsCount || 0) },
         { label: "Pending invoices", value: money(stats.pendingInvoiceTotal || 0, sym) },
         { label: "Overdue invoices", value: String(stats.overdueInvoices?.length || 0) }
-      ]
-    };
-  }
-
-  if (isSmallBusinessOrgData(data)) {
-    return {
-      title: "Business Snapshot",
-      rows: [
-        { label: "Service catalog", value: String(stats.servicesCount || 0) },
-        { label: "Team members", value: String(stats.teamCount || 0) },
-        { label: "Partner dues", value: money(stats.partnerBalanceTotal || 0, sym) }
       ]
     };
   }
@@ -1263,93 +1238,6 @@ export async function downloadMonthlyReport(data, year, month, sym) {
 
     addPageNumbers(doc);
     doc.save(`freelancer-report-${stats.monthKey}.pdf`);
-    return;
-  }
-
-  if (isSmallBusinessOrgData(data)) {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const stats = calculateSmallBusinessDashboard(data, year, month);
-    const title = `Small Business Report - ${MONTHS[month]} ${year}`;
-
-    let y = PAGE.top;
-    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title);
-
-    y = sectionTitle(doc, y, "Business Summary");
-    y = drawMetricGrid(doc, y, [
-      { label: "Sales", value: money(stats.totalIncome, sym) },
-      { label: "Expenses", value: money(stats.totalExpense, sym) },
-      { label: "Profit / Loss", value: money(stats.profit, sym) },
-      { label: "Pending Invoices", value: money(stats.pendingInvoiceTotal, sym) },
-      { label: "Service Catalog", value: String(stats.servicesCount || 0) },
-      { label: "Partner Dues", value: money(stats.partnerBalanceTotal || 0, sym) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Service Catalog");
-    y = drawRows(
-      doc,
-      y,
-      stats.servicesCount
-        ? (stats.topServices || []).slice(0, 6).map(item => ({
-            label: safeText(item.serviceName),
-            value: `${item.defaultAmount ? money(item.defaultAmount, sym) : "--"}${item.packageName ? ` | ${safeText(item.packageName)}` : ""}`
-          }))
-        : [{ label: "No service records added", value: "Add your core services in Settings to keep work consistent" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Partner Balances");
-    y = drawRows(
-      doc,
-      y,
-      stats.partnersCount
-        ? (stats.partnersWithBalance.length
-          ? stats.partnersWithBalance.slice(0, 6).map(partner => ({
-              label: safeText(partner.partnerName),
-              value: `${money(partner.balanceDue, sym)}${partner.contact ? ` | ${safeText(partner.contact)}` : ""}`
-            }))
-          : [{ label: "All partner balances are clear", value: "No outstanding partner or vendor dues are recorded" }])
-        : [{ label: "No partner records added", value: "Add partners or outside vendors in Settings to track balances here" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Team Snapshot");
-    y = drawRows(
-      doc,
-      y,
-      stats.teamCount
-        ? (stats.teamMembers || []).slice(0, 6).map(member => ({
-            label: safeText(member.name),
-            value: `${member.role ? safeText(member.role) : "Role not added"}${member.payout ? ` | ${money(member.payout, sym)}` : ""}`
-          }))
-        : [{ label: "No team records added", value: "Add team members in Settings to keep roles and payouts visible" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Top Customers");
-    y = drawRows(
-      doc,
-      y,
-      stats.topCustomers.length
-        ? stats.topCustomers.map(item => ({
-            label: item.name,
-            value: `${money(item.revenue, sym)} | Open ${money(item.balance, sym)}`
-          }))
-        : [{ label: "No customer revenue recorded yet", value: "Create invoices to build customer insights" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Alerts Snapshot");
-    y = drawRows(
-      doc,
-      y,
-      stats.alertItems.length
-        ? stats.alertItems.slice(0, 6).map(item => ({ label: item.title, value: safeText(item.message) }))
-        : [{ label: "No active alerts", value: "Operations, stock, and collections look steady right now" }]
-    );
-
-    addPageNumbers(doc);
-    doc.save(`small-business-report-${stats.monthKey}.pdf`);
     return;
   }
 

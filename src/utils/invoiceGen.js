@@ -345,3 +345,120 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
   doc.save(`${safeText(invoice.number || "invoice")}.pdf`);
 }
+
+export async function downloadPayslip(payslip, account, sym) {
+  await ensureJsPDF();
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const acc = account || {};
+  const staffName = safeText(payslip.staffMemberName || "Staff");
+  const payPeriod = String(payslip.payPeriod || "");
+  const periodLabel = payPeriod
+    ? new Date(`${payPeriod}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+    : "—";
+  const basic = toNumber(payslip.basicPay);
+  const allowances = toNumber(payslip.allowances);
+  const deductions = toNumber(payslip.deductions);
+  const gross = basic + allowances;
+  const net = gross - deductions;
+  let y = PAGE.top;
+
+  // Header bar
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 28, 6, 6, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(21);
+  doc.text(safeText(acc.name || "Business"), PAGE.left + 4, y + 10);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(safeText(acc.email || acc.phone || ""), PAGE.left + 4, y + 17);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("PAYSLIP", PAGE.right - 4, y + 11, { align: "right" });
+  doc.setFontSize(10.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(safeText(periodLabel), PAGE.right - 4, y + 18, { align: "right" });
+  y += 36;
+
+  // Employer + Details blocks
+  const employerLines = [
+    acc.addressLine || acc.address || "",
+    acc.gstin ? `GSTIN: ${acc.gstin}` : "",
+    acc.phone ? `Phone: ${acc.phone}` : "",
+    acc.email ? `Email: ${acc.email}` : ""
+  ];
+  const detailLines = [
+    `Pay Period: ${periodLabel}`,
+    `Issue Date: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`,
+    "Status: PAID"
+  ];
+  doc.setDrawColor(225);
+  doc.setFillColor(248, 248, 251);
+  doc.roundedRect(PAGE.left, y, 84, 34, 4, 4, "FD");
+  doc.roundedRect(110, y, 84, 34, 4, 4, "FD");
+  const leftEnd = drawWrappedBlock(doc, PAGE.left + 4, y + 7, 74, "EMPLOYER", employerLines);
+  const rightEnd = drawWrappedBlock(doc, 114, y + 7, 74, "DETAILS", detailLines);
+  y += Math.max(42, Math.max(leftEnd, rightEnd) - y + 6);
+
+  // Employee
+  y = ensureSpace(doc, y, 26);
+  doc.setFillColor(238, 242, 247);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 22, 4, 4, "F");
+  drawWrappedBlock(doc, PAGE.left + 4, y + 7, PAGE.right - PAGE.left - 8, "EMPLOYEE", [staffName]);
+  y += 30;
+
+  // Earnings
+  y = ensureSpace(doc, y, 50);
+  doc.setFillColor(235, 245, 255);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 7, 2, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(20, 60, 120);
+  doc.text("EARNINGS", PAGE.left + 4, y + 4.8);
+  doc.text("AMOUNT", PAGE.right - 4, y + 4.8, { align: "right" });
+  y += 10;
+  [["Basic Pay", basic], ["Allowances", allowances]].forEach(([label, val]) => {
+    drawLabelValue(doc, y, label, money(val, sym));
+    y += 7;
+  });
+  drawRule(doc, y);
+  y += 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10.5);
+  doc.setTextColor(20, 20, 28);
+  doc.text("Gross Earnings", PAGE.left, y);
+  doc.text(money(gross, sym), PAGE.right, y, { align: "right" });
+  y += 12;
+
+  // Deductions
+  if (deductions > 0) {
+    y = ensureSpace(doc, y, 36);
+    doc.setFillColor(255, 243, 243);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 7, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(160, 30, 30);
+    doc.text("DEDUCTIONS", PAGE.left + 4, y + 4.8);
+    doc.text("AMOUNT", PAGE.right - 4, y + 4.8, { align: "right" });
+    y += 10;
+    drawLabelValue(doc, y, "Deductions", money(deductions, sym));
+    y += 7;
+    drawRule(doc, y);
+    y += 10;
+  }
+
+  // Net Pay
+  y = ensureSpace(doc, y, 22);
+  doc.setFillColor(22, 22, 28);
+  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 18, 4, 4, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(255, 255, 255);
+  doc.text("Net Pay", PAGE.left + 6, y + 11);
+  doc.setFontSize(16);
+  doc.text(money(net, sym), PAGE.right - 6, y + 11, { align: "right" });
+  y += 26;
+
+  drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
+  doc.save(`payslip-${staffName.replace(/\s+/g, "-").toLowerCase()}-${payPeriod || "undated"}.pdf`);
+}
