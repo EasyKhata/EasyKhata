@@ -2060,6 +2060,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </div>
               <div className="card">
                 <MenuRow icon="T" label="Team Members" sub="Invite members and manage admin or viewer access" onClick={() => setScreen("org-members")} />
+                <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
               </div>
             </div>
           )}
