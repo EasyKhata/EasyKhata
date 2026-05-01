@@ -183,7 +183,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     : getOrgConfig(effectiveOrgType);
   const isApartmentOrg = !isAdmin && effectiveOrgType === ORG_TYPES.APARTMENT;
   const showTaxFields = !isApartmentOrg;
-  const isSmallBusinessOrg = !isAdmin && effectiveOrgType === ORG_TYPES.SMALL_BUSINESS;
   const isFreelancerOrg = !isAdmin && effectiveOrgType === ORG_TYPES.FREELANCER;
   const isQuote = documentType === "quote";
   const documentLabel = isQuote ? "Quote" : config.invoiceEntryLabel;
@@ -888,7 +887,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             <WorkflowSetupCard
               eyebrow={isQuote ? "Quotes" : isApartmentOrg ? "Receipts & bills" : "Documents"}
               title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`}
-              description={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
+              message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
               actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel}
               onAction={openNew}
               tone="accent"
@@ -896,7 +895,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
           ) : filteredMonthInv.length === 0 ? (
             <WorkflowSetupCard
               title="No matching records"
-              description="Try a different search term to find the receipt or bill you need."
+              message="Try a different search term to find the receipt or bill you need."
               tone="info"
             />
           ) : (
@@ -1256,26 +1255,6 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                     </button>
                   )}
                 </div>
-                {isSmallBusinessOrg && (
-                  <Select value={item.serviceId || ""} onChange={event => {
-                    const service = serviceOptions.find(option => option.id === event.target.value);
-                    setForm(current => ({
-                      ...current,
-                      items: current.items.map(entry => entry.id === item.id ? {
-                        ...entry,
-                        serviceId: event.target.value,
-                        desc: service?.name || entry.desc,
-                        subDesc: service?.packageName || service?.notes || entry.subDesc,
-                        rate: service?.defaultAmount ? String(service.defaultAmount) : entry.rate
-                      } : entry)
-                    }));
-                  }} style={{ marginBottom: 8 }}>
-                    <option value="">{serviceOptions.length ? "Select saved service" : "Add services in Settings first"}</option>
-                    {serviceOptions.map(service => (
-                      <option key={service.id} value={service.id}>{service.label}</option>
-                    ))}
-                  </Select>
-                )}
                 <Input placeholder="Description" value={item.desc} onChange={event => setItem(item.id, "desc", event.target.value)} style={{ marginBottom: 8 }} />
                 <Input placeholder="Sub-description (optional)" value={item.subDesc || ""} onChange={event => setItem(item.id, "subDesc", event.target.value)} style={{ marginBottom: 8, fontSize: 14 }} />
                 {showTaxFields && (

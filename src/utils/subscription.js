@@ -29,10 +29,9 @@ export const PAYMENT_REQUEST_STATUS = {
 
 // Prices per org type. Household (personal) is permanently free — no Pro tier needed.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:       { pro: null },
-  [ORG_TYPES.FREELANCER]:     { pro: { monthly: 69, yearly: 699 } },
-  [ORG_TYPES.SMALL_BUSINESS]: { pro: { monthly: 69, yearly: 699 } },
-  [ORG_TYPES.APARTMENT]:      { pro: { monthly: 69, yearly: 699 } }
+  [ORG_TYPES.PERSONAL]:   { pro: null },
+  [ORG_TYPES.FREELANCER]: { pro: { monthly: 69, yearly: 699 } },
+  [ORG_TYPES.APARTMENT]:  { pro: { monthly: 69, yearly: 699 } }
 };
 
 // Per-plan limits for org types that aren't fully unlimited on Pro
@@ -124,8 +123,8 @@ export function getSubscriptionEndDate(days) {
 }
 
 // orgType is required to look up the correct price tier
-export function getBillingAmount(cycle, plan = PLANS.PRO, orgType = ORG_TYPES.SMALL_BUSINESS) {
-  const prices = PLAN_PRICES[orgType] || PLAN_PRICES[ORG_TYPES.SMALL_BUSINESS];
+export function getBillingAmount(cycle, plan = PLANS.PRO, orgType = ORG_TYPES.FREELANCER) {
+  const prices = PLAN_PRICES[orgType] || PLAN_PRICES[ORG_TYPES.FREELANCER];
   const tier = prices.pro;
   if (!tier) return 0;
   return cycle === BILLING_CYCLES.YEARLY ? tier.yearly : tier.monthly;
@@ -167,7 +166,7 @@ export function isFreeReadOnlyMode(user, orgType) {
 //   invoiceCreate       → invoiceCountForCustomer (freelancer only; per customer per month)
 //   apartmentFlatCreate → flatCount
 //   societyInvite       → inviteCount
-export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMALL_BUSINESS) {
+export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FREELANCER) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
 
@@ -234,7 +233,7 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.SMA
   }
 }
 
-export function getUpgradeCopy(feature, orgType = ORG_TYPES.SMALL_BUSINESS) {
+export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
   switch (feature) {
     case "invoiceCreate":
       if (orgType === ORG_TYPES.FREELANCER) {

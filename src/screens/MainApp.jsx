@@ -33,7 +33,6 @@ const IncomeSection = lazy(() => import("../sections/IncomeSection"));
 const ExpensesSection = lazy(() => import("../sections/ExpensesSection"));
 const EmiSection = lazy(() => import("../sections/EmiSection"));
 const InvoicesSection = lazy(() => import("../sections/InvoicesSection"));
-const KhataSection = lazy(() => import("../sections/KhataSection"));
 const SettingsSection = lazy(() => import("../sections/SettingsSection"));
 const OrgSection = lazy(() => import("../sections/SettingsSection"));
 const AdminPanel = lazy(() => import("../sections/AdminPanel"));
@@ -314,17 +313,19 @@ function QuickEntrySheet({
   isViewerMode,
   addIncome,
   addExpense,
-  addOrgRecord
+  addOrgRecord,
+  addCustomer
 }) {
   const resolvedOrgType = getOrgType(orgType);
-  const config = getOrgConfig(resolvedOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
+  const config = getOrgConfig(resolvedOrgType);
   const isPersonalOrg = resolvedOrgType === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = resolvedOrgType === ORG_TYPES.FREELANCER;
   const isApartmentOrg = resolvedOrgType === ORG_TYPES.APARTMENT;
   const tabs = [
     { key: "income", label: isApartmentOrg ? "Collection" : config.incomeEntryLabel, color: "var(--accent)" },
     { key: "expense", label: config.expensesEntryLabel, color: "var(--danger)" },
-    ...(isPersonalOrg ? [{ key: "emi", label: "EMI", color: "var(--gold)" }] : [])
+    ...(isPersonalOrg ? [{ key: "emi", label: "EMI", color: "var(--gold)" }] : []),
+    ...(isFreelancerOrg ? [{ key: "client", label: config.customerEntryLabel || "Client", color: "var(--blue)" }] : [])
   ];
   const [entryType, setEntryType] = useState(tabs[0]?.key || "income");
   const [saving, setSaving] = useState(false);
@@ -343,6 +344,11 @@ function QuickEntrySheet({
   const hasHouseholdPeople = householdPeople.length > 0;
   const hasFreelancerClients = freelancerClients.length > 0;
   const hasApartmentFlats = apartmentFlats.length > 0;
+  const { orgRecords } = useData();
+  const staffMembers = useMemo(() =>
+    (orgRecords?.staff || []).map(m => ({ value: m.name || "", label: [m.name || "", m.role || m.phone || ""].filter(Boolean).join(" - ") })).filter(o => o.value),
+    [orgRecords?.staff]
+  );
   const [form, setForm] = useState({
     description: "",
     amount: "",
@@ -352,6 +358,7 @@ function QuickEntrySheet({
     incomeType: "Salary",
     clientName: "",
     billable: "No",
+    staffMemberName: "",
     flatNumber: "",
     residentName: "",
     collectionType: "Monthly Maintenance",
@@ -360,7 +367,9 @@ function QuickEntrySheet({
     billReference: "",
     lender: "",
     dueDay: "1",
-    endDate: ""
+    endDate: "",
+    newClientName: "",
+    newClientPhone: ""
   });
 
   useEffect(() => {
@@ -398,6 +407,11 @@ function QuickEntrySheet({
 
   function validate() {
     if (isViewerMode || isReadOnlyFreeMode) return "Your current access does not allow creating new records here.";
+    if (entryType === "client") {
+      if (!String(form.newClientName || "").trim()) return "Enter client name.";
+      if (!String(form.newClientPhone || "").replace(/\D/g, "")) return "Enter client phone number.";
+      return "";
+    }
     if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
     if (!String(form.description || "").trim()) return "Enter a description.";
     if (entryType === "income") {
@@ -412,7 +426,6 @@ function QuickEntrySheet({
       if (!String(form.category || "").trim()) return "Choose a category.";
       if (isPersonalOrg && !hasHouseholdPeople) return "Add a household member in Khata first.";
       if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
-      if (isFreelancerOrg && !hasFreelancerClients) return "Add a client in Khata first.";
     }
     if (entryType === "emi") {
       if (!hasHouseholdPeople) return "Add a household member in Khata first.";
@@ -430,7 +443,16 @@ function QuickEntrySheet({
     }
     setSaving(true);
     try {
-      if (entryType === "income") {
+      if (entryType === "client") {
+        const cleanPhone = String(form.newClientPhone || "").replace(/\D/g, "");
+        addCustomer?.({
+          name: String(form.newClientName || "").trim(),
+          phoneNumber: cleanPhone,
+          phone: cleanPhone,
+          email: "",
+          addressLine: "", city: "", state: "", country: "", location: "", address: "", gstin: ""
+        });
+      } else if (entryType === "income") {
         const payload = {
           description: String(form.description || "").trim(),
           label: String(form.description || "").trim(),
@@ -471,6 +493,9 @@ function QuickEntrySheet({
         if (isFreelancerOrg) {
           payload.clientName = String(form.clientName || "").trim();
           payload.billable = String(form.billable || "No").trim();
+          if (String(form.category || "").toLowerCase() === "payroll") {
+            payload.staffMemberName = String(form.staffMemberName || "").trim() || undefined;
+          }
         }
         if (isApartmentOrg) {
           payload.serviceProvider = String(form.serviceProvider || "").trim();
@@ -548,6 +573,20 @@ function QuickEntrySheet({
       </div>
       {/* Scrollable fields — amount first, then all other fields */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 14px 4px", WebkitOverflowScrolling: "touch" }}><div style={{ display: "grid", gap: 10 }}>
+        {entryType === "client" ? (
+          <>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client Name *</div>
+              <input autoFocus type="text" value={form.newClientName} placeholder="e.g. Rajesh Kumar" onChange={event => updateField("newClientName", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Phone Number *</div>
+              <input type="tel" inputMode="numeric" value={form.newClientPhone} placeholder="9876543210" onChange={event => updateField("newClientPhone", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>To add more details (email, GSTIN, address) open the client in Org Settings after saving.</div>
+          </>
+        ) : (
+        <>
         <div style={{ display: "flex", alignItems: "center", gap: 10, borderRadius: 14, border: "1px solid var(--border)", background: "var(--surface-high)", padding: "10px 14px" }}>
           <span style={{ fontSize: 22, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
           <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 26, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
@@ -575,23 +614,25 @@ function QuickEntrySheet({
           <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
         </div>
         {entryType !== "emi" && (
-          <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: (entryType === "income" && isFreelancerOrg) ? "1fr" : twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Date</div>
               <input type="date" value={form.date} onChange={event => updateField("date", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>{entryType === "income" && !isApartmentOrg ? "Type" : "Category"}</div>
-              {entryType === "income" && !isApartmentOrg ? (
-                <select value={form.incomeType} onChange={event => updateField("incomeType", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
-                  {(config.incomeFields?.find(field => field.key === "incomeType")?.options || ["Salary", "Other"]).map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-              ) : (
-                <select value={entryType === "income" && isApartmentOrg ? form.collectionType : form.category} onChange={event => updateField(entryType === "income" && isApartmentOrg ? "collectionType" : "category", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
-                  {(entryType === "income" && isApartmentOrg ? (config.incomeFields?.find(field => field.key === "collectionType")?.options || ["Monthly Maintenance", "Other"]) : expenseCategories).map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-              )}
-            </div>
+            {!(entryType === "income" && isFreelancerOrg) && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>{entryType === "income" && !isApartmentOrg ? "Type" : "Category"}</div>
+                {entryType === "income" && !isApartmentOrg ? (
+                  <select value={form.incomeType} onChange={event => updateField("incomeType", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
+                    {(config.incomeFields?.find(field => field.key === "incomeType")?.options || ["Salary", "Other"]).map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                ) : (
+                  <select value={entryType === "income" && isApartmentOrg ? form.collectionType : form.category} onChange={event => updateField(entryType === "income" && isApartmentOrg ? "collectionType" : "category", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>
+                    {(entryType === "income" && isApartmentOrg ? (config.incomeFields?.find(field => field.key === "collectionType")?.options || ["Monthly Maintenance", "Other"]) : expenseCategories).map(option => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                )}
+              </div>
+            )}
           </div>
         )}
         {entryType === "income" && isPersonalOrg && (
@@ -646,8 +687,8 @@ function QuickEntrySheet({
           <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
-              <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle} disabled={!hasFreelancerClients}>
-                <option value="">{hasFreelancerClients ? "Select client" : "Add client first"}</option>
+              <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
+                <option value="">{hasFreelancerClients ? "Select client" : "No clients yet"}</option>
                 {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
@@ -655,6 +696,15 @@ function QuickEntrySheet({
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Billable</div>
               <select value={form.billable} onChange={event => updateField("billable", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}><option value="No">No</option><option value="Yes">Yes</option></select>
             </div>
+          </div>
+        )}
+        {entryType === "expense" && isFreelancerOrg && String(form.category || "").toLowerCase() === "payroll" && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Staff Member</div>
+            <select value={form.staffMemberName || ""} onChange={event => updateField("staffMemberName", event.target.value)} style={sheetSelectStyle}>
+              <option value="">{staffMembers.length ? "Select staff member" : "No staff added yet — add in Settings"}</option>
+              {staffMembers.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
           </div>
         )}
         {entryType === "expense" && isApartmentOrg && (
@@ -695,6 +745,8 @@ function QuickEntrySheet({
               </div>
             </div>
           </>
+        )}
+        </>
         )}
       </div>
       </div>
@@ -1019,6 +1071,7 @@ export default function MainApp() {
     addIncome,
     addExpense,
     addOrgRecord,
+    addCustomer,
     customers = [],
     currency
   } = data;
@@ -1363,10 +1416,9 @@ export default function MainApp() {
   const trialActive = isTrialActive(user);
   const trialEndLabel = formatSubscriptionDate(user?.subscriptionEndsAt);
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
-  const orgConfig = getOrgConfig(currentOrgType) || getOrgConfig(ORG_TYPES.SMALL_BUSINESS);
+  const orgConfig = getOrgConfig(currentOrgType);
   const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = currentOrgType === ORG_TYPES.FREELANCER;
-  const isSmallBusinessOrg = currentOrgType === ORG_TYPES.SMALL_BUSINESS;
   const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
 
@@ -1424,12 +1476,11 @@ export default function MainApp() {
       { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
       ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : [])
     ] : []),
-    ...(!isAdmin && !hideInvoices && isSmallBusinessOrg ? [{ id: "khata", icon: "KH", label: "Khata" }] : []),
     ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Chat" }] : []),
     ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: "Khata" }] : []),
     ...(isAdmin ? [] : [])
-  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
+  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
   const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
   const handleDateChange = useCallback((nextYear, nextMonth) => {
@@ -1557,7 +1608,6 @@ export default function MainApp() {
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
         {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
         {tab === "discussions" && isApartmentOrg && <DiscussionsSection />}
-        {tab === "khata" && !isAdmin && isSmallBusinessOrg && <KhataSection orgType={currentOrgType} />}
         {tab === "invoices" && !hideInvoices && (
           <InvoicesSection
             year={year}
@@ -1569,7 +1619,7 @@ export default function MainApp() {
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
-  }, [currentOrgType, datePickerNode, handleNavigate, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, isSmallBusinessOrg, month, settingsNavigation, tab, viewMode, year]);
+  }, [currentOrgType, datePickerNode, handleNavigate, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, month, settingsNavigation, tab, viewMode, year]);
 
 
   const footerTabs = useMemo(() => {
@@ -1596,7 +1646,7 @@ export default function MainApp() {
         tabId === "income" && isApartmentOrg ? "Maint." :
         tabId === "income" && isFreelancerOrg ? "Payments" :
         tabId === "expenses" ? "Spend" :
-        tabId === "invoices" && (isFreelancerOrg || isSmallBusinessOrg) ? "Invoices" :
+        tabId === "invoices" && isFreelancerOrg ? "Invoices" :
         tabId === "discussions" ? "Chat" :
         tabId === "org" ? "Khata" :
         tabId === "adminSupport" ? "Support" :
@@ -1605,7 +1655,7 @@ export default function MainApp() {
         found.label;
       return { ...found, label };
     }).filter(Boolean);
-  }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isSmallBusinessOrg, isViewerMode]);
+  }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isViewerMode]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
 
   return (
@@ -2046,6 +2096,7 @@ export default function MainApp() {
                 addIncome={addIncome}
                 addExpense={addExpense}
                 addOrgRecord={addOrgRecord}
+                addCustomer={addCustomer}
               />
             </motion.div>
           </>

@@ -4,7 +4,7 @@ import { BILLING_CYCLES, PLANS, UPI_CONFIG, getBillingAmount } from "../../utils
 import { ORG_TYPES } from "../../utils/orgTypes";
 import { isNative } from "../../utils/native";
 
-export default function PlanRequestModal({ form, onFormChange, onSubmit, submitting, onClose, orgType = ORG_TYPES.SMALL_BUSINESS }) {
+export default function PlanRequestModal({ form, onFormChange, onSubmit, submitting, onClose, orgType = ORG_TYPES.FREELANCER }) {
   const billingCycle = form.billingCycle || BILLING_CYCLES.MONTHLY;
   const monthlyAmount = getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
   const yearlyAmount  = getBillingAmount(BILLING_CYCLES.YEARLY,  PLANS.PRO, orgType);

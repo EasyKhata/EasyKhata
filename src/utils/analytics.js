@@ -461,10 +461,6 @@ export function isPersonalOrgData(data) {
   return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.PERSONAL;
 }
 
-export function isSmallBusinessOrgData(data) {
-  return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.SMALL_BUSINESS;
-}
-
 export function isFreelancerOrgData(data) {
   return getOrgType(data?.account?.organizationType || data?.organizationType) === ORG_TYPES.FREELANCER;
 }

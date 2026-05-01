@@ -1,7 +1,6 @@
 export const ORG_TYPES = {
   PERSONAL: "personal",
   FREELANCER: "freelancer",
-  SMALL_BUSINESS: "small_business",
   APARTMENT: "apartment"
 };
 
@@ -130,78 +129,8 @@ export const ORG_TYPE_CONFIGS = {
       { key: "billable", label: "Billable", type: "select", options: ["Yes", "No"] }
     ],
     invoiceFields: [],
-    customerFields: [
-      { key: "company", label: "Company", type: "text", placeholder: "Company name" }
-    ],
-    extraSections: []
-  },
-  [ORG_TYPES.SMALL_BUSINESS]: {
-    ...BASE_CONFIG,
-    typeLabel: "Small Business",
-    enableBudgets: false,
-    simpleCustomerForm: true,
-    incomeLabel: "Sales",
-    incomeEntryLabel: "Sale",
-    incomeActionLabel: "Add Sale",
-    expensesLabel: "Expenses",
-    expensesEntryLabel: "Expense",
-    expensesActionLabel: "Add Expense",
-    invoicesLabel: "Bills / Invoices",
-    hideInvoices: true,
-    customerLabel: "Customers",
-    customerEntryLabel: "Customer",
-    customerNameLabel: "Customer Name",
-    customerNamePlaceholder: "Customer name",
-    profileNameLabel: "Business / Studio Name",
-    profileNamePlaceholder: "E.g. Reddy Photo Studio",
-    accountIntro: "Use this profile for a small service business with one owner, a small team, customer invoices, and everyday operating costs.",
-    incomeFields: [
-      { key: "customerName", label: "Customer", type: "text", placeholder: "Type or select customer" }
-    ],
-    expenseFields: [
-      { key: "expenseType", label: "Expense Type", type: "select", options: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"] }
-    ],
-    invoiceFields: [
-      { key: "taxId", label: "GST / Tax ID", type: "text", placeholder: "Tax identifier (optional)" },
-      { key: "discount", label: "Discount", type: "number", placeholder: "0.00" },
-      { key: "paymentTerms", label: "Payment Terms", type: "text", placeholder: "E.g. Net 15" }
-    ],
     customerFields: [],
-    expenseCategories: ["Operations", "Team Payout", "Rent", "Travel", "Marketing", "Software", "Partner Payment", "Other"],
-    extraSections: [
-      {
-        key: "services",
-        label: "Services",
-        entryLabel: "Service",
-        empty: () => ({ serviceName: "", notes: "", products: [] }),
-        fields: [
-          { key: "serviceName", label: "Service Name", type: "text", required: true, placeholder: "Wedding shoot, flat resale, ad campaign" },
-          { key: "notes", label: "Notes", type: "textarea", placeholder: "Short notes or scope" }
-        ]
-      },
-      {
-        key: "team",
-        label: "Team Members",
-        entryLabel: "Team Member",
-        empty: () => ({ name: "", payout: "", role: "" }),
-        fields: [
-          { key: "name", label: "Name", type: "text", required: true, placeholder: "Team member name" },
-          { key: "payout", label: "Monthly Payout", type: "number", placeholder: "0.00" },
-          { key: "role", label: "Role", type: "text", placeholder: "Photographer, agent, editor, coordinator" }
-        ]
-      },
-      {
-        key: "partners",
-        label: "Partners / Vendors",
-        entryLabel: "Partner",
-        empty: () => ({ partnerName: "", contact: "", balanceDue: "" }),
-        fields: [
-          { key: "partnerName", label: "Partner / Vendor Name", type: "text", required: true, placeholder: "Venue, printer, decorator, broker, freelancer" },
-          { key: "contact", label: "Contact", type: "text", placeholder: "Phone or email" },
-          { key: "balanceDue", label: "Balance Due", type: "number", placeholder: "0.00" }
-        ]
-      }
-    ]
+    extraSections: []
   },
   [ORG_TYPES.APARTMENT]: {
     ...BASE_CONFIG,

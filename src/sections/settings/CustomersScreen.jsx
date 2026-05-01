@@ -733,12 +733,13 @@ export default function CustomersScreen({
   }
 
   if (screen === "customer-form") {
+    const phoneRequired = showPersonContactFields;
     return (
       <Modal
         title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`}
         onClose={onBackToList}
         onSave={onSaveCust}
-        canSave={!!custForm?.name?.trim()}
+        canSave={!!custForm?.name?.trim() && (!phoneRequired || !!(custForm?.phoneNumber || "").trim())}
       >
         <Field label={orgConfig.customerNameLabel} required>
           <Input
@@ -751,6 +752,7 @@ export default function CustomersScreen({
         {(showPersonContactFields || showApartmentWhatsappField) && (
           <Field
             label={showApartmentWhatsappField ? "Resident WhatsApp Number" : "Phone"}
+            required={phoneRequired}
             hint={showApartmentWhatsappField ? "Used for due reminders and invoice updates on WhatsApp." : ""}
           >
             <PhoneNumberInput
