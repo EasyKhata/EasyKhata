@@ -850,7 +850,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
             <WorkflowSetupCard
               eyebrow={isApartmentOrg ? "Collections" : "Manual entries"}
               title={`No ${config.incomeLabel.toLowerCase()} yet`}
-              message={isApartmentOrg ? "Use Add Collection to enter maintenance amounts already collected before onboarding or received after starting with the app." : `Track cash, transfers, or direct ${config.incomeEntryLabel.toLowerCase()} entries here.`}
+              message={isApartmentOrg ? `Tap "${config.incomeActionLabel}" below or use the + button to record your first maintenance collection.` : `Tap "${config.incomeActionLabel}" below or use the + button to record your first ${config.incomeEntryLabel.toLowerCase()}.`}
               actionLabel={config.incomeActionLabel}
               onAction={openNew}
               tone="accent"

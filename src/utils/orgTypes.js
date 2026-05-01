@@ -74,7 +74,7 @@ export const ORG_TYPE_CONFIGS = {
     customerNameLabel: "Person Name",
     customerNamePlaceholder: "Family member, friend, or contact name",
     profileNameLabel: "Household Name",
-    profileNamePlaceholder: "E.g. Reddy Family Budget",
+    profileNamePlaceholder: "E.g. Family Budget",
     accountIntro: "Use this profile for your household or personal finance records.",
     hideInvoices: true,
     incomeFields: [
@@ -119,7 +119,7 @@ export const ORG_TYPE_CONFIGS = {
     customerNameLabel: "Client Name",
     customerNamePlaceholder: "Client or studio name",
     profileNameLabel: "Your Name / Business Name",
-    profileNamePlaceholder: "E.g. Deepak Design Studio",
+    profileNamePlaceholder: "E.g. Design Studio",
     accountIntro: "This profile powers your client invoices, payments, and expense records.",
     incomeFields: [
       { key: "clientName", label: "Client", type: "text", placeholder: "Select client" }

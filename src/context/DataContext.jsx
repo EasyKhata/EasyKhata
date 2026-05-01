@@ -1376,8 +1376,29 @@ export function DataProvider({ children }) {
       const result = await orgsApi.delete(user.id, orgId);
       const nextActiveOrgId = result.newActiveOrgId || (orgIds.find(id => id !== orgId)) || DEFAULT_ORG_ID;
 
+      // Reset collection flags so sections re-fetch fresh data for the fallback org
+      const freshFetched = { income: false, expenses: false, invoices: false, customers: false };
+      collectionFetchedRef.current = freshFetched;
+      collectionFetchingRef.current = {};
+      setCollectionFetched(freshFetched);
+
       const nextOrgs = { ...data.orgs };
       delete nextOrgs[orgId];
+
+      // The fallback org's collections (income/expenses/invoices) were never lazy-loaded
+      // this session (user was on the deleted org). Rescue them from the existing local
+      // cache so we don't overwrite good cached data with empty arrays.
+      const existingCache = getUserData(user.id, "appData") || EMPTY_DATA;
+      const cachedFallbackOrg = existingCache.orgs?.[nextActiveOrgId] || {};
+      if (nextOrgs[nextActiveOrgId]) {
+        const live = nextOrgs[nextActiveOrgId];
+        nextOrgs[nextActiveOrgId] = normalizeOrgData({
+          ...live,
+          income:   live.income?.length   ? live.income   : (cachedFallbackOrg.income   || []),
+          expenses: live.expenses?.length ? live.expenses : (cachedFallbackOrg.expenses || []),
+          invoices: live.invoices?.length ? live.invoices : (cachedFallbackOrg.invoices || []),
+        });
+      }
 
       const nextState = buildStateFromOrganizations({
         orgs: nextOrgs,
@@ -1547,6 +1568,9 @@ export function DataProvider({ children }) {
     } catch (err) {
       logError(`ensureCollectionLoaded(${key}) failed`, err);
       showGlobalToast({ tone: "danger", title: "Sync error", message: "Some records couldn't be loaded. Check your connection and try again." });
+      // Reset fetched flag so the next section mount or org-switch can retry
+      collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: false };
+      setCollectionFetched(prev => ({ ...prev, [key]: false }));
     } finally {
       collectionFetchingRef.current[key] = false;
     }

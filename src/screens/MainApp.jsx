@@ -12,6 +12,7 @@ import { useConfirm } from "../context/DialogContext";
 import useIdleTimeout from "../hooks/useIdleTimeout";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
+import CoachMark, { useCoachMark } from "../components/CoachMark";
 import PendingInviteBanner from "../components/PendingInviteBanner";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
@@ -1080,6 +1081,10 @@ export default function MainApp() {
   const ownOrgName = ownOrgNameRef.current || account?.name || "My Organization";
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const orgSwitcherRef = useRef(null);
+  const orgSwitchBtnRef = useRef(null);
+  const fabRef = useRef(null);
+  const { seen: coachFabSeen, dismiss: dismissFabCoach } = useCoachMark(user?.id, "fab");
+  const { seen: coachOrgSeen, dismiss: dismissOrgCoach } = useCoachMark(user?.id, "org-switch");
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [trialBannerVisible, setTrialBannerVisible] = useState(true);
@@ -1802,7 +1807,8 @@ export default function MainApp() {
               {!isAdmin && (
                 <div style={{ position: "relative" }} ref={orgSwitcherRef}>
                   <button
-                    onClick={() => setShowOrgSwitcher(v => !v)}
+                    ref={orgSwitchBtnRef}
+                    onClick={() => { setShowOrgSwitcher(v => !v); dismissOrgCoach(); }}
                     title="Switch Khata"
                     style={{ height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid color-mix(in srgb, var(--saffron) 40%, var(--border))`, background: activeSharedOrgKey ? "color-mix(in srgb, var(--saffron) 12%, var(--raised))" : "color-mix(in srgb, var(--saffron) 7%, var(--raised))", color: "var(--saffron)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 12px", flexShrink: 0 }}
                   >
@@ -1955,9 +1961,10 @@ export default function MainApp() {
           if (tabItem.id === "__fab__") {
             return (
               <button
+                ref={fabRef}
                 key="__fab__"
                 type="button"
-                onClick={() => setShowFab(v => !v)}
+                onClick={() => { setShowFab(v => !v); dismissFabCoach(); }}
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -2102,6 +2109,26 @@ export default function MainApp() {
           </>
         )}
       </AnimatePresence>
+
+      {/* Coach marks */}
+      {!!account && !coachFabSeen && !showFab && (
+        <CoachMark
+          anchorRef={fabRef}
+          arrow="down"
+          label="Start here"
+          sub="Tap + to record income or expense"
+          onDismiss={dismissFabCoach}
+        />
+      )}
+      {organizations.length >= 2 && !coachOrgSeen && (
+        <CoachMark
+          anchorRef={orgSwitchBtnRef}
+          arrow="up"
+          label="Switch between your khatas"
+          sub="Tap here to switch the active khata"
+          onDismiss={dismissOrgCoach}
+        />
+      )}
 
       {readOnlyNotice && (
         <div style={{ position: "fixed", left: 16, right: 16, bottom: bottomNoticeBase, zIndex: 140, display: "flex", justifyContent: "center" }}>

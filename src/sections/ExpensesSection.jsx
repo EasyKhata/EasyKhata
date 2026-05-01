@@ -485,7 +485,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 <WorkflowSetupCard
                   eyebrow="Track spend"
                   title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                  message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                  message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
                   actionLabel={config.expensesActionLabel}
                   onAction={openNew}
                   tone="danger"
@@ -559,7 +559,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   <WorkflowSetupCard
                     eyebrow="Track spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
                     tone="danger"
@@ -607,7 +607,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 {oneTime.length === 0 ? (
                   <WorkflowSetupCard
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
                     tone="danger"
@@ -624,7 +624,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   <WorkflowSetupCard
                     eyebrow="Society spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                    message={`Add your first ${config.expensesEntryLabel.toLowerCase()} to keep this month accurate.`}
+                    message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
                     actionLabel={config.expensesActionLabel}
                     onAction={openNew}
                     tone="danger"
