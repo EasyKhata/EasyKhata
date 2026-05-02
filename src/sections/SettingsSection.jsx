@@ -24,6 +24,7 @@ import { callAuthedFunction as callFunction } from "../utils/functionsClient";
 import { loadRazorpay } from "../utils/razorpay";
 import { Modal, Field, Input, Textarea, Select, CurrencyPicker, Avatar, DateSelectInput, DeleteBtn, fmtMoney, MONTHS, MonthSelectInput, UpgradeModal, ToastNotice, SectionSkeleton, WorkflowRecordCard, WorkflowSetupCard } from "../components/UI";
 import { downloadMonthlyReport, downloadAdminMonthlyReport, downloadFinancialYearReport } from "../utils/reportGen";
+import TemplatePicker from "../components/TemplatePicker";
 import { downloadCSV, generateIncomeCSV, generateExpensesCSV, generateCollectionsCSV } from "../utils/csvGen";
 import {
   isOptionalEmail,
@@ -377,6 +378,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [submittingPayment, setSubmittingPayment] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [showReportPicker, setShowReportPicker] = useState(false);
+  const [reportPreviewUrl, setReportPreviewUrl] = useState(null);
+  const [generatingReportPreview, setGeneratingReportPreview] = useState(false);
   const [societyPortalMeta, setSocietyPortalMeta] = useState(null);
   const [societyPortalLoading, setSocietyPortalLoading] = useState(false);
   const [societyPortalInvites, setSocietyPortalInvites] = useState([]);
@@ -408,7 +411,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       period: "month",
       month: now.getMonth(),
       year: now.getFullYear(),
-      financialYearStart: getCurrentFinancialYearStart(now)
+      financialYearStart: getCurrentFinancialYearStart(now),
+      templateId: account?.reportTemplate || "classic"
     };
   });
   const currentPlan = getUserPlan(user);
@@ -1256,9 +1260,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       const reportData = { account, currency, customers, income, expenses, invoices, goals, budgets, orgRecords };
 
       if (reportForm.period === "financial-year") {
-        await downloadFinancialYearReport(reportData, financialYearStart, currency?.symbol || "Rs");
+        await downloadFinancialYearReport(reportData, financialYearStart, currency?.symbol || "Rs", reportForm.templateId);
       } else {
-        await downloadMonthlyReport(reportData, year, month, currency?.symbol || "Rs");
+        await downloadMonthlyReport(reportData, year, month, currency?.symbol || "Rs", reportForm.templateId);
       }
 
       showNotice("Report downloaded.", "success");
@@ -1268,6 +1272,31 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice(err?.message || "Unable to generate the report right now.");
     } finally {
       setGeneratingReport(false);
+    }
+  }
+
+  async function handleReportPreview() {
+    if (!canUseFeature(user, "reports")) {
+      setUpgradeInfo(getUpgradeCopy("reports"));
+      return;
+    }
+    const year = Number(reportForm.year);
+    const month = Number(reportForm.month);
+    const financialYearStart = Number(reportForm.financialYearStart);
+    const reportData = { account, currency, customers, income, expenses, invoices, goals, budgets, orgRecords };
+    setGeneratingReportPreview(true);
+    try {
+      let url;
+      if (reportForm.period === "financial-year") {
+        url = await downloadFinancialYearReport(reportData, financialYearStart, currency?.symbol || "Rs", reportForm.templateId, true);
+      } else {
+        url = await downloadMonthlyReport(reportData, year, month, currency?.symbol || "Rs", reportForm.templateId, true);
+      }
+      if (url) setReportPreviewUrl(url);
+    } catch (err) {
+      logError("Report preview error", err);
+    } finally {
+      setGeneratingReportPreview(false);
     }
   }
 
@@ -2192,6 +2221,20 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     : "This will export the selected month as a PDF report."}
                 </div>
               </div>
+              <div style={{ padding: "12px 0 4px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>Report Template</div>
+                  <button
+                    type="button"
+                    onClick={handleReportPreview}
+                    disabled={generatingReportPreview}
+                    style={{ border: "none", background: "var(--surface-pop)", borderRadius: 10, padding: "6px 12px", cursor: "pointer", color: "var(--text)", fontWeight: 700, fontSize: 12 }}
+                  >
+                    {generatingReportPreview ? "Generating..." : "Preview Report"}
+                  </button>
+                </div>
+                <TemplatePicker type="report" selected={reportForm.templateId || "classic"} onChange={id => setReportForm(f => ({ ...f, templateId: id }))} />
+              </div>
               <button
                 className="btn-secondary"
                 onClick={handleCSVDownload}
@@ -2209,6 +2252,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             onSwitch={handleSwitchOrganization}
             onDelete={async (orgId) => { await deleteOrganization(orgId); setShowOrgSwitcher(false); }}
           />
+          {reportPreviewUrl && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#16161e", borderBottom: "1px solid #ffffff18" }}>
+                <button onClick={() => { URL.revokeObjectURL(reportPreviewUrl); setReportPreviewUrl(null); }} style={{ border: "none", background: "#ffffff18", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}>Close</button>
+                <span style={{ flex: 1, fontSize: 13, color: "#aaa" }}>Select a template above, then click Preview again to compare</span>
+                <button onClick={handleReportDownload} disabled={generatingReport} style={{ border: "none", background: "var(--blue)", borderRadius: 10, padding: "8px 16px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}>{generatingReport ? "Generating..." : "Download PDF"}</button>
+              </div>
+              <iframe src={reportPreviewUrl} style={{ flex: 1, border: "none", background: "#fff" }} title="Report Preview" />
+            </div>
+          )}
         </div>
       );
     }
@@ -2431,6 +2484,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </div>
             </div>
             {user?.role !== "admin" && (
+              <div style={{ padding: "12px 0 4px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>Report Template</div>
+                  <button
+                    type="button"
+                    onClick={handleReportPreview}
+                    disabled={generatingReportPreview}
+                    style={{ border: "none", background: "var(--surface-pop)", borderRadius: 10, padding: "6px 12px", cursor: "pointer", color: "var(--text)", fontWeight: 700, fontSize: 12 }}
+                  >
+                    {generatingReportPreview ? "Generating..." : "Preview Report"}
+                  </button>
+                </div>
+                <TemplatePicker type="report" selected={reportForm.templateId || "classic"} onChange={id => setReportForm(f => ({ ...f, templateId: id }))} />
+              </div>
+            )}
+            {user?.role !== "admin" && (
               <button
                 className="btn-secondary"
                 onClick={handleCSVDownload}
@@ -2440,6 +2509,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               </button>
             )}
           </Modal>
+        )}
+        {reportPreviewUrl && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#16161e", borderBottom: "1px solid #ffffff18" }}>
+              <button onClick={() => { URL.revokeObjectURL(reportPreviewUrl); setReportPreviewUrl(null); }} style={{ border: "none", background: "#ffffff18", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}>Close</button>
+              <span style={{ flex: 1, fontSize: 13, color: "#aaa" }}>Select a template above, then click Preview again to compare</span>
+              <button onClick={handleReportDownload} disabled={generatingReport} style={{ border: "none", background: "var(--blue)", borderRadius: 10, padding: "8px 16px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}>{generatingReport ? "Generating..." : "Download PDF"}</button>
+            </div>
+            <iframe src={reportPreviewUrl} style={{ flex: 1, border: "none", background: "#fff" }} title="Report Preview" />
+          </div>
         )}
       </div>
     );

@@ -2,13 +2,21 @@ import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDas
 import { MONTHS } from "../components/UI";
 import { APP_WEBSITE_HOST } from "./brand";
 import { isNative } from "./native";
+import { getReportTheme } from "./pdfThemes";
 
 let jsPDF = null;
 async function ensureJsPDF() {
   if (!jsPDF) ({ jsPDF } = await import("jspdf"));
 }
 
+let _previewMode = false;
+let _previewBlobUrl = null;
+
 async function savePdf(doc, filename) {
+  if (_previewMode) {
+    _previewBlobUrl = doc.output("bloburl");
+    return;
+  }
   if (isNative) {
     const { Browser } = await import("@capacitor/browser");
     const dataUri = doc.output("datauristring");
@@ -439,20 +447,7 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
   };
 }
 
-const STATEMENT_THEME = {
-  header: [16, 42, 67],
-  headerSoft: [226, 236, 248],
-  credit: [34, 139, 94],
-  creditSoft: [229, 245, 237],
-  debit: [189, 69, 69],
-  debitSoft: [250, 232, 232],
-  neutral: [186, 137, 57],
-  neutralSoft: [248, 241, 223],
-  row: [247, 249, 252],
-  border: [219, 227, 236],
-  text: [20, 20, 28],
-  textDim: [96, 104, 116]
-};
+let STATEMENT_THEME = getReportTheme("classic");
 
 function setRgbFill(doc, rgb) {
   doc.setFillColor(rgb[0], rgb[1], rgb[2]);
@@ -1022,11 +1017,15 @@ export async function downloadAdminMonthlyReport(data, year, month, sym) {
   await savePdf(doc, `admin-report-${monthKey}.pdf`);
 }
 
-export async function downloadFinancialYearReport(data, startYear, sym) {
+export async function downloadFinancialYearReport(data, startYear, sym, templateId, previewMode = false) {
+  STATEMENT_THEME = getReportTheme(templateId || data?.account?.reportTemplate);
+  _previewMode = previewMode;
+  _previewBlobUrl = null;
   await ensureJsPDF();
   if (isApartmentOrgData(data)) {
     await downloadApartmentFinancialYearStatementReport(data, startYear, sym);
-    return;
+    _previewMode = false;
+    return _previewBlobUrl;
   }
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -1110,13 +1109,19 @@ export async function downloadFinancialYearReport(data, startYear, sym) {
 
   addPageNumbers(doc);
   await savePdf(doc, getFinancialYearFilename(data, startYear));
+  _previewMode = false;
+  return _previewBlobUrl;
 }
 
-export async function downloadMonthlyReport(data, year, month, sym) {
+export async function downloadMonthlyReport(data, year, month, sym, templateId, previewMode = false) {
+  STATEMENT_THEME = getReportTheme(templateId || data?.account?.reportTemplate);
+  _previewMode = previewMode;
+  _previewBlobUrl = null;
   await ensureJsPDF();
   if (isApartmentOrgData(data)) {
     await downloadApartmentMonthlyStatementReport(data, year, month, sym);
-    return;
+    _previewMode = false;
+    return _previewBlobUrl;
   }
 
   if (isPersonalOrgData(data)) {
@@ -1193,7 +1198,8 @@ export async function downloadMonthlyReport(data, year, month, sym) {
 
     addPageNumbers(doc);
     await savePdf(doc, `household-report-${stats.monthKey}.pdf`);
-    return;
+    _previewMode = false;
+    return _previewBlobUrl;
   }
 
   if (isFreelancerOrgData(data)) {
@@ -1262,7 +1268,8 @@ export async function downloadMonthlyReport(data, year, month, sym) {
 
     addPageNumbers(doc);
     await savePdf(doc, `freelancer-report-${stats.monthKey}.pdf`);
-    return;
+    _previewMode = false;
+    return _previewBlobUrl;
   }
 
   const doc = new jsPDF({ unit: "mm", format: "a4" });
@@ -1353,4 +1360,6 @@ export async function downloadMonthlyReport(data, year, month, sym) {
 
   addPageNumbers(doc);
   await savePdf(doc, `ledger-report-${stats.monthKey}.pdf`);
+  _previewMode = false;
+  return _previewBlobUrl;
 }
