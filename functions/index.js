@@ -24,7 +24,12 @@ const ALLOWED_ORIGINS = [
 
 function setCors(req, res) {
   const origin = req.headers.origin || "";
-  if (ALLOWED_ORIGINS.includes(origin)) {
+  let allowedOrigin = ALLOWED_ORIGINS.includes(origin);
+  try {
+    const { protocol } = new URL(origin);
+    if (["capacitor:", "ionic:", "app:"].includes(protocol)) allowedOrigin = true;
+  } catch {}
+  if (allowedOrigin) {
     res.set("Access-Control-Allow-Origin", origin);
   }
   res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -1051,6 +1056,46 @@ exports.recordClientLog = onRequest(
     await db.collection("app_logs").add({
       level, label, message, stack, errorCode,
       userId, ctx, route, userAgent: ua, platform, appVersion,
+      ip,
+      ts: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(200).json({ ok: true });
+  }
+);
+
+const _eventRateMap = new Map(); // ip:event -> lastWriteMs
+exports.recordClientEvent = onRequest(
+  { region: "asia-south1", invoker: "public" },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
+
+    const body = req.body || {};
+    const event = String(body.event || "unknown").slice(0, 100);
+    const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+    const rateKey = `${ip}:${event}`;
+    const now = Date.now();
+    const last = _eventRateMap.get(rateKey) || 0;
+    if (now - last < 500) { res.status(429).json({ error: "Too many event writes" }); return; }
+    _eventRateMap.set(rateKey, now);
+
+    const userId = String(body.userId || "").slice(0, 128) || null;
+    const ctx = body.ctx ? String(body.ctx).slice(0, 500) : null;
+    const route = body.route ? String(body.route).slice(0, 200) : null;
+    const ua = String(body.userAgent || "").slice(0, 300) || null;
+    const platform = body.platform ? String(body.platform).slice(0, 100) : null;
+    const appVersion = body.appVersion ? String(body.appVersion).slice(0, 50) : null;
+
+    await db.collection("app_events").add({
+      event,
+      userId,
+      ctx,
+      route,
+      userAgent: ua,
+      platform,
+      appVersion,
       ip,
       ts: admin.firestore.FieldValue.serverTimestamp()
     });
