@@ -12,17 +12,38 @@ async function getIdToken() {
   return user.getIdToken();
 }
 
+const RETRYABLE_METHODS = new Set(["GET", "POST", "PUT", "PATCH"]);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options, method) {
+  const maxAttempts = RETRYABLE_METHODS.has(method) ? 3 : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fetch(url, options);
+    } catch (err) {
+      lastError = err;
+      if (attempt === maxAttempts) break;
+      await sleep(450 * attempt);
+    }
+  }
+  throw lastError;
+}
+
 async function request(method, path, body) {
   const token = await getIdToken();
 
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetchWithRetry(`${BASE_URL}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${token}`
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {})
-  });
+  }, method);
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

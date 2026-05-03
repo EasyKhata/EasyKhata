@@ -73,6 +73,18 @@ function getActiveOrgProfile(profile = {}) {
   };
 }
 
+function toTime(value) {
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function isLikelyReturningFirebaseUser(firebaseUser) {
+  const createdAt = toTime(firebaseUser?.metadata?.creationTime);
+  const lastSignInAt = toTime(firebaseUser?.metadata?.lastSignInTime);
+  if (!createdAt || !lastSignInAt) return false;
+  return lastSignInAt - createdAt > 60 * 1000;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -269,7 +281,21 @@ export function AuthProvider({ children }) {
         }
 
         if (!existing?.legalAccepted) {
-          // Cloud Function pre-created the row but user hasn't completed setup modal yet
+          if (isLikelyReturningFirebaseUser(firebaseUser)) {
+            const profile = await ensureUserProfile(firebaseUser, {
+              name: existing.name || firebaseUser.displayName || "",
+              email: existing.email || firebaseUser.email || "",
+              organizationType: existing.organizationType || existing?.account?.organizationType || ORG_TYPES.PERSONAL,
+              phone: existing.phone || firebaseUser.phoneNumber || "",
+              phoneCountryCode: existing.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE
+            });
+            setUser(buildSessionUser(firebaseUser, profile || {}));
+            setCurrentUser(firebaseUser.uid);
+            setPendingSetup(null);
+            setLoading(false);
+            return;
+          }
+          // Cloud Function pre-created the row for a genuinely new account.
           setPendingSetup({
             firebaseUser,
             name: existing.name || firebaseUser.displayName || "",
