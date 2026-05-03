@@ -5,6 +5,7 @@ const admin = require("firebase-admin");
 const functionsV1 = require("firebase-functions/v1");
 const { onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { defineSecret } = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 
@@ -77,6 +78,8 @@ const RAZORPAY_KEY_ID = defineSecret("RAZORPAY_KEY_ID");
 const RAZORPAY_KEY_SECRET = defineSecret("RAZORPAY_KEY_SECRET");
 const RAZORPAY_WEBHOOK_SECRET = defineSecret("RAZORPAY_WEBHOOK_SECRET");
 const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
+const RAILWAY_API_URL = defineSecret("RAILWAY_API_URL");
+const INTERNAL_SECRET = defineSecret("INTERNAL_SECRET");
 
 const PLAN_PRICES = {
   pro: { monthly: 69, yearly: 699 },
@@ -1014,6 +1017,48 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
   }
 });
 
+// ── POST recordClientLog — receive error/warn logs from the client app ─────────
+// No auth required so it works even when the user's Firebase token is absent or
+// expired (exactly when auth-flow errors happen). Admin SDK writes bypass
+// Firestore security rules. Rate-limited to 20 writes/IP/min via ip-last-write map.
+const _logRateMap = new Map(); // ip → lastWriteMs — cleared on cold-start, lightweight guard
+exports.recordClientLog = onRequest(
+  { region: "asia-south1", invoker: "public" },
+  async (req, res) => {
+    setCors(req, res);
+    if (req.method === "OPTIONS") { res.status(204).send(""); return; }
+    if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
+
+    const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+    const now = Date.now();
+    const last = _logRateMap.get(ip) || 0;
+    if (now - last < 3000) { res.status(429).json({ error: "Too many log writes" }); return; }
+    _logRateMap.set(ip, now);
+
+    const body = req.body || {};
+    const level   = String(body.level   || "error").slice(0, 20);
+    const label   = String(body.label   || "unknown").slice(0, 100);
+    const message = String(body.message || "").slice(0, 1000);
+    const stack   = String(body.stack   || "").slice(0, 2000);
+    const userId  = String(body.userId  || "").slice(0, 128) || null;
+    const errorCode = body.errorCode ? String(body.errorCode).slice(0, 100) : null;
+    const ctx     = body.ctx ? String(body.ctx).slice(0, 500) : null;
+    const route   = body.route ? String(body.route).slice(0, 200) : null;
+    const ua      = String(body.userAgent || "").slice(0, 300) || null;
+    const platform = body.platform ? String(body.platform).slice(0, 100) : null;
+    const appVersion = body.appVersion ? String(body.appVersion).slice(0, 50) : null;
+
+    await db.collection("app_logs").add({
+      level, label, message, stack, errorCode,
+      userId, ctx, route, userAgent: ua, platform, appVersion,
+      ip,
+      ts: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(200).json({ ok: true });
+  }
+);
+
 exports.refreshAdminMetricsSnapshot = onSchedule(
   {
     region: "asia-south1",
@@ -1026,6 +1071,144 @@ exports.refreshAdminMetricsSnapshot = onSchedule(
     } catch (err) {
       logger.error("Failed to refresh admin metrics snapshot", err);
       throw err;
+    }
+  }
+);
+
+// ── Railway internal API helper ───────────────────────────────────────────────
+
+async function callRailway(apiUrl, secret, method, path, body) {
+  const res = await fetch(`${apiUrl}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": secret
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {})
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Railway ${method} ${path} → ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+// ── auth.user().onCreate — create Postgres row immediately when Firebase Auth ──
+// user is created. Acts as the primary creator so the client never hits a cold
+// server on first login. legalAccepted=false until setup modal is completed.
+exports.onUserCreated = functionsV1
+  .region("asia-south1")
+  .runWith({ secrets: [RAILWAY_API_URL, INTERNAL_SECRET] })
+  .auth.user()
+  .onCreate(async (user) => {
+    const apiUrl = RAILWAY_API_URL.value();
+    const secret = INTERNAL_SECRET.value();
+    if (!apiUrl || !secret) {
+      logger.error("[onUserCreated] RAILWAY_API_URL or INTERNAL_SECRET not set");
+      return;
+    }
+    try {
+      await callRailway(apiUrl, secret, "POST", "/internal/users", {
+        uid: user.uid,
+        email: user.email || "",
+        name: user.displayName || "",
+        phone: user.phoneNumber || "",
+        phoneCountryCode: ""
+      });
+      logger.info("[onUserCreated] user provisioned", { uid: user.uid });
+    } catch (err) {
+      logger.error("[onUserCreated] failed — client POST /users will create on first login", { uid: user.uid, err: err.message });
+    }
+  });
+
+// ── auth.user().onDelete — delete Postgres row when Firebase Auth account is ──
+// deleted (e.g. from Firebase console or deleteAccount() on client).
+exports.onUserDeleted = functionsV1
+  .region("asia-south1")
+  .runWith({ secrets: [RAILWAY_API_URL, INTERNAL_SECRET] })
+  .auth.user()
+  .onDelete(async (user) => {
+    const apiUrl = RAILWAY_API_URL.value();
+    const secret = INTERNAL_SECRET.value();
+    if (!apiUrl || !secret) {
+      logger.error("[onUserDeleted] RAILWAY_API_URL or INTERNAL_SECRET not set");
+      return;
+    }
+    try {
+      await callRailway(apiUrl, secret, "DELETE", `/internal/users/${user.uid}`);
+      // Also remove Firestore user doc (best-effort)
+      await db.collection("users").doc(user.uid).delete().catch(() => {});
+      logger.info("[onUserDeleted] user deleted", { uid: user.uid });
+    } catch (err) {
+      logger.error("[onUserDeleted] failed", { uid: user.uid, err: err.message });
+    }
+  });
+
+// ── Hourly scheduled job — batch-downgrade expired trial accounts ─────────────
+// Replaces the per-request trial-expiry check in GET /users as the primary path.
+exports.downgradeExpiredTrials = onSchedule(
+  {
+    region: "asia-south1",
+    schedule: "every 1 hours",
+    timeZone: "Asia/Kolkata",
+    secrets: [RAILWAY_API_URL, INTERNAL_SECRET]
+  },
+  async () => {
+    const apiUrl = RAILWAY_API_URL.value();
+    const secret = INTERNAL_SECRET.value();
+    if (!apiUrl || !secret) {
+      logger.error("[downgradeExpiredTrials] RAILWAY_API_URL or INTERNAL_SECRET not set");
+      return;
+    }
+    try {
+      const result = await callRailway(apiUrl, secret, "POST", "/internal/downgrade-trials");
+      logger.info("[downgradeExpiredTrials] done", { downgraded: result.downgraded });
+    } catch (err) {
+      logger.error("[downgradeExpiredTrials] failed", { err: err.message });
+      throw err;
+    }
+  }
+);
+
+// ── Firestore trigger — sync subscription to Postgres when payment lands ──────
+// Fires whenever users/{userId} changes in Firestore (written by applySubscriptionUpgrade).
+// Only calls Railway when plan/subscriptionStatus/subscriptionEndsAt actually changed.
+exports.syncSubscriptionToPostgres = onDocumentWritten(
+  {
+    document: "users/{userId}",
+    region: "asia-south1",
+    secrets: [RAILWAY_API_URL, INTERNAL_SECRET]
+  },
+  async (event) => {
+    const userId = event.params.userId;
+    const before = event.data.before.exists ? (event.data.before.data() || {}) : null;
+    const after  = event.data.after.exists  ? (event.data.after.data()  || {}) : null;
+
+    if (!after || !after.plan || !after.subscriptionStatus) return;
+
+    // Skip if subscription fields didn't change
+    if (before &&
+        before.plan               === after.plan &&
+        before.subscriptionStatus === after.subscriptionStatus &&
+        before.subscriptionEndsAt === after.subscriptionEndsAt) {
+      return;
+    }
+
+    const apiUrl = RAILWAY_API_URL.value();
+    const secret = INTERNAL_SECRET.value();
+    if (!apiUrl || !secret) {
+      logger.error("[syncSubscriptionToPostgres] RAILWAY_API_URL or INTERNAL_SECRET not set");
+      return;
+    }
+    try {
+      await callRailway(apiUrl, secret, "PATCH", `/internal/users/${userId}/subscription`, {
+        plan: after.plan,
+        subscriptionStatus: after.subscriptionStatus,
+        subscriptionEndsAt: after.subscriptionEndsAt || ""
+      });
+      logger.info("[syncSubscriptionToPostgres] synced", { userId, plan: after.plan, status: after.subscriptionStatus });
+    } catch (err) {
+      logger.error("[syncSubscriptionToPostgres] failed", { userId, err: err.message });
     }
   }
 );
