@@ -147,6 +147,13 @@ export function AuthProvider({ children }) {
     if (!existing?.lastActivityAt && (existing?.updatedAt || existing?.createdAt)) {
       updates.lastActivityAt = existing?.updatedAt || existing?.createdAt;
     }
+    // Mark setup complete — either Cloud Function pre-created the row (legalAccepted=false)
+    // or this is an older account that never had it set.
+    if (!existing?.legalAccepted) {
+      updates.legalAccepted = true;
+      updates.termsVersion = "1.0";
+      updates.termsAcceptedAt = new Date().toISOString();
+    }
 
     if (Object.keys(updates).length > 0) {
       return await usersApi.update(firebaseUser.uid, updates);
@@ -250,11 +257,23 @@ export function AuthProvider({ children }) {
             setLoading(false);
             return;
           }
-          // Genuine new user (404) — need org type + phone before creating profile
+          // Genuine 404 — Cloud Function hasn't provisioned the row yet
           setPendingSetup({
             firebaseUser,
             name: firebaseUser.displayName || "",
             email: firebaseUser.email || ""
+          });
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        if (!existing?.legalAccepted) {
+          // Cloud Function pre-created the row but user hasn't completed setup modal yet
+          setPendingSetup({
+            firebaseUser,
+            name: existing.name || firebaseUser.displayName || "",
+            email: existing.email || firebaseUser.email || ""
           });
           setUser(null);
           setLoading(false);
