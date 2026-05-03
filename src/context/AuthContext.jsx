@@ -238,11 +238,19 @@ export function AuthProvider({ children }) {
       if (setupInProgressRef.current) return;
 
       try {
-        let existing = {};
-        try { existing = await usersApi.get(firebaseUser.uid); } catch {}
+        let existing = null;
+        let getUserError = null;
+        try { existing = await usersApi.get(firebaseUser.uid); } catch (err) { getUserError = err; }
 
         if (!existing?.id) {
-          // First-time Google user — need org type + phone before creating profile
+          if (getUserError && getUserError.status !== 404) {
+            // Network error or unexpected server error — do not treat as new user
+            logError("Failed to load user profile", getUserError);
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+          // Genuine new user (404) — need org type + phone before creating profile
           setPendingSetup({
             firebaseUser,
             name: firebaseUser.displayName || "",

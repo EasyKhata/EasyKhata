@@ -25,6 +25,7 @@ import { RupeeDisplay } from "../components/ui/reimagined";
 import { UpgradeModal } from "../components/UI";
 import { useAuth } from "../context/AuthContext";
 import { downloadInvoice } from "../utils/invoiceGen";
+import TemplatePicker from "../components/TemplatePicker";
 import {
   getFinancialInvoices,
   getInvoiceDiscount,
@@ -193,6 +194,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const [showForm, setShowForm] = useState(false);
   const [editInv, setEditInv] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [invoiceTemplateId, setInvoiceTemplateId] = useState(() => d.account?.invoiceTemplate || "classic");
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState(null);
   const [formError, setFormError] = useState("");
   const [errors, setErrors] = useState({});
   const [upgradeInfo, setUpgradeInfo] = useState(null);
@@ -476,9 +479,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       return;
     }
     try {
-      await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg });
+      await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg, templateId: invoiceTemplateId });
     } catch (err) {
       setFormError("Could not generate PDF. Please try again.");
+    }
+  }
+
+  async function handlePreviewPdf(invoice) {
+    if (!canUseFeature(user, "invoicePdf")) {
+      setUpgradeInfo(getUpgradeCopy("invoicePdf"));
+      return;
+    }
+    try {
+      const url = await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg, templateId: invoiceTemplateId, preview: true });
+      if (url) setPdfPreviewUrl(url);
+    } catch (err) {
+      setFormError("Could not generate preview. Please try again.");
     }
   }
 
@@ -1067,6 +1083,22 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </button>
             </div>
 
+            {!isApartmentOrg && (
+              <div style={{ marginTop: 14, padding: "12px 14px", background: "var(--surface-high)", borderRadius: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6 }}>Invoice Template</div>
+                  <button
+                    type="button"
+                    onClick={() => handlePreviewPdf(invoice)}
+                    style={{ border: "none", background: "var(--surface-pop)", borderRadius: 10, padding: "6px 12px", cursor: "pointer", color: "var(--text)", fontWeight: 700, fontSize: 12 }}
+                  >
+                    Preview PDF
+                  </button>
+                </div>
+                <TemplatePicker type="invoice" selected={invoiceTemplateId} onChange={setInvoiceTemplateId} />
+              </div>
+            )}
+
             {!isViewerMode && (
               <button onClick={async () => { if (await confirm(`Delete this ${documentLabel.toLowerCase()}?`, { title: "Delete", confirmLabel: "Delete" })) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
                 Delete {documentLabel}
@@ -1385,6 +1417,31 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       })()}
 
       <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
+
+      {pdfPreviewUrl && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", background: "#16161e", borderBottom: "1px solid #ffffff18" }}>
+            <button
+              onClick={() => { URL.revokeObjectURL(pdfPreviewUrl); setPdfPreviewUrl(null); }}
+              style={{ border: "none", background: "#ffffff18", borderRadius: 10, padding: "8px 14px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}
+            >
+              Close
+            </button>
+            <span style={{ flex: 1, fontSize: 13, color: "#aaa" }}>
+              Select a template below, then click Preview PDF again to compare
+            </span>
+            {detail && (
+              <button
+                onClick={() => handleDownloadPdf(d.invoices.find(i => i.id === detail.id) || detail)}
+                style={{ border: "none", background: "var(--blue)", borderRadius: 10, padding: "8px 16px", cursor: "pointer", color: "#fff", fontWeight: 700, fontSize: 13 }}
+              >
+                Download PDF
+              </button>
+            )}
+          </div>
+          <iframe src={pdfPreviewUrl} style={{ flex: 1, border: "none", background: "#fff" }} title="Invoice Preview" />
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { getInvoiceDiscount, getInvoiceTaxBreakdown } from "./analytics";
 import { APP_WEBSITE_HOST } from "./brand";
 import { buildLocationLabel, parseLocationFields } from "./profile";
 import { isNative } from "./native";
+import { getInvoiceTheme } from "./pdfThemes";
 
 let jsPDF = null;
 async function ensureJsPDF() {
@@ -131,6 +132,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   await ensureJsPDF();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
+  const theme = getInvoiceTheme(options?.templateId || acc.invoiceTemplate);
   const isApartment = Boolean(options.isApartment);
   const billToCountry = invoice.billTo?.country || "";
   const isExport = !isApartment && billToCountry && billToCountry !== "India";
@@ -141,38 +143,76 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   let y = PAGE.top;
 
   const hasLogo = Boolean(acc.logoBase64);
-  const headerH = hasLogo ? 32 : 28;
-  doc.setFillColor(22, 22, 28);
-  doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, headerH, 6, 6, "F");
+  const isMinimalLayout = theme.layout === "minimal";
 
-  let textX = PAGE.left + 4;
-  if (hasLogo) {
-    try {
-      const logoH = 20;
-      const logoW = Math.min(logoH * (acc.logoRatio || 2.5), 48);
-      doc.addImage(acc.logoBase64, PAGE.left + 4, y + 6, logoW, logoH);
-      textX = PAGE.left + logoW + 8;
-    } catch { /* skip logo if image fails */ }
+  if (isMinimalLayout) {
+    doc.setFillColor(...theme.headerBg);
+    doc.rect(PAGE.left, y, PAGE.right - PAGE.left, 3, "F");
+    y += 8;
+    let textX = PAGE.left + 4;
+    if (hasLogo) {
+      try {
+        const logoH = 18;
+        const logoW = Math.min(logoH * (acc.logoRatio || 2.5), 44);
+        doc.addImage(acc.logoBase64, PAGE.left + 4, y, logoW, logoH);
+        textX = PAGE.left + logoW + 8;
+      } catch { /* skip */ }
+    }
+    doc.setTextColor(...theme.headerBg);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(hasLogo ? 14 : 20);
+    doc.text(safeText(acc.name || "Your Business"), textX, y + (hasLogo ? 11 : 14));
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(120, 120, 130);
+    doc.text(safeText(acc.email || acc.phone || ""), textX, y + (hasLogo ? 18 : 21));
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(30, 30, 40);
+    doc.text(isQuote ? "QUOTE" : isExport ? "EXPORT INVOICE" : acc.gstin ? "TAX INVOICE" : "INVOICE", PAGE.right - 4, y + (hasLogo ? 11 : 14), { align: "right" });
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 110);
+    doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + (hasLogo ? 18 : 21), { align: "right" });
+    doc.setFontSize(9);
+    doc.setTextColor(150, 150, 158);
+    doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + (hasLogo ? 24 : 28), { align: "right" });
+    doc.setDrawColor(220, 220, 225);
+    doc.setLineWidth(0.4);
+    doc.line(PAGE.left, y + (hasLogo ? 28 : 32), PAGE.right, y + (hasLogo ? 28 : 32));
+    y += hasLogo ? 36 : 40;
+  } else {
+    const headerH = hasLogo ? 32 : 28;
+    doc.setFillColor(...theme.headerBg);
+    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, headerH, 6, 6, "F");
+    let textX = PAGE.left + 4;
+    if (hasLogo) {
+      try {
+        const logoH = 20;
+        const logoW = Math.min(logoH * (acc.logoRatio || 2.5), 48);
+        doc.addImage(acc.logoBase64, PAGE.left + 4, y + 6, logoW, logoH);
+        textX = PAGE.left + logoW + 8;
+      } catch { /* skip logo if image fails */ }
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    const nameY = hasLogo ? y + 12 : y + 10;
+    const subY = hasLogo ? y + 20 : y + 17;
+    doc.setFontSize(hasLogo ? 16 : 21);
+    doc.text(safeText(acc.name || "Your Business"), textX, nameY);
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text(safeText(acc.email || acc.phone || "Business invoice"), textX, subY);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(isQuote ? "QUOTE" : isExport ? "EXPORT INVOICE" : acc.gstin ? "TAX INVOICE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
+    doc.setFontSize(10.5);
+    doc.setFont("helvetica", "normal");
+    doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
+    doc.setFontSize(9);
+    doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + (hasLogo ? 26 : 23), { align: "right" });
+    y += headerH + 8;
   }
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  const nameY = hasLogo ? y + 12 : y + 10;
-  const subY  = hasLogo ? y + 20 : y + 17;
-  doc.setFontSize(hasLogo ? 16 : 21);
-  doc.text(safeText(acc.name || "Your Business"), textX, nameY);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(safeText(acc.email || acc.phone || "Business invoice"), textX, subY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text(isQuote ? "QUOTE" : isExport ? "EXPORT INVOICE" : acc.gstin ? "TAX INVOICE" : "INVOICE", PAGE.right - 4, y + 11, { align: "right" });
-  doc.setFontSize(10.5);
-  doc.setFont("helvetica", "normal");
-  doc.text(safeText(invoice.number || "--"), PAGE.right - 4, y + 18, { align: "right" });
-  doc.setFontSize(9);
-  doc.text(`All amounts in ${safeText(sym === "Rs" ? "INR" : sym)}`, PAGE.right - 4, y + (hasLogo ? 26 : 23), { align: "right" });
-  y += headerH + 8;
 
   const businessLines = [
     isApartment ? "" : contactAddress(acc),
@@ -188,18 +228,34 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     !isApartment && invoice.placeOfSupply ? `Place of Supply: ${safeText(invoice.placeOfSupply)}` : ""
   ];
 
-  doc.setDrawColor(225);
-  doc.setFillColor(248, 248, 251);
-  doc.roundedRect(PAGE.left, y, 84, 34, 4, 4, "FD");
-  doc.roundedRect(110, y, 84, 34, 4, 4, "FD");
+  if (isMinimalLayout) {
+    doc.setDrawColor(...theme.headerBg);
+    doc.setLineWidth(0.4);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(PAGE.left, y, 84, 34, 4, 4, "FD");
+    doc.roundedRect(110, y, 84, 34, 4, 4, "FD");
+  } else {
+    doc.setDrawColor(225);
+    doc.setFillColor(...theme.infoBg);
+    doc.roundedRect(PAGE.left, y, 84, 34, 4, 4, "FD");
+    doc.setFillColor(...theme.infoBg);
+    doc.roundedRect(110, y, 84, 34, 4, 4, "FD");
+  }
   const leftEnd = drawWrappedBlock(doc, PAGE.left + 4, y + 7, 74, "FROM", businessLines);
   const rightEnd = drawWrappedBlock(doc, 114, y + 7, 74, "DETAILS", metaLines);
   y += Math.max(42, Math.max(leftEnd, rightEnd) - y + 6);
 
   if (isApartment) {
     y = ensureSpace(doc, y, 24);
-    doc.setFillColor(238, 242, 247);
-    doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 22, 4, 4, "F");
+    if (isMinimalLayout) {
+      doc.setDrawColor(...theme.headerBg);
+      doc.setLineWidth(0.4);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 22, 4, 4, "FD");
+    } else {
+      doc.setFillColor(...theme.billToBg);
+      doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 22, 4, 4, "F");
+    }
     const billEnd = drawWrappedBlock(
       doc,
       PAGE.left + 4,
@@ -215,9 +271,17 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     y += Math.max(30, billEnd - y + 6);
   } else {
     y = ensureSpace(doc, y, 36);
-    doc.setFillColor(238, 242, 247);
-    doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "F");
-    doc.roundedRect(110, y, 84, 30, 4, 4, "F");
+    if (isMinimalLayout) {
+      doc.setDrawColor(...theme.headerBg);
+      doc.setLineWidth(0.4);
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "FD");
+      doc.roundedRect(110, y, 84, 30, 4, 4, "FD");
+    } else {
+      doc.setFillColor(...theme.billToBg);
+      doc.roundedRect(PAGE.left, y, 84, 30, 4, 4, "F");
+      doc.roundedRect(110, y, 84, 30, 4, 4, "F");
+    }
     const billEnd = drawWrappedBlock(
       doc,
       PAGE.left + 4,
@@ -247,18 +311,34 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
   }
 
   y = ensureSpace(doc, y, 22);
-  doc.setFillColor(16, 42, 67);
-  doc.rect(PAGE.left, y, PAGE.right - PAGE.left, 9, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text("#", 18, y + 6);
-  doc.text("Description", 26, y + 6);
-  doc.text("HSN/SAC", 116, y + 6, { align: "right" });
-  doc.text("Qty", 130, y + 6, { align: "right" });
-  doc.text("Rate", 150, y + 6, { align: "right" });
-  doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 168, y + 6, { align: "right" });
-  doc.text("Amount", 192, y + 6, { align: "right" });
+  if (isMinimalLayout) {
+    doc.setTextColor(...theme.tableHeaderBg);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("#", 18, y + 6);
+    doc.text("Description", 26, y + 6);
+    doc.text("HSN/SAC", 116, y + 6, { align: "right" });
+    doc.text("Qty", 130, y + 6, { align: "right" });
+    doc.text("Rate", 150, y + 6, { align: "right" });
+    doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 168, y + 6, { align: "right" });
+    doc.text("Amount", 192, y + 6, { align: "right" });
+    doc.setDrawColor(...theme.tableHeaderBg);
+    doc.setLineWidth(0.7);
+    doc.line(PAGE.left, y + 9, PAGE.right, y + 9);
+  } else {
+    doc.setFillColor(...theme.tableHeaderBg);
+    doc.rect(PAGE.left, y, PAGE.right - PAGE.left, 9, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("#", 18, y + 6);
+    doc.text("Description", 26, y + 6);
+    doc.text("HSN/SAC", 116, y + 6, { align: "right" });
+    doc.text("Qty", 130, y + 6, { align: "right" });
+    doc.text("Rate", 150, y + 6, { align: "right" });
+    doc.text((invoice.taxMode || "split") === "split" ? "GST %" : "IGST %", 168, y + 6, { align: "right" });
+    doc.text("Amount", 192, y + 6, { align: "right" });
+  }
   y += 12;
   doc.setTextColor(20, 20, 28);
 
@@ -269,8 +349,8 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     const rowHeight = Math.max(10, descriptionLines.length * 5);
     y = ensureSpace(doc, y, rowHeight + 3);
 
-    if (index % 2 === 0) {
-      doc.setFillColor(249, 249, 251);
+    if (index % 2 === 0 && !isMinimalLayout) {
+      doc.setFillColor(...theme.rowAltBg);
       doc.rect(PAGE.left, y - 4, PAGE.right - PAGE.left, rowHeight + 2, "F");
     }
 
@@ -314,24 +394,39 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     y += 7;
   }
   doc.setFont("helvetica", "bold");
-  doc.setFillColor(243, 246, 249);
-  doc.roundedRect(118, y - 6, 76, 14, 3, 3, "F");
-  doc.setFontSize(10);
-  doc.setTextColor(85, 85, 95);
-  doc.text("Grand Total", 122, y - 0.5);
-  doc.setFontSize(13);
-  doc.setTextColor(20, 20, 28);
-  doc.text(moneyPlain(total), 190, y - 0.5, { align: "right" });
-  doc.setFontSize(9);
-  doc.setTextColor(110, 110, 120);
-  doc.text(sym === "Rs" ? "INR" : safeText(sym), 192, y - 0.5, { align: "left" });
+  if (isMinimalLayout) {
+    doc.setDrawColor(...theme.totalBg);
+    doc.setLineWidth(1.2);
+    doc.line(118, y - 7, PAGE.right, y - 7);
+    doc.setFontSize(10);
+    doc.setTextColor(85, 85, 95);
+    doc.text("Grand Total", 122, y - 0.5);
+    doc.setFontSize(14);
+    doc.setTextColor(...theme.totalBg);
+    doc.text(moneyPlain(total), 190, y - 0.5, { align: "right" });
+    doc.setFontSize(9);
+    doc.setTextColor(140, 140, 148);
+    doc.text(sym === "Rs" ? "INR" : safeText(sym), 192, y - 0.5, { align: "left" });
+  } else {
+    doc.setFillColor(...theme.totalBg);
+    doc.roundedRect(118, y - 6, 76, 14, 3, 3, "F");
+    doc.setFontSize(10);
+    doc.setTextColor(...theme.totalLabelColor);
+    doc.text("Grand Total", 122, y - 0.5);
+    doc.setFontSize(13);
+    doc.setTextColor(...theme.totalTextColor);
+    doc.text(moneyPlain(total), 190, y - 0.5, { align: "right" });
+    doc.setFontSize(9);
+    doc.setTextColor(...theme.totalLabelColor);
+    doc.text(sym === "Rs" ? "INR" : safeText(sym), 192, y - 0.5, { align: "left" });
+  }
   y += 12;
 
   if (invoice.notes) {
     y = ensureSpace(doc, y, 26);
     doc.setFillColor(247, 248, 250);
     doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 18, 4, 4, "F");
-    doc.setFillColor(16, 42, 67);
+    doc.setFillColor(...theme.notesAccentBg);
     doc.roundedRect(PAGE.left, y, 4, 18, 4, 4, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
@@ -348,7 +443,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     y = ensureSpace(doc, y, 28);
     doc.setFillColor(247, 248, 250);
     doc.roundedRect(PAGE.left, y, PAGE.right - PAGE.left, 20, 4, 4, "F");
-    doc.setFillColor(96, 120, 160);
+    doc.setFillColor(...theme.termsAccentBg);
     doc.roundedRect(PAGE.left, y, 4, 20, 4, 4, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9.5);
@@ -369,6 +464,7 @@ export async function downloadInvoice(invoice, account, sym, options = {}) {
     doc.text(`${i} / ${pageCount}`, PAGE.right, PAGE.bottom + 8, { align: "right" });
   }
   drawPdfBrandBadge(doc, PAGE.right - 40, PAGE.bottom - 9, "dark");
+  if (options.preview) return doc.output("bloburl");
   await savePdf(doc, `${safeText(invoice.number || "invoice")}.pdf`);
 }
 

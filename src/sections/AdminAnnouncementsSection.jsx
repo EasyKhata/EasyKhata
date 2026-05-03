@@ -116,7 +116,7 @@ export default function AdminAnnouncementsSection() {
 
           <input
             className="input-field"
-            placeholder="Title — e.g. Happy Diwali from EasyKhata!"
+            placeholder="Title — e.g. Happy Diwali from EazyKhata!"
             value={form.title}
             onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
             style={{ marginBottom: 8 }}

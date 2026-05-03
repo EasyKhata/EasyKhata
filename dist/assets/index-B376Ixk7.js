@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/web-CFl-4483.js","assets/index-hp4hzr9S.js","assets/react-vendor-KfUPlHYY.js","assets/firebase-vendor-BF1fOmIt.js","assets/index-B3OuBgKB.css"])))=>i.map(i=>d[i]);
+import{r as e,_ as o}from"./index-hp4hzr9S.js";import"./react-vendor-KfUPlHYY.js";import"./firebase-vendor-BF1fOmIt.js";const s=e("Browser",{web:()=>o(()=>import("./web-CFl-4483.js"),__vite__mapDeps([0,1,2,3,4])).then(r=>new r.BrowserWeb)});export{s as Browser};
