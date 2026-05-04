@@ -160,6 +160,22 @@ function computeSyncDelta(baselineMap, current) {
   return { upsert, deleteIds };
 }
 
+function buildSharedOrgEntries(memberships = []) {
+  return (memberships || []).reduce((acc, m) => {
+    if (!m?.ownerId || !m?.orgId) return acc;
+    acc[`${m.ownerId}_${m.orgId}`] = {
+      ownerId: m.ownerId,
+      orgId: m.orgId,
+      orgName: m.orgName || "",
+      ownerName: m.owner?.name || "",
+      organizationType: m.organizationType || ORG_TYPES.PERSONAL,
+      role: m.role || "viewer",
+      acceptedAt: m.acceptedAt || ""
+    };
+    return acc;
+  }, {});
+}
+
 function withId(record = {}) {
   return { ...record, id: record.id || uid() };
 }
@@ -803,6 +819,19 @@ export function DataProvider({ children }) {
     [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id]
   );
 
+  const refreshSharedMemberships = useCallback(async () => {
+    if (!user?.id) return null;
+    try {
+      const memberships = await orgsApi.getMemberships(user.id);
+      const nextSharedOrgs = buildSharedOrgEntries(Array.isArray(memberships) ? memberships : []);
+      setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
+      return nextSharedOrgs;
+    } catch (err) {
+      logError("refreshSharedMemberships failed", err);
+      return null;
+    }
+  }, [setUser, user?.id]);
+
   useEffect(() => {
     async function loadData() {
       if (activeSharedOrgRef.current) return;
@@ -946,32 +975,10 @@ export function DataProvider({ children }) {
         // • Add any accepted memberships not yet in sharedOrgs (e.g. after page refresh)
         const memberships = await orgsApi.getMemberships(user.id).catch(() => null);
         if (memberships !== null) {
+          const nextSharedOrgs = buildSharedOrgEntries(Array.isArray(memberships) ? memberships : []);
           const currentSharedOrgs = user?.sharedOrgs || {};
-          const validKeys = new Set(memberships.map(m => `${m.ownerId}_${m.orgId}`));
-          const invalidKeys = Object.keys(currentSharedOrgs).filter(k => !validKeys.has(k));
-          const newEntries = memberships
-            .filter(m => !currentSharedOrgs[`${m.ownerId}_${m.orgId}`])
-            .reduce((acc, m) => {
-              acc[`${m.ownerId}_${m.orgId}`] = {
-                ownerId: m.ownerId,
-                orgId: m.orgId,
-                orgName: m.orgName || "",
-                ownerName: m.owner?.name || "",
-                organizationType: m.organizationType || ORG_TYPES.PERSONAL,
-                role: m.role || "viewer",
-                acceptedAt: m.acceptedAt || ""
-              };
-              return acc;
-            }, {});
-          if (invalidKeys.length > 0 || Object.keys(newEntries).length > 0) {
-            setUser(prev => {
-              if (!prev) return prev;
-              const next = { ...(prev.sharedOrgs || {}) };
-              invalidKeys.forEach(k => delete next[k]);
-              Object.assign(next, newEntries);
-              usersApi.update(user.id, { sharedOrgs: next }).catch(() => {});
-              return { ...prev, sharedOrgs: next };
-            });
+          if (JSON.stringify(currentSharedOrgs) !== JSON.stringify(nextSharedOrgs)) {
+            setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
           }
         }
       } catch (err) {
@@ -1712,6 +1719,7 @@ export function DataProvider({ children }) {
     activeSharedOrgRole,
     sharedOrgs,
     activeSharedOrgKey,
+    refreshSharedMemberships,
     switchToSharedOrg,
     switchToOwnOrg,
     organizations,
@@ -1789,6 +1797,7 @@ export function DataProvider({ children }) {
     saveOrgRecords,
     setCurrency,
     switchOrganization,
+    refreshSharedMemberships,
     switchToSharedOrg,
     switchToOwnOrg,
     updateCustomer,
