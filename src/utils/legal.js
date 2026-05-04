@@ -1,4 +1,4 @@
-export const LEGAL_VERSION = "2026-04-13";
+export const LEGAL_VERSION = "2026-05-04";
 
 export const LEGAL_PATHS = {
   terms: "/legal/terms.html",
