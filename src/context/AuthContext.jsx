@@ -321,6 +321,10 @@ export function AuthProvider({ children }) {
         setUser(buildSessionUser(firebaseUser, profile || {}));
         setCurrentUser(firebaseUser.uid);
         setPendingSetup(null);
+        logEvent("session_restored", {
+          email: firebaseUser.email || profile?.email || null,
+          returning: isLikelyReturningFirebaseUser(firebaseUser)
+        });
       } catch (err) {
         logError("Profile load error", err);
         setUser(null);
