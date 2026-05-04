@@ -579,14 +579,33 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     const duration = PLAN_DURATION_DAYS[billingCycle];
     const currentUser = userSnap.exists ? userSnap.data() || {} : {};
     assertBusinessPlanEligibility(currentUser, requestedPlan);
-    const nextEndDate = computeSubscriptionEndDate(currentUser.subscriptionEndsAt || "", duration);
+    const orgId = String(requestData.orgId || "org_primary").trim() || "org_primary";
+    const currentOrgSubscriptions = currentUser.orgSubscriptions && typeof currentUser.orgSubscriptions === "object"
+      ? currentUser.orgSubscriptions
+      : {};
+    const currentOrgSubscription = currentOrgSubscriptions[orgId] || {};
+    const nextEndDate = computeSubscriptionEndDate(currentOrgSubscription.subscriptionEndsAt || currentUser.subscriptionEndsAt || "", duration);
     const nowIso = new Date().toISOString();
+    const orgSubscription = {
+      plan: requestedPlan,
+      subscriptionStatus: "active",
+      subscriptionEndsAt: nextEndDate,
+      billingCycle,
+      orgName: requestData.orgName || "",
+      orgType: requestData.orgType || "",
+      updatedAt: nowIso
+    };
 
     tx.set(userRef, {
       plan: requestedPlan,
       subscriptionStatus: "active",
       subscriptionEndsAt: nextEndDate,
       trialEligible: false,
+      activeOrgId: orgId,
+      orgSubscriptions: {
+        ...currentOrgSubscriptions,
+        [orgId]: orgSubscription
+      },
       updatedAt: nowIso,
       lastActivityAt: nowIso
     }, { merge: true });
@@ -599,6 +618,9 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
         reviewedAt: nowIso,
         reviewedBy: source,
         processedPaymentId: paymentId || requestData.processedPaymentId || "",
+        orgId,
+        orgName: requestData.orgName || "",
+        orgType: requestData.orgType || "",
         updatedAt: nowIso
       },
       { merge: true }
@@ -828,6 +850,9 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
     sendError(res, "invalid-argument", e.message); return;
   }
   const note = String(req.body?.data?.note || "").trim().slice(0, 300);
+  const orgId = String(req.body?.data?.orgId || "org_primary").trim() || "org_primary";
+  const orgName = String(req.body?.data?.orgName || "").trim().slice(0, 120);
+  const orgType = String(req.body?.data?.orgType || "").trim().toLowerCase();
   const amount = getAmountInPaise(targetPlan, billingCycle);
   const userId = authUser.uid;
   try {
@@ -850,7 +875,7 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
     amount,
     currency: "INR",
     receipt: `sub_${userId.slice(0, 8)}_${Date.now()}`,
-    notes: { userId, requestedPlan: targetPlan, billingCycle }
+    notes: { userId, requestedPlan: targetPlan, billingCycle, orgId, orgName, orgType }
   });
 
   const nowIso = new Date().toISOString();
@@ -862,6 +887,9 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
       currentPlan: userData.plan || "free",
       requestedPlan: targetPlan,
       billingCycle,
+      orgId,
+      orgName,
+      orgType,
       amount: Math.round(amount / 100),
       amountPaise: amount,
       currency: "INR",
@@ -1274,13 +1302,24 @@ exports.syncSubscriptionToPostgres = onDocumentWritten(
     const before = event.data.before.exists ? (event.data.before.data() || {}) : null;
     const after  = event.data.after.exists  ? (event.data.after.data()  || {}) : null;
 
-    if (!after || !after.plan || !after.subscriptionStatus) return;
+    if (!after) return;
+
+    const beforeOrgSubscriptions = before?.orgSubscriptions || {};
+    const afterOrgSubscriptions = after.orgSubscriptions || {};
+    const legacyChanged = Boolean(after.plan && after.subscriptionStatus) && (
+      !before ||
+      before.plan !== after.plan ||
+      before.subscriptionStatus !== after.subscriptionStatus ||
+      before.subscriptionEndsAt !== after.subscriptionEndsAt
+    );
+    const orgSubscriptionsChanged = JSON.stringify(beforeOrgSubscriptions) !== JSON.stringify(afterOrgSubscriptions);
 
     // Skip if subscription fields didn't change
     if (before &&
         before.plan               === after.plan &&
         before.subscriptionStatus === after.subscriptionStatus &&
-        before.subscriptionEndsAt === after.subscriptionEndsAt) {
+        before.subscriptionEndsAt === after.subscriptionEndsAt &&
+        !orgSubscriptionsChanged) {
       return;
     }
 
@@ -1291,12 +1330,31 @@ exports.syncSubscriptionToPostgres = onDocumentWritten(
       return;
     }
     try {
-      await callRailway(apiUrl, secret, "PATCH", `/internal/users/${userId}/subscription`, {
-        plan: after.plan,
-        subscriptionStatus: after.subscriptionStatus,
-        subscriptionEndsAt: after.subscriptionEndsAt || ""
-      });
-      logger.info("[syncSubscriptionToPostgres] synced", { userId, plan: after.plan, status: after.subscriptionStatus });
+      if (legacyChanged) {
+        await callRailway(apiUrl, secret, "PATCH", `/internal/users/${userId}/subscription`, {
+          plan: after.plan,
+          subscriptionStatus: after.subscriptionStatus,
+          subscriptionEndsAt: after.subscriptionEndsAt || ""
+        });
+      }
+
+      if (orgSubscriptionsChanged && afterOrgSubscriptions && typeof afterOrgSubscriptions === "object") {
+        const changedOrgIds = Object.keys(afterOrgSubscriptions).filter(orgId => (
+          JSON.stringify(beforeOrgSubscriptions?.[orgId] || {}) !== JSON.stringify(afterOrgSubscriptions?.[orgId] || {})
+        ));
+        for (const orgId of changedOrgIds) {
+          const sub = afterOrgSubscriptions[orgId] || {};
+          if (!sub.plan) continue;
+          await callRailway(apiUrl, secret, "PATCH", `/internal/users/${userId}/orgs/${orgId}/subscription`, {
+            plan: sub.plan,
+            subscriptionStatus: sub.subscriptionStatus || "active",
+            subscriptionEndsAt: sub.subscriptionEndsAt || "",
+            billingCycle: sub.billingCycle || ""
+          });
+        }
+      }
+
+      logger.info("[syncSubscriptionToPostgres] synced", { userId, legacyChanged, orgSubscriptionsChanged });
     } catch (err) {
       logger.error("[syncSubscriptionToPostgres] failed", { userId, err: err.message });
     }

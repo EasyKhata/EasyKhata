@@ -76,19 +76,29 @@ export function hasBusinessPlan(orgType) {
   return false;
 }
 
-// True when user is on an active paid plan (not trial, not expired)
-export function isPaidActive(user) {
-  if (isAdminUser(user)) return true;
-  const plan = getUserPlan(user);
-  if (plan !== PLANS.PRO) return false;
-  return isSubscriptionActive(user);
+export function getOrgPlan(org) {
+  return org?.plan || org?.account?.plan || "";
 }
 
-// Pro: 2 orgs. Trial: 2 slots (pay-gate at 2nd). Expired: keep however many they have (creation blocked separately).
+export function getOrgSubscriptionStatus(org) {
+  return org?.subscriptionStatus || org?.account?.subscriptionStatus || "";
+}
+
+export function getOrgSubscriptionEndsAt(org) {
+  return org?.subscriptionEndsAt || org?.account?.subscriptionEndsAt || "";
+}
+
+// True when user/org is on an active paid plan (not trial, not expired)
+export function isPaidActive(user, org = null) {
+  if (isAdminUser(user)) return true;
+  const plan = getOrgPlan(org) || getUserPlan(user);
+  if (plan !== PLANS.PRO) return false;
+  return isSubscriptionActive(user, org);
+}
+
+// Per-org billing has no account-wide org cap. Household remains limited separately.
 export function getMaxOrganizations(user) {
-  if (isAdminUser(user) || isReviewAccessEnabled()) return 4;
-  if (isPaidActive(user) || isSubscriptionActive(user)) return 2;
-  return Infinity; // expired: don't force-reduce, creation is blocked via isSubscriptionActive check
+  return Infinity;
 }
 
 // Org type can be changed during trial (clears data) or on a paid plan.
@@ -134,31 +144,35 @@ export function getBillingDuration(cycle) {
   return cycle === BILLING_CYCLES.YEARLY ? DEFAULT_YEARLY_DAYS : DEFAULT_MONTHLY_DAYS;
 }
 
-export function isTrialActive(user) {
+export function isTrialActive(user, org = null) {
   if (isAdminUser(user)) return true;
-  if ((user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE) !== SUBSCRIPTION_STATUS.TRIAL) return false;
-  if (!user?.subscriptionEndsAt) return true;
-  const endAt = new Date(user.subscriptionEndsAt);
+  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+  if (status !== SUBSCRIPTION_STATUS.TRIAL) return false;
+  const endsAt = getOrgSubscriptionEndsAt(org) || user?.subscriptionEndsAt || "";
+  if (!endsAt) return true;
+  const endAt = new Date(endsAt);
   if (Number.isNaN(endAt.getTime())) return true;
   return endAt.getTime() >= Date.now();
 }
 
-export function isSubscriptionActive(user) {
+export function isSubscriptionActive(user, org = null) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return true;
-  const status = user?.subscriptionStatus;
+  const orgType = org?.organizationType || org?.account?.organizationType;
+  if (orgType && isFreeOrgType(orgType)) return true;
+  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus;
   if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return true;
-  if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user);
+  if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user, org);
   return false;
 }
 
 // Read-only mode: trial expired or no active subscription.
 // Pass orgType to exempt Household users (always free, never read-only).
-export function isFreeReadOnlyMode(user, orgType) {
+export function isFreeReadOnlyMode(user, orgType, org = null) {
   if (isAdminUser(user)) return false;
   if (isReviewAccessEnabled()) return false;
   if (orgType && isFreeOrgType(orgType)) return false;
-  return !isSubscriptionActive(user);
+  return !isSubscriptionActive(user, org);
 }
 
 // usage keys by feature:
@@ -166,7 +180,7 @@ export function isFreeReadOnlyMode(user, orgType) {
 //   invoiceCreate       → invoiceCountForCustomer (freelancer only; per customer per month)
 //   apartmentFlatCreate → flatCount
 //   societyInvite       → inviteCount
-export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FREELANCER) {
+export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FREELANCER, org = null) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
 
@@ -176,8 +190,8 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FRE
     return true;
   }
 
-  const plan = getUserPlan(user);
-  const active = isSubscriptionActive(user);
+  const plan = getOrgPlan(org) || getUserPlan(user);
+  const active = isSubscriptionActive(user, org);
 
   // Trial expired / no active plan: read-only — allow viewing and exports, block all writes
   if (!active) {
@@ -327,9 +341,9 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
   }
 }
 
-export function getPlanSummary(user, orgType) {
-  const plan = getUserPlan(user);
-  const status = user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+export function getPlanSummary(user, orgType, org = null) {
+  const plan = getOrgPlan(org) || getUserPlan(user);
+  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
 
   if (orgType && isFreeOrgType(orgType)) {
     return {
@@ -352,15 +366,15 @@ export function getPlanSummary(user, orgType) {
     };
   }
 
-  if (status === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user)) {
-    const ends = formatSubscriptionDate(user?.subscriptionEndsAt);
+  if (status === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user, org)) {
+    const ends = formatSubscriptionDate(getOrgSubscriptionEndsAt(org) || user?.subscriptionEndsAt);
     return {
       title: `${PLAN_LABELS[plan] || "Pro"} trial`,
       message: ends ? `Trial access is active until ${ends}.` : "Trial access is active for a limited period."
     };
   }
 
-  if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user)) {
+  if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user, org)) {
     return {
       title: "Trial ended",
       message: "Your 30-day free trial has ended. You can still view all your records. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
