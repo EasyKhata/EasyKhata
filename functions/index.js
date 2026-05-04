@@ -37,6 +37,35 @@ function setCors(req, res) {
   res.set("Access-Control-Max-Age", "3600");
 }
 
+function safeActivityUserId(userId, userEmail) {
+  const raw = String(userId || userEmail || "anonymous").trim() || "anonymous";
+  return raw.replace(/[^a-zA-Z0-9_.@-]/g, "_").slice(0, 160) || "anonymous";
+}
+
+async function writeClientActivity(type, payload, summary = {}) {
+  const ts = admin.firestore.FieldValue.serverTimestamp();
+  const userDocId = safeActivityUserId(payload.userId, payload.userEmail);
+  const flatCollectionName = type === "logs" ? "app_logs" : "app_events";
+  const userSubcollectionName = type === "logs" ? "logs" : "events";
+  const userActivityRef = db.collection("user_activity").doc(userDocId);
+  const batch = db.batch();
+
+  batch.set(db.collection(flatCollectionName).doc(), payload);
+  batch.set(userActivityRef.collection(userSubcollectionName).doc(), payload);
+  batch.set(userActivityRef, {
+    userId: payload.userId || null,
+    userEmail: payload.userEmail || null,
+    lastSeenAt: ts,
+    lastRoute: payload.route || null,
+    platform: payload.platform || null,
+    appVersion: payload.appVersion || null,
+    [type === "logs" ? "lastLogAt" : "lastEventAt"]: ts,
+    ...summary
+  }, { merge: true });
+
+  await batch.commit();
+}
+
 async function verifyFirebaseAuth(req) {
   const authHeader = req.headers.authorization || "";
   if (!authHeader.startsWith("Bearer ")) return null;
@@ -1046,6 +1075,7 @@ exports.recordClientLog = onRequest(
     const message = String(body.message || "").slice(0, 1000);
     const stack   = String(body.stack   || "").slice(0, 2000);
     const userId  = String(body.userId  || "").slice(0, 128) || null;
+    const userEmail = body.userEmail ? String(body.userEmail).slice(0, 200) : null;
     const errorCode = body.errorCode ? String(body.errorCode).slice(0, 100) : null;
     const ctx     = body.ctx ? String(body.ctx).slice(0, 500) : null;
     const route   = body.route ? String(body.route).slice(0, 200) : null;
@@ -1053,11 +1083,18 @@ exports.recordClientLog = onRequest(
     const platform = body.platform ? String(body.platform).slice(0, 100) : null;
     const appVersion = body.appVersion ? String(body.appVersion).slice(0, 50) : null;
 
-    await db.collection("app_logs").add({
+    const logDoc = {
       level, label, message, stack, errorCode,
-      userId, ctx, route, userAgent: ua, platform, appVersion,
+      userId, userEmail, ctx, route, userAgent: ua, platform, appVersion,
       ip,
       ts: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await writeClientActivity("logs", logDoc, {
+      userId,
+      userEmail,
+      lastLogLabel: label,
+      lastLogLevel: level
     });
 
     res.status(200).json({ ok: true });
@@ -1082,15 +1119,17 @@ exports.recordClientEvent = onRequest(
     _eventRateMap.set(rateKey, now);
 
     const userId = String(body.userId || "").slice(0, 128) || null;
+    const userEmail = body.userEmail ? String(body.userEmail).slice(0, 200) : null;
     const ctx = body.ctx ? String(body.ctx).slice(0, 500) : null;
     const route = body.route ? String(body.route).slice(0, 200) : null;
     const ua = String(body.userAgent || "").slice(0, 300) || null;
     const platform = body.platform ? String(body.platform).slice(0, 100) : null;
     const appVersion = body.appVersion ? String(body.appVersion).slice(0, 50) : null;
 
-    await db.collection("app_events").add({
+    const eventDoc = {
       event,
       userId,
+      userEmail,
       ctx,
       route,
       userAgent: ua,
@@ -1098,6 +1137,12 @@ exports.recordClientEvent = onRequest(
       appVersion,
       ip,
       ts: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await writeClientActivity("events", eventDoc, {
+      userId,
+      userEmail,
+      lastEvent: event
     });
 
     res.status(200).json({ ok: true });
