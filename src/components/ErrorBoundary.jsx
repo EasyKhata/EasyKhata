@@ -9,6 +9,8 @@ function isChunkLoadError(error) {
   return (
     msg.includes("Failed to fetch dynamically imported module") ||
     msg.includes("Importing a module script failed") ||
+    msg.includes("not a valid JavaScript MIME type") ||
+    msg.includes("Expected a JavaScript module script") ||
     msg.includes("Loading chunk") ||
     msg.includes("Loading CSS chunk") ||
     /\.js\)$/.test(msg)
@@ -130,7 +132,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[EazyKhata] Uncaught error:", error.message);
-    logError("app_crash", error, { componentStack: (info?.componentStack || "").slice(0, 500) });
+    logError(isChunkLoadError(error) ? "app_update_required" : "app_crash", error, { componentStack: (info?.componentStack || "").slice(0, 500) });
   }
 
   handleRetry() {
