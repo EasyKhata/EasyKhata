@@ -2018,12 +2018,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
           <div className="ledger-block">
             <div className="ledger-block-header">
-              <div className="ledger-block-title">Khata</div>
+              <div className="ledger-block-title">Khata Settings</div>
                 <div className="ledger-block-caption">Manage your workspace, residents, reports, and records.</div>
             </div>
             <div className="card">
-              <MenuRow icon="B" label="Your Khata" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              <MenuRow icon="K" label="Switch Khata" sub={`${organizations.length} Khatas — tap to switch or manage`} onClick={() => setShowOrgSwitcher(true)} />
+              <MenuRow icon="B" label="Khata Profile" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon="K" label="Manage Khatas" sub={`${organizations.length} Khatas — switch, review, or manage workspaces`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => {
                   const ownedSet = new Set(organizations.map(o => getOrgType(o.organizationType)));
@@ -2365,11 +2365,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
         <div className="ledger-block">
           <div className="ledger-block-header">
-            <div className="ledger-block-title">{user?.role === "admin" ? "Admin Account" : "Account"}</div>
+            <div className="ledger-block-title">{user?.role === "admin" ? "Admin Account" : "Your Profile"}</div>
             <div className="ledger-block-caption">Update your identity, currency, and reporting tools.</div>
           </div>
           <div className="card">
-            <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name || "Update your sign-in profile"} onClick={() => setScreen("profile")} />
+            <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name ? `${user.name} · sign-in details` : "Update your sign-in profile"} onClick={() => setScreen("profile")} />
             <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
             {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
             {user?.role !== "admin" && (

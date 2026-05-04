@@ -1107,6 +1107,37 @@ select.input-field {
   background: color-mix(in srgb, var(--surface-high) 85%, transparent);
 }
 
+.app-quick-add-floating {
+  position: fixed;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+  z-index: 132;
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--saffron) 70%, rgba(255,255,255,0.32));
+  background: var(--saffron);
+  color: #0C0908;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 14px 30px color-mix(in srgb, var(--saffron) 38%, transparent),
+    0 7px 16px rgba(0,0,0,0.24),
+    inset 0 1px 0 rgba(255,255,255,0.34);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.app-quick-add-floating:active {
+  transform: scale(0.94);
+  background: color-mix(in srgb, var(--saffron) 88%, #fff);
+  box-shadow:
+    0 9px 20px color-mix(in srgb, var(--saffron) 30%, transparent),
+    0 5px 12px rgba(0,0,0,0.2);
+}
+
 .app-bottom-nav-btn.active .app-bottom-nav-icon {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   color: var(--accent);
@@ -1430,6 +1461,7 @@ a:focus:not(:focus-visible) { outline: none; }
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+  overflow: visible;
 }
 
 .app-bottom-nav-btn {
@@ -1480,6 +1512,14 @@ a:focus:not(:focus-visible) { outline: none; }
   }
   .app-bottom-nav-label {
     font-size: 8px;
+  }
+
+  .app-quick-add-floating {
+    right: 12px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+    width: 44px;
+    height: 44px;
+    border-radius: 16px;
   }
 }
 
