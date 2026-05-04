@@ -30,6 +30,7 @@ export default function OrgMembersScreen({ onBack }) {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(true);
+  const [transferringOwner, setTransferringOwner] = useState("");
 
   useEffect(() => {
     if (!user?.id || !orgId) return;
@@ -105,7 +106,30 @@ export default function OrgMembersScreen({ onBack }) {
     } catch {
       setError("Failed to remove member.");
     }
-  }, [orgId, user?.id]);
+  }, [confirm, orgId, user?.id]);
+
+  const handleTransferOwnership = useCallback(async member => {
+    if (!user?.id || !member?.memberUid) return;
+    const ok = await confirm(
+      `Transfer ownership of ${orgName} to ${member.email}? You will become an admin, and they will become the owner.`,
+      { title: "Transfer Ownership", confirmLabel: "Transfer" }
+    );
+    if (!ok) return;
+
+    setError("");
+    setSuccessMsg("");
+    setTransferringOwner(member.id);
+    try {
+      await membersApi.transferOwnership(user.id, orgId, member.memberUid);
+      await data.refreshSharedMemberships?.();
+      setSuccessMsg(`Ownership transferred to ${member.email}. Reloading access...`);
+      window.setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      setError(err.message || "Failed to transfer ownership.");
+    } finally {
+      setTransferringOwner("");
+    }
+  }, [confirm, data, orgId, orgName, user?.id]);
 
   const statusColor = status => status === "accepted" ? "var(--accent)" : status === "declined" ? "var(--danger)" : "var(--gold)";
   const statusLabel = status => status === "accepted" ? "Active" : status === "declined" ? "Declined" : "Invited";
@@ -225,6 +249,7 @@ export default function OrgMembersScreen({ onBack }) {
                     <button
                       key={r.value}
                       type="button"
+                      disabled={transferringOwner === member.id}
                       onClick={() => handleRoleChange(member, r.value)}
                       style={{
                         padding: "4px 10px",
@@ -234,7 +259,8 @@ export default function OrgMembersScreen({ onBack }) {
                         color: member.role === r.value ? "var(--accent)" : "var(--text-dim)",
                         fontSize: 11,
                         fontWeight: 700,
-                        cursor: "pointer"
+                        cursor: transferringOwner === member.id ? "wait" : "pointer",
+                        opacity: transferringOwner === member.id ? 0.6 : 1
                       }}
                     >
                       {r.label}
@@ -247,11 +273,32 @@ export default function OrgMembersScreen({ onBack }) {
                   {statusLabel(member.status)}
                 </span>
                 <button
+                  disabled={transferringOwner === member.id}
                   onClick={() => handleRemove(member)}
-                  style={{ background: "none", border: "none", color: "var(--danger)", fontSize: 11, cursor: "pointer", fontWeight: 700, padding: 0 }}
+                  style={{ background: "none", border: "none", color: "var(--danger)", fontSize: 11, cursor: transferringOwner === member.id ? "wait" : "pointer", fontWeight: 700, padding: 0, opacity: transferringOwner === member.id ? 0.6 : 1 }}
                 >
                   Remove
                 </button>
+                {member.status === "accepted" && member.memberUid && (
+                  <button
+                    disabled={Boolean(transferringOwner)}
+                    onClick={() => handleTransferOwnership(member)}
+                    style={{
+                      border: "1px solid var(--accent)",
+                      background: "var(--accent-deep)",
+                      color: "var(--accent)",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      cursor: transferringOwner ? "wait" : "pointer",
+                      fontWeight: 800,
+                      padding: "5px 9px",
+                      whiteSpace: "nowrap",
+                      opacity: transferringOwner && transferringOwner !== member.id ? 0.55 : 1
+                    }}
+                  >
+                    {transferringOwner === member.id ? "Transferring..." : "Make Owner"}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -259,7 +306,7 @@ export default function OrgMembersScreen({ onBack }) {
 
         <div className="card" style={{ padding: "12px 14px" }}>
           <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EazyKhata with their own account. Once they accept, they can access this organization's data based on their role. {isApartmentOrg ? "Apartment admins can add records and manage only records they created. Owner and other admin records stay protected." : "Admins can add records and manage only records they created. Viewers can only view and export."}
+            <strong style={{ color: "var(--text-sec)" }}>How it works:</strong> Invited members sign in to EazyKhata with their own account. Once they accept, they can access this organization's data based on their role. You can transfer ownership only to an active member. {isApartmentOrg ? "Apartment admins can add records and manage only records they created. Owner and other admin records stay protected." : "Admins can add records and manage only records they created. Viewers can only view and export."}
           </div>
         </div>
       </div>

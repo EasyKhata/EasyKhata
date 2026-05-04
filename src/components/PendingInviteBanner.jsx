@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { membersApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useData } from "../context/DataContext";
 
 /**
  * Shown at the top of MainApp when the logged-in user has pending org invitations.
@@ -8,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
  */
 export default function PendingInviteBanner() {
   const { user, setUser } = useAuth();
+  const data = useData();
   const [pendingInvites, setPendingInvites] = useState([]);
   const [processing, setProcessing] = useState({});
   const [inviteError, setInviteError] = useState({});
@@ -37,14 +39,17 @@ export default function PendingInviteBanner() {
         acceptedAt: new Date().toISOString()
       };
 
-      // Update local user state so the org switcher appears immediately
-      setUser(prev => prev ? ({
-        ...prev,
-        sharedOrgs: {
-          ...(prev.sharedOrgs || {}),
-          [`${ownerId}_${orgId}`]: sharedOrgEntry
-        }
-      }) : prev);
+      const refreshed = await data.refreshSharedMemberships?.();
+      if (!refreshed) {
+        // Fallback: update local user state so the org switcher appears immediately.
+        setUser(prev => prev ? ({
+          ...prev,
+          sharedOrgs: {
+            ...(prev.sharedOrgs || {}),
+            [`${ownerId}_${orgId}`]: sharedOrgEntry
+          }
+        }) : prev);
+      }
 
       setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
     } catch {

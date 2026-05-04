@@ -177,6 +177,9 @@ export const membersApi = {
   remove: (userId, orgId, memberUid) =>
     api.delete(`/users/${userId}/orgs/${orgId}/members/${memberUid}`),
 
+  transferOwnership: (userId, orgId, memberUid) =>
+    api.post(`/users/${userId}/orgs/${orgId}/members/transfer-owner`, { memberUid }),
+
   // Called by the invited member to accept
   acceptInvite: (inviteId) =>
     api.post("/invitations/accept", { inviteId }),
