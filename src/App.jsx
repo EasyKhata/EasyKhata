@@ -27,9 +27,11 @@ if (isNative && isAndroid) {
 const AuthScreen = lazy(() => import("./screens/AuthScreen"));
 const MainApp = lazy(() => import("./screens/MainApp"));
 const LandingScreen = lazy(() => import("./screens/LandingScreen"));
+const AdsManager = lazy(() => import("./sections/AdsManager"));
 
 function AppRouter() {
   const { user, loading, logout } = useAuth();
+  const isAdsManagerRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/ads-manager");
   // Track at mount whether a user was previously signed in (before Firebase resolves).
   // This lets returning users skip the landing page and see the app skeleton instead.
   const wasSignedIn = useRef(!!getCurrentUser());
@@ -46,6 +48,21 @@ function AppRouter() {
       <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
         <DashboardSkeleton />
       </div>
+    );
+  }
+
+  if (isAdsManagerRoute && !user) {
+    if (loading) {
+      return (
+        <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
+          <DashboardSkeleton />
+        </div>
+      );
+    }
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <AuthScreen />
+      </Suspense>
     );
   }
 
@@ -92,6 +109,14 @@ function AppRouter() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (isAdsManagerRoute) {
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <AdsManager />
+      </Suspense>
     );
   }
 

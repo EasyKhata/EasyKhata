@@ -15,6 +15,7 @@ import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan, isReviewAcce
 import OnboardingGuide from "../components/OnboardingGuide";
 import Collapsible from "../components/Collapsible";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import AdCarousel from "../components/AdCarousel";
 
 function polarToCartesian(cx, cy, radius, angleInDegrees) {
   const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
@@ -1072,6 +1073,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       onCreateOrganization={data.createOrganization}
     />
   );
+  const dashboardAds = !isViewerMode ? <AdCarousel placement="dashboard_carousel" /> : null;
 
   if (isApartmentOrg) {
     const overallBalance = Number(stats.totalReserve || 0);
@@ -1126,6 +1128,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <ProgressLine value={paidFlats} max={Math.max(totalFlats, 1)} color={healthColor} />
             </div>
           </div>
+
+          {dashboardAds}
 
           {/* Stat chips */}
           <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -1263,6 +1267,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <ProgressLine value={Number(stats.totalExpense || 0)} max={Math.max(Number(stats.totalIncome || 0), 1)} color={spendPct < 65 ? "var(--jade)" : spendPct < 85 ? "var(--saffron)" : "var(--ember)"} />
             </div>
           </div>
+
+          {dashboardAds}
 
           {/* Stat chips */}
           <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -1427,6 +1433,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <ProgressLine value={collected} max={Math.max(collected + expenses, 1)} color="var(--sky)" />
             </div>
           </div>
+
+          {dashboardAds}
 
           {/* Outstanding invoices callout */}
           {stats.pendingInvoiceTotal > 0 && (
@@ -1698,6 +1706,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <ProgressLine value={Number(stats.totalIncome || 0)} max={Math.max(Number(stats.totalIncome || 0) + Number(stats.totalExpense || 0), 1)} color={Number(stats.profit || 0) >= 0 ? "var(--jade)" : "var(--ember)"} />
           </div>
         </div>
+
+        {dashboardAds}
 
         {/* Plan / review access banner */}
         {!activeSharedOrgKey && (reviewAccessEnabled || currentPlan === PLANS.FREE || isTrial) && (

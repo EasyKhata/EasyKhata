@@ -1017,6 +1017,316 @@ select.input-field {
   gap: 10px;
 }
 
+.ad-carousel-banner {
+  position: relative;
+  margin: 0 0 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2));
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ad-carousel-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.ad-carousel-dots button {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  border: 0;
+  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+  cursor: pointer;
+}
+
+.ad-carousel-dots button.active {
+  width: 18px;
+  background: var(--saffron);
+}
+
+.ad-carousel-banner-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(42vh, 360px);
+  object-fit: contain;
+  background: var(--surface);
+}
+
+.ad-carousel-banner-link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ad-carousel-banner-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(5px);
+}
+
+.ads-manager-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.ads-manager-shell,
+.ads-manager-form,
+.ads-manager-list {
+  gap: 16px;
+}
+
+.ads-manager-header,
+.ads-manager-list-head,
+.ads-manager-form-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.ads-manager-header h1,
+.ads-manager-form h2,
+.ads-manager-list h2 {
+  margin: 0;
+  font-family: var(--serif);
+  color: var(--text);
+}
+
+.ads-manager-header p,
+.ads-manager-form-title p,
+.ads-manager-list-head p {
+  margin: 4px 0 0;
+  color: var(--text-sec);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ads-manager-form,
+.ads-manager-list {
+  display: grid;
+}
+
+.ads-manager-form {
+  padding: 18px;
+}
+
+.ads-manager-tabs {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ads-manager-tabs button {
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 18px;
+  background: transparent;
+  color: var(--text-sec);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ads-manager-tabs button.active {
+  background: var(--saffron);
+  color: #1f1607;
+}
+
+.ads-audience-section {
+  display: grid;
+  gap: 12px;
+}
+
+.ads-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ads-insight-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+.ads-insight-card div,
+.ads-insight-card span {
+  color: var(--text-sec);
+  font-size: 12px;
+}
+
+.ads-insight-card strong {
+  display: block;
+  margin: 5px 0 2px;
+  color: var(--text);
+  font-size: 24px;
+}
+
+.ads-insight-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ads-insight-list {
+  padding: 14px;
+}
+
+.ads-insight-list h3 {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.ads-insight-list p {
+  margin: 0;
+  color: var(--text-sec);
+  font-size: 12px;
+}
+
+.ads-insight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
+  color: var(--text-sec);
+  font-size: 12px;
+}
+
+.ads-insight-row strong {
+  color: var(--text);
+}
+
+.ads-manager-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ads-manager-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-sec);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ads-image-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ads-image-preview {
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--saffron) 10%, var(--surface));
+}
+
+.ads-image-preview.empty {
+  display: grid;
+  place-items: center;
+  color: var(--saffron);
+}
+
+.ads-upload-button {
+  margin-top: 8px;
+  width: fit-content;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.ads-upload-button input {
+  display: none;
+}
+
+.ads-campaign-row {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) auto auto;
+  gap: 13px;
+  align-items: center;
+  padding: 14px;
+}
+
+.ads-campaign-preview {
+  width: 62px;
+  height: 62px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--saffron) 10%, var(--surface));
+  color: var(--saffron);
+  overflow: hidden;
+}
+
+.ads-campaign-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ads-campaign-main { min-width: 0; }
+
+.ads-campaign-main h3 {
+  margin: 4px 0;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.ads-campaign-main p,
+.ads-campaign-meta,
+.ads-campaign-targets,
+.ads-campaign-stats {
+  color: var(--text-sec);
+  font-size: 12px;
+}
+
+.ads-campaign-meta,
+.ads-campaign-targets,
+.ads-campaign-stats,
+.ads-campaign-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ads-campaign-meta span,
+.ads-campaign-targets span,
+.ads-campaign-stats div {
+  padding: 4px 7px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--surface-pop) 82%, transparent);
+}
+
+.ads-campaign-actions { justify-content: flex-end; }
+.danger-soft { color: var(--danger); }
+
 .modal-footer {
   padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   display: flex;
@@ -1267,6 +1577,31 @@ svg {
   .ledger-form-split {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+  .ad-carousel-banner {
+    border-radius: 13px;
+  }
+  .ad-carousel-banner-image {
+    max-height: min(38vh, 280px);
+  }
+  .ads-manager-header,
+  .ads-manager-list-head,
+  .ads-manager-form-title {
+    flex-direction: column;
+  }
+  .ads-insight-grid,
+  .ads-insight-lists {
+    grid-template-columns: 1fr;
+  }
+  .ads-campaign-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+  .ads-campaign-stats,
+  .ads-campaign-actions {
+    grid-column: 1 / -1;
+  }
+  .ads-image-tools {
+    align-items: flex-start;
   }
   .modal-footer {
     padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
