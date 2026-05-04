@@ -12,6 +12,7 @@ const EVENT_ENDPOINT =
 function getClientContext() {
   return {
     userId: auth.currentUser?.uid ?? null,
+    userEmail: auth.currentUser?.email ?? null,
     route: typeof window !== "undefined" ? window.location.pathname : null,
     userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
     platform: typeof navigator !== "undefined" ? navigator.platform : null,
