@@ -961,8 +961,9 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
         const tax = getInvoiceTaxBreakdown(invoice);
         const grandTotal = invoiceGrandTotal(invoice);
         const dueMessage = isApartmentOrg ? "" : getDocumentDueMessage(invoice, isQuote);
+        const canManageInvoice = d.canManageRecord?.(invoice) ?? !isViewerMode;
         return (
-          <Modal title={invoice.number} onClose={() => setDetail(null)} onSave={!isViewerMode ? () => openEdit(invoice) : undefined} saveLabel="Edit" accentColor="var(--blue)">
+          <Modal title={invoice.number} onClose={() => setDetail(null)} onSave={!isViewerMode && canManageInvoice ? () => openEdit(invoice) : undefined} saveLabel="Edit" accentColor="var(--blue)">
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
               <Avatar name={invoice.customer?.name || invoice.billTo?.name || "?"} size={52} fontSize={20} />
               <div style={{ minWidth: 0 }}>
@@ -1068,7 +1069,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
             {invoice.terms && <div className="card" style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-sec)", marginBottom: 18, lineHeight: 1.6 }}><strong style={{ color: "var(--text)" }}>Terms:</strong> {invoice.terms}</div>}
 
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : `repeat(${isViewerMode ? 1 : isApartmentOrg ? 2 : 3}, 1fr)`, gap: 10, marginBottom: 12 }}>
-              {!isApartmentOrg && !isViewerMode && (
+              {!isApartmentOrg && !isViewerMode && canManageInvoice && (
                 <button onClick={() => updateInvoiceStatus(invoice, isQuote ? (computedStatus === "draft" ? "sent" : computedStatus === "sent" ? "approved" : "draft") : computedStatus === "paid" ? "pending" : "paid")} style={{ border: "none", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 700, cursor: "pointer", background: isQuote ? "var(--gold-deep)" : computedStatus === "paid" ? "var(--gold-deep)" : "var(--accent)", color: isQuote ? "var(--gold)" : computedStatus === "paid" ? "var(--gold)" : "#0C0C10" }}>
                   {isQuote ? (computedStatus === "draft" ? "Mark Sent" : computedStatus === "sent" ? "Mark Approved" : "Mark Draft") : computedStatus === "paid" ? "Mark Pending" : "Mark Paid"}
                 </button>
@@ -1099,7 +1100,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               </div>
             )}
 
-            {!isViewerMode && (
+            {!isViewerMode && canManageInvoice && (
               <button onClick={async () => { if (await confirm(`Delete this ${documentLabel.toLowerCase()}?`, { title: "Delete", confirmLabel: "Delete" })) { removeApartmentLinkedEntries(invoice.id); d.removeInvoice(invoice.id); setDetail(null); } }} style={{ width: "100%", border: "1px solid var(--danger)44", borderRadius: 14, padding: "14px", fontFamily: "var(--font)", fontSize: 14, fontWeight: 600, cursor: "pointer", background: "var(--danger-deep)", color: "var(--danger)" }}>
                 Delete {documentLabel}
               </button>

@@ -55,6 +55,7 @@ export default function CustomersScreen({
   isApartmentOrg,
   expensesLoaded,
   incomeLoaded,
+  canManageRecord,
 }) {
   const confirm = useConfirm();
   const sym = currency?.symbol || "Rs";
@@ -338,6 +339,7 @@ export default function CustomersScreen({
 
   function CustomerListCard({ customer, isLast }) {
     const isProtectedProfile = Boolean(customer?.isPrimaryProfile || customer?.isLockedProfile);
+    const canManage = canManageRecord?.(customer) ?? true;
     const isExpanded = expandedId === customer.id;
     const meta = orgConfig.showCustomerFinancials === false
       ? isApartmentOrg
@@ -358,10 +360,10 @@ export default function CustomersScreen({
             ...(isProtectedProfile ? [{ label: "Primary", tone: "blue" }] : []),
             { label: isExpanded ? "▾" : "▸" }
           ]}
-          actions={[
+          actions={canManage ? [
             { label: "Edit", onClick: () => onOpenEditCust(customer), tone: "blue" },
             ...(!isProtectedProfile ? [{ label: "Delete", onClick: async () => { if (await confirm(`Remove ${customer.name}?`, { title: "Delete", confirmLabel: "Delete" })) onRemoveCustomer(customer.id); }, tone: "danger" }] : [])
-          ]}
+          ] : []}
         />
         {isExpanded && (
           <div style={{

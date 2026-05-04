@@ -1,5 +1,7 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { useData } from "../context/DataContext";
+import { storage } from "../firebase";
 import {
   DateSelectInput,
   Modal,
@@ -28,9 +30,11 @@ import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue } f
 import { useAuth } from "../context/AuthContext";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { logError } from "../utils/logger";
 
 const DEFAULT_EXPENSE_CATEGORIES = ["Operations", "Tools", "Marketing", "Payroll", "Utilities", "Travel", "Other"];
 const TODAY = new Date().toISOString().slice(0, 10);
+const RECEIPT_MAX_BYTES = 5 * 1024 * 1024;
 
 function buildBlankForm(year, month, config, categories) {
   const defaultCategory = categories?.[0] || DEFAULT_EXPENSE_CATEGORIES[0];
@@ -44,7 +48,11 @@ function buildBlankForm(year, month, config, categories) {
     note: "",
     teamMemberName: "",
     partnerName: "",
-    staffMemberName: ""
+    staffMemberName: "",
+    receiptImageUrl: "",
+    receiptImagePath: "",
+    receiptFileName: "",
+    receiptUploadedAt: ""
   };
   (config.expenseFields || []).forEach(field => {
     base[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
@@ -93,6 +101,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
+  const canAttachReceipt = isApartmentOrg || isFreelancerOrg;
   const visibleExpenseFields = useMemo(
     () => (config.expenseFields || []).filter(field => {
       if (isPersonalOrg && field.key === "necessityType") return false;
@@ -116,6 +125,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const [budgetError, setBudgetError] = useState("");
   const [editId, setEditId] = useState(null);
   const [formError, setFormError] = useState("");
+  const [receiptError, setReceiptError] = useState("");
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
   const [errors, setErrors] = useState({});
   const [searchQuery, setSearchQuery] = useState("");
   const [expensesPage, setExpensesPage] = useState(1);
@@ -234,6 +245,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     }
     setEditId(null);
     setForm(buildBlankForm(year, month, config, categoryOptions));
+    setReceiptError("");
     setFormError(""); setErrors({});
     setShowForm(true);
   }
@@ -275,11 +287,16 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     next.teamMemberName = expense.teamMemberName || "";
     next.partnerName = expense.partnerName || "";
     next.staffMemberName = expense.staffMemberName || "";
+    next.receiptImageUrl = expense.receiptImageUrl || "";
+    next.receiptImagePath = expense.receiptImagePath || "";
+    next.receiptFileName = expense.receiptFileName || "";
+    next.receiptUploadedAt = expense.receiptUploadedAt || "";
     visibleExpenseFields.forEach(field => {
       next[field.key] = expense[field.key] || (field.type === "select" ? field.options?.[0] || "" : "");
     });
     setEditId(expense.id);
     setForm(next);
+    setReceiptError("");
     setFormError(""); setErrors({});
     setShowForm(true);
   }
@@ -287,8 +304,83 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   function closeForm() {
     setEditId(null);
     setShowForm(false);
+    setReceiptError("");
     setFormError(""); setErrors({});
     setForm(buildBlankForm(year, month, config, categoryOptions));
+  }
+
+  function safeReceiptFileName(file) {
+    const extension = String(file?.name || "").split(".").pop()?.toLowerCase() || "jpg";
+    const safeExtension = extension.replace(/[^a-z0-9]/g, "") || "jpg";
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${safeExtension}`;
+  }
+
+  async function uploadReceiptImage(file) {
+    if (!file || !canAttachReceipt) return;
+    setReceiptError("");
+
+    if (!String(file.type || "").startsWith("image/")) {
+      setReceiptError("Upload an image file for the receipt or bill.");
+      return;
+    }
+
+    if (file.size > RECEIPT_MAX_BYTES) {
+      setReceiptError("Receipt image must be under 5 MB.");
+      return;
+    }
+
+    if (!user?.id) {
+      setReceiptError("Please sign in again before uploading a receipt.");
+      return;
+    }
+
+    setUploadingReceipt(true);
+    try {
+      const orgId = d.activeOrgId || "active-org";
+      const filePath = `expense-receipts/${user.id}/${orgId}/${safeReceiptFileName(file)}`;
+      const uploadRef = ref(storage, filePath);
+      await uploadBytes(uploadRef, file, {
+        contentType: file.type,
+        customMetadata: {
+          uploadedBy: user.id,
+          orgId: String(orgId),
+          expenseId: editId || "new"
+        }
+      });
+      const url = await getDownloadURL(uploadRef);
+      setForm(current => ({
+        ...current,
+        receiptImageUrl: url,
+        receiptImagePath: filePath,
+        receiptFileName: file.name || "receipt",
+        receiptUploadedAt: new Date().toISOString()
+      }));
+    } catch (error) {
+      setReceiptError("Receipt upload failed. Please try again.");
+      logError("expense_receipt_upload_failed", error, {
+        userId: user?.id,
+        orgId: d.activeOrgId || "",
+        editId: editId || ""
+      });
+    } finally {
+      setUploadingReceipt(false);
+    }
+  }
+
+  function clearReceiptImage() {
+    setReceiptError("");
+    setForm(current => ({
+      ...current,
+      receiptImageUrl: "",
+      receiptImagePath: "",
+      receiptFileName: "",
+      receiptUploadedAt: ""
+    }));
+  }
+
+  function openReceipt(url) {
+    if (!url || typeof window === "undefined") return;
+    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   function saveBudgets() {
@@ -359,6 +451,13 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       payload[field.key] = String(form[field.key] || "").trim();
     });
 
+    if (canAttachReceipt) {
+      payload.receiptImageUrl = form.receiptImageUrl || "";
+      payload.receiptImagePath = form.receiptImagePath || "";
+      payload.receiptFileName = form.receiptFileName || "";
+      payload.receiptUploadedAt = form.receiptUploadedAt || "";
+    }
+
     if (!isPersonalOrg && form.recurring) {
       payload.startMonth = form.date.slice(0, 7);
       payload.endDate = form.endDate || "";
@@ -410,19 +509,32 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     return bits.join(" - ");
   }
 
-  const ExpenseRow = ({ expense }) => (
-    <WorkflowRecordCard
-      title={expense.label}
-      meta={expenseMeta(expense)}
-      amount={fmtMoney(expense.amount, sym)}
-      amountTone="danger"
-      badges={!isPersonalOrg && expense.recurring ? [{ label: "Recurring", tone: "blue" }] : []}
-      actions={!isViewerMode ? [
+  const ExpenseRow = ({ expense }) => {
+    const receiptUrl = expense.receiptImageUrl || "";
+    const badges = [
+      ...(!isPersonalOrg && expense.recurring ? [{ label: "Recurring", tone: "blue" }] : []),
+      ...(receiptUrl ? [{ label: "Receipt", tone: "green" }] : [])
+    ];
+    const canManage = d.canManageRecord?.(expense) ?? !isViewerMode;
+    const ownerActions = [
+      ...(receiptUrl ? [{ label: "View Receipt", onClick: () => openReceipt(receiptUrl) }] : []),
+      ...(canManage ? [
         { label: "Edit", onClick: () => openEdit(expense) },
         { label: "Delete", onClick: () => d.removeExpense(expense.id), tone: "danger" }
-      ] : []}
-    />
-  );
+      ] : [])
+    ];
+
+    return (
+      <WorkflowRecordCard
+        title={expense.label}
+        meta={expenseMeta(expense)}
+        amount={fmtMoney(expense.amount, sym)}
+        amountTone="danger"
+        badges={badges}
+        actions={!isViewerMode ? ownerActions : receiptUrl ? [{ label: "View Receipt", onClick: () => openReceipt(receiptUrl) }] : []}
+      />
+    );
+  };
 
   const expensesSub = isPersonalOrg
     ? "Review monthly spending without oversized cards."
@@ -717,7 +829,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
           onClose={closeForm}
           onSave={save}
           saveLabel={editId ? "Update" : "Save"}
-          canSave={!!form.label.trim() && Number(form.amount) > 0}
+          canSave={!!form.label.trim() && Number(form.amount) > 0 && !uploadingReceipt}
           accentColor="var(--danger)"
         >
           {formError && (
@@ -751,6 +863,44 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     <option value="">{staffOptions.length ? "Select staff member" : "No staff added yet — add in Settings"}</option>
                     {staffOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
+                </Field>
+              )}
+              {canAttachReceipt && (
+                <Field label="Receipt / Bill Photo" hint="Optional. Upload an image under 5 MB.">
+                  <div style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: "var(--surface-high)" }}>
+                    {form.receiptImageUrl ? (
+                      <button type="button" onClick={() => openReceipt(form.receiptImageUrl)} style={{ width: "100%", border: 0, padding: 0, background: "transparent", cursor: "pointer", marginBottom: 10 }}>
+                        <img src={form.receiptImageUrl} alt="Expense receipt preview" style={{ width: "100%", maxHeight: 180, objectFit: "contain", borderRadius: 10, background: "var(--surface)" }} />
+                      </button>
+                    ) : (
+                      <div style={{ minHeight: 104, display: "grid", placeItems: "center", border: "1px dashed var(--border-strong)", borderRadius: 10, color: "var(--text-dim)", fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
+                        No receipt attached
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <label className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12, cursor: uploadingReceipt ? "not-allowed" : "pointer", opacity: uploadingReceipt ? 0.7 : 1 }}>
+                        {uploadingReceipt ? "Uploading..." : form.receiptImageUrl ? "Change Photo" : "Upload Photo"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingReceipt}
+                          onChange={event => {
+                            const file = event.target.files?.[0];
+                            event.target.value = "";
+                            uploadReceiptImage(file);
+                          }}
+                          style={{ display: "none" }}
+                        />
+                      </label>
+                      {form.receiptImageUrl && (
+                        <button type="button" className="btn-secondary" style={{ padding: "9px 12px", fontSize: 12 }} onClick={clearReceiptImage} disabled={uploadingReceipt}>
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {form.receiptFileName && <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)", wordBreak: "break-word" }}>{form.receiptFileName}</div>}
+                    {receiptError && <div style={{ marginTop: 8, fontSize: 12, color: "var(--danger)", fontWeight: 700 }}>{receiptError}</div>}
+                  </div>
                 </Field>
               )}
             </div>

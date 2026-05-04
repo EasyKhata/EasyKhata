@@ -1163,56 +1163,143 @@ export function DataProvider({ children }) {
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));
-  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(c)] }));
+  const withAudit = record => ({
+    ...record,
+    createdBy: record.createdBy || user?.id || "",
+    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedBy: user?.id || "",
+    updatedByName: user?.name || user?.email || "Unknown",
+    updatedAt: new Date().toISOString()
+  });
+  const showProtectedRecordNotice = () => {
+    showGlobalToast({
+      tone: "warning",
+      title: "Record protected",
+      message: "Admins can edit or delete only records they created. Owner and other admin records are locked."
+    });
+  };
+  const canManageRecord = record => {
+    if (!activeSharedOrgRef.current) return true;
+    if (activeSharedOrgRef.current.isViewer) return false;
+    if (!record?.id) return true;
+    return String(record?.createdBy || "").trim() === String(user?.id || "").trim();
+  };
+  const preserveAuditForUpdate = (record, existing) => withAudit({
+    ...record,
+    createdBy: existing?.createdBy || record.createdBy || user?.id || "",
+    createdByName: existing?.createdByName || record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: existing?.createdAt || record.createdAt || new Date().toISOString()
+  });
+  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(withAudit(c))] }));
   const updateCustomer = c => update(d => ({
     ...d,
     customers: d.customers.map(existing => {
       if (existing.id !== c.id) return existing;
-      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
-        return { ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true };
+      if (!canManageRecord(existing)) {
+        showProtectedRecordNotice();
+        return existing;
       }
-      return c;
+      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
+        return withAudit({ ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
+      }
+      return withAudit({ ...c, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
     })
   }));
   const removeCustomer = id => update(d => {
     const protectedCustomer = d.customers.find(customer => customer?.id === id && (customer.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer.isPrimaryProfile));
     if (protectedCustomer) return d;
+    const existing = d.customers.find(customer => customer?.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
     return { ...d, customers: d.customers.filter(c => c.id !== id) };
   });
   const saveOrgRecords = (key, items) => update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: items } }));
   const addOrgRecord = (key, record) =>
-    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(record), ...(d.orgRecords?.[key] || [])] } }));
+    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(withAudit(record)), ...(d.orgRecords?.[key] || [])] } }));
   const updateOrgRecord = (key, record) =>
     update(d => ({
       ...d,
       orgRecords: {
         ...d.orgRecords,
-        [key]: (d.orgRecords?.[key] || []).map(item => (item.id === record.id ? record : item))
+        [key]: (d.orgRecords?.[key] || []).map(item => {
+          if (item.id !== record.id) return item;
+          if (!canManageRecord(item)) {
+            showProtectedRecordNotice();
+            return item;
+          }
+          return withAudit({ ...record, createdBy: item.createdBy, createdByName: item.createdByName, createdAt: item.createdAt });
+        })
       }
     }));
   const removeOrgRecord = (key, id) =>
-    update(d => ({
-      ...d,
-      orgRecords: {
-        ...d.orgRecords,
-        [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
+    update(d => {
+      const existing = (d.orgRecords?.[key] || []).find(item => item.id === id);
+      if (existing && !canManageRecord(existing)) {
+        showProtectedRecordNotice();
+        return d;
       }
-    }));
-  const withAudit = record => ({
-    ...record,
-    createdBy: record.createdBy || user?.id || "",
-    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
-    createdAt: record.createdAt || new Date().toISOString()
-  });
+      return {
+        ...d,
+        orgRecords: {
+          ...d.orgRecords,
+          [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
+        }
+      };
+    });
   const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(withAudit(i)), ...d.income]) }));
-  const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => (i.id === income.id ? income : i))) }));
-  const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
+  const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => {
+    if (i.id !== income.id) return i;
+    if (!canManageRecord(i)) {
+      showProtectedRecordNotice();
+      return i;
+    }
+    return preserveAuditForUpdate(income, i);
+  })) }));
+  const removeIncome = id => update(d => {
+    const existing = d.income.find(i => i.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, income: d.income.filter(i => i.id !== id) };
+  });
   const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(withAudit(e)), ...d.expenses]) }));
-  const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => (e.id === expense.id ? expense : e))) }));
-  const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
+  const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => {
+    if (e.id !== expense.id) return e;
+    if (!canManageRecord(e)) {
+      showProtectedRecordNotice();
+      return e;
+    }
+    return preserveAuditForUpdate(expense, e);
+  })) }));
+  const removeExpense = id => update(d => {
+    const existing = d.expenses.find(e => e.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, expenses: d.expenses.filter(e => e.id !== id) };
+  });
   const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(withAudit(inv)), ...d.invoices]) }));
-  const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
-  const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
+  const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => {
+    if (i.id !== inv.id) return i;
+    if (!canManageRecord(i)) {
+      showProtectedRecordNotice();
+      return i;
+    }
+    return preserveAuditForUpdate(inv, i);
+  })) }));
+  const removeInvoice = id => update(d => {
+    const existing = d.invoices.find(i => i.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, invoices: d.invoices.filter(i => i.id !== id) };
+  });
 
   async function switchOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
@@ -1621,6 +1708,7 @@ export function DataProvider({ children }) {
     orgSummary,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
+    canManageRecord,
     activeSharedOrgRole,
     sharedOrgs,
     activeSharedOrgKey,
@@ -1713,8 +1801,9 @@ export function DataProvider({ children }) {
     activeSharedOrgKey,
     activeSharedOrgRole,
     collectionFetched,
+    canManageRecord,
     ensureCollectionLoaded
-  ]);
+  ]); 
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 }
