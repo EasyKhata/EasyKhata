@@ -363,6 +363,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     billingCycle: BILLING_CYCLES.MONTHLY,
     note: ""
   });
+  const [paymentOrgId, setPaymentOrgId] = useState(activeOrgId || "");
+  const [pendingNewOrgDraft, setPendingNewOrgDraft] = useState(null);
   const [supportForm, setSupportForm] = useState({
     topic: "account",
     subject: "",
@@ -454,6 +456,20 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
   const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
+  const paymentOrganizations = useMemo(() => {
+    if (pendingNewOrgDraft) {
+      return [{
+        id: pendingNewOrgDraft.orgId,
+        name: pendingNewOrgDraft.name,
+        organizationType: pendingNewOrgDraft.organizationType,
+        plan: "free",
+        subscriptionStatus: "pending_payment",
+        subscriptionEndsAt: ""
+      }];
+    }
+    return organizations.filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
+  }, [organizations, pendingNewOrgDraft]);
+  const selectedPaymentOrg = paymentOrganizations.find(org => org.id === paymentOrgId) || paymentOrganizations[0] || null;
   const selectableOrgTypeOptions = useMemo(() => {
     if (isPrimaryHouseholdOrg) {
       return ORG_TYPE_OPTIONS.filter(option => getOrgType(option.value) === ORG_TYPES.PERSONAL);
@@ -743,6 +759,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }, [account?.organizationType, user?.organizationType]);
 
   useEffect(() => {
+    if (!pendingNewOrgDraft && activeOrgId) setPaymentOrgId(activeOrgId);
+  }, [activeOrgId, pendingNewOrgDraft]);
+
+  useEffect(() => {
     setGoalForm({
       targetAmount: goals?.targetAmount ?? goals?.monthlySavings ?? "",
       targetDate: goals?.targetDate || "",
@@ -786,6 +806,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     if (navigationTarget.screen === "plan-request") {
+      setPendingNewOrgDraft(null);
+      setPaymentOrgId(activeOrgId || "");
       setScreen("plan-request");
       return;
     }
@@ -1524,13 +1546,26 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   async function submitPlanRequest() {
+    const targetOrg = selectedPaymentOrg;
+    const targetOrgId = targetOrg?.id || "";
+    const targetOrgType = getOrgType(targetOrg?.organizationType || orgType);
+    const targetOrgName = String(targetOrg?.name || account?.name || "Current Khata").trim();
+    if (!targetOrgId) {
+      showNotice("Please select the Khata you want to upgrade before starting payment.");
+      return;
+    }
+
     // On Android, in-app payments are not allowed (Play Store policy).
     // Send users to the website to complete the upgrade there.
     if (isNative) {
+      const upgradeUrl = new URL(APP_UPGRADE_URL);
+      upgradeUrl.searchParams.set("orgId", targetOrgId);
+      upgradeUrl.searchParams.set("orgName", targetOrgName);
+      upgradeUrl.searchParams.set("orgType", targetOrgType);
       import("@capacitor/browser").then(({ Browser }) => {
-        Browser.open({ url: APP_UPGRADE_URL });
+        Browser.open({ url: upgradeUrl.toString() });
       }).catch(() => {
-        window.open(APP_UPGRADE_URL, "_blank");
+        window.open(upgradeUrl.toString(), "_blank");
       });
       setScreen("main");
       return;
@@ -1551,9 +1586,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       const orderResponse = await callFunction("createUpiSubscriptionOrder", {
         targetPlan,
         billingCycle,
-        orgId: activeOrgId,
-        orgName: account?.name || "",
-        orgType,
+        orgId: targetOrgId,
+        orgName: targetOrgName,
+        orgType: targetOrgType,
         note: cleanNote
       });
 
@@ -1568,7 +1603,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "EazyKhata",
-        description: `${PLAN_LABELS[targetPlan] || "Pro"} Subscription`,
+        description: `${PLAN_LABELS[targetPlan] || "Pro"} for ${targetOrgName}`,
         order_id: orderData.orderId,
         method: {
           upi: true,
@@ -1585,7 +1620,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         },
         notes: {
           userId: user?.id || "",
-          orgId: activeOrgId || "",
+          orgId: targetOrgId,
+          orgName: targetOrgName,
+          orgType: targetOrgType,
           targetPlan,
           billingCycle
         },
@@ -1607,13 +1644,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             const nowIso = new Date().toISOString();
             const durationDays = billingCycle === BILLING_CYCLES.YEARLY ? 365 : 30;
             const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
-            saveAccount({
-              ...account,
-              plan: targetPlan,
-              subscriptionStatus: "active",
-              subscriptionEndsAt: endsAt,
-              billingCycle
-            });
+            if (pendingNewOrgDraft) {
+              const created = await createOrganization({ ...pendingNewOrgDraft, orgId: targetOrgId });
+              if (created?.error) {
+                showNotice(`Payment received, but Khata creation needs support: ${created.error}`);
+                return;
+              }
+              setPendingNewOrgDraft(null);
+            } else if (targetOrgId === activeOrgId) {
+              saveAccount({
+                ...account,
+                plan: targetPlan,
+                subscriptionStatus: "active",
+                subscriptionEndsAt: endsAt,
+                billingCycle
+              });
+            }
             setUser(prev => prev ? {
               ...prev,
               plan: targetPlan,
@@ -1625,7 +1671,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
             setPlanRequestForm({ billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
             setScreen("main");
-            showNotice(`Payment successful! Pro is now active until ${formatSubscriptionDate(endsAt)}.`, "success");
+            showNotice(`Payment successful! Pro is now active for ${targetOrgName} until ${formatSubscriptionDate(endsAt)}.`, "success");
           } catch (verifyErr) {
             logError("Payment verification error", verifyErr);
             showNotice(verifyErr?.message || "Payment received but activation is pending. Please wait a moment — your plan will update automatically.");
@@ -1662,10 +1708,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function emailPaymentProof() {
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
-    const subject = encodeURIComponent(`EazyKhata payment proof - ${user?.name || "Customer"}`);
+    const targetOrg = selectedPaymentOrg;
+    const targetOrgType = getOrgType(targetOrg?.organizationType || orgType);
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, targetOrgType);
+    const paymentOrgName = String(targetOrg?.name || account?.name || "Current Khata").trim();
+    const subject = encodeURIComponent(`EazyKhata payment proof - ${paymentOrgName}`);
     const body = encodeURIComponent(
-      `Hello,\n\nI have completed the UPI payment for EazyKhata.\n\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
+      `Hello,\n\nI have completed the UPI payment for EazyKhata.\n\nKhata: ${paymentOrgName}\nKhata ID: ${targetOrg?.id || ""}\nKhata type: ${getOrgConfig(targetOrgType)?.typeLabel || targetOrgType}\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
     );
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
@@ -2049,9 +2098,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               <MenuRow icon="K" label="Manage Khatas" sub={`${organizations.length} Khatas — switch, review, or manage workspaces`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => {
-                  const ownedSet = new Set(organizations.map(o => getOrgType(o.organizationType)));
-                  const firstAvailable = getSecondaryOrgTypeOptions(ORG_TYPES.FREELANCER).find(o => !ownedSet.has(getOrgType(o.value)));
-                  setCreateOrgForm({ name: "", organizationType: firstAvailable?.value || ORG_TYPES.FREELANCER, addressLine: "", city: "", district: "", state: "", pincode: "", country: "India" });
+                  setPendingNewOrgDraft(null);
+                  setCreateOrgForm({ name: "", organizationType: ORG_TYPES.FREELANCER, addressLine: "", city: "", district: "", state: "", pincode: "", country: "India" });
                   setScreen("create-org");
                 }} />
               )}
@@ -2273,7 +2321,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             organizations={organizations}
             activeOrgId={activeOrgId}
             onSwitch={handleSwitchOrganization}
-            onDelete={async (orgId) => { await deleteOrganization(orgId); setShowOrgSwitcher(false); }}
+            onDelete={handleDeleteOrganization}
           />
           {reportPreviewUrl && (
             <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 1200, display: "flex", flexDirection: "column" }}>
@@ -2370,7 +2418,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     className="btn-secondary"
                     style={{ width: "100%", opacity: reviewAccessEnabled ? 0.55 : 1, cursor: reviewAccessEnabled ? "not-allowed" : "pointer" }}
                     onClick={() => {
-                      if (!reviewAccessEnabled) setScreen("plan-request");
+                      if (!reviewAccessEnabled) {
+                        setPendingNewOrgDraft(null);
+                        setPaymentOrgId(activeOrgId || "");
+                        setScreen("plan-request");
+                      }
                     }}
                     disabled={reviewAccessEnabled}
                   >
@@ -2450,7 +2502,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           organizations={organizations}
           activeOrgId={activeOrgId}
           onSwitch={handleSwitchOrganization}
-          onDelete={async (orgId) => { await deleteOrganization(orgId); setShowOrgSwitcher(false); }}
+          onDelete={handleDeleteOrganization}
         />
         {showReportPicker && (
           <Modal
@@ -2668,8 +2720,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       }
       const cleanLocation = buildLocationLabel({ city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
       const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
-      const res = await createOrganization({
-        organizationType: getOrgType(createOrgForm.organizationType),
+      const newOrgType = getOrgType(createOrgForm.organizationType);
+      const draftIdSeed = window.crypto?.randomUUID?.() || `${Date.now()}_${Math.random()}`;
+      const draft = {
+        orgId: `org_${draftIdSeed.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24)}`,
+        organizationType: newOrgType,
         name: createOrgForm.name.trim(),
         addressLine: cleanAddressLine,
         city: cleanCity,
@@ -2679,14 +2734,23 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         country: cleanCountry,
         location: cleanLocation,
         address: cleanAddress
-      });
+      };
+      const existingWorkOrgCount = organizations.filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL).length;
+      if (existingWorkOrgCount > 0) {
+        setPendingNewOrgDraft(draft);
+        setPaymentOrgId(draft.orgId);
+        setScreen("plan-request");
+        showNotice("Complete payment to create and activate this Khata.");
+        return;
+      }
+      const res = await createOrganization(draft);
       if (res?.error === "UPGRADE_REQUIRED") { setScreen("plan-request"); return; }
       if (res?.error) { showNotice(res.error); return; }
       setScreen("main");
     }
 
     return withNotice(
-      <Modal title="New Khata" onClose={() => setScreen("main")} onSave={handleCreateOrg} saveLabel="Create" canSave={!!createOrgForm.name?.trim()}>
+      <Modal title="New Khata" onClose={() => setScreen("main")} onSave={handleCreateOrg} saveLabel="Continue" canSave={!!createOrgForm.name?.trim()}>
         <Field label="Khata Type" required>
           <Select
             value={createOrgForm.organizationType}
@@ -3165,25 +3229,21 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "plan-request") {
-    if (isPaidActive(user, account) && account?.subscriptionStatus === "active") {
-      return withNotice(
-        <Modal title="Pro Plan Active" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done" canSave accentColor="var(--accent)">
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              This Khata's Pro subscription is already active{account?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(account.subscriptionEndsAt)}` : ""}. Premium features are unlocked for this Khata.
-            </div>
-          </div>
-        </Modal>
-      );
-    }
     return withNotice(
       <PlanRequestModal
         form={planRequestForm}
         onFormChange={setPlanRequestForm}
         onSubmit={submitPlanRequest}
         submitting={submittingPayment}
-        onClose={() => setScreen("main")}
-        orgType={orgType}
+        onClose={() => { setPendingNewOrgDraft(null); setScreen("main"); }}
+        orgType={selectedPaymentOrg?.organizationType || orgType}
+        orgName={selectedPaymentOrg?.name || account?.name || ""}
+        orgId={selectedPaymentOrg?.id || activeOrgId || ""}
+        user={user}
+        organizations={paymentOrganizations}
+        selectedOrgId={paymentOrgId || selectedPaymentOrg?.id || ""}
+        onSelectedOrgIdChange={setPaymentOrgId}
+        lockedOrgSelection={Boolean(pendingNewOrgDraft)}
       />
     );
   }
