@@ -19,6 +19,7 @@ export default function AdminUsersSection() {
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
   const [userFilter, setUserFilter] = useState("all");
+  const [sortMode, setSortMode] = useState("newest");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,23 +63,59 @@ export default function AdminUsersSection() {
   }, []);
 
   const filteredUsers = useMemo(() => {
-    return users.filter(member => {
+    const now = new Date();
+    const rows = users.filter(member => {
       const parsedLocation = parseLocationFields(member.location || "");
       const locationLabel = buildLocationLabel({
         city: member.city || parsedLocation.city,
         state: member.state || parsedLocation.state,
         country: member.country || parsedLocation.country
       });
+      const orgCount = Array.isArray(member.organizations) ? member.organizations.length : 0;
+      const records = (member.organizations || []).reduce((sum, org) => sum + Number(org._count?.income || 0) + Number(org._count?.expenses || 0) + Number(org._count?.invoices || 0) + Number(org._count?.customers || 0) + Number(org._count?.orgRecords || 0), 0);
+      const lastActivity = member.lastActivityAt ? new Date(member.lastActivityAt) : null;
+      const inactiveDays = lastActivity && !Number.isNaN(lastActivity.getTime()) ? Math.floor((now - lastActivity) / 86400000) : null;
       const haystack = `${member.name || ""} ${member.email || ""} ${member.phone || ""} ${locationLabel}`.toLowerCase();
       const matchesSearch = haystack.includes(search.trim().toLowerCase());
       const matchesFilter =
         userFilter === "all" ||
         (userFilter === "blocked" && member.blocked) ||
         (userFilter === "active" && !member.blocked) ||
-        (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS));
+        (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS)) ||
+        (userFilter === "trial" && member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) ||
+        (userFilter === "dormant" && inactiveDays !== null && inactiveDays > 30) ||
+        (userFilter === "multi_org" && orgCount > 1) ||
+        (userFilter === "activated" && records > 0);
       return matchesSearch && matchesFilter;
     });
-  }, [search, userFilter, users]);
+    return rows.sort((a, b) => {
+      const aRecords = (a.organizations || []).reduce((sum, org) => sum + Number(org._count?.income || 0) + Number(org._count?.expenses || 0) + Number(org._count?.invoices || 0) + Number(org._count?.customers || 0) + Number(org._count?.orgRecords || 0), 0);
+      const bRecords = (b.organizations || []).reduce((sum, org) => sum + Number(org._count?.income || 0) + Number(org._count?.expenses || 0) + Number(org._count?.invoices || 0) + Number(org._count?.customers || 0) + Number(org._count?.orgRecords || 0), 0);
+      if (sortMode === "activity") return new Date(b.lastActivityAt || b.updatedAt || 0) - new Date(a.lastActivityAt || a.updatedAt || 0);
+      if (sortMode === "records") return bRecords - aRecords;
+      if (sortMode === "orgs") return (b.organizations?.length || 0) - (a.organizations?.length || 0);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+  }, [search, sortMode, userFilter, users]);
+
+  const userStats = useMemo(() => {
+    const now = new Date();
+    return users.reduce((acc, member) => {
+      const orgCount = Array.isArray(member.organizations) ? member.organizations.length : 0;
+      const records = (member.organizations || []).reduce((sum, org) => sum + Number(org._count?.income || 0) + Number(org._count?.expenses || 0) + Number(org._count?.invoices || 0) + Number(org._count?.customers || 0) + Number(org._count?.orgRecords || 0), 0);
+      const lastActivity = member.lastActivityAt ? new Date(member.lastActivityAt) : null;
+      const inactiveDays = lastActivity && !Number.isNaN(lastActivity.getTime()) ? Math.floor((now - lastActivity) / 86400000) : null;
+      acc.total += 1;
+      if (!member.blocked) acc.active += 1;
+      if (member.blocked) acc.blocked += 1;
+      if (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS) acc.premium += 1;
+      if (member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) acc.trial += 1;
+      if (orgCount > 1) acc.multiOrg += 1;
+      if (records > 0) acc.activated += 1;
+      if (inactiveDays !== null && inactiveDays > 30) acc.dormant += 1;
+      return acc;
+    }, { total: 0, active: 0, blocked: 0, premium: 0, trial: 0, multiOrg: 0, activated: 0, dormant: 0 });
+  }, [users]);
 
   async function toggleBlock(id, blocked) {
     if (id === user.id) {
@@ -162,6 +199,22 @@ export default function AdminUsersSection() {
         </div>
       )}
 
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {[
+          ["Active", userStats.active, "var(--accent)"],
+          ["Premium", userStats.premium, "var(--gold)"],
+          ["Trial", userStats.trial, "var(--blue)"],
+          ["Activated", userStats.activated, "var(--purple)"],
+          ["Multi-org", userStats.multiOrg, "var(--green)"],
+          ["Dormant", userStats.dormant, "var(--danger)"]
+        ].map(([label, value, color]) => (
+          <div key={label} className="card" style={{ padding: 12, marginBottom: 0, borderColor: `${color}44` }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</div>
+            <div style={{ fontSize: 22, fontFamily: "var(--serif)", color: "var(--text)", marginTop: 4 }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Search + filter bar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
         <input
@@ -171,7 +224,18 @@ export default function AdminUsersSection() {
           onChange={event => setSearch(event.target.value)}
           style={{ flex: 1, minWidth: 200 }}
         />
-        {[["all", "All"], ["active", "Active"], ["blocked", "Blocked"], ["premium", "Premium"]].map(([value, label]) => (
+        <select
+          className="input-field"
+          value={sortMode}
+          onChange={event => setSortMode(event.target.value)}
+          style={{ width: "auto", minWidth: 140, padding: "8px 12px", fontSize: 12 }}
+        >
+          <option value="newest">Newest first</option>
+          <option value="activity">Recent activity</option>
+          <option value="records">Most records</option>
+          <option value="orgs">Most orgs</option>
+        </select>
+        {[["all", "All"], ["active", "Active"], ["premium", "Premium"], ["trial", "Trial"], ["activated", "Activated"], ["multi_org", "Multi-org"], ["dormant", "Dormant"], ["blocked", "Blocked"]].map(([value, label]) => (
           <button
             key={value}
             className="btn-secondary"
@@ -209,6 +273,7 @@ export default function AdminUsersSection() {
                   {member.email || "No email"}
                   {member.phone ? ` · ${member.phone}` : ""}
                   {" · "}{member.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE}
+                  {Array.isArray(member.organizations) ? ` · ${member.organizations.length} org${member.organizations.length === 1 ? "" : "s"}` : ""}
                   {member.lastActivityAt ? ` · Active ${new Date(member.lastActivityAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}
                   {(() => {
                     const loc = buildLocationLabel({ city: member.city || parseLocationFields(member.location || "").city, state: member.state || parseLocationFields(member.location || "").state, country: member.country || parseLocationFields(member.location || "").country });

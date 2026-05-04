@@ -40,6 +40,8 @@ function fromApiOrg(apiOrg, collections = {}) {
       addressLine: apiOrg.addressLine || "",
       city: apiOrg.city || "",
       state: apiOrg.state || "",
+      district: apiOrg.district || "",
+      pincode: apiOrg.pincode || "",
       country: apiOrg.country || "",
       location: apiOrg.location || "",
       address: apiOrg.address || "",
@@ -82,6 +84,8 @@ function toApiOrgUpdate(orgData) {
     addressLine: acc.addressLine || "",
     city: acc.city || "",
     state: acc.state || "",
+    district: acc.district || "",
+    pincode: acc.pincode || "",
     country: acc.country || "",
     location: acc.location || "",
     address: acc.address || "",
@@ -235,6 +239,8 @@ const EMPTY_ORG_DATA = {
     addressLine: "",
     city: "",
     state: "",
+    district: "",
+    pincode: "",
     country: "",
     location: "",
     address: "",
@@ -267,16 +273,20 @@ function createEmptyAccount(overrides = {}) {
   const addressLine = String(overrides.addressLine || parsedLocation.addressLine || "").trim();
   const city = String(overrides.city || parsedLocation.city || "").trim();
   const state = String(overrides.state || parsedLocation.state || "").trim();
+  const district = String(overrides.district || parsedLocation.district || "").trim();
+  const pincode = String(overrides.pincode || parsedLocation.pincode || "").trim();
   const rawCountry = String(overrides.country || parsedLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
   const country = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
-  const location = buildLocationLabel({ city, state, country });
-  const address = buildLocationLabel({ addressLine, city, state, country });
+  const location = buildLocationLabel({ city, district, state, pincode, country });
+  const address = buildLocationLabel({ addressLine, city, district, state, pincode, country });
   return {
     ...EMPTY_ORG_DATA.account,
     ...overrides,
     addressLine,
     city,
     state,
+    district,
+    pincode,
     country,
     location,
     address,
@@ -293,10 +303,12 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
   const normalizedAddressLine = String(sourceAccount.addressLine || source.addressLine || parsedSourceLocation.addressLine || fallbackAccount.addressLine || fallback.addressLine || parsedFallbackLocation.addressLine || "").trim();
   const normalizedCity = String(sourceAccount.city || source.city || parsedSourceLocation.city || fallbackAccount.city || fallback.city || parsedFallbackLocation.city || "").trim();
   const normalizedState = String(sourceAccount.state || source.state || parsedSourceLocation.state || fallbackAccount.state || fallback.state || parsedFallbackLocation.state || "").trim();
+  const normalizedDistrict = String(sourceAccount.district || source.district || parsedSourceLocation.district || fallbackAccount.district || fallback.district || parsedFallbackLocation.district || "").trim();
+  const normalizedPincode = String(sourceAccount.pincode || source.pincode || parsedSourceLocation.pincode || fallbackAccount.pincode || fallback.pincode || parsedFallbackLocation.pincode || "").trim();
   const rawCountry = String(sourceAccount.country || source.country || parsedSourceLocation.country || fallbackAccount.country || fallback.country || parsedFallbackLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
   const normalizedCountry = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
-  const normalizedLocation = buildLocationLabel({ city: normalizedCity, state: normalizedState, country: normalizedCountry });
-  const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, state: normalizedState, country: normalizedCountry });
+  const normalizedLocation = buildLocationLabel({ city: normalizedCity, district: normalizedDistrict, state: normalizedState, pincode: normalizedPincode, country: normalizedCountry });
+  const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, district: normalizedDistrict, state: normalizedState, pincode: normalizedPincode, country: normalizedCountry });
   const normalizedCollections = {
     income: sortOrgCollectionRecords("income", source.income || []),
     expenses: sortOrgCollectionRecords("expenses", source.expenses || []),
@@ -330,6 +342,8 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
         addressLine: normalizedAddressLine,
         city: normalizedCity,
         state: normalizedState,
+        district: normalizedDistrict,
+        pincode: normalizedPincode,
         country: normalizedCountry,
         location: normalizedLocation,
         address: normalizedAddress,
@@ -1149,56 +1163,143 @@ export function DataProvider({ children }) {
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));
-  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(c)] }));
+  const withAudit = record => ({
+    ...record,
+    createdBy: record.createdBy || user?.id || "",
+    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: record.createdAt || new Date().toISOString(),
+    updatedBy: user?.id || "",
+    updatedByName: user?.name || user?.email || "Unknown",
+    updatedAt: new Date().toISOString()
+  });
+  const showProtectedRecordNotice = () => {
+    showGlobalToast({
+      tone: "warning",
+      title: "Record protected",
+      message: "Admins can edit or delete only records they created. Owner and other admin records are locked."
+    });
+  };
+  const canManageRecord = record => {
+    if (!activeSharedOrgRef.current) return true;
+    if (activeSharedOrgRef.current.isViewer) return false;
+    if (!record?.id) return true;
+    return String(record?.createdBy || "").trim() === String(user?.id || "").trim();
+  };
+  const preserveAuditForUpdate = (record, existing) => withAudit({
+    ...record,
+    createdBy: existing?.createdBy || record.createdBy || user?.id || "",
+    createdByName: existing?.createdByName || record.createdByName || user?.name || user?.email || "Unknown",
+    createdAt: existing?.createdAt || record.createdAt || new Date().toISOString()
+  });
+  const addCustomer = c => update(d => ({ ...d, customers: [...d.customers, withId(withAudit(c))] }));
   const updateCustomer = c => update(d => ({
     ...d,
     customers: d.customers.map(existing => {
       if (existing.id !== c.id) return existing;
-      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
-        return { ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true };
+      if (!canManageRecord(existing)) {
+        showProtectedRecordNotice();
+        return existing;
       }
-      return c;
+      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
+        return withAudit({ ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
+      }
+      return withAudit({ ...c, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
     })
   }));
   const removeCustomer = id => update(d => {
     const protectedCustomer = d.customers.find(customer => customer?.id === id && (customer.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer.isPrimaryProfile));
     if (protectedCustomer) return d;
+    const existing = d.customers.find(customer => customer?.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
     return { ...d, customers: d.customers.filter(c => c.id !== id) };
   });
   const saveOrgRecords = (key, items) => update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: items } }));
   const addOrgRecord = (key, record) =>
-    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(record), ...(d.orgRecords?.[key] || [])] } }));
+    update(d => ({ ...d, orgRecords: { ...d.orgRecords, [key]: [withId(withAudit(record)), ...(d.orgRecords?.[key] || [])] } }));
   const updateOrgRecord = (key, record) =>
     update(d => ({
       ...d,
       orgRecords: {
         ...d.orgRecords,
-        [key]: (d.orgRecords?.[key] || []).map(item => (item.id === record.id ? record : item))
+        [key]: (d.orgRecords?.[key] || []).map(item => {
+          if (item.id !== record.id) return item;
+          if (!canManageRecord(item)) {
+            showProtectedRecordNotice();
+            return item;
+          }
+          return withAudit({ ...record, createdBy: item.createdBy, createdByName: item.createdByName, createdAt: item.createdAt });
+        })
       }
     }));
   const removeOrgRecord = (key, id) =>
-    update(d => ({
-      ...d,
-      orgRecords: {
-        ...d.orgRecords,
-        [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
+    update(d => {
+      const existing = (d.orgRecords?.[key] || []).find(item => item.id === id);
+      if (existing && !canManageRecord(existing)) {
+        showProtectedRecordNotice();
+        return d;
       }
-    }));
-  const withAudit = record => ({
-    ...record,
-    createdBy: record.createdBy || user?.id || "",
-    createdByName: record.createdByName || user?.name || user?.email || "Unknown",
-    createdAt: record.createdAt || new Date().toISOString()
-  });
+      return {
+        ...d,
+        orgRecords: {
+          ...d.orgRecords,
+          [key]: (d.orgRecords?.[key] || []).filter(item => item.id !== id)
+        }
+      };
+    });
   const addIncome = i => update(d => ({ ...d, income: sortOrgCollectionRecords("income", [withId(withAudit(i)), ...d.income]) }));
-  const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => (i.id === income.id ? income : i))) }));
-  const removeIncome = id => update(d => ({ ...d, income: d.income.filter(i => i.id !== id) }));
+  const updateIncome = income => update(d => ({ ...d, income: sortOrgCollectionRecords("income", d.income.map(i => {
+    if (i.id !== income.id) return i;
+    if (!canManageRecord(i)) {
+      showProtectedRecordNotice();
+      return i;
+    }
+    return preserveAuditForUpdate(income, i);
+  })) }));
+  const removeIncome = id => update(d => {
+    const existing = d.income.find(i => i.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, income: d.income.filter(i => i.id !== id) };
+  });
   const addExpense = e => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", [withId(withAudit(e)), ...d.expenses]) }));
-  const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => (e.id === expense.id ? expense : e))) }));
-  const removeExpense = id => update(d => ({ ...d, expenses: d.expenses.filter(e => e.id !== id) }));
+  const updateExpense = expense => update(d => ({ ...d, expenses: sortOrgCollectionRecords("expenses", d.expenses.map(e => {
+    if (e.id !== expense.id) return e;
+    if (!canManageRecord(e)) {
+      showProtectedRecordNotice();
+      return e;
+    }
+    return preserveAuditForUpdate(expense, e);
+  })) }));
+  const removeExpense = id => update(d => {
+    const existing = d.expenses.find(e => e.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, expenses: d.expenses.filter(e => e.id !== id) };
+  });
   const addInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", [withId(withAudit(inv)), ...d.invoices]) }));
-  const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => (i.id === inv.id ? inv : i))) }));
-  const removeInvoice = id => update(d => ({ ...d, invoices: d.invoices.filter(i => i.id !== id) }));
+  const updateInvoice = inv => update(d => ({ ...d, invoices: sortOrgCollectionRecords("invoices", d.invoices.map(i => {
+    if (i.id !== inv.id) return i;
+    if (!canManageRecord(i)) {
+      showProtectedRecordNotice();
+      return i;
+    }
+    return preserveAuditForUpdate(inv, i);
+  })) }));
+  const removeInvoice = id => update(d => {
+    const existing = d.invoices.find(i => i.id === id);
+    if (existing && !canManageRecord(existing)) {
+      showProtectedRecordNotice();
+      return d;
+    }
+    return { ...d, invoices: d.invoices.filter(i => i.id !== id) };
+  });
 
   async function switchOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
@@ -1341,8 +1442,17 @@ export function DataProvider({ children }) {
     try {
       await orgsApi.create(user.id, nextOrgId, {
         organizationType: getOrgType(accountInput.organizationType || user.organizationType),
+        name: accountInput.name || "",
         email: accountInput.email || user.email || "",
-        phone: accountInput.phone || user.phone || ""
+        phone: accountInput.phone || user.phone || "",
+        addressLine: accountInput.addressLine || "",
+        city: accountInput.city || "",
+        state: accountInput.state || "",
+        district: accountInput.district || "",
+        pincode: accountInput.pincode || "",
+        country: accountInput.country || "India",
+        location: accountInput.location || "",
+        address: accountInput.address || ""
       });
     } catch (err) {
       return { error: err.message || "Could not create organization." };
@@ -1598,6 +1708,7 @@ export function DataProvider({ children }) {
     orgSummary,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
+    canManageRecord,
     activeSharedOrgRole,
     sharedOrgs,
     activeSharedOrgKey,
@@ -1690,8 +1801,9 @@ export function DataProvider({ children }) {
     activeSharedOrgKey,
     activeSharedOrgRole,
     collectionFetched,
+    canManageRecord,
     ensureCollectionLoaded
-  ]);
+  ]); 
 
   return <DataContext.Provider value={contextValue}>{children}</DataContext.Provider>;
 }

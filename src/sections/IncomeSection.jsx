@@ -276,7 +276,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       ...(config.incomeFields || []).map(field => item[field.key]).filter(Boolean)
     ].filter(Boolean).join(" · ");
 
-    const actions = !isViewerMode ? [
+    const canManage = d.canManageRecord?.(item) ?? !isViewerMode;
+    const actions = !isViewerMode && canManage ? [
       { label: "Edit", onClick: event => { event.stopPropagation(); openEdit(item); } },
       { label: "Delete", onClick: event => { event.stopPropagation(); d.removeIncome(item.id); }, tone: "danger" }
     ] : [];

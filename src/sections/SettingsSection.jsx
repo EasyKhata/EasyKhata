@@ -47,10 +47,12 @@ import {
   getStateProvinceOptions,
   getAgeGroupFromDateOfBirth,
   isValidDateOfBirth,
+  isValidIndianPincode,
   isValidUserPhoneNumber,
   parseLocationFields,
   parseDateOfBirthParts,
   sanitizePhoneDigits,
+  sanitizeIndianPincode,
   splitPhoneNumber
 } from "../utils/profile";
 import {
@@ -223,8 +225,10 @@ function buildAccountFormState(account, user) {
   const addressLine = account?.addressLine || parsedLocation.addressLine || "";
   const city = account?.city || parsedLocation.city || "";
   const state = account?.state || parsedLocation.state || "";
-  const country = account?.country || parsedLocation.country || "India";
-  const location = account?.location || buildLocationLabel({ city, state, country });
+  const district = account?.district || parsedLocation.district || "";
+  const pincode = account?.pincode || parsedLocation.pincode || "";
+  const country = "India";
+  const location = account?.location || buildLocationLabel({ city, district, state, pincode, country });
   return {
     name: account?.name || "",
     email: account?.email || user?.email || "",
@@ -234,9 +238,11 @@ function buildAccountFormState(account, user) {
     addressLine,
     city,
     state,
+    district,
+    pincode,
     country,
     location,
-    address: account?.address || buildLocationLabel({ addressLine, city, state, country }),
+    address: account?.address || buildLocationLabel({ addressLine, city, district, state, pincode, country }),
     gstin: account?.gstin || "",
     showHSN: account?.showHSN ?? true,
     organizationType: getOrgType(account?.organizationType || user?.organizationType),
@@ -313,7 +319,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     maxOrganizations,
     canCreateOrganization,
     ensureCollectionLoaded,
-    collectionFetched
+    collectionFetched,
+    canManageRecord
   } = useData();
   useTheme();
 
@@ -340,6 +347,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     addressLine: user?.addressLine || initialLocationParts.addressLine || "",
     city: user?.city || initialLocationParts.city || "",
     state: user?.state || initialLocationParts.state || "",
+    district: user?.district || initialLocationParts.district || "",
+    pincode: user?.pincode || initialLocationParts.pincode || "",
     country: user?.country || initialLocationParts.country || "India"
   });
   const [accForm, setAccForm] = useState(buildAccountFormState(account, user));
@@ -372,7 +381,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     name: "",
     organizationType: getOrgType(account?.organizationType || user?.organizationType) === ORG_TYPES.PERSONAL
       ? ORG_TYPES.FREELANCER
-      : getOrgType(account?.organizationType || user?.organizationType)
+      : getOrgType(account?.organizationType || user?.organizationType),
+    addressLine: "",
+    city: "",
+    district: "",
+    state: "",
+    pincode: "",
+    country: "India"
   });
   const [upgradeInfo, setUpgradeInfo] = useState(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
@@ -539,7 +554,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     [selectedSupportTicketId, supportTickets]
   );
   const stateProvinceOptions = useMemo(() => getStateProvinceOptions(userForm.country), [userForm.country]);
-  const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions(accForm.country), [accForm.country]);
+  const orgStateProvinceOptions = useMemo(() => getStateProvinceOptions("India"), []);
+  const createOrgStateProvinceOptions = orgStateProvinceOptions;
   const customerStateProvinceOptions = useMemo(() => getStateProvinceOptions(custForm?.country || "India"), [custForm?.country]);
   const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
   const birthDayOptions = useMemo(() => getBirthDayOptions(userForm.birthMonth, userForm.birthYear), [userForm.birthMonth, userForm.birthYear]);
@@ -887,9 +903,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const cleanAddressLine = String(accForm.addressLine || "").trim();
     const cleanCity = String(accForm.city || "").trim();
     const cleanState = String(accForm.state || "").trim();
-    const cleanCountry = String(accForm.country || "").trim();
-    const cleanLocation = isApartmentOrg ? cleanAddressLine : buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
-    const cleanAddress = isApartmentOrg ? cleanAddressLine : buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
+    const cleanDistrict = String(accForm.district || "").trim();
+    const cleanPincode = sanitizeIndianPincode(accForm.pincode || "");
+    const cleanCountry = "India";
+    const cleanLocation = buildLocationLabel({ city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
+    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
     const cleanOrganizationType = getOrgType(accForm.organizationType);
     const previousOrganizationType = getOrgType(account?.organizationType || user?.organizationType);
     const isOrgTypeChanging = previousOrganizationType !== cleanOrganizationType;
@@ -913,12 +931,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid GSTIN or leave it empty.");
       return;
     }
-    if (!isApartmentOrg && (!cleanCity || !cleanState || !cleanCountry)) {
-      showNotice("Please enter your organization city, state, and country.");
+    if (!cleanAddressLine || !cleanCity || !cleanDistrict || !cleanState || !cleanPincode) {
+      showNotice("Please complete the Khata address: address, city, district, state, and pincode are required.");
       return;
     }
-    if (isApartmentOrg && !cleanAddressLine) {
-      showNotice("Please enter the apartment or society address.");
+    if (!isValidIndianPincode(cleanPincode)) {
+      showNotice("Please enter a valid 6-digit Indian pincode.");
       return;
     }
     if (duplicateOrgType) {
@@ -935,6 +953,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       addressLine: cleanAddressLine,
       city: cleanCity,
       state: cleanState,
+      district: cleanDistrict,
+      pincode: cleanPincode,
       country: cleanCountry,
       location: cleanLocation,
       address: cleanAddress,
@@ -2028,7 +2048,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => {
                   const ownedSet = new Set(organizations.map(o => getOrgType(o.organizationType)));
                   const firstAvailable = getSecondaryOrgTypeOptions(ORG_TYPES.FREELANCER).find(o => !ownedSet.has(getOrgType(o.value)));
-                  setCreateOrgForm({ name: "", organizationType: firstAvailable?.value || ORG_TYPES.FREELANCER });
+                  setCreateOrgForm({ name: "", organizationType: firstAvailable?.value || ORG_TYPES.FREELANCER, addressLine: "", city: "", district: "", state: "", pincode: "", country: "India" });
                   setScreen("create-org");
                 }} />
               )}
@@ -2632,10 +2652,34 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType).filter(o => !ownedTypes.has(getOrgType(o.value)));
 
     async function handleCreateOrg() {
+      const cleanAddressLine = String(createOrgForm.addressLine || "").trim();
+      const cleanCity = String(createOrgForm.city || "").trim();
+      const cleanDistrict = String(createOrgForm.district || "").trim();
+      const cleanState = String(createOrgForm.state || "").trim();
+      const cleanPincode = sanitizeIndianPincode(createOrgForm.pincode || "");
+      const cleanCountry = "India";
       if (!createOrgForm.name?.trim()) { showNotice("Please enter a name for the new Khata."); return; }
+      if (!cleanAddressLine || !cleanCity || !cleanDistrict || !cleanState || !cleanPincode) {
+        showNotice("Please complete the Khata address before creating it.");
+        return;
+      }
+      if (!isValidIndianPincode(cleanPincode)) {
+        showNotice("Please enter a valid 6-digit Indian pincode.");
+        return;
+      }
+      const cleanLocation = buildLocationLabel({ city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
+      const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, district: cleanDistrict, state: cleanState, pincode: cleanPincode, country: cleanCountry });
       const res = await createOrganization({
         organizationType: getOrgType(createOrgForm.organizationType),
-        name: createOrgForm.name.trim()
+        name: createOrgForm.name.trim(),
+        addressLine: cleanAddressLine,
+        city: cleanCity,
+        district: cleanDistrict,
+        state: cleanState,
+        pincode: cleanPincode,
+        country: cleanCountry,
+        location: cleanLocation,
+        address: cleanAddress
       });
       if (res?.error === "UPGRADE_REQUIRED") { setScreen("plan-request"); return; }
       if (res?.error) { showNotice(res.error); return; }
@@ -2659,6 +2703,55 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             onChange={e => setCreateOrgForm(f => ({ ...f, name: e.target.value }))}
           />
         </Field>
+        <Field label="Address" required hint="Building, street, area, and landmark.">
+          <Input
+            placeholder="Lake View Residency, MG Road"
+            value={createOrgForm.addressLine || ""}
+            onChange={e => setCreateOrgForm(f => ({ ...f, addressLine: e.target.value }))}
+            autoComplete="street-address"
+          />
+        </Field>
+        <div className="desktop-grid-2">
+          <Field label="City" required>
+            <Input
+              placeholder="Hyderabad"
+              value={createOrgForm.city || ""}
+              onChange={e => setCreateOrgForm(f => ({ ...f, city: e.target.value }))}
+              autoComplete="address-level2"
+            />
+          </Field>
+          <Field label="District" required>
+            <Input
+              placeholder="Hyderabad"
+              value={createOrgForm.district || ""}
+              onChange={e => setCreateOrgForm(f => ({ ...f, district: e.target.value }))}
+              autoComplete="address-level2"
+            />
+          </Field>
+        </div>
+        <div className="desktop-grid-2">
+          <Field label="State" required>
+            <Select
+              value={createOrgForm.state || ""}
+              onChange={e => setCreateOrgForm(f => ({ ...f, state: e.target.value }))}
+            >
+              <option value="">Select state</option>
+              {createOrgStateProvinceOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Pincode" required>
+            <Input
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="500081"
+              value={createOrgForm.pincode || ""}
+              onChange={e => setCreateOrgForm(f => ({ ...f, pincode: sanitizeIndianPincode(e.target.value) }))}
+              autoComplete="postal-code"
+            />
+          </Field>
+        </div>
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginTop: 4 }}>
           You currently have {organizations.length} of {maxOrganizations} Khatas.
         </div>
@@ -2715,6 +2808,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         isApartmentOrg={isApartmentOrg}
         expensesLoaded={collectionFetched?.expenses ?? false}
         incomeLoaded={collectionFetched?.income ?? false}
+        canManageRecord={canManageRecord}
       />
     );
   }
