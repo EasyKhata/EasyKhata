@@ -1427,7 +1427,7 @@ export function DataProvider({ children }) {
       return { error: "Household is already your default Khata." };
     }
 
-    const nextOrgId = `org_${uid()}${uid()}`;
+    const nextOrgId = accountInput.orgId || `org_${uid()}${uid()}`;
     const nextOrg = normalizeOrgData(
         {
           account: {
@@ -1484,7 +1484,6 @@ export function DataProvider({ children }) {
 
   async function deleteOrganization(orgId) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
     if (!data.orgs?.[orgId]) return { error: "That organization was not found." };
 
     const orgIds = Object.keys(data.orgs || {});
@@ -1541,6 +1540,10 @@ export function DataProvider({ children }) {
     id: orgId,
     name: orgValue.account?.name || "Untitled Organization",
     organizationType: getOrgType(orgValue.account?.organizationType),
+    plan: orgValue.account?.plan || "",
+    subscriptionStatus: orgValue.account?.subscriptionStatus || "",
+    subscriptionEndsAt: orgValue.account?.subscriptionEndsAt || "",
+    billingCycle: orgValue.account?.billingCycle || "",
     hasData: Boolean(
       orgValue.customers?.length ||
       orgValue.income?.length ||

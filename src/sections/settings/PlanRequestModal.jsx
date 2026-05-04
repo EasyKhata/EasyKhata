@@ -1,26 +1,77 @@
 import React from "react";
-import { Modal, Field, Textarea } from "../../components/UI";
-import { BILLING_CYCLES, PLANS, UPI_CONFIG, getBillingAmount } from "../../utils/subscription";
-import { ORG_TYPES } from "../../utils/orgTypes";
+import { Modal, Field, Select, Textarea } from "../../components/UI";
+import { BILLING_CYCLES, PLANS, UPI_CONFIG, getBillingAmount, isPaidActive } from "../../utils/subscription";
+import { ORG_TYPES, getOrgConfig, getOrgType } from "../../utils/orgTypes";
 import { isNative } from "../../utils/native";
 
-export default function PlanRequestModal({ form, onFormChange, onSubmit, submitting, onClose, orgType = ORG_TYPES.FREELANCER }) {
+export default function PlanRequestModal({
+  form,
+  onFormChange,
+  onSubmit,
+  submitting,
+  onClose,
+  orgType = ORG_TYPES.FREELANCER,
+  orgName = "",
+  orgId = "",
+  user = null,
+  organizations = [],
+  selectedOrgId = "",
+  onSelectedOrgIdChange,
+  lockedOrgSelection = false
+}) {
+  const selectedOrg = organizations.find(org => org.id === selectedOrgId) || null;
+  const normalizedOrgType = getOrgType(selectedOrg?.organizationType || orgType);
+  const orgConfig = getOrgConfig(normalizedOrgType);
+  const displayOrgName = String(selectedOrg?.name || orgName || "Current Khata").trim();
+  const displayOrgId = selectedOrg?.id || orgId;
+  const selectedOrgActive = Boolean(selectedOrg && isPaidActive(user, { account: selectedOrg, organizationType: selectedOrg.organizationType }));
   const billingCycle = form.billingCycle || BILLING_CYCLES.MONTHLY;
-  const monthlyAmount = getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO, orgType);
-  const yearlyAmount  = getBillingAmount(BILLING_CYCLES.YEARLY,  PLANS.PRO, orgType);
+  const monthlyAmount = getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO, normalizedOrgType);
+  const yearlyAmount  = getBillingAmount(BILLING_CYCLES.YEARLY,  PLANS.PRO, normalizedOrgType);
   const amount = billingCycle === BILLING_CYCLES.MONTHLY ? monthlyAmount : yearlyAmount;
 
   return (
     <Modal
-      title="Upgrade Subscription"
+      title="Upgrade This Khata"
       onClose={onClose}
       onSave={onSubmit}
-      saveLabel={submitting ? "Starting..." : isNative ? "Upgrade on Website" : "Pay Securely"}
-      canSave={!submitting}
+      saveLabel={selectedOrgActive ? "Already Active" : submitting ? "Starting..." : isNative ? "Upgrade on Website" : "Pay Securely"}
+      canSave={!submitting && !selectedOrgActive}
     >
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, marginBottom: 12 }}>
-          Pro plan includes advanced analytics, reminders, and exports.
+          Pro will be activated only for the Khata shown below. Other Khatas keep their own plan and billing status.
+        </div>
+
+        {organizations.length > 1 && !lockedOrgSelection && (
+          <Field label="Select Khata" required hint="Choose exactly which Khata this payment should activate.">
+            <Select value={selectedOrgId || displayOrgId} onChange={event => onSelectedOrgIdChange?.(event.target.value)}>
+              {organizations.map(org => {
+                const cfg = getOrgConfig(org.organizationType);
+                const active = isPaidActive(user, { account: org, organizationType: org.organizationType });
+                return (
+                  <option key={org.id} value={org.id}>
+                    {org.name} - {cfg.typeLabel}{active ? " - Pro active" : ""}
+                  </option>
+                );
+              })}
+            </Select>
+          </Field>
+        )}
+
+        <div style={{ padding: 14, background: "var(--surface-high)", border: "1px solid var(--accent)", borderRadius: 8, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+            Paying for
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.25 }}>
+            {displayOrgName}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4 }}>
+            {orgConfig.typeLabel} Khata{displayOrgId ? ` • ${displayOrgId}` : ""}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, lineHeight: 1.45 }}>
+            {selectedOrgActive ? "This Khata already has an active Pro plan." : "Payment will unlock Pro features for this Khata only."}
+          </div>
         </div>
 
         <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
@@ -55,7 +106,10 @@ export default function PlanRequestModal({ form, onFormChange, onSubmit, submitt
             <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 6 }}>
               Gateway: Razorpay (UPI, Cards, Netbanking, Wallets, Pay Later)
             </div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)" }}>Amount to pay: Rs {amount}</div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
+              Amount to pay: Rs {amount}<br />
+              Activation target: {displayOrgName}
+            </div>
           </div>
         </Field>
 
@@ -73,8 +127,8 @@ export default function PlanRequestModal({ form, onFormChange, onSubmit, submitt
           How activation works
         </div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          After a successful payment, your subscription is updated automatically. If activation does not
-          reflect immediately, wait a moment and refresh the app.
+          After a successful payment, Pro is applied to this Khata automatically. If you switch to another
+          Khata, that Khata may still show a different plan until it is paid separately.
         </div>
       </div>
     </Modal>
