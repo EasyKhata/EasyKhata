@@ -78,6 +78,8 @@ const STATUS_COLORS = {
   resolved:    { bg: "var(--accent-deep)", text: "var(--accent)" }
 };
 
+const REMOTE_STATUS_FILTERS = new Set(["open", "in_progress", "resolved"]);
+
 function ChatBubble({ msg }) {
   const isAdmin = msg.senderRole === "admin";
   return (
@@ -127,9 +129,10 @@ export default function AdminSupportSection() {
 
   async function fetchTickets(filter) {
     const f = filter !== undefined ? filter : statusFilter;
+    const remoteStatus = REMOTE_STATUS_FILTERS.has(f) ? f : undefined;
     setLoading(true); setError(""); setApiPage(1);
     try {
-      const res = await adminApi.listSupportTickets(1, PAGE_SIZE, f !== "all" ? f : undefined);
+      const res = await adminApi.listSupportTickets(1, PAGE_SIZE, remoteStatus);
       const list = Array.isArray(res) ? res : (res.tickets || []);
       setTickets(list.map(t => ({ ...t, messages: normalizeSupportMessages(t) })));
       setTotal(res.total ?? list.length);
@@ -145,9 +148,10 @@ export default function AdminSupportSection() {
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     const nextPage = apiPage + 1;
+    const remoteStatus = REMOTE_STATUS_FILTERS.has(statusFilter) ? statusFilter : undefined;
     setLoadingMore(true);
     try {
-      const res = await adminApi.listSupportTickets(nextPage, PAGE_SIZE, statusFilter !== "all" ? statusFilter : undefined);
+      const res = await adminApi.listSupportTickets(nextPage, PAGE_SIZE, remoteStatus);
       const list = Array.isArray(res) ? res : (res.tickets || []);
       setTickets(prev => [...prev, ...list.map(t => ({ ...t, messages: normalizeSupportMessages(t) }))]);
       setTotal(res.total ?? (tickets.length + list.length));
@@ -176,19 +180,29 @@ export default function AdminSupportSection() {
 
   const visibleTickets = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase();
-    if (!needle) return tickets;
     return tickets.filter(t => {
+      const status = String(t.status || "open");
+      const matchesStatus =
+        statusFilter === "all" ||
+        (REMOTE_STATUS_FILTERS.has(statusFilter) && status === statusFilter) ||
+        (statusFilter === "needs_reply" && needsAdminReply(t)) ||
+        (statusFilter === "overdue" && getSlaBadge(t) === "Overdue") ||
+        (statusFilter === "high" && getPriority(t) === "High");
+      if (!matchesStatus) return false;
+      if (!needle) return true;
       const hay = [t.subject, t.message, t.userName, t.userEmail, t.topic, t.organizationName]
         .filter(Boolean).join(" ").toLowerCase();
       return hay.includes(needle);
     });
-  }, [searchTerm, tickets]);
+  }, [searchTerm, statusFilter, tickets]);
 
   const queueStats = useMemo(() => ({
     open:       tickets.filter(t => String(t.status || "open") === "open").length,
     inProgress: tickets.filter(t => String(t.status || "open") === "in_progress").length,
     resolved:   tickets.filter(t => String(t.status || "open") === "resolved").length,
-    needsReply: tickets.filter(needsAdminReply).length
+    needsReply: tickets.filter(needsAdminReply).length,
+    overdue:    tickets.filter(t => getSlaBadge(t) === "Overdue").length,
+    high:       tickets.filter(t => getPriority(t) === "High").length
   }), [tickets]);
 
   const selectedTicket = useMemo(() => (
@@ -497,7 +511,7 @@ export default function AdminSupportSection() {
         <input className="input-field" placeholder="Search by subject, user, email, or topic"
           value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ marginBottom: 10 }} />
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {[["all", "All"], ["open", `Open (${queueStats.open})`], ["in_progress", `In Progress (${queueStats.inProgress})`], ["resolved", `Resolved (${queueStats.resolved})`]].map(([val, label]) => (
+          {[["all", "All"], ["needs_reply", `Needs Reply (${queueStats.needsReply})`], ["overdue", `Overdue (${queueStats.overdue})`], ["high", `High (${queueStats.high})`], ["open", `Open (${queueStats.open})`], ["in_progress", `In Progress (${queueStats.inProgress})`], ["resolved", `Resolved (${queueStats.resolved})`]].map(([val, label]) => (
             <button key={val} className="btn-secondary" onClick={() => changeStatusFilter(val)}
               style={{ padding: "7px 11px", fontSize: 12, background: statusFilter === val ? "var(--surface-pop)" : "var(--surface-high)" }}>
               {label}
@@ -511,6 +525,33 @@ export default function AdminSupportSection() {
       </div>
 
       {error && <div className="card" style={{ marginBottom: 14, color: "var(--danger)", fontSize: 13 }}>{error}</div>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 10, marginBottom: 14 }}>
+        {[
+          ["Needs reply", queueStats.needsReply, "var(--danger)", "needs_reply"],
+          ["Overdue", queueStats.overdue, "var(--gold)", "overdue"],
+          ["High priority", queueStats.high, "var(--blue)", "high"],
+          ["Open", queueStats.open, "var(--accent)", "open"]
+        ].map(([label, value, color, filter]) => (
+          <button
+            key={label}
+            type="button"
+            onClick={() => changeStatusFilter(filter)}
+            className="card"
+            style={{
+              padding: 12,
+              marginBottom: 0,
+              textAlign: "left",
+              cursor: "pointer",
+              borderColor: statusFilter === filter ? color : `${color}44`,
+              background: statusFilter === filter ? `color-mix(in srgb, ${color} 8%, var(--bg))` : "var(--bg)"
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</div>
+            <div style={{ fontSize: 24, fontFamily: "var(--serif)", color: "var(--text)", marginTop: 4 }}>{value}</div>
+          </button>
+        ))}
+      </div>
 
       {!visibleTickets.length ? (
         <div className="card"><WorkflowSetupCard title="No support tickets" message="No tickets match this filter." tone="info" /></div>

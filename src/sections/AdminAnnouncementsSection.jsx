@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { announcementsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { SectionSkeleton, WorkflowSetupCard } from "../components/UI";
@@ -80,6 +80,28 @@ export default function AdminAnnouncementsSection() {
   }
 
   const cfg = typeConfig(form.type);
+  const summary = useMemo(() => {
+    const now = new Date();
+    return items.reduce((acc, item) => {
+      const expired = item.endsAt && new Date(item.endsAt) < now;
+      if (expired) acc.expired += 1;
+      else acc.active += 1;
+      if (item.type === "offer") acc.offers += 1;
+      if (item.targetPlan && item.targetPlan !== "all") acc.targeted += 1;
+      return acc;
+    }, { active: 0, expired: 0, offers: 0, targeted: 0 });
+  }, [items]);
+
+  function duplicate(item) {
+    setForm({
+      title: item.title || "",
+      body: item.body || "",
+      type: item.type || "info",
+      targetPlan: item.targetPlan || "all",
+      endsAt: ""
+    });
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   return (
     <div style={{ padding: "16px 16px 110px" }}>
@@ -90,6 +112,20 @@ export default function AdminAnnouncementsSection() {
           <div style={{ fontSize: 12, color: "var(--danger)" }}>{error}</div>
         </div>
       )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 14 }}>
+        {[
+          ["Active", summary.active, "var(--accent)"],
+          ["Expired", summary.expired, "var(--text-dim)"],
+          ["Offers", summary.offers, "var(--gold)"],
+          ["Targeted", summary.targeted, "var(--blue)"]
+        ].map(([label, value, color]) => (
+          <div key={label} className="card" style={{ padding: 12, marginBottom: 0, borderColor: `${color}44` }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color, textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</div>
+            <div style={{ fontSize: 22, fontFamily: "var(--serif)", color: "var(--text)", marginTop: 4 }}>{value}</div>
+          </div>
+        ))}
+      </div>
 
       {/* Compose form */}
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -205,9 +241,14 @@ export default function AdminAnnouncementsSection() {
                     {date}{item.endsAt ? ` · Expires ${new Date(item.endsAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""}
                   </div>
                 </div>
-                <button className="btn-secondary" style={{ padding: "5px 10px", fontSize: 11, color: "var(--danger)", flexShrink: 0 }} onClick={() => remove(item)}>
-                  Delete
-                </button>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", flexShrink: 0 }}>
+                  <button className="btn-secondary" style={{ padding: "5px 10px", fontSize: 11 }} onClick={() => duplicate(item)}>
+                    Duplicate
+                  </button>
+                  <button className="btn-secondary" style={{ padding: "5px 10px", fontSize: 11, color: "var(--danger)" }} onClick={() => remove(item)}>
+                    Delete
+                  </button>
+                </div>
               </div>
             );
           })}

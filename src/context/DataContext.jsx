@@ -40,6 +40,8 @@ function fromApiOrg(apiOrg, collections = {}) {
       addressLine: apiOrg.addressLine || "",
       city: apiOrg.city || "",
       state: apiOrg.state || "",
+      district: apiOrg.district || "",
+      pincode: apiOrg.pincode || "",
       country: apiOrg.country || "",
       location: apiOrg.location || "",
       address: apiOrg.address || "",
@@ -82,6 +84,8 @@ function toApiOrgUpdate(orgData) {
     addressLine: acc.addressLine || "",
     city: acc.city || "",
     state: acc.state || "",
+    district: acc.district || "",
+    pincode: acc.pincode || "",
     country: acc.country || "",
     location: acc.location || "",
     address: acc.address || "",
@@ -235,6 +239,8 @@ const EMPTY_ORG_DATA = {
     addressLine: "",
     city: "",
     state: "",
+    district: "",
+    pincode: "",
     country: "",
     location: "",
     address: "",
@@ -267,16 +273,20 @@ function createEmptyAccount(overrides = {}) {
   const addressLine = String(overrides.addressLine || parsedLocation.addressLine || "").trim();
   const city = String(overrides.city || parsedLocation.city || "").trim();
   const state = String(overrides.state || parsedLocation.state || "").trim();
+  const district = String(overrides.district || parsedLocation.district || "").trim();
+  const pincode = String(overrides.pincode || parsedLocation.pincode || "").trim();
   const rawCountry = String(overrides.country || parsedLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
   const country = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
-  const location = buildLocationLabel({ city, state, country });
-  const address = buildLocationLabel({ addressLine, city, state, country });
+  const location = buildLocationLabel({ city, district, state, pincode, country });
+  const address = buildLocationLabel({ addressLine, city, district, state, pincode, country });
   return {
     ...EMPTY_ORG_DATA.account,
     ...overrides,
     addressLine,
     city,
     state,
+    district,
+    pincode,
     country,
     location,
     address,
@@ -293,10 +303,12 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
   const normalizedAddressLine = String(sourceAccount.addressLine || source.addressLine || parsedSourceLocation.addressLine || fallbackAccount.addressLine || fallback.addressLine || parsedFallbackLocation.addressLine || "").trim();
   const normalizedCity = String(sourceAccount.city || source.city || parsedSourceLocation.city || fallbackAccount.city || fallback.city || parsedFallbackLocation.city || "").trim();
   const normalizedState = String(sourceAccount.state || source.state || parsedSourceLocation.state || fallbackAccount.state || fallback.state || parsedFallbackLocation.state || "").trim();
+  const normalizedDistrict = String(sourceAccount.district || source.district || parsedSourceLocation.district || fallbackAccount.district || fallback.district || parsedFallbackLocation.district || "").trim();
+  const normalizedPincode = String(sourceAccount.pincode || source.pincode || parsedSourceLocation.pincode || fallbackAccount.pincode || fallback.pincode || parsedFallbackLocation.pincode || "").trim();
   const rawCountry = String(sourceAccount.country || source.country || parsedSourceLocation.country || fallbackAccount.country || fallback.country || parsedFallbackLocation.country || EMPTY_ORG_DATA.account.country || "").trim();
   const normalizedCountry = rawCountry ? normalizeSupportedCountry(rawCountry) : "";
-  const normalizedLocation = buildLocationLabel({ city: normalizedCity, state: normalizedState, country: normalizedCountry });
-  const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, state: normalizedState, country: normalizedCountry });
+  const normalizedLocation = buildLocationLabel({ city: normalizedCity, district: normalizedDistrict, state: normalizedState, pincode: normalizedPincode, country: normalizedCountry });
+  const normalizedAddress = buildLocationLabel({ addressLine: normalizedAddressLine, city: normalizedCity, district: normalizedDistrict, state: normalizedState, pincode: normalizedPincode, country: normalizedCountry });
   const normalizedCollections = {
     income: sortOrgCollectionRecords("income", source.income || []),
     expenses: sortOrgCollectionRecords("expenses", source.expenses || []),
@@ -330,6 +342,8 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
         addressLine: normalizedAddressLine,
         city: normalizedCity,
         state: normalizedState,
+        district: normalizedDistrict,
+        pincode: normalizedPincode,
         country: normalizedCountry,
         location: normalizedLocation,
         address: normalizedAddress,
@@ -1341,8 +1355,17 @@ export function DataProvider({ children }) {
     try {
       await orgsApi.create(user.id, nextOrgId, {
         organizationType: getOrgType(accountInput.organizationType || user.organizationType),
+        name: accountInput.name || "",
         email: accountInput.email || user.email || "",
-        phone: accountInput.phone || user.phone || ""
+        phone: accountInput.phone || user.phone || "",
+        addressLine: accountInput.addressLine || "",
+        city: accountInput.city || "",
+        state: accountInput.state || "",
+        district: accountInput.district || "",
+        pincode: accountInput.pincode || "",
+        country: accountInput.country || "India",
+        location: accountInput.location || "",
+        address: accountInput.address || ""
       });
     } catch (err) {
       return { error: err.message || "Could not create organization." };

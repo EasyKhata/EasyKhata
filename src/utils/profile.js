@@ -243,7 +243,7 @@ export function splitPhoneNumber(phone, fallbackCountryCode = DEFAULT_PHONE_COUN
 export function parseLocationFields(location) {
   const clean = String(location || "").trim();
   if (!clean) {
-    return { addressLine: "", city: "", state: "", country: "" };
+    return { addressLine: "", city: "", state: "", district: "", pincode: "", country: "" };
   }
 
   const parts = clean
@@ -251,11 +251,24 @@ export function parseLocationFields(location) {
     .map(part => part.trim())
     .filter(Boolean);
 
+  if (parts.length >= 6) {
+    return {
+      addressLine: parts.slice(0, -5).join(", "),
+      city: parts[parts.length - 5],
+      district: parts[parts.length - 4],
+      state: parts[parts.length - 3],
+      pincode: parts[parts.length - 2],
+      country: parts[parts.length - 1]
+    };
+  }
+
   if (parts.length >= 4) {
     return {
       addressLine: parts.slice(0, -3).join(", "),
       city: parts[parts.length - 3],
       state: parts[parts.length - 2],
+      district: "",
+      pincode: "",
       country: parts[parts.length - 1]
     };
   }
@@ -265,6 +278,8 @@ export function parseLocationFields(location) {
       addressLine: "",
       city: parts[0],
       state: parts[1],
+      district: "",
+      pincode: "",
       country: parts[2]
     };
   }
@@ -274,18 +289,28 @@ export function parseLocationFields(location) {
       addressLine: "",
       city: parts[0],
       state: parts[1],
+      district: "",
+      pincode: "",
       country: ""
     };
   }
 
-  return { addressLine: "", city: parts[0] || "", state: "", country: "" };
+  return { addressLine: "", city: parts[0] || "", state: "", district: "", pincode: "", country: "" };
 }
 
-export function buildLocationLabel({ addressLine = "", city = "", state = "", country = "" } = {}) {
-  return [addressLine, city, state, country]
+export function buildLocationLabel({ addressLine = "", city = "", district = "", state = "", pincode = "", country = "" } = {}) {
+  return [addressLine, city, district, state, pincode, country]
     .map(value => String(value || "").trim())
     .filter(Boolean)
     .join(", ");
+}
+
+export function sanitizeIndianPincode(value) {
+  return String(value || "").replace(/\D/g, "").slice(0, 6);
+}
+
+export function isValidIndianPincode(value) {
+  return /^\d{6}$/.test(String(value || "").trim());
 }
 
 export function isValidDateOfBirth(dateOfBirth) {

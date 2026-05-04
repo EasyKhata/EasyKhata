@@ -1,6 +1,6 @@
 import React from "react";
 import { Modal, Field, Input, Select, PhoneNumberInput } from "../../components/UI";
-import { COUNTRY_OPTIONS, PHONE_COUNTRY_OPTIONS } from "../../utils/profile";
+import { PHONE_COUNTRY_OPTIONS, sanitizeIndianPincode } from "../../utils/profile";
 
 /**
  * Organization profile edit modal (screen === "account").
@@ -43,7 +43,7 @@ export default function AccountModal({
         title="Your Khata"
         onClose={onClose}
         onSave={onSave}
-        canSave={!!form.name?.trim()}
+        canSave={!!form.name?.trim() && !!form.addressLine?.trim() && !!form.city?.trim() && !!form.district?.trim() && !!form.state?.trim() && !!form.pincode?.trim()}
       >
         <Field
           label="Usage Type"
@@ -78,41 +78,48 @@ export default function AccountModal({
           />
         </Field>
 
-        {!isApartmentOrg && (
-          <>
-            <div className="desktop-grid-2">
-              <Field label="City" required>
-                <Input
-                  placeholder="Hyderabad"
-                  value={form.city || ""}
-                  onChange={e => onFormChange(f => ({ ...f, city: e.target.value }))}
-                  autoComplete="address-level2"
-                />
-              </Field>
-              <Field label="Country" required>
-                <Select
-                  value={form.country || "India"}
-                  onChange={e => onFormChange(f => ({ ...f, country: e.target.value }))}
-                >
-                  {COUNTRY_OPTIONS.map(option => (
-                    <option key={option} value={option}>{option}</option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-            <Field label="State / Province" required>
-              <Select
-                value={form.state || ""}
-                onChange={e => onFormChange(f => ({ ...f, state: e.target.value }))}
-              >
-                <option value="">Select state / province</option>
-                {orgStateProvinceOptions.map(option => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </Select>
-            </Field>
-          </>
-        )}
+        <div className="desktop-grid-2">
+          <Field label="City" required>
+            <Input
+              placeholder="Hyderabad"
+              value={form.city || ""}
+              onChange={e => onFormChange(f => ({ ...f, city: e.target.value }))}
+              autoComplete="address-level2"
+            />
+          </Field>
+          <Field label="District" required>
+            <Input
+              placeholder="Hyderabad"
+              value={form.district || ""}
+              onChange={e => onFormChange(f => ({ ...f, district: e.target.value }))}
+              autoComplete="address-level2"
+            />
+          </Field>
+        </div>
+
+        <div className="desktop-grid-2">
+          <Field label="State" required>
+            <Select
+              value={form.state || ""}
+              onChange={e => onFormChange(f => ({ ...f, state: e.target.value }))}
+            >
+              <option value="">Select state</option>
+              {orgStateProvinceOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Pincode" required>
+            <Input
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="500081"
+              value={form.pincode || ""}
+              onChange={e => onFormChange(f => ({ ...f, pincode: sanitizeIndianPincode(e.target.value) }))}
+              autoComplete="postal-code"
+            />
+          </Field>
+        </div>
 
         {showOrgBusinessFields && (
           <Field label="GSTIN">

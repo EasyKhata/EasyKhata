@@ -30,6 +30,12 @@ async function fetchWithRetry(url, options, method) {
       await sleep(450 * attempt);
     }
   }
+  if (lastError && typeof lastError === "object") {
+    lastError.status = 0;
+    lastError.code = lastError.code || "NETWORK_ERROR";
+    lastError.method = method;
+    lastError.url = url;
+  }
   throw lastError;
 }
 

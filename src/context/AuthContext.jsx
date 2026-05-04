@@ -9,7 +9,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { usersApi } from "../lib/api";
-import { clearCurrentUser, setCurrentUser } from "../utils/storage";
+import { clearCurrentUser, getUserData, setCurrentUser } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
@@ -48,6 +48,8 @@ function createDefaultOrgProfile({ email = "", phone = "", organizationType = OR
       addressLine: "",
       city: "",
       state: "",
+      district: "",
+      pincode: "",
       country: "",
       location: "",
       address: "",
@@ -85,6 +87,27 @@ function isLikelyReturningFirebaseUser(firebaseUser) {
   return lastSignInAt - createdAt > 60 * 1000;
 }
 
+function isNetworkProfileError(err) {
+  const message = String(err?.message || "");
+  return err?.status === 0 || err?.code === "NETWORK_ERROR" || /failed to fetch|network|load failed/i.test(message);
+}
+
+function buildOfflineProfile(firebaseUser) {
+  const cachedData = getUserData(firebaseUser.uid, "appData") || {};
+  const cachedAccount = cachedData.account || {};
+  return {
+    id: firebaseUser.uid,
+    name: firebaseUser.displayName || cachedAccount.name || "",
+    email: firebaseUser.email || cachedAccount.email || "",
+    phone: firebaseUser.phoneNumber || cachedAccount.phone || "",
+    phoneCountryCode: cachedAccount.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    activeOrgId: cachedData.activeOrgId || DEFAULT_ORG_ID,
+    organizationType: getOrgType(cachedAccount.organizationType || ORG_TYPES.PERSONAL),
+    legalAccepted: true,
+    orgs: cachedData.orgs || {}
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +122,8 @@ export function AuthProvider({ children }) {
     let existing = {};
     try {
       existing = await usersApi.get(firebaseUser.uid);
-    } catch {
+    } catch (err) {
+      if (err?.status !== 404) throw err;
       // new user
     }
     const baseName = normalizedOverrides.name || existing?.name || firebaseUser.displayName || "";
@@ -110,9 +134,11 @@ export function AuthProvider({ children }) {
     const baseAddressLine = normalizedOverrides.addressLine || existing?.addressLine || legacyLocation.addressLine || "";
     const baseCity = normalizedOverrides.city || existing?.city || legacyLocation.city || "";
     const baseState = normalizedOverrides.state || existing?.state || legacyLocation.state || "";
+    const baseDistrict = normalizedOverrides.district || existing?.district || legacyLocation.district || "";
+    const basePincode = normalizedOverrides.pincode || existing?.pincode || legacyLocation.pincode || "";
     const baseCountry = normalizedOverrides.country || existing?.country || legacyLocation.country || "";
-    const baseLocation = buildLocationLabel({ city: baseCity, state: baseState, country: baseCountry });
-    const baseAddress = buildLocationLabel({ addressLine: baseAddressLine, city: baseCity, state: baseState, country: baseCountry });
+    const baseLocation = buildLocationLabel({ city: baseCity, district: baseDistrict, state: baseState, pincode: basePincode, country: baseCountry });
+    const baseAddress = buildLocationLabel({ addressLine: baseAddressLine, city: baseCity, district: baseDistrict, state: baseState, pincode: basePincode, country: baseCountry });
     const baseDateOfBirth = normalizedOverrides.dateOfBirth || existing?.dateOfBirth || "";
     const baseAgeGroup = getAgeGroupFromDateOfBirth(baseDateOfBirth) || normalizedOverrides.ageGroup || existing?.ageGroup || "";
     const baseGender = normalizedOverrides.gender || existing?.gender || "";
@@ -129,6 +155,8 @@ export function AuthProvider({ children }) {
         addressLine: baseAddressLine,
         city: baseCity,
         state: baseState,
+        district: baseDistrict,
+        pincode: basePincode,
         country: baseCountry,
         location: baseLocation,
         address: baseAddress,
@@ -152,6 +180,8 @@ export function AuthProvider({ children }) {
     if (!existing?.addressLine && baseAddressLine) updates.addressLine = baseAddressLine;
     if (!existing?.city && baseCity) updates.city = baseCity;
     if (!existing?.state && baseState) updates.state = baseState;
+    if (!existing?.district && baseDistrict) updates.district = baseDistrict;
+    if (!existing?.pincode && basePincode) updates.pincode = basePincode;
     if (!existing?.country && baseCountry) updates.country = baseCountry;
     if (!existing?.location && baseLocation) updates.location = baseLocation;
     if (!existing?.address && baseAddress) updates.address = baseAddress;
@@ -187,9 +217,11 @@ export function AuthProvider({ children }) {
       addressLine: profile?.addressLine || parseLocationFields(profile?.location || profile?.address || "").addressLine || "",
       city: profile?.city || parseLocationFields(profile?.location || "").city || "",
       state: profile?.state || parseLocationFields(profile?.location || "").state || "",
+      district: profile?.district || parseLocationFields(profile?.location || "").district || "",
+      pincode: profile?.pincode || parseLocationFields(profile?.location || "").pincode || "",
       country: profile?.country || parseLocationFields(profile?.location || "").country || "",
-      location: profile?.location || buildLocationLabel({ city: profile?.city, state: profile?.state, country: profile?.country }),
-      address: profile?.address || buildLocationLabel({ addressLine: profile?.addressLine, city: profile?.city, state: profile?.state, country: profile?.country }),
+      location: profile?.location || buildLocationLabel({ city: profile?.city, district: profile?.district, state: profile?.state, pincode: profile?.pincode, country: profile?.country }),
+      address: profile?.address || buildLocationLabel({ addressLine: profile?.addressLine, city: profile?.city, district: profile?.district, state: profile?.state, pincode: profile?.pincode, country: profile?.country }),
       role: profile?.role || "user",
       onboardingSeenAt: profile?.onboardingSeenAt || "",
       lastActivityAt: profile?.lastActivityAt || profile?.updatedAt || profile?.createdAt || "",
@@ -264,8 +296,21 @@ export function AuthProvider({ children }) {
         if (!existing?.id) {
           if (getUserError && getUserError.status !== 404) {
             // Network error or unexpected server error — do not treat as new user
-            logError("Failed to load user profile", getUserError);
-            setUser(null);
+            logError("Failed to load user profile", getUserError, {
+              phase: "auth_state_profile_get",
+              status: getUserError?.status ?? null,
+              code: getUserError?.code ?? null,
+              native: isNative
+            });
+            if (isNetworkProfileError(getUserError)) {
+              const fallbackProfile = buildOfflineProfile(firebaseUser);
+              setUser(buildSessionUser(firebaseUser, fallbackProfile));
+              setCurrentUser(firebaseUser.uid);
+              setPendingSetup(null);
+              logEvent("profile_load_offline_fallback", { reason: "network_error" });
+            } else {
+              setUser(null);
+            }
             setLoading(false);
             return;
           }
@@ -326,8 +371,21 @@ export function AuthProvider({ children }) {
           returning: isLikelyReturningFirebaseUser(firebaseUser)
         });
       } catch (err) {
-        logError("Profile load error", err);
-        setUser(null);
+        logError("Profile load error", err, {
+          phase: "auth_state_restore",
+          status: err?.status ?? null,
+          code: err?.code ?? null,
+          native: isNative
+        });
+        if (isNetworkProfileError(err)) {
+          const fallbackProfile = buildOfflineProfile(firebaseUser);
+          setUser(buildSessionUser(firebaseUser, fallbackProfile));
+          setCurrentUser(firebaseUser.uid);
+          setPendingSetup(null);
+          logEvent("profile_load_offline_fallback", { reason: "restore_error" });
+        } else {
+          setUser(null);
+        }
       } finally {
         setLoading(false);
       }
@@ -383,7 +441,7 @@ async function signInWithGoogle() {
   } catch (err) {
     logError("Google sign-in error", err);
 
-    if (err?.code === "canceled") {
+    if (err?.code === "canceled" || /no credentials available/i.test(String(err?.message || ""))) {
       return { error: null };
     }
 
@@ -435,16 +493,20 @@ async function signInWithGoogle() {
       if ("dateOfBirth" in nextUpdates) {
         nextUpdates.ageGroup = getAgeGroupFromDateOfBirth(nextUpdates.dateOfBirth);
       }
-      if ("addressLine" in nextUpdates || "city" in nextUpdates || "state" in nextUpdates || "country" in nextUpdates) {
+      if ("addressLine" in nextUpdates || "city" in nextUpdates || "state" in nextUpdates || "district" in nextUpdates || "pincode" in nextUpdates || "country" in nextUpdates) {
         nextUpdates.location = buildLocationLabel({
           city: nextUpdates.city ?? user?.city ?? "",
+          district: nextUpdates.district ?? user?.district ?? "",
           state: nextUpdates.state ?? user?.state ?? "",
+          pincode: nextUpdates.pincode ?? user?.pincode ?? "",
           country: nextUpdates.country ?? user?.country ?? ""
         });
         nextUpdates.address = buildLocationLabel({
           addressLine: nextUpdates.addressLine ?? user?.addressLine ?? "",
           city: nextUpdates.city ?? user?.city ?? "",
+          district: nextUpdates.district ?? user?.district ?? "",
           state: nextUpdates.state ?? user?.state ?? "",
+          pincode: nextUpdates.pincode ?? user?.pincode ?? "",
           country: nextUpdates.country ?? user?.country ?? ""
         });
       }
