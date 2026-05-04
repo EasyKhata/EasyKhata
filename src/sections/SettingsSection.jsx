@@ -430,11 +430,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       templateId: account?.reportTemplate || "classic"
     };
   });
-  const currentPlan = getUserPlan(user);
+  const currentPlan = account?.plan || getUserPlan(user);
   const reviewAccessEnabled = isReviewAccessEnabled();
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
-  const planSummary = getPlanSummary(user, orgType);
+  const planSummary = getPlanSummary(user, orgType, account);
   const isPrimaryHouseholdOrg = orgType === ORG_TYPES.PERSONAL;
   const canChangeOrgType = (user?.role === "admin" || canChangeOrgTypeFn(user)) && !isPrimaryHouseholdOrg;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
@@ -458,16 +458,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (isPrimaryHouseholdOrg) {
       return ORG_TYPE_OPTIONS.filter(option => getOrgType(option.value) === ORG_TYPES.PERSONAL);
     }
-    const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
-    const usedTypes = new Set(
-      organizations
-        .filter(org => org.id !== activeOrgId)
-        .map(org => getOrgType(org.organizationType))
-    );
-    return getSecondaryOrgTypeOptions(accForm.organizationType || orgType).filter(
-      option => getOrgType(option.value) === currentOrgType || !usedTypes.has(getOrgType(option.value))
-    );
-  }, [accForm.organizationType, orgType, organizations, activeOrgId, account?.organizationType, user?.organizationType, isPrimaryHouseholdOrg]);
+    return getSecondaryOrgTypeOptions(accForm.organizationType || orgType);
+  }, [accForm.organizationType, orgType, isPrimaryHouseholdOrg]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSecondaryOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const [customerInsights, setCustomerInsights] = useState(customers);
@@ -939,8 +931,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid 6-digit Indian pincode.");
       return;
     }
-    if (duplicateOrgType) {
-      showNotice("You already have a Khata with this usage type. Each user can have only one Khata per type.");
+    if (duplicateOrgType && cleanOrganizationType === ORG_TYPES.PERSONAL) {
+      showNotice("Household is already your default Khata.");
       return;
     }
 
@@ -1238,7 +1230,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openReportPicker() {
-    if (!canUseFeature(user, "reports")) {
+    if (!canUseFeature(user, "reports", {}, orgType, account)) {
       setUpgradeInfo(getUpgradeCopy("reports"));
       return;
     }
@@ -1559,6 +1551,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       const orderResponse = await callFunction("createUpiSubscriptionOrder", {
         targetPlan,
         billingCycle,
+        orgId: activeOrgId,
+        orgName: account?.name || "",
+        orgType,
         note: cleanNote
       });
 
@@ -1590,6 +1585,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         },
         notes: {
           userId: user?.id || "",
+          orgId: activeOrgId || "",
           targetPlan,
           billingCycle
         },
@@ -1611,6 +1607,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             const nowIso = new Date().toISOString();
             const durationDays = billingCycle === BILLING_CYCLES.YEARLY ? 365 : 30;
             const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
+            saveAccount({
+              ...account,
+              plan: targetPlan,
+              subscriptionStatus: "active",
+              subscriptionEndsAt: endsAt,
+              billingCycle
+            });
             setUser(prev => prev ? {
               ...prev,
               plan: targetPlan,
@@ -2294,11 +2297,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", lineHeight: 1.12 }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 2 }}>{user?.phone}</div>
             <div className="ledger-inline-note" style={{ marginTop: 7, padding: 1 }}>{planSummary.title}, {planSummary.message}</div>
-            {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
-              <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+            {!reviewAccessEnabled && account?.subscriptionStatus === "trial" && account?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>This Khata trial ends on {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
             )}
-            {!reviewAccessEnabled && isPaidActive(user) && user?.subscriptionStatus === "active" && user?.subscriptionEndsAt && (
-              <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>Pro active — renews {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+            {!reviewAccessEnabled && isPaidActive(user, account) && account?.subscriptionStatus === "active" && account?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>Khata Pro active — renews {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
             )}
           </div>
         </div>
@@ -2324,10 +2327,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
                 : reviewAccessEnabled
                 ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
-                : isPaidActive(user) && user?.subscriptionStatus === "active"
-                  ? `Pro plan is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. All features — reports, PDF exports, alerts, and advanced insights — are fully unlocked.`
-                  : currentPlan === PLANS.PRO && user?.subscriptionStatus === "trial"
-                    ? "You are currently exploring Pro on a 30-day free trial. Reports, alerts, PDF exports, and advanced insights are fully unlocked until your trial ends."
+                : isPaidActive(user, account) && account?.subscriptionStatus === "active"
+                  ? `This Khata's Pro plan is active${account?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(account.subscriptionEndsAt)}` : ""}. Reports, PDF exports, alerts, and advanced insights are unlocked for this Khata.`
+                  : currentPlan === PLANS.PRO && account?.subscriptionStatus === "trial"
+                    ? "This Khata is currently on a 30-day Pro trial. Reports, alerts, PDF exports, and advanced insights are unlocked until the trial ends."
                     : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders."}
             </div>
             {!isPersonalOrg && (
@@ -2352,13 +2355,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     </div>
                   </div>
                 </div>
-                {isPaidActive(user) && user?.subscriptionStatus === "active" ? (
+                {isPaidActive(user, account) && account?.subscriptionStatus === "active" ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface-high)", borderRadius: 8, border: "1px solid var(--border)" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Pro Plan Active</div>
-                      {user?.subscriptionEndsAt && (
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+                      {account?.subscriptionEndsAt && (
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
                       )}
                     </div>
                   </div>
@@ -2615,12 +2618,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   if (screen === "create-org") {
     if (user?.role === "admin") return null;
 
-    const isPaid = isPaidActive(user);
-    const hasExistingOrg = organizations.length >= 1;
-
     // At plan limit (Pro: 2 Khatas max)
-    if (!canCreateOrganization) {
-      const atProMax = isPaid && organizations.length >= 2;
+    if (false && !canCreateOrganization) {
+      const atProMax = false;
       return withNotice(
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={atProMax ? () => setScreen("main") : () => setScreen("plan-request")} saveLabel={atProMax ? "Back" : "Upgrade to Pro — Rs 69/mo"} canSave accentColor="var(--blue)">
           <div className="card" style={{ padding: 14 }}>
@@ -2635,7 +2635,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     // Trial user with 1+ org: show upgrade prompt
-    if (!isPaid && hasExistingOrg) {
+    if (false) {
       return withNotice(
         <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
@@ -2648,8 +2648,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     // Paid (or trial with 0 orgs): show create form filtered to unowned types
-    const ownedTypes = new Set(organizations.map(o => getOrgType(o.organizationType)));
-    const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType).filter(o => !ownedTypes.has(getOrgType(o.value)));
+    const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType);
 
     async function handleCreateOrg() {
       const cleanAddressLine = String(createOrgForm.addressLine || "").trim();
@@ -3166,12 +3165,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   if (screen === "plan-request") {
-    if (isPaidActive(user) && user?.subscriptionStatus === "active") {
+    if (isPaidActive(user, account) && account?.subscriptionStatus === "active") {
       return withNotice(
         <Modal title="Pro Plan Active" onClose={() => setScreen("main")} onSave={() => setScreen("main")} saveLabel="Done" canSave accentColor="var(--accent)">
           <div className="card" style={{ padding: 14 }}>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your Pro subscription is already active{user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. All premium features are fully unlocked.
+              This Khata's Pro subscription is already active{account?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(account.subscriptionEndsAt)}` : ""}. Premium features are unlocked for this Khata.
             </div>
           </div>
         </Modal>

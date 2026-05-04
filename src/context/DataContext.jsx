@@ -47,7 +47,12 @@ function fromApiOrg(apiOrg, collections = {}) {
       address: apiOrg.address || "",
       gstin: apiOrg.gstin || "",
       showHSN: apiOrg.showHsn || false,
-      organizationType: apiOrg.organizationType || ORG_TYPES.PERSONAL
+      organizationType: apiOrg.organizationType || ORG_TYPES.PERSONAL,
+      plan: apiOrg.plan || "",
+      subscriptionStatus: apiOrg.subscriptionStatus || "",
+      subscriptionEndsAt: apiOrg.subscriptionEndsAt || "",
+      billingCycle: apiOrg.billingCycle || "",
+      trialStartedAt: apiOrg.trialStartedAt || ""
     },
     currency: {
       code: apiOrg.currencyCode || "INR",
@@ -92,6 +97,11 @@ function toApiOrgUpdate(orgData) {
     gstin: acc.gstin || "",
     showHsn: Boolean(acc.showHSN),
     organizationType: acc.organizationType || ORG_TYPES.PERSONAL,
+    plan: acc.plan || "",
+    subscriptionStatus: acc.subscriptionStatus || "",
+    subscriptionEndsAt: acc.subscriptionEndsAt || "",
+    billingCycle: acc.billingCycle || "",
+    trialStartedAt: acc.trialStartedAt || "",
     currencyCode: cur.code || "INR",
     currencySymbol: cur.symbol || "Rs",
     currencyName: cur.name || "Indian Rupee",
@@ -262,7 +272,12 @@ const EMPTY_ORG_DATA = {
     address: "",
     gstin: "",
     showHSN: false,
-    organizationType: ORG_TYPES.PERSONAL
+    organizationType: ORG_TYPES.PERSONAL,
+    plan: "free",
+    subscriptionStatus: "active",
+    subscriptionEndsAt: "",
+    billingCycle: "",
+    trialStartedAt: ""
   },
   goals: { monthlySavings: 0, targetAmount: 0, targetDate: "", savedAmount: 0, note: "" },
   budgets: {},
@@ -365,7 +380,12 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
         address: normalizedAddress,
         gstin: source.gstin || fallbackAccount.gstin || "",
         showHSN: source.showHSN || fallbackAccount.showHSN || false,
-        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || ORG_TYPES.PERSONAL
+        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || ORG_TYPES.PERSONAL,
+        plan: sourceAccount.plan || source.plan || fallbackAccount.plan || "",
+        subscriptionStatus: sourceAccount.subscriptionStatus || source.subscriptionStatus || fallbackAccount.subscriptionStatus || "",
+        subscriptionEndsAt: sourceAccount.subscriptionEndsAt || source.subscriptionEndsAt || fallbackAccount.subscriptionEndsAt || "",
+        billingCycle: sourceAccount.billingCycle || source.billingCycle || fallbackAccount.billingCycle || "",
+        trialStartedAt: sourceAccount.trialStartedAt || source.trialStartedAt || fallbackAccount.trialStartedAt || ""
       }
     )
   };
@@ -540,7 +560,7 @@ export function DataProvider({ children }) {
   const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
   const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
   const activeOrgType = getOrgType(data.account?.organizationType || user?.organizationType);
-  const readOnlyFreeMode = isFreeReadOnlyMode(user, activeOrgType);
+  const readOnlyFreeMode = isFreeReadOnlyMode(user, activeOrgType, data.account);
   const sessionRef = useRef(null);
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
@@ -1391,31 +1411,17 @@ export function DataProvider({ children }) {
 
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
-    if (readOnlyFreeMode) return { error: "Your trial has ended. Upgrade to Pro to edit records." };
-
-    const orgCount = Object.keys(data.orgs || {}).length;
-    const maxOrganizations = getMaxOrganizations(user);
-    const hasHouseholdOrg = organizations.some(org => isHouseholdOrgType(org.organizationType));
-    if (orgCount >= maxOrganizations) {
-      return { error: `Your account can use up to ${maxOrganizations} Khatas: one permanent Household and one extra work Khata.` };
-    }
-
-    // Creating a 2nd+ org requires an active paid plan.
-    // Household users are free for their own org but still need Pro to add other types.
     const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
-    const isCreatingFreeOrg = isFreeOrgType(requestedType) && orgCount === 0;
-    if (orgCount >= 1 && !isPaidActive(user) && !isCreatingFreeOrg) {
-      return { error: "UPGRADE_REQUIRED" };
-    }
+    // Work Khatas can repeat and are billed per Khata. Household cannot repeat.
+    const isHouseholdRequest = isFreeOrgType(requestedType);
+    const hasHouseholdOrg = organizations.some(org => isHouseholdOrgType(org.organizationType));
+    if (isHouseholdRequest && hasHouseholdOrg) return { error: "Household is already your default Khata." };
 
     // One org per type — no duplicates
     const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
-    if (alreadyHasType) {
-      const label = requestedType.replace(/_/g, " ");
-      return { error: `You already have a ${label} Khata. Each plan allows one of each type.` };
-    }
+    if (isHouseholdRequest && alreadyHasType) return { error: "Household is already your default Khata." };
     if (requestedType !== ORG_TYPES.PERSONAL && ![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
-      return { error: "The second Khata can only be Small Business or Apartment." };
+      return { error: "Khata type must be Household, Small Business, or Apartment." };
     }
     if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
       return { error: "Household is already your default Khata." };
@@ -1725,7 +1731,7 @@ export function DataProvider({ children }) {
     organizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
-    canCreateOrganization: (isSubscriptionActive(user) || isFreeOrgType(activeOrgType)) && organizations.length < maxOrganizations,
+    canCreateOrganization: true,
     switchOrganization,
     createOrganization,
     deleteOrganization,
