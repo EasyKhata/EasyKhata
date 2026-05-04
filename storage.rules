@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdManager() {
+      return request.auth != null &&
+        request.auth.token.email in ["admin@easykhata.net", "admin@eazykhata.in"];
+    }
+
+    match /ad-assets/{managerId}/{fileName} {
+      allow read: if true;
+      allow write: if isAdManager() &&
+        request.auth.uid == managerId &&
+        request.resource.size < 2 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
+  }
+}

@@ -20,6 +20,17 @@ service cloud.firestore {
       );
     }
 
+    function isAdManager() {
+      return isAdmin() || (
+        isSignedIn() &&
+        request.auth.token.email in ["admin@easykhata.net", "admin@eazykhata.in"]
+      ) || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/ad_managers/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/ad_managers/$(request.auth.uid)).data.active == true
+      );
+    }
+
     // ── Org member helpers ─────────────────────────────────────────
     // Checks users/{ownerId}/orgMembers/{orgId}_{memberUid}
     function isMemberOf(ownerId, orgId) {
@@ -388,11 +399,37 @@ service cloud.firestore {
         allow delete: if isAdmin() || isPortalOwner(portalId) || (isSignedIn() && request.auth.uid == memberId);
       }
     }
+
+    match /ad_campaigns/{campaignId} {
+      allow read: if isAdManager() || (isSignedIn() && resource.data.status == "active");
+      allow create, update, delete: if isAdManager();
+    }
+
+    match /ad_managers/{managerId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == managerId);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /ad_events/{eventId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, update, delete: if isAdManager();
+    }
+
+    // Production error logs: signed-in users write their own errors only, admin reads all.
+    match /app_logs/{logId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, delete: if isAdmin();
+    }
+
+    match /app_events/{eventId} {
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow read, delete: if isAdmin();
+    }
+
+    match /user_activity/{activityUserId}/{document=**} {
+      allow read, delete: if isAdmin();
+      allow create, update: if false;
+    }
   }
 
-  // Production error logs — signed-in users write their own errors only, admin reads all
-  match /app_logs/{logId} {
-    allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-    allow read, delete: if isAdmin();
-  }
 }

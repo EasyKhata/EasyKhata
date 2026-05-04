@@ -286,5 +286,8 @@ export const adminApi = {
     api.get("/admin/payment-requests"),
 
   updatePaymentRequest: (requestId, updates) =>
-    api.put(`/admin/payment-requests/${requestId}`, updates)
+    api.put(`/admin/payment-requests/${requestId}`, updates),
+
+  getAdAudienceInsights: () =>
+    api.get("/admin/ad-audience-insights")
 };
