@@ -11,6 +11,18 @@ import {
   sanitizePhoneDigits
 } from "../utils/profile";
 
+function friendlySetupError(message) {
+  const text = String(message || "").trim();
+  if (!text) return "Could not complete setup. Please try again.";
+  if (/failed to fetch|network|load failed/i.test(text)) {
+    return "Couldn't connect to EasyKhata. Please check your internet and try again.";
+  }
+  if (/session expired|not authenticated/i.test(text)) {
+    return "Your sign-in session expired. Please go back and sign in again.";
+  }
+  return text;
+}
+
 // Google "G" logo SVG
 function GoogleIcon() {
   return (
@@ -25,7 +37,7 @@ function GoogleIcon() {
 }
 
 export default function AuthScreen() {
-  const { signInWithGoogle, completeSetup, pendingSetup } = useAuth();
+  const { signInWithGoogle, completeSetup, pendingSetup, logout } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -56,10 +68,16 @@ export default function AuthScreen() {
     setSetupLoading(true);
     try {
       const res = await completeSetup({ phone: cleanPhone, phoneCountryCode });
-      if (res?.error) setSetupError(res.error);
+      if (res?.error) setSetupError(friendlySetupError(res.error));
     } finally {
       setSetupLoading(false);
     }
+  }
+
+  async function handleExitSetup() {
+    if (setupLoading) return;
+    setSetupError("");
+    await logout();
   }
 
   // First-time setup modal
@@ -67,10 +85,10 @@ export default function AuthScreen() {
     return (
       <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg)) 0%, var(--bg) 100%)", padding: 20 }}>
         <Modal
-          title="Set Up Your Household"
-          onClose={null}
+          title="One Last Step"
+          onClose={handleExitSetup}
           onSave={handleCompleteSetup}
-          saveLabel={setupLoading ? "Setting up..." : "Get Started"}
+          saveLabel={setupLoading ? "Setting up..." : setupError ? "Try Again" : "Get Started"}
           canSave={!setupLoading}
         >
           <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 16, lineHeight: 1.6 }}>
@@ -89,7 +107,12 @@ export default function AuthScreen() {
           </Field>
 
           {setupError && (
-            <div style={{ fontSize: 13, color: "var(--danger)", marginTop: 8 }}>{setupError}</div>
+            <div style={{ fontSize: 13, color: "var(--danger)", marginTop: 8, lineHeight: 1.5 }}>
+              {setupError}
+              <div style={{ marginTop: 6, color: "var(--text-sec)" }}>
+                You can try again, or tap Cancel to go back and sign in again.
+              </div>
+            </div>
           )}
 
           <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 16, lineHeight: 1.6 }}>

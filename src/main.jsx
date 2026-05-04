@@ -2,7 +2,9 @@ import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-import { logError } from './utils/logger.js'
+import { logError, logEvent } from './utils/logger.js'
+
+logEvent("app_opened");
 
 // Catch unhandled promise rejections — covers "Failed to fetch", Firebase token
 // refresh failures, and any async error that isn't caught by a try/catch.

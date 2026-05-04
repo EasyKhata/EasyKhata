@@ -5,6 +5,19 @@ const isDev = import.meta.env.DEV;
 // Cloud Function URL — set VITE_LOG_ENDPOINT in .env to the recordClientLog URL.
 // Falls back to no-op if not configured so dev/CI builds are unaffected.
 const LOG_ENDPOINT = import.meta.env.VITE_LOG_ENDPOINT || "";
+const EVENT_ENDPOINT =
+  import.meta.env.VITE_EVENT_ENDPOINT ||
+  (LOG_ENDPOINT ? LOG_ENDPOINT.replace("recordclientlog", "recordclientevent") : "");
+
+function getClientContext() {
+  return {
+    userId: auth.currentUser?.uid ?? null,
+    route: typeof window !== "undefined" ? window.location.pathname : null,
+    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+    platform: typeof navigator !== "undefined" ? navigator.platform : null,
+    appVersion: import.meta.env.VITE_APP_VERSION ?? null
+  };
+}
 
 async function writeLog(level, label, error, ctx) {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -15,12 +28,8 @@ async function writeLog(level, label, error, ctx) {
     message,
     stack,
     errorCode: error?.code ?? null,
-    userId: auth.currentUser?.uid ?? null,
+    ...getClientContext(),
     ctx: ctx ? JSON.stringify(ctx).slice(0, 500) : null,
-    route: typeof window !== "undefined" ? window.location.pathname : null,
-    userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
-    platform: typeof navigator !== "undefined" ? navigator.platform : null,
-    appVersion: import.meta.env.VITE_APP_VERSION ?? null
   };
 
   // Primary: Cloud Function — works even when unauthenticated (auth errors, cold start)
@@ -62,4 +71,22 @@ export function logWarn(label, ctx) {
     return;
   }
   writeLog("warn", label, null, ctx);
+}
+
+export function logEvent(event, ctx) {
+  if (isDev || !EVENT_ENDPOINT) return;
+  const payload = {
+    event: String(event || "unknown").slice(0, 100),
+    ...getClientContext(),
+    ctx: ctx ? JSON.stringify(ctx).slice(0, 500) : null
+  };
+
+  fetch(EVENT_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true
+  }).catch(() => {
+    // Never let event logging affect the app.
+  });
 }

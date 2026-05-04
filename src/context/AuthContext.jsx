@@ -13,7 +13,7 @@ import { clearCurrentUser, setCurrentUser } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
-import { logError } from "../utils/logger";
+import { logError, logEvent } from "../utils/logger";
 import { isNative } from "../utils/native";
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { signInWithCredential } from "firebase/auth";
@@ -270,6 +270,7 @@ export function AuthProvider({ children }) {
             return;
           }
           // Genuine 404 — Cloud Function hasn't provisioned the row yet
+          logEvent("setup_shown", { reason: "profile_not_found" });
           setPendingSetup({
             firebaseUser,
             name: firebaseUser.displayName || "",
@@ -292,10 +293,12 @@ export function AuthProvider({ children }) {
             setUser(buildSessionUser(firebaseUser, profile || {}));
             setCurrentUser(firebaseUser.uid);
             setPendingSetup(null);
+            logEvent("returning_user_migrated", { reason: "legal_not_accepted" });
             setLoading(false);
             return;
           }
           // Cloud Function pre-created the row for a genuinely new account.
+          logEvent("setup_shown", { reason: "legal_not_accepted" });
           setPendingSetup({
             firebaseUser,
             name: existing.name || firebaseUser.displayName || "",
@@ -354,6 +357,7 @@ export function AuthProvider({ children }) {
 */
 
 async function signInWithGoogle() {
+  logEvent("login_started", { provider: "google" });
   try {
     const result = await FirebaseAuthentication.signInWithGoogle({
   mode: 'explicit'
@@ -369,6 +373,7 @@ async function signInWithGoogle() {
 
     await signInWithCredential(auth, credential);
 
+    logEvent("login_success", { provider: "google" });
     return { success: true };
 
   } catch (err) {
@@ -378,6 +383,7 @@ async function signInWithGoogle() {
       return { error: null };
     }
 
+    logEvent("login_failed", { provider: "google", code: err?.code || "unknown" });
     return { error: "Sign-in failed. Please try again." };
   }
 }
@@ -405,9 +411,11 @@ async function signInWithGoogle() {
       setUser(sessionUser);
       setCurrentUser(sessionUser.id);
       setPendingSetup(null);
+      logEvent("setup_completed");
       return { success: true };
     } catch (err) {
       logError("Setup error", err);
+      logEvent("setup_failed", { message: err?.message || "unknown" });
       return { error: err.message || "Could not complete setup. Please try again." };
     } finally {
       setupInProgressRef.current = false;
@@ -449,6 +457,7 @@ async function signInWithGoogle() {
 
   async function logout() {
     const userId = auth.currentUser?.uid;
+    logEvent("logout");
     await signOut(auth);
     clearCurrentUser();
     if (userId) {

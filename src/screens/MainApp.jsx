@@ -2,7 +2,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useStat
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Bell, BookOpen, Building2, CreditCard, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Power, Settings,
+  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Plus, Power, Settings,
   TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -71,6 +71,52 @@ const TAB_ICONS = {
   adminSupport: HeadphonesIcon,
   adminDashboard: LayoutDashboard
 };
+
+function getGuideDismissKey(userId, orgId) {
+  return `ek_start_guide_dismissed:${userId || "guest"}:${orgId || "default"}`;
+}
+
+function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav, onAdd, onDismiss }) {
+  const setupLabel = isPersonalOrg ? "Add people" : isApartmentOrg ? "Add flats" : "Add clients";
+  const setupBody = isPersonalOrg
+    ? "Add family members first so income, expenses, and EMIs can be tagged clearly."
+    : isApartmentOrg
+      ? "Add flats first so maintenance and dues can be tracked by flat."
+      : "Add clients first so payments, invoices, and work records stay connected.";
+  const incomeLabel = isApartmentOrg ? "Record dues" : isFreelancerOrg ? "Record payments" : "Record income";
+  const expenseLabel = isApartmentOrg ? "Add society expenses" : "Add expenses";
+
+  const steps = [
+    { title: setupLabel, body: setupBody, action: () => onNav({ tab: "org", screen: "customers" }) },
+    { title: incomeLabel, body: isApartmentOrg ? "Use this for maintenance collections and other society income." : "Use this whenever money comes in.", action: () => onNav({ tab: "income" }) },
+    { title: expenseLabel, body: "Use this whenever money goes out.", action: () => onNav({ tab: "expenses" }) },
+    { title: "Quick add", body: "Tap + when you just want to enter a transaction quickly.", action: onAdd }
+  ];
+
+  return (
+    <div className="card" style={{ padding: 14, marginBottom: 14, border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))", background: "color-mix(in srgb, var(--accent) 5%, var(--card))" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 4 }}>Start here</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>Set up your Khata in a few taps</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 4 }}>Khata is your workspace. Profile is your personal sign-in account.</div>
+        </div>
+        <button type="button" onClick={onDismiss} aria-label="Dismiss guide" style={{ border: "none", background: "transparent", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, padding: 2, cursor: "pointer" }}>×</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))", gap: 8 }}>
+        {steps.map((step, index) => (
+          <button key={step.title} type="button" onClick={step.action} style={{ textAlign: "left", border: "1px solid var(--border)", background: "var(--surface-high)", borderRadius: 10, padding: "10px 11px", cursor: "pointer" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+              <span style={{ width: 20, height: 20, borderRadius: 7, background: "color-mix(in srgb, var(--accent) 14%, var(--raised))", color: "var(--accent)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>{index + 1}</span>
+              <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 800 }}>{step.title}</span>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-sec)", lineHeight: 1.45 }}>{step.body}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function QuickAddSheet({ onClose, isPersonalOrg, isApartmentOrg, isFreelancerOrg, isReadOnlyFreeMode, isViewerMode, addIncome, addExpense, currentMonth, currentYear }) {
   const [entryType, setEntryType] = React.useState("expense");
@@ -306,6 +352,7 @@ function QuickActionSheet({ onClose, actions = [], isReadOnlyFreeMode, isViewerM
 function QuickEntrySheet({
   onClose,
   orgType,
+  initialEntryType = "income",
   customers = [],
   currencySymbol = "Rs",
   currentMonth,
@@ -326,9 +373,10 @@ function QuickEntrySheet({
     { key: "income", label: isApartmentOrg ? "Collection" : config.incomeEntryLabel, color: "var(--accent)" },
     { key: "expense", label: config.expensesEntryLabel, color: "var(--danger)" },
     ...(isPersonalOrg ? [{ key: "emi", label: "EMI", color: "var(--gold)" }] : []),
-    ...(isFreelancerOrg ? [{ key: "client", label: config.customerEntryLabel || "Client", color: "var(--blue)" }] : [])
+    ...(isFreelancerOrg ? [{ key: "client", label: config.customerEntryLabel || "Client", color: "var(--blue)" }] : []),
+    ...(isApartmentOrg ? [{ key: "resident", label: "Resident", color: "var(--blue)" }] : [])
   ];
-  const [entryType, setEntryType] = useState(tabs[0]?.key || "income");
+  const [entryType, setEntryType] = useState(() => tabs.some(item => item.key === initialEntryType) ? initialEntryType : (tabs[0]?.key || "income"));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const amountRef = useRef(null);
@@ -370,7 +418,10 @@ function QuickEntrySheet({
     dueDay: "1",
     endDate: "",
     newClientName: "",
-    newClientPhone: ""
+    newClientPhone: "",
+    newFlatNumber: "",
+    newOwnerName: "",
+    newResidentPhone: ""
   });
 
   useEffect(() => {
@@ -413,6 +464,11 @@ function QuickEntrySheet({
       if (!String(form.newClientPhone || "").replace(/\D/g, "")) return "Enter client phone number.";
       return "";
     }
+    if (entryType === "resident") {
+      if (!String(form.newFlatNumber || "").trim()) return "Enter flat number.";
+      if (!String(form.newOwnerName || "").trim()) return "Enter resident or owner name.";
+      return "";
+    }
     if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
     if (!String(form.description || "").trim()) return "Enter a description.";
     if (entryType === "income") {
@@ -452,6 +508,22 @@ function QuickEntrySheet({
           phone: cleanPhone,
           email: "",
           addressLine: "", city: "", state: "", country: "", location: "", address: "", gstin: ""
+        });
+      } else if (entryType === "resident") {
+        const cleanPhone = String(form.newResidentPhone || "").replace(/\D/g, "");
+        addCustomer?.({
+          name: String(form.newFlatNumber || "").trim().toUpperCase(),
+          ownerName: String(form.newOwnerName || "").trim(),
+          phoneNumber: cleanPhone,
+          phone: cleanPhone,
+          email: "",
+          addressLine: "",
+          city: "",
+          state: "",
+          country: "",
+          location: "",
+          address: "",
+          gstin: ""
         });
       } else if (entryType === "income") {
         const payload = {
@@ -585,6 +657,24 @@ function QuickEntrySheet({
               <input type="tel" inputMode="numeric" value={form.newClientPhone} placeholder="9876543210" onChange={event => updateField("newClientPhone", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
             <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>To add more details (email, GSTIN, address) open the client in Org Settings after saving.</div>
+          </>
+        ) : entryType === "resident" ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Flat Number *</div>
+                <input autoFocus type="text" value={form.newFlatNumber} placeholder="e.g. A-101" onChange={event => updateField("newFlatNumber", event.target.value.toUpperCase())} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Resident / Owner *</div>
+                <input type="text" value={form.newOwnerName} placeholder="Resident name" onChange={event => updateField("newOwnerName", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Phone Number</div>
+              <input type="tel" inputMode="numeric" value={form.newResidentPhone} placeholder="9876543210" onChange={event => updateField("newResidentPhone", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>This adds the flat to Residents / Flats so collections can be recorded against it.</div>
           </>
         ) : (
         <>
@@ -1103,6 +1193,7 @@ export default function MainApp() {
   const [tab, setTab] = useState("dashboard");
   const [settingsNavigation, setSettingsNavigation] = useState(null);
   const [showFab, setShowFab] = useState(false);
+  const [quickEntryType, setQuickEntryType] = useState("income");
 
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -1118,6 +1209,9 @@ export default function MainApp() {
   const [idleWarning, setIdleWarning] = useState(false);
   const [idleCountdown, setIdleCountdown] = useState(120);
   const [residentMemberView, setResidentMemberView] = useState(null);
+  const [startGuideDismissed, setStartGuideDismissed] = useState(() => {
+    try { return localStorage.getItem(getGuideDismissKey(user?.id, activeOrgId)) === "1"; } catch { return false; }
+  });
   const idleCountdownRef = useRef(null);
   const historyMountedRef = useRef(false);
   const isPopStateRef = useRef(false);
@@ -1426,6 +1520,23 @@ export default function MainApp() {
   const isFreelancerOrg = currentOrgType === ORG_TYPES.FREELANCER;
   const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
+  const hasStartedUsingKhata = customers.length > 0 || (data.income || []).length > 0 || (data.expenses || []).length > 0 || (data.invoices || []).length > 0;
+  const showStartGuide = !isAdmin && !activeSharedOrgKey && tab === "dashboard" && !startGuideDismissed && !hasStartedUsingKhata;
+  const contextualQuickEntryType = tab === "income" ? "income" : tab === "expenses" ? "expense" : tab === "emi" ? "emi" : null;
+
+  useEffect(() => {
+    try { setStartGuideDismissed(localStorage.getItem(getGuideDismissKey(user?.id, activeOrgId)) === "1"); } catch { setStartGuideDismissed(false); }
+  }, [activeOrgId, user?.id]);
+
+  const dismissStartGuide = useCallback(() => {
+    setStartGuideDismissed(true);
+    try { localStorage.setItem(getGuideDismissKey(user?.id, activeOrgId), "1"); } catch {}
+  }, [activeOrgId, user?.id]);
+
+  const openQuickEntry = useCallback((entryType) => {
+    setQuickEntryType(entryType || "income");
+    setShowFab(true);
+  }, []);
 
   const handleQuickAddAction = useCallback((target) => {
     setShowFab(false);
@@ -1474,7 +1585,7 @@ export default function MainApp() {
   }, [handleQuickAddAction, isAdmin, isPersonalOrg, orgConfig.expensesActionLabel, orgConfig.expensesLabel, orgConfig.incomeActionLabel, orgConfig.incomeLabel]);
   const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
-    { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Dashboard" },
+    { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Home" },
     ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }, { id: "adminAnnounce", icon: "AN", label: "Announce" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "IN", label: orgConfig.incomeLabel },
@@ -1483,7 +1594,7 @@ export default function MainApp() {
     ] : []),
     ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Chat" }] : []),
-    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: "Khata" }] : []),
+    ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: "Khata Setup" }] : []),
     ...(isAdmin ? [] : [])
   ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
@@ -1638,22 +1749,21 @@ export default function MainApp() {
             ? ["dashboard", "income", "expenses", "emi", "org"]
             : ["dashboard", "income", "expenses", ...(hideInvoices ? [] : ["invoices"]), "org"]
         : isApartmentOrg
-          ? ["income", "expenses", "__fab__", "discussions", "org"]
+          ? ["dashboard", "income", "expenses", "discussions", "org"]
           : isPersonalOrg
-            ? ["income", "expenses", "__fab__", "emi", "org"]
-            : ["income", "expenses", "__fab__", "invoices", "org"];
+            ? ["dashboard", "income", "expenses", "emi", "org"]
+            : ["dashboard", "income", "expenses", "invoices", "org"];
     return baseTabOrder.map(tabId => {
-      if (tabId === "__fab__") return { id: "__fab__", label: "", icon: null };
       const found = TABS.find(item => item.id === tabId);
       if (!found) return null;
       const label =
         tabId === "dashboard" ? "Home" :
-        tabId === "income" && isApartmentOrg ? "Maint." :
+        tabId === "income" && isApartmentOrg ? "Dues" :
         tabId === "income" && isFreelancerOrg ? "Payments" :
-        tabId === "expenses" ? "Spend" :
+        tabId === "expenses" ? "Expenses" :
         tabId === "invoices" && isFreelancerOrg ? "Invoices" :
         tabId === "discussions" ? "Chat" :
-        tabId === "org" ? "Khata" :
+        tabId === "org" ? "Setup" :
         tabId === "adminSupport" ? "Support" :
         tabId === "adminAnnounce" ? "Announce" :
         tabId === "users" ? "Users" :
@@ -1946,6 +2056,16 @@ export default function MainApp() {
               transition={{ duration: 0.16, ease: "easeOut" }}
               style={tab === "discussions" ? { height: "100%", display: "flex", flexDirection: "column" } : {}}
             >
+              {showStartGuide && (
+                <StartGuideCard
+                  isPersonalOrg={isPersonalOrg}
+                  isApartmentOrg={isApartmentOrg}
+                  isFreelancerOrg={isFreelancerOrg}
+                  onNav={handleNavigate}
+                  onAdd={() => openQuickEntry("income")}
+                  onDismiss={dismissStartGuide}
+                />
+              )}
               {renderTabContent()}
             </motion.div>
           </AnimatePresence>
@@ -1958,51 +2078,6 @@ export default function MainApp() {
         style={{ gridTemplateColumns: `repeat(${Math.max(footerTabs.length, 1)}, minmax(0, 1fr))` }}
       >
         {footerTabs.map(tabItem => {
-          if (tabItem.id === "__fab__") {
-            return (
-              <button
-                ref={fabRef}
-                key="__fab__"
-                type="button"
-                onClick={() => { setShowFab(v => !v); dismissFabCoach(); }}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: "0 0 2px",
-                  position: "relative",
-                }}
-              >
-                <motion.span
-                  animate={showFab ? { rotate: 45, scale: 1.08 } : { rotate: 0, scale: 1 }}
-                  transition={{ type: "spring", stiffness: 420, damping: 24 }}
-                  style={{
-                    width: 52,
-                    height: 52,
-                    borderRadius: "50%",
-                    background: "var(--saffron)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 28,
-                    fontWeight: 700,
-                    lineHeight: 1,
-                    color: "#0C0908",
-                    boxShadow: "0 6px 20px color-mix(in srgb, var(--saffron) 60%, transparent), 0 2px 6px rgba(0,0,0,0.18)",
-                    marginBottom: 0,
-                    marginTop: -6,
-                  }}
-                >
-                  +
-                </motion.span>
-              </button>
-            );
-          }
-
           const active = tab === tabItem.id;
           const activeColor = TAB_COLOR[tabItem.id] || "var(--accent)";
           const IconComponent = TAB_ICONS[tabItem.id];
@@ -2037,30 +2112,16 @@ export default function MainApp() {
       </div>
       )}
 
-      {tab !== "dashboard" && !showFab && tab !== "discussions" && !isViewerMode && (
+      {!showFab && !isViewerMode && contextualQuickEntryType && (
         <button
+          ref={fabRef}
           type="button"
-          onClick={() => handleNavigate({ tab: "dashboard" })}
-          title="Back to dashboard"
-          style={{
-            position: "fixed",
-            right: isCompactMobile ? 12 : 16,
-            bottom: "calc(env(safe-area-inset-bottom, 0px) + 92px)",
-            zIndex: 132,
-            width: isCompactMobile ? 44 : 48,
-            height: isCompactMobile ? 44 : 48,
-            borderRadius: 16,
-            border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))",
-            background: "color-mix(in srgb, var(--accent) 12%, var(--surface))",
-            color: "var(--accent)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 10px 24px rgba(0,0,0,0.14)",
-            cursor: "pointer"
-          }}
+          className="app-quick-add-floating"
+          onClick={() => { openQuickEntry(contextualQuickEntryType); dismissFabCoach(); }}
+          title={contextualQuickEntryType === "income" ? "Add income" : contextualQuickEntryType === "emi" ? "Add EMI" : "Add expense"}
+          aria-label={contextualQuickEntryType === "income" ? "Add income" : contextualQuickEntryType === "emi" ? "Add EMI" : "Add expense"}
         >
-          <LayoutDashboard size={20} strokeWidth={2.2} />
+          <Plus size={22} strokeWidth={2.4} />
         </button>
       )}
 
@@ -2094,6 +2155,7 @@ export default function MainApp() {
               <QuickEntrySheet
                 onClose={() => setShowFab(false)}
                 orgType={currentOrgType}
+                initialEntryType={quickEntryType}
                 customers={customers}
                 currencySymbol={currency?.symbol || "Rs"}
                 currentMonth={month}
@@ -2111,12 +2173,12 @@ export default function MainApp() {
       </AnimatePresence>
 
       {/* Coach marks */}
-      {!!account && !coachFabSeen && !showFab && (
+      {!!account && !coachFabSeen && !showFab && contextualQuickEntryType && (
         <CoachMark
           anchorRef={fabRef}
           arrow="down"
           label="Start here"
-          sub="Tap + to record income or expense"
+          sub={contextualQuickEntryType === "income" ? "Tap + to record income" : contextualQuickEntryType === "emi" ? "Tap + to add EMI" : "Tap + to record expense"}
           onDismiss={dismissFabCoach}
         />
       )}
