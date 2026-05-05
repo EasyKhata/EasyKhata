@@ -5,6 +5,7 @@ import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEnt
 import { logError } from "../utils/logger";
 import {
   getPersonalEmiDueDay,
+  getPersonalEmiAmount,
   getInvoiceStatusColor,
   getInvoiceStatusLabel,
   invoiceGrandTotal
@@ -748,6 +749,158 @@ function NeedsWantsCard({ expenses, sym, month, year, viewMode, onNav }) {
   );
 }
 
+function toLocalDateKey(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getCurrentFinancialYearWindow(date = new Date()) {
+  const currentYear = date.getFullYear();
+  const startYear = date.getMonth() >= 3 ? currentYear : currentYear - 1;
+  return {
+    start: `${startYear}-04-01`,
+    end: toLocalDateKey(date),
+    label: `FY ${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`
+  };
+}
+
+function getRecordDateKey(record) {
+  if (!record) return "";
+  if (record.date) return String(record.date).slice(0, 10);
+  if (record.paidDate) return String(record.paidDate).slice(0, 10);
+  if (record.month) return `${String(record.month).slice(0, 7)}-01`;
+  return "";
+}
+
+function isBetweenDateKeys(dateKey, start, end) {
+  return Boolean(dateKey) && dateKey >= start && dateKey <= end;
+}
+
+function sumDatedRecords(records, window, getAmount = record => Number(record?.amount || 0)) {
+  return (records || []).reduce((sum, record) => {
+    const dateKey = getRecordDateKey(record);
+    if (!isBetweenDateKeys(dateKey, window.start, window.end)) return sum;
+    return sum + Number(getAmount(record) || 0);
+  }, 0);
+}
+
+function getMonthKeysBetween(startDateKey, endDateKey) {
+  const [startYear, startMonth] = String(startDateKey).slice(0, 7).split("-").map(Number);
+  const [endYear, endMonth] = String(endDateKey).slice(0, 7).split("-").map(Number);
+  if (!startYear || !startMonth || !endYear || !endMonth) return [];
+  const keys = [];
+  const cursor = new Date(startYear, startMonth - 1, 1);
+  const end = new Date(endYear, endMonth - 1, 1);
+  while (cursor <= end) {
+    keys.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys;
+}
+
+function getMonthEndDateKey(monthKeyValue) {
+  const [yyyy, mm] = String(monthKeyValue).split("-").map(Number);
+  if (!yyyy || !mm) return `${monthKeyValue}-31`;
+  return toLocalDateKey(new Date(yyyy, mm, 0));
+}
+
+function getEmiStartDateKey(emi) {
+  if (emi?.startDate) return String(emi.startDate).slice(0, 10);
+  const legacyDate = String(emi?.dueDate || emi?.nextDueDate || "");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(legacyDate)) return legacyDate;
+  return "";
+}
+
+function getEmiEndDateKey(emi) {
+  return String(emi?.endDate || "").slice(0, 10);
+}
+
+function isEmiActiveForMonthKey(emi, monthKeyValue) {
+  const periodStart = `${monthKeyValue}-01`;
+  const periodEnd = getMonthEndDateKey(monthKeyValue);
+  const startDate = getEmiStartDateKey(emi);
+  const endDate = getEmiEndDateKey(emi);
+  return (!startDate || startDate <= periodEnd) && (!endDate || endDate >= periodStart);
+}
+
+function calculateFinancialYearPaidEmi(data, window) {
+  const loans = data?.orgRecords?.loans || [];
+  const monthKeys = getMonthKeysBetween(window.start, window.end);
+  return monthKeys.reduce((sum, monthKeyValue) => (
+    sum + loans.reduce((monthSum, emi) => {
+      const paidMonths = Array.isArray(emi?.paidMonths) ? emi.paidMonths : [];
+      if (!isEmiActiveForMonthKey(emi, monthKeyValue) || !paidMonths.includes(monthKeyValue)) {
+        return monthSum;
+      }
+      return monthSum + Number(getPersonalEmiAmount(emi) || 0);
+    }, 0)
+  ), 0);
+}
+
+function buildFinancialYearSummary(data, window, { includePaidInvoices = false, includePaidEmi = false } = {}) {
+  const incomeTotal = sumDatedRecords(data.income, window);
+  const expenseTotal = sumDatedRecords(data.expenses, window);
+  const emiTotal = includePaidEmi ? calculateFinancialYearPaidEmi(data, window) : 0;
+  const paidInvoiceTotal = includePaidInvoices
+    ? sumDatedRecords(
+        (data.invoices || []).filter(invoice => (
+          String(invoice?.documentType || "invoice") === "invoice"
+          && String(invoice?.status || "").toLowerCase() === "paid"
+        )),
+        window,
+        invoice => Number(invoice?.grandTotal || invoiceGrandTotal(invoice) || invoice?.total || 0)
+      )
+    : 0;
+  const totalIncome = incomeTotal + paidInvoiceTotal;
+
+  return {
+    ...window,
+    income: totalIncome,
+    expenses: expenseTotal,
+    emi: includePaidEmi ? emiTotal : undefined,
+    balance: totalIncome - expenseTotal - emiTotal
+  };
+}
+
+function FinancialYearSummaryCard({ summary, sym, incomeLabel = "Income", expenseLabel = "Expenses", emiLabel = "EMI" }) {
+  const balanceColor = Number(summary.balance || 0) >= 0 ? "var(--jade)" : "var(--ember)";
+  const items = [
+    { label: incomeLabel, value: summary.income, color: "var(--jade)" },
+    { label: expenseLabel, value: summary.expenses, color: "var(--ember)" },
+    ...(summary.emi !== undefined ? [{ label: emiLabel, value: summary.emi, color: "var(--saffron)" }] : []),
+    { label: "Balance", value: summary.balance, color: balanceColor }
+  ];
+
+  return (
+    <div className="card-leather anim-fade-up-2" style={{ padding: "14px 16px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start", marginBottom: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="section-eyebrow" style={{ marginBottom: 5 }}>{summary.label} · Till today</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--text)" }}>Financial year so far</div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <RupeeDisplay amount={summary.balance} color={balanceColor} size={22} />
+          <div style={{ fontSize: 10, color: "var(--cream-3)", marginTop: 2 }}>Net</div>
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(78px, 1fr))", gap: 8 }}>
+        {items.map(item => (
+          <div key={item.label} style={{ minWidth: 0, padding: "10px 8px", borderRadius: 10, border: "1px solid var(--line-2)", background: "color-mix(in srgb, var(--surface) 88%, transparent)" }}>
+            <div style={{ fontSize: 10, fontWeight: 800, color: item.color, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.label}
+            </div>
+            <div style={{ fontSize: "clamp(13px, 3.4vw, 17px)", fontWeight: 900, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {fmtMoney(Number(item.value || 0), sym)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ year, month, viewMode: propViewMode, onNav, headerDatePicker }) {
   const data = useData();
   const { activeSharedOrgKey, collectionFetched, isViewerMode } = data;
@@ -795,6 +948,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
+  const financialYearWindow = useMemo(() => getCurrentFinancialYearWindow(), []);
+  const financialYearSummary = useMemo(() => (
+    buildFinancialYearSummary(data, financialYearWindow, {
+      includePaidInvoices: isFreelancerOrg,
+      includePaidEmi: isPersonalOrg
+    })
+  ), [data.income, data.expenses, data.invoices, data.orgRecords?.loans, financialYearWindow, isFreelancerOrg, isPersonalOrg]);
   const EMPTY_STATS = {
     profit: 0, netAfterEmi: 0, totalIncome: 0, totalExpense: 0,
     cashFlow: [], monthlyBreakdown: [],
@@ -830,7 +990,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     // Reset stale stats when loading starts so old shared-org data doesn't render
     if (!data.loaded) { setStats(EMPTY_STATS); return; }
     if (!user?.id || !data.activeOrgId) return;
-    const sharedInfo = data.activeSharedOrgKey ? user?.sharedOrgs?.[data.activeSharedOrgKey] : null;
+    const sharedInfo = data.activeSharedOrgKey
+      ? (data.sharedOrgs || []).find(org => org.key === data.activeSharedOrgKey)
+      : null;
     const dashboardUserId = sharedInfo?.ownerId || user?.id;
     const cacheKey = `${dashboardUserId}-${data.activeOrgId}-${year}-${month}-${viewMode}`;
     const cached = dashboardCache.current.get(cacheKey);
@@ -851,7 +1013,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       .catch(err => logError("dashboard fetch", err))
       .finally(() => { if (!cancelled) setStatsLoading(false); });
     return () => { cancelled = true; };
-  }, [data.loaded, data.activeOrgId, user?.id, year, month, viewMode]);
+  }, [data.loaded, data.activeOrgId, data.activeSharedOrgKey, data.sharedOrgs, user?.id, year, month, viewMode]);
   const showAdvanced = canUseFeature(user, "advancedAnalytics");
   const currentPlan = getUserPlan(user);
   const isTrial = user?.subscriptionStatus === "trial";
@@ -1277,6 +1439,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <StatChip label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--saffron)" sub={`${stats.activeLoansCount || 0} active loan(s)`} onClick={() => onNav("emi")} />
           </div>
 
+          <FinancialYearSummaryCard
+            summary={financialYearSummary}
+            sym={sym}
+            incomeLabel="Income"
+            expenseLabel="Expenses"
+          />
+
           {/* First-use onboarding CTA */}
           {isEmptyOrg && (
             <div className="anim-fade-up-2">
@@ -1473,6 +1642,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               onClick={!isViewerMode ? () => onNav("expenses") : undefined}
             />
           </div>
+
+          <FinancialYearSummaryCard
+            summary={financialYearSummary}
+            sym={sym}
+            incomeLabel="Revenue"
+            expenseLabel="Expenses"
+          />
 
           {/* First-use onboarding CTA */}
           {isEmptyOrg && (

@@ -1498,8 +1498,11 @@ export default function MainApp() {
   const headerOrgOptions = useMemo(() => {
     const owned = [];
     const seenOwnedIds = new Set();
-    (organizations || []).forEach(org => {
-      if (!org || org.isShared || org.isOwned === false || seenOwnedIds.has(org.id)) return;
+    const ownedSource = Array.isArray(data.ownedOrganizations) && data.ownedOrganizations.length
+      ? data.ownedOrganizations
+      : (organizations || []).filter(org => org && org.isOwned !== false && !org.isShared);
+    ownedSource.forEach(org => {
+      if (!org || seenOwnedIds.has(org.id)) return;
       seenOwnedIds.add(org.id);
       owned.push({
         key: `own:${org.id}`,
@@ -1534,7 +1537,7 @@ export default function MainApp() {
       isActive: activeSharedOrgKey === org.key
     }));
     return [...owned, ...shared];
-  }, [account?.name, activeOrgId, activeSharedOrgKey, currentOrgType, organizations, ownOrgName, sharedOrgs]);
+  }, [account?.name, activeOrgId, activeSharedOrgKey, currentOrgType, data.ownedOrganizations, organizations, ownOrgName, sharedOrgs]);
 
   const handleHeaderOrgSwitch = useCallback(async option => {
     if (!option) return;

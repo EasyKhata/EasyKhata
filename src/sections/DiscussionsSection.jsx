@@ -143,9 +143,9 @@ function PinnedBanner({ message, canPin, onUnpin }) {
 
 export default function DiscussionsSection() {
   const { user } = useAuth();
-  const { activeSharedOrgKey, activeOrgId } = useData();
+  const { activeSharedOrgKey, activeOrgId, sharedOrgs = [] } = useData();
 
-  const sharedInfo = activeSharedOrgKey ? user?.sharedOrgs?.[activeSharedOrgKey] : null;
+  const sharedInfo = activeSharedOrgKey ? sharedOrgs.find(org => org.key === activeSharedOrgKey) : null;
   const ownerId = sharedInfo?.ownerId || user?.id;
   const orgId = sharedInfo?.orgId || activeOrgId;
 
