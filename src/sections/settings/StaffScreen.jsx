@@ -17,13 +17,15 @@ export default function StaffScreen({
   onRemoveStaff,
   onBackToList,
   onClose,
+  canCreateRecords = true,
+  canManageRecord,
 }) {
   const confirm = useConfirm();
   const canSave = !!(staffForm?.name?.trim()) && !!(staffForm?.phoneNumber || "").trim();
 
   if (screen === "staff") {
     return (
-      <Modal title="Staff" onClose={onClose} onSave={onOpenNewStaff} saveLabel="Add Staff">
+      <Modal title="Staff" onClose={onClose} onSave={canCreateRecords ? onOpenNewStaff : undefined} saveLabel="Add Staff">
         {items.length === 0 ? (
           <WorkflowSetupCard
             title="Add your first staff member"
@@ -43,7 +45,7 @@ export default function StaffScreen({
                     ? `${member.idCardType}${member.idCardNumber ? ` · ${member.idCardNumber}` : ""}`
                     : ""
                 ].filter(Boolean).join(" · ")}
-                actions={[
+                actions={(canManageRecord?.(member) ?? canCreateRecords) ? [
                   { label: "Edit", onClick: () => onOpenEditStaff(member), tone: "blue" },
                   {
                     label: "Delete",
@@ -53,7 +55,7 @@ export default function StaffScreen({
                     },
                     tone: "danger"
                   }
-                ]}
+                ] : []}
               />
             ))}
           </div>
@@ -67,7 +69,7 @@ export default function StaffScreen({
       <Modal
         title={editStaff ? "Edit Staff Member" : "New Staff Member"}
         onClose={onBackToList}
-        onSave={onSaveStaff}
+        onSave={(editStaff ? (canManageRecord?.(editStaff) ?? canCreateRecords) : canCreateRecords) ? onSaveStaff : undefined}
         canSave={canSave}
       >
         <Field label="Full Name" required>

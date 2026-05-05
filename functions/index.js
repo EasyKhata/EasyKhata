@@ -116,8 +116,8 @@ const RAILWAY_API_URL = defineSecret("RAILWAY_API_URL");
 const INTERNAL_SECRET = defineSecret("INTERNAL_SECRET");
 
 const PLAN_PRICES = {
-  pro: { monthly: 69, yearly: 699 },
-  business: { monthly: 99, yearly: 999 }
+  pro: { monthly: 99, yearly: 999 },
+  business: { monthly: 199, yearly: 1999 }
 };
 
 const PLAN_DURATION_DAYS = {
@@ -374,8 +374,7 @@ function getActiveOrgType(userData = {}) {
 }
 
 function assertBusinessPlanEligibility(userData = {}, requestedPlan = "pro") {
-  if (String(requestedPlan || "").toLowerCase() !== "business") return;
-  throw new HttpsError("failed-precondition", "Business plan subscriptions are temporarily disabled and will return in a future release.");
+  return true;
 }
 
 function isMatchingHexSignature(expectedHex, providedHex) {
@@ -579,33 +578,15 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     const duration = PLAN_DURATION_DAYS[billingCycle];
     const currentUser = userSnap.exists ? userSnap.data() || {} : {};
     assertBusinessPlanEligibility(currentUser, requestedPlan);
-    const orgId = String(requestData.orgId || "org_primary").trim() || "org_primary";
-    const currentOrgSubscriptions = currentUser.orgSubscriptions && typeof currentUser.orgSubscriptions === "object"
-      ? currentUser.orgSubscriptions
-      : {};
-    const currentOrgSubscription = currentOrgSubscriptions[orgId] || {};
-    const nextEndDate = computeSubscriptionEndDate(currentOrgSubscription.subscriptionEndsAt || currentUser.subscriptionEndsAt || "", duration);
+    const orgId = String(requestData.orgId || "account_plan").trim() || "account_plan";
+    const nextEndDate = computeSubscriptionEndDate(currentUser.subscriptionEndsAt || "", duration);
     const nowIso = new Date().toISOString();
-    const orgSubscription = {
-      plan: requestedPlan,
-      subscriptionStatus: "active",
-      subscriptionEndsAt: nextEndDate,
-      billingCycle,
-      orgName: requestData.orgName || "",
-      orgType: requestData.orgType || "",
-      updatedAt: nowIso
-    };
 
     tx.set(userRef, {
       plan: requestedPlan,
       subscriptionStatus: "active",
       subscriptionEndsAt: nextEndDate,
       trialEligible: false,
-      activeOrgId: orgId,
-      orgSubscriptions: {
-        ...currentOrgSubscriptions,
-        [orgId]: orgSubscription
-      },
       updatedAt: nowIso,
       lastActivityAt: nowIso
     }, { merge: true });
@@ -850,7 +831,7 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
     sendError(res, "invalid-argument", e.message); return;
   }
   const note = String(req.body?.data?.note || "").trim().slice(0, 300);
-  const orgId = String(req.body?.data?.orgId || "org_primary").trim() || "org_primary";
+  const orgId = String(req.body?.data?.orgId || "account_plan").trim() || "account_plan";
   const orgName = String(req.body?.data?.orgName || "").trim().slice(0, 120);
   const orgType = String(req.body?.data?.orgType || "").trim().toLowerCase();
   const amount = getAmountInPaise(targetPlan, billingCycle);

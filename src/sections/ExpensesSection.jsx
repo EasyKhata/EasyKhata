@@ -31,6 +31,7 @@ import { useAuth } from "../context/AuthContext";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
+import { useConfirm } from "../context/DialogContext";
 
 const DEFAULT_EXPENSE_CATEGORIES = ["Operations", "Tools", "Marketing", "Payroll", "Utilities", "Travel", "Other"];
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -92,11 +93,15 @@ function renderDynamicField(field, value, onChange) {
 
 export default function ExpensesSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
+  const confirm = useConfirm();
   const isViewerMode = d.isViewerMode;
   const { user } = useAuth();
 
   // Lazy-load expenses collection the first time this section mounts
-  useEffect(() => { d.ensureCollectionLoaded?.("expenses"); }, [d.ensureCollectionLoaded]);
+  useEffect(() => {
+    if (!d.loaded || !d.activeOrgId) return;
+    d.ensureCollectionLoaded?.("expenses");
+  }, [d.ensureCollectionLoaded, d.loaded, d.activeOrgId]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
@@ -168,7 +173,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
 
   const active = useMemo(() => d.expenses.filter(expense => {
-    if (!expense.recurring) return expense.month === mk;
+    if (!expense.recurring) return (expense.month || expense.date?.slice(0, 7) || "") === mk;
     const started = expense.startMonth <= mk;
     const notEnded = !expense.endMonth || expense.endMonth >= mk;
     return started && notEnded;
@@ -235,6 +240,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   useEffect(() => { setExpensesPage(1); }, [mk, searchQuery]);
 
   function openNew() {
+    if (isViewerMode) return;
     if (isApartmentOrg && !hasApartmentFlats) {
       openFlatManager();
       return;
@@ -267,6 +273,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function openBudgetEditor() {
+    if (isViewerMode) return;
     if (!canUseFeature(user, "budgets")) {
       setUpgradeInfo(getUpgradeCopy("budgets"));
       return;
@@ -276,6 +283,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function openEdit(expense) {
+    if (isViewerMode) return;
     const next = buildBlankForm(year, month, config, categoryOptions);
     next.label = expense.label || "";
     next.amount = String(expense.amount ?? "");
@@ -384,6 +392,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function saveBudgets() {
+    if (isViewerMode) return;
     const invalidBudget = categoryOptions.find(category => {
       const raw = budgetDraft[category];
       if (raw === "" || raw == null) return false;
@@ -428,6 +437,12 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function save() {
+    if (editId) {
+      const existing = (d.expenses || []).find(item => item.id === editId);
+      if (!(d.canManageRecord?.(existing) ?? !isViewerMode)) return;
+    } else if (isViewerMode) {
+      return;
+    }
     const nextErrors = validateForm();
     if (nextErrors._form) {
       setFormError(nextErrors._form);
@@ -516,11 +531,17 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       ...(receiptUrl ? [{ label: "Receipt", tone: "green" }] : [])
     ];
     const canManage = d.canManageRecord?.(expense) ?? !isViewerMode;
+    const confirmDeleteExpense = async () => {
+      if (!canManage) return;
+      if (await confirm(`Delete ${expense.label || "this expense"}?`, { title: "Delete Expense", confirmLabel: "Delete" })) {
+        d.removeExpense(expense.id);
+      }
+    };
     const ownerActions = [
       ...(receiptUrl ? [{ label: "View Receipt", onClick: () => openReceipt(receiptUrl) }] : []),
       ...(canManage ? [
         { label: "Edit", onClick: () => openEdit(expense) },
-        { label: "Delete", onClick: () => d.removeExpense(expense.id), tone: "danger" }
+        { label: "Delete", onClick: confirmDeleteExpense, tone: "danger" }
       ] : [])
     ];
 
@@ -589,8 +610,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   eyebrow="Household setup"
                   title="Add a person before tracking spendings"
                   message="Household spending must be tagged to at least one person. Add your first person in Khata to continue."
-                  actionLabel="Open People"
-                  onAction={openPeopleManager}
+                  actionLabel={!isViewerMode ? "Open People" : undefined}
+                  onAction={!isViewerMode ? openPeopleManager : undefined}
                   tone="danger"
                 />
               ) : active.length === 0 ? (
@@ -598,8 +619,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   eyebrow="Track spend"
                   title={`No ${config.expensesLabel.toLowerCase()} yet`}
                   message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
-                  actionLabel={config.expensesActionLabel}
-                  onAction={openNew}
+                  actionLabel={!isViewerMode ? config.expensesActionLabel : undefined}
+                  onAction={!isViewerMode ? openNew : undefined}
                   tone="danger"
                 />
               ) : filteredExpenses.length === 0 ? (
@@ -620,11 +641,11 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Category Budgets</div>
                     <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>See overspending early and set simple monthly limits.</div>
                   </div>
-                  <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={openBudgetEditor}>Set Budgets</button>
+                  {!isViewerMode && <button className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={openBudgetEditor}>Set Budgets</button>}
                 </div>
                 <div className="card" style={{ marginBottom: 22 }}>
                   {budgetCards.length === 0 ? (
-                    <WorkflowSetupCard title="No budgets set yet" message="Create category budgets to spot overspending before it hurts your month." actionLabel="Set Budgets" onAction={openBudgetEditor} tone="danger" />
+                    <WorkflowSetupCard title="No budgets set yet" message="Create category budgets to spot overspending before it hurts your month." actionLabel={!isViewerMode ? "Set Budgets" : undefined} onAction={!isViewerMode ? openBudgetEditor : undefined} tone="danger" />
                   ) : (
                     budgetCards.map((item, index) => (
                       <div key={item.category} style={{ padding: "12px 14px", borderBottom: index < budgetCards.length - 1 ? "1px solid color-mix(in srgb, var(--border) 68%, transparent)" : "none" }}>
@@ -663,8 +684,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     eyebrow="Client setup"
                     title="Add a client before tracking expenses"
                     message="Freelancer expenses must be linked to at least one client. Add your first client in Khata to continue."
-                    actionLabel="Open Clients"
-                    onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
+                    actionLabel={!isViewerMode ? "Open Clients" : undefined}
+                    onAction={!isViewerMode ? () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })) : undefined}
                     tone="danger"
                   />
                 ) : active.length === 0 ? (
@@ -672,8 +693,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     eyebrow="Track spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
                     message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
-                    actionLabel={config.expensesActionLabel}
-                    onAction={openNew}
+                    actionLabel={!isViewerMode ? config.expensesActionLabel : undefined}
+                    onAction={!isViewerMode ? openNew : undefined}
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
@@ -720,8 +741,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   <WorkflowSetupCard
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
                     message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
-                    actionLabel={config.expensesActionLabel}
-                    onAction={openNew}
+                    actionLabel={!isViewerMode ? config.expensesActionLabel : undefined}
+                    onAction={!isViewerMode ? openNew : undefined}
                     tone="danger"
                   />
                 ) : (
@@ -737,8 +758,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     eyebrow="Society spend"
                     title={`No ${config.expensesLabel.toLowerCase()} yet`}
                     message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
-                    actionLabel={config.expensesActionLabel}
-                    onAction={openNew}
+                    actionLabel={!isViewerMode ? config.expensesActionLabel : undefined}
+                    onAction={!isViewerMode ? openNew : undefined}
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (
@@ -782,8 +803,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                     eyebrow="Society setup"
                     title="Add flats before tracking society expenses"
                     message="Society expenses stay locked until you create at least one flat record in Khata."
-                    actionLabel="Open Flats"
-                    onAction={openFlatManager}
+                    actionLabel={!isViewerMode ? "Open Flats" : undefined}
+                    onAction={!isViewerMode ? openFlatManager : undefined}
                     tone="danger"
                   />
                 ) : filteredExpenses.length === 0 ? (

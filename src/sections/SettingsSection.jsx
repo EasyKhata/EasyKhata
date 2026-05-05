@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfirm } from "../context/DialogContext";
 import { isNative } from "../utils/native";
-import { supportApi, adminApi, societyApi, orgsApi } from "../lib/api";
+import { supportApi, adminApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
 import SubscriptionHistoryScreen from "./settings/SubscriptionHistoryScreen";
@@ -14,7 +14,6 @@ import { useCoachMark } from "../components/CoachMark";
 import BusinessImportScreen from "./settings/BusinessImportScreen";
 import CustomersScreen from "./settings/CustomersScreen";
 import StaffScreen from "./settings/StaffScreen";
-import SocietyPortalScreen from "./settings/SocietyPortalScreen";
 import AuditLogScreen from "./settings/AuditLogScreen";
 import OrgMembersScreen from "./settings/OrgMembersScreen";
 import { useAuth } from "../context/AuthContext";
@@ -61,8 +60,11 @@ import {
   UPI_CONFIG,
   canUseFeature,
   canChangeOrgType as canChangeOrgTypeFn,
+  canCreatePaidOrg,
   formatSubscriptionDate,
   getBillingAmount,
+  getOwnedPaidOrgCount,
+  getPaidOrgLimit,
   getUserPlan,
   getPlanSummary,
   getUpgradeCopy,
@@ -170,22 +172,6 @@ function normalizeSupportMessages(ticket) {
       createdAt: ticket?.createdAt || ""
     }
   ];
-}
-
-function buildSocietyPortalId(ownerId = "", orgId = "") {
-  return `portal_${String(ownerId || "").trim()}_${String(orgId || "").trim()}`;
-}
-
-function normalizeInviteCode(value = "") {
-  return String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
-}
-
-function createInviteCode() {
-  return normalizeInviteCode(Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-2));
-}
-
-function flatDueDocId(flatNumber = "") {
-  return String(flatNumber || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "-");
 }
 
 function createEmptyServiceProduct() {
@@ -314,14 +300,18 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     organizations,
     ownedOrganizations,
     activeOrgId,
+    activeSharedOrgKey,
     createOrganization,
     switchOrganization,
+    switchToSharedOrg,
+    switchToOwnOrg,
     deleteOrganization,
     maxOrganizations,
     canCreateOrganization,
     ensureCollectionLoaded,
     collectionFetched,
-    canManageRecord
+    canManageRecord,
+    isViewerMode
   } = useData();
   useTheme();
 
@@ -361,6 +351,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   });
   const [notificationForm, setNotificationForm] = useState(notificationPrefs);
   const [planRequestForm, setPlanRequestForm] = useState({
+    targetPlan: PLANS.PRO,
     billingCycle: BILLING_CYCLES.MONTHLY,
     note: ""
   });
@@ -398,20 +389,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [showReportPicker, setShowReportPicker] = useState(false);
   const [reportPreviewUrl, setReportPreviewUrl] = useState(null);
   const [generatingReportPreview, setGeneratingReportPreview] = useState(false);
-  const [societyPortalMeta, setSocietyPortalMeta] = useState(null);
-  const [societyPortalLoading, setSocietyPortalLoading] = useState(false);
-  const [societyPortalInvites, setSocietyPortalInvites] = useState([]);
-  const [societyPortalForm, setSocietyPortalForm] = useState({
-    month: new Date().toISOString().slice(0, 7),
-    notice: ""
-  });
-  const [memberInviteForm, setMemberInviteForm] = useState({
-    email: "",
-    flatNumber: ""
-  });
-  const [societyJoinForm, setSocietyJoinForm] = useState({
-    inviteCode: ""
-  });
   const [orgSectionKey, setOrgSectionKey] = useState("");
   const [orgRecordForm, setOrgRecordForm] = useState(null);
   const [editOrgRecord, setEditOrgRecord] = useState(null);
@@ -433,30 +410,23 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       templateId: account?.reportTemplate || "classic"
     };
   });
-  const currentPlan = account?.plan || getUserPlan(user);
+  const currentPlan = getUserPlan(user);
   const reviewAccessEnabled = isReviewAccessEnabled();
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
-  const planSummary = getPlanSummary(user, orgType, account);
+  const planSummary = getPlanSummary(user, orgType, account, ownedOrganizations);
   const isPrimaryHouseholdOrg = orgType === ORG_TYPES.PERSONAL;
   const canChangeOrgType = (user?.role === "admin" || canChangeOrgTypeFn(user)) && !isPrimaryHouseholdOrg;
   const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const showApartmentWhatsappField = isApartmentOrg;
-  const canManageSocietyPortal = Boolean(
-    user?.id &&
-    user?.role !== "admin" &&
-    isApartmentOrg &&
-    activeOrgId &&
-    canUseFeature(user, "residentPortal")
-  );
-  const societyPortalId = useMemo(() => buildSocietyPortalId(user?.id, activeOrgId), [activeOrgId, user?.id]);
-  const hasMemberPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
   const showOrgBusinessFields = !isPersonalOrg;
   const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
   const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
+  const paidOrgCount = getOwnedPaidOrgCount(ownedOrganizations);
+  const paidOrgLimit = getPaidOrgLimit(user);
   const paymentOrganizations = useMemo(() => {
     if (pendingNewOrgDraft) {
       return [{
@@ -515,9 +485,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const safeCustomers = customers || [];
     if (orgConfig.showCustomerFinancials === false) return safeCustomers;
     // Show any customer that was just added locally but isn't yet in the fetched insights
-    const insightIds = new Set(safeInsights.map(c => c.id));
-    const pending = safeCustomers.filter(c => c.id && !insightIds.has(c.id));
-    return [...safeInsights, ...pending];
+    const insightsById = new Map(safeInsights.map(c => [c.id, c]));
+    return safeCustomers.map(customer => ({
+      ...customer,
+      ...(insightsById.get(customer.id) || {})
+    }));
   }, [customers, customerInsights, orgConfig.showCustomerFinancials]);
   const filteredCustomerDirectory = useMemo(() => {
     const safeDirectory = customerDirectory || [];
@@ -582,37 +554,24 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setNotice({ id: Date.now(), message, tone, title });
   }
 
-  const loadSocietyPortalMeta = useCallback(async () => {
-    if (!canManageSocietyPortal) {
-      setSocietyPortalMeta(null);
-      setSocietyPortalInvites([]);
+  async function handleSwitchOrganization(target) {
+    const org = typeof target === "object"
+      ? target
+      : organizations.find(item => item.id === target || item.switchKey === target);
+    if (!org) {
+      showNotice("That Khata was not found.");
       return;
     }
-    setSocietyPortalLoading(true);
-    try {
-      const portal = await societyApi.getPortal(activeOrgId);
-      if (!portal) {
-        setSocietyPortalMeta(null);
-        setSocietyPortalInvites([]);
-        return;
-      }
-      setSocietyPortalMeta(portal);
-      const invites = Array.isArray(portal.invites) ? portal.invites : [];
-      setSocietyPortalInvites(invites);
-    } catch (err) {
-      logError("Society portal load error", err);
-      showNotice("Could not load resident access settings right now.");
-    } finally {
-      setSocietyPortalLoading(false);
+
+    let res = { success: true };
+    if (org.isShared) {
+      await switchToSharedOrg?.(org.switchKey || org.key);
+    } else if (activeSharedOrgKey) {
+      switchToOwnOrg?.(org.id);
+    } else {
+      res = await switchOrganization(org.id);
     }
-  }, [canManageSocietyPortal, activeOrgId]);
 
-  useEffect(() => {
-    loadSocietyPortalMeta();
-  }, [loadSocietyPortalMeta]);
-
-  async function handleSwitchOrganization(orgId) {
-    const res = await switchOrganization(orgId);
     if (res?.error) {
       showNotice(res.error);
       return;
@@ -809,12 +768,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
     if (navigationTarget.screen === "plan-request") {
       setPendingNewOrgDraft(null);
-      const defaultPaymentOrg = (ownedOrganizations || []).find(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
-      if (!defaultPaymentOrg) {
-        showNotice("Only Khata owners can manage subscriptions. Shared admin/view access cannot pay for this Khata.");
-        return;
-      }
-      setPaymentOrgId(defaultPaymentOrg.id);
+      setPaymentOrgId("");
       setScreen("plan-request");
       return;
     }
@@ -915,6 +869,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   const saveAcc = async () => {
+    if (isViewerMode) return;
     const cleanEmail = showOrgBusinessFields ? normalizeEmail(accForm.email) : "";
     const cleanPhoneNumber = showOrgBusinessFields ? sanitizePhoneDigits(accForm.phoneNumber) : "";
     const cleanPhoneCountryCode = accForm.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
@@ -1001,6 +956,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   };
 
   function openNewCust() {
+    if (isViewerMode) return;
     const next = buildCustomerFormState({}, orgType);
     (orgConfig.customerFields || []).forEach(field => {
       next[field.key] = field.type === "select" ? field.options?.[0] || "" : "";
@@ -1014,6 +970,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openEditCust(customer) {
+    if (!(canManageRecord?.(customer) ?? !isViewerMode)) return;
     setCustForm(buildCustomerFormState(customer, orgType));
     setEditCust(customer);
     setScreen("customer-form");
@@ -1022,12 +979,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function openCustomerDetail(customer) {
     const detail = orgConfig.showCustomerFinancials === false
       ? customer
-      : customerInsights.find(item => item.id === customer.id) || customer;
+      : customerDirectory.find(item => item.id === customer.id) || customer;
     setSelectedCustomer(detail);
     setScreen("customer-detail");
   }
 
   function saveCust() {
+    if (editCust ? !(canManageRecord?.(editCust) ?? !isViewerMode) : isViewerMode) return;
     const cleanName = String(custForm?.name || "").trim();
     const cleanEmail = showFullCustomerForm ? normalizeEmail(custForm?.email) : "";
     const canCapturePhone = showPersonContactFields || showApartmentWhatsappField;
@@ -1125,6 +1083,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openNewOrgRecord() {
+    if (isViewerMode) return;
     if (!activeOrgSection) return;
     setEditOrgRecord(null);
     const base = activeOrgSection.empty();
@@ -1136,6 +1095,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openEditOrgRecord(record) {
+    if (!(canManageRecord?.(record) ?? !isViewerMode)) return;
     setEditOrgRecord(record);
     setOrgRecordForm({
       ...record,
@@ -1147,6 +1107,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function saveOrgSectionRecord() {
+    if (editOrgRecord ? !(canManageRecord?.(editOrgRecord) ?? !isViewerMode) : isViewerMode) return;
     if (!activeOrgSection || !orgRecordForm) return;
 
     const requiredField = activeOrgSection.fields.find(field => field.required && !String(orgRecordForm[field.key] || "").trim());
@@ -1178,6 +1139,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openNewStaff() {
+    if (isViewerMode) return;
     setEditStaff(null);
     setStaffForm({
       name: "",
@@ -1193,6 +1155,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openEditStaff(member) {
+    if (!(canManageRecord?.(member) ?? !isViewerMode)) return;
     setEditStaff(member);
     const phoneParts = splitPhoneNumber(member.phone || "", member.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
     setStaffForm({
@@ -1204,6 +1167,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   async function saveStaffMember() {
+    if (editStaff ? !(canManageRecord?.(editStaff) ?? !isViewerMode) : isViewerMode) return;
     const name = String(staffForm?.name || "").trim();
     const cleanPhoneNumber = sanitizePhoneDigits(staffForm?.phoneNumber || "");
     const cleanPhoneCountryCode = staffForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
@@ -1378,155 +1342,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     setShowReportPicker(false);
   }
 
-  async function saveSocietyPortal() {
-    if (!canManageSocietyPortal) return;
-    try {
-      await societyApi.savePortal(activeOrgId, account?.name || "Society");
-      await loadSocietyPortalMeta();
-      showNotice("Resident read-only access is saved.", "success");
-    } catch (err) {
-      logError("Society portal save error", err);
-      showNotice("Could not save resident access settings.");
-    }
-  }
-
-  async function createMemberInvite() {
-    const inviteEmail = normalizeEmail(memberInviteForm.email || "");
-    const flatNumber = String(memberInviteForm.flatNumber || "").trim().toUpperCase();
-    if (!inviteEmail || !isValidEmail(inviteEmail)) {
-      showNotice("Enter a valid resident email for this invite.");
-      return;
-    }
-    if (!flatNumber) {
-      showNotice("Select a flat number for this resident invite.");
-      return;
-    }
-    try {
-      const invite = await societyApi.createInvite(activeOrgId, flatNumber, inviteEmail);
-      setMemberInviteForm({ email: "", flatNumber: "" });
-      await loadSocietyPortalMeta();
-      showNotice(`Invite created for ${flatNumber}. Share code: ${invite.id}`, "success");
-    } catch (err) {
-      logError("Create member invite error", err);
-      showNotice("Could not create resident invite.");
-    }
-  }
-
-  async function deactivateMemberInvite(inviteCode) {
-    try {
-      await societyApi.deactivateInvite(inviteCode);
-      await loadSocietyPortalMeta();
-      showNotice("Invite deactivated.", "success");
-    } catch (err) {
-      logError("Deactivate invite error", err);
-      showNotice("Could not deactivate invite.");
-    }
-  }
-
-  async function publishSocietyPortalRecords() {
-    if (!canManageSocietyPortal) return;
-    const period = String(societyPortalForm.month || "").trim();
-    if (!/^\d{4}-\d{2}$/.test(period)) {
-      showNotice("Choose a valid month before publishing.");
-      return;
-    }
-    const symbol = currency?.symbol || "Rs";
-    const flats = (customers || []).filter(item => String(item?.name || "").trim());
-    const maintenanceRows = (income || []).filter(item => {
-      const itemPeriod = item.collectionMonth || item.month || item.date?.slice(0, 7);
-      return itemPeriod === period && String(item.collectionType || "").trim() === "Monthly Maintenance";
-    });
-    const expenseAmount = (expenses || []).reduce((sum, item) => {
-      const itemPeriod = item.month || item.date?.slice(0, 7);
-      return itemPeriod === period ? sum + Number(item.amount || 0) : sum;
-    }, 0);
-    const defaultMonthlyAmount = Number(account?.monthlyMaintenanceAmount || 0);
-    const flatRows = flats.map(flat => {
-      const flatNumber = String(flat.name || "").trim();
-      const expectedAmount = Number(flat.monthlyMaintenance || defaultMonthlyAmount || 0);
-      const paidAmount = maintenanceRows
-        .filter(item => String(item.flatNumber || "").trim() === flatNumber)
-        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-      const pendingAmount = Math.max(0, expectedAmount - paidAmount);
-      return {
-        flatNumber,
-        ownerName: flat.ownerName || "",
-        period,
-        expectedAmount,
-        paidAmount,
-        pendingAmount,
-        status: pendingAmount <= 0 ? "paid" : paidAmount > 0 ? "partial" : "pending",
-        currencySymbol: symbol,
-        updatedAt: new Date().toISOString()
-      };
-    });
-    const expectedAmount = flatRows.reduce((sum, row) => sum + Number(row.expectedAmount || 0), 0);
-    const collectedAmount = flatRows.reduce((sum, row) => sum + Number(row.paidAmount || 0), 0);
-    const pendingAmount = Math.max(0, expectedAmount - collectedAmount);
-    const notice = String(societyPortalForm.notice || "").trim();
-    try {
-      await societyApi.publish(activeOrgId, period, {
-        expectedAmount,
-        collectedAmount,
-        pendingAmount,
-        expenseAmount,
-        totalFlats: flatRows.length,
-        paidFlats: flatRows.filter(row => row.status === "paid").length,
-        pendingFlats: flatRows.filter(row => row.status !== "paid").length,
-        notice,
-        notices: notice ? [notice] : [],
-        currencySymbol: symbol
-      }, flatRows);
-      showNotice(`Published resident records for ${period}.`, "success");
-    } catch (err) {
-      logError("Society publish error", err);
-      showNotice("Could not publish resident records.");
-    }
-  }
-
-  async function joinSocietyPortalWithInvite() {
-    const inviteCode = normalizeInviteCode(societyJoinForm.inviteCode);
-    if (!inviteCode) {
-      showNotice("Enter invite code shared by your apartment admin.");
-      return;
-    }
-    try {
-      const result = await societyApi.join(inviteCode);
-      setUser(prev => prev ? ({
-        ...prev,
-        societyPortalId:   result.societyPortalId,
-        societyPortalRole: result.societyPortalRole,
-        societyFlatNumber: result.societyFlatNumber,
-        societyInviteCode: result.societyInviteCode
-      }) : prev);
-      setSocietyJoinForm({ inviteCode: "" });
-      showNotice("Resident access joined successfully.", "success");
-      setScreen("main");
-    } catch (err) {
-      logError("Join portal error", err);
-      showNotice(err.message || "Could not join resident access with this code.");
-    }
-  }
-
-  async function leaveSocietyPortalAccess() {
-    if (!user?.societyPortalId) return;
-    try {
-      await societyApi.leave();
-      setUser(prev => prev ? ({
-        ...prev,
-        societyPortalId:   "",
-        societyPortalRole: "",
-        societyFlatNumber: "",
-        societyInviteCode: ""
-      }) : prev);
-      showNotice("You left resident access.", "success");
-      setScreen("main");
-    } catch (err) {
-      logError("Leave portal error", err);
-      showNotice("Could not leave resident access right now.");
-    }
-  }
-
   async function saveNotificationSettings() {
     if (!canUseFeature(user, "notifications")) {
       setUpgradeInfo(getUpgradeCopy("notifications"));
@@ -1554,15 +1369,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function submitPlanRequest() {
     const targetOrg = selectedPaymentOrg;
-    const targetOrgId = targetOrg?.id || "";
+    const targetOrgId = targetOrg?.id || (pendingNewOrgDraft?.orgId || "account_plan");
     const targetOrgType = getOrgType(targetOrg?.organizationType || orgType);
-    const targetOrgName = String(targetOrg?.name || account?.name || "Current Khata").trim();
+    const targetOrgName = String(targetOrg?.name || pendingNewOrgDraft?.name || account?.name || "EazyKhata account").trim();
+    const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
     if (!pendingNewOrgDraft && targetOrg?.isOwned === false) {
       showNotice("Only the Khata owner can pay for this subscription.");
       return;
     }
-    if (!targetOrgId) {
-      showNotice("Please select the Khata you want to upgrade before starting payment.");
+    if (pendingNewOrgDraft && !canCreatePaidOrg(user, ownedOrganizations, targetPlan)) {
+      showNotice(`${PLAN_LABELS[targetPlan]} does not have enough Khata slots for this new Khata. Choose Business or remove another paid Khata.`);
       return;
     }
 
@@ -1570,9 +1386,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     // Send users to the website to complete the upgrade there.
     if (isNative) {
       const upgradeUrl = new URL(APP_UPGRADE_URL);
-      upgradeUrl.searchParams.set("orgId", targetOrgId);
-      upgradeUrl.searchParams.set("orgName", targetOrgName);
-      upgradeUrl.searchParams.set("orgType", targetOrgType);
+      upgradeUrl.searchParams.set("plan", targetPlan);
+      upgradeUrl.searchParams.set("billing", planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY);
+      if (pendingNewOrgDraft) {
+        upgradeUrl.searchParams.set("orgId", targetOrgId);
+        upgradeUrl.searchParams.set("orgName", targetOrgName);
+        upgradeUrl.searchParams.set("orgType", targetOrgType);
+      }
       import("@capacitor/browser").then(({ Browser }) => {
         Browser.open({ url: upgradeUrl.toString() });
       }).catch(() => {
@@ -1582,7 +1402,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
 
-    const targetPlan = PLANS.PRO;
     const billingCycle = planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY;
     const cleanNote = planRequestForm.note.trim();
 
@@ -1614,7 +1433,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         amount: orderData.amount,
         currency: orderData.currency || "INR",
         name: "EazyKhata",
-        description: `${PLAN_LABELS[targetPlan] || "Pro"} for ${targetOrgName}`,
+        description: `${PLAN_LABELS[targetPlan] || "Plan"} membership`,
         order_id: orderData.orderId,
         method: {
           upi: true,
@@ -1656,20 +1475,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             const durationDays = billingCycle === BILLING_CYCLES.YEARLY ? 365 : 30;
             const endsAt = new Date(Date.now() + durationDays * 86400000).toISOString();
             if (pendingNewOrgDraft) {
-              const created = await createOrganization({ ...pendingNewOrgDraft, orgId: targetOrgId });
+              const created = await createOrganization({ ...pendingNewOrgDraft, orgId: targetOrgId, planOverride: targetPlan });
               if (created?.error) {
                 showNotice(`Payment received, but Khata creation needs support: ${created.error}`);
                 return;
               }
               setPendingNewOrgDraft(null);
-            } else if (targetOrgId === activeOrgId) {
-              saveAccount({
-                ...account,
-                plan: targetPlan,
-                subscriptionStatus: "active",
-                subscriptionEndsAt: endsAt,
-                billingCycle
-              });
             }
             setUser(prev => prev ? {
               ...prev,
@@ -1680,9 +1491,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               updatedAt: nowIso
             } : prev);
 
-            setPlanRequestForm({ billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
+            setPlanRequestForm({ targetPlan: PLANS.PRO, billingCycle: BILLING_CYCLES.MONTHLY, note: "" });
             setScreen("main");
-            showNotice(`Payment successful! Pro is now active for ${targetOrgName} until ${formatSubscriptionDate(endsAt)}.`, "success");
+            showNotice(`Payment successful! ${PLAN_LABELS[targetPlan]} is active until ${formatSubscriptionDate(endsAt)}.`, "success");
           } catch (verifyErr) {
             logError("Payment verification error", verifyErr);
             showNotice(verifyErr?.message || "Payment received but activation is pending. Please wait a moment — your plan will update automatically.");
@@ -1721,11 +1532,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   function emailPaymentProof() {
     const targetOrg = selectedPaymentOrg;
     const targetOrgType = getOrgType(targetOrg?.organizationType || orgType);
-    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, PLANS.PRO, targetOrgType);
-    const paymentOrgName = String(targetOrg?.name || account?.name || "Current Khata").trim();
-    const subject = encodeURIComponent(`EazyKhata payment proof - ${paymentOrgName}`);
+    const targetPlan = planRequestForm.targetPlan || PLANS.PRO;
+    const amount = getBillingAmount(planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY, targetPlan, targetOrgType);
+    const paymentOrgName = String(targetOrg?.name || pendingNewOrgDraft?.name || account?.name || "EazyKhata account").trim();
+    const subject = encodeURIComponent(`EazyKhata payment proof - ${PLAN_LABELS[targetPlan] || targetPlan}`);
     const body = encodeURIComponent(
-      `Hello,\n\nI have completed the UPI payment for EazyKhata.\n\nKhata: ${paymentOrgName}\nKhata ID: ${targetOrg?.id || ""}\nKhata type: ${getOrgConfig(targetOrgType)?.typeLabel || targetOrgType}\nPlan: Pro\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nTransaction ID: ${planRequestForm.transactionId || ""}\n\nPlease find my payment screenshot attached.\n\nThanks.`
+      `Hello,\n\nI have completed the payment for EazyKhata.\n\nPlan: ${PLAN_LABELS[targetPlan] || targetPlan}\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nKhata context: ${paymentOrgName}\nKhata type: ${getOrgConfig(targetOrgType)?.typeLabel || targetOrgType}\n\nPlease find my payment screenshot attached.\n\nThanks.`
     );
     window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
   }
@@ -1853,6 +1665,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function handleApartmentImportFile(event) {
+    if (isViewerMode) return;
     const file = event?.target?.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -1866,6 +1679,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function buildApartmentImportPreview(sourceText = importCsvText) {
+    if (isViewerMode) return;
     const text = String(sourceText || "").trim();
     if (!text) {
       setImportPreview(null);
@@ -1923,6 +1737,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function applyApartmentImport() {
+    if (isViewerMode) return;
     if (!importPreview?.validRows?.length) {
       showNotice("No valid rows to import. Please check your file and preview.");
       return;
@@ -2115,7 +1930,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 }} />
               )}
               <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => { setScreen("customers"); dismissCustCoach(); }} />
-              {customers.length === 0 && !coachCustSeen && (
+              {customers.length === 0 && !coachCustSeen && !isViewerMode && (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "color-mix(in srgb, var(--saffron) 10%, var(--surface-high))", borderTop: "1px solid color-mix(in srgb, var(--saffron) 18%, var(--border))", boxSizing: "border-box" }}>
                   <span style={{ fontSize: 18 }}>👆</span>
                   <div
@@ -2144,7 +1959,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   onClick={() => { setScreen("staff"); dismissStaffCoach(); }}
                 />
               )}
-              {isFreelancerOrg && (orgRecords?.staff || []).length === 0 && !coachStaffSeen && (
+              {isFreelancerOrg && (orgRecords?.staff || []).length === 0 && !coachStaffSeen && !isViewerMode && (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "color-mix(in srgb, var(--saffron) 10%, var(--surface-high))", borderTop: "1px solid color-mix(in srgb, var(--saffron) 18%, var(--border))", boxSizing: "border-box" }}>
                   <span style={{ fontSize: 18 }}>👆</span>
                   <div
@@ -2165,7 +1980,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   >×</button>
                 </div>
               )}
-              {isFreelancerOrg && (
+              {isFreelancerOrg && !isViewerMode && (
                 <MenuRow icon="↑" label="Import Data" sub="Import payments, spends, or invoices from a CSV file" onClick={() => setScreen("business-import")} />
               )}
               {!isPersonalOrg && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />}
@@ -2177,21 +1992,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "invoices" } }))}
                 />
               )}
-              {isApartmentOrg && (
+              {isApartmentOrg && !isViewerMode && (
                 <MenuRow
                   icon="I"
                   label="Import Apartment Data"
                   sub="Upload flats, collections, expenses, dues, and opening balances in one CSV"
                   onClick={() => setScreen("apartment-import")}
-                />
-              )}
-              {isApartmentOrg && (
-                <MenuRow
-                  icon="M"
-                  label="Apartment Resident Portal"
-                  badge="Coming Soon"
-                  sub="Resident portal is disabled right now and will return in a later release."
-                  onClick={() => setUpgradeInfo(getUpgradeCopy("residentPortal"))}
                 />
               )}
               {visibleOrgSections.map(section => (
@@ -2331,6 +2137,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             onClose={() => setShowOrgSwitcher(false)}
             organizations={organizations}
             activeOrgId={activeOrgId}
+            activeSharedOrgKey={activeSharedOrgKey}
             onSwitch={handleSwitchOrganization}
             onDelete={handleDeleteOrganization}
           />
@@ -2356,10 +2163,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", lineHeight: 1.12 }}>{user?.name}</div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 2 }}>{user?.phone}</div>
             <div className="ledger-inline-note" style={{ marginTop: 7, padding: 1 }}>{planSummary.title}, {planSummary.message}</div>
-            {!reviewAccessEnabled && account?.subscriptionStatus === "trial" && account?.subscriptionEndsAt && (
-              <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>This Khata trial ends on {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
+            {!reviewAccessEnabled && user?.subscriptionStatus === "trial" && user?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--gold)", marginTop: 4 }}>Your trial ends on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
             )}
-            {!reviewAccessEnabled && isPaidActive(user, account) && account?.subscriptionStatus === "active" && account?.subscriptionEndsAt && (
+            {!reviewAccessEnabled && isPaidActive(user) && user?.subscriptionStatus === "active" && user?.subscriptionEndsAt && (
+              <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>{PLAN_LABELS[currentPlan] || "Plan"} active - renews {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
+            )}
+            {false && !reviewAccessEnabled && isPaidActive(user) && user?.subscriptionStatus === "active" && user?.subscriptionEndsAt && (
               <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 4 }}>Khata Pro active — renews {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
             )}
           </div>
@@ -2386,11 +2196,11 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
                 : reviewAccessEnabled
                 ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
-                : isPaidActive(user, account) && account?.subscriptionStatus === "active"
-                  ? `This Khata's Pro plan is active${account?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(account.subscriptionEndsAt)}` : ""}. Reports, PDF exports, alerts, and advanced insights are unlocked for this Khata.`
-                  : currentPlan === PLANS.PRO && account?.subscriptionStatus === "trial"
-                    ? "This Khata is currently on a 30-day Pro trial. Reports, alerts, PDF exports, and advanced insights are unlocked until the trial ends."
-                    : "Free plan covers basic bookkeeping. Pro unlocks reports, alerts, PDF exports, advanced insights, and reminders."}
+                : isPaidActive(user) && user?.subscriptionStatus === "active"
+                  ? `${PLAN_LABELS[currentPlan] || "Plan"} is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. You are using ${paidOrgCount}/${paidOrgLimit} paid Khata slots.`
+                  : currentPlan !== PLANS.FREE && user?.subscriptionStatus === "trial"
+                    ? `${PLAN_LABELS[currentPlan] || "Pro"} trial is active. Household is free, and paid Khatas use your plan slots.`
+                    : "Household is free. Pro gives 2 paid Khatas; Business gives 5 paid Khatas."}
             </div>
             {!isPersonalOrg && (
               <>
@@ -2406,23 +2216,25 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     </div>
                     <div>
                       <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", marginBottom: 6 }}>
-                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
+                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro / Business"}
                       </div>
                         <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>
-                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "PDF exports, reports, smart alerts, advanced dashboard, and priority business tools. New users get a 30-day free trial, then Rs 69/month or Rs 699/year."}
+                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "Pro: 2 paid Khatas for Rs 99/month or Rs 999/year. Business: 5 paid Khatas for Rs 199/month or Rs 1999/year."}
                       </div>
                     </div>
                   </div>
                 </div>
-                {isPaidActive(user, account) && account?.subscriptionStatus === "active" ? (
+                {isPaidActive(user) && user?.subscriptionStatus === "active" ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface-high)", borderRadius: 8, border: "1px solid var(--border)" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>Pro Plan Active</div>
-                      {account?.subscriptionEndsAt && (
-                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(account.subscriptionEndsAt)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{PLAN_LABELS[currentPlan] || "Plan"} Active</div>
+                      <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>{paidOrgCount}/{paidOrgLimit} paid Khatas used</div>
+                      {user?.subscriptionEndsAt && (
+                        <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
                       )}
                     </div>
+                    <button className="btn-secondary" onClick={() => { setPendingNewOrgDraft(null); setPaymentOrgId(""); setScreen("plan-request"); }}>Change Plan</button>
                   </div>
                 ) : (
                   <button
@@ -2431,12 +2243,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     onClick={() => {
                       if (!reviewAccessEnabled) {
                         setPendingNewOrgDraft(null);
-                        const defaultPaymentOrg = (ownedOrganizations || []).find(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
-                        if (!defaultPaymentOrg) {
-                          showNotice("Only Khata owners can manage subscriptions. Shared admin/view access cannot pay for this Khata.");
-                          return;
-                        }
-                        setPaymentOrgId(defaultPaymentOrg.id);
+                        setPaymentOrgId("");
                         setScreen("plan-request");
                       }
                     }}
@@ -2517,6 +2324,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           onClose={() => setShowOrgSwitcher(false)}
           organizations={organizations}
           activeOrgId={activeOrgId}
+          activeSharedOrgKey={activeSharedOrgKey}
           onSwitch={handleSwitchOrganization}
           onDelete={handleDeleteOrganization}
         />
@@ -2635,6 +2443,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onRemoveStaff={id => removeOrgRecord("staff", id)}
         onBackToList={() => setScreen("staff")}
         onClose={() => setScreen("main")}
+        canCreateRecords={!isViewerMode}
+        canManageRecord={canManageRecord}
       />
     );
   }
@@ -2645,7 +2455,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
-  if (screen === "business-import" && isFreelancerOrg) {
+  if (screen === "business-import" && isFreelancerOrg && !isViewerMode) {
     return withNotice(
       <BusinessImportScreen
         onClose={() => setScreen("main")}
@@ -2666,7 +2476,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       <AccountModal
         form={accForm}
         onFormChange={setAccForm}
-        onSave={saveAcc}
+        onSave={!isViewerMode ? saveAcc : undefined}
         onClose={() => setScreen("main")}
         orgConfig={orgConfig}
         isApartmentOrg={isApartmentOrg}
@@ -2685,35 +2495,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   if (screen === "create-org") {
     if (user?.role === "admin") return null;
-
-    // At plan limit (Pro: 2 Khatas max)
-    if (false && !canCreateOrganization) {
-      const atProMax = false;
-      return withNotice(
-        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={atProMax ? () => setScreen("main") : () => setScreen("plan-request")} saveLabel={atProMax ? "Back" : "Upgrade to Pro — Rs 69/mo"} canSave accentColor="var(--blue)">
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              {atProMax
-                ? "You have reached the maximum of 2 Khatas on the Pro plan: one permanent Household and one extra work Khata."
-                : "Your subscription has ended. Upgrade to Pro to create or manage Khatas."}
-            </div>
-          </div>
-        </Modal>
-      );
-    }
-
-    // Trial user with 1+ org: show upgrade prompt
-    if (false) {
-      return withNotice(
-        <Modal title="New Khata" onClose={() => setScreen("main")} onSave={() => setScreen("plan-request")} saveLabel="Upgrade to Pro — Rs 69/mo" canSave accentColor="var(--accent)">
-          <div className="card" style={{ padding: 14 }}>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-              Your trial includes 1 Khata. Upgrade to Pro for 2 Khatas total: one permanent Household plus one Small Business or Apartment Khata.
-            </div>
-          </div>
-        </Modal>
-      );
-    }
 
     // Paid (or trial with 0 orgs): show create form filtered to unowned types
     const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType);
@@ -2751,12 +2532,15 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         location: cleanLocation,
         address: cleanAddress
       };
-      const existingWorkOrgCount = organizations.filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL).length;
-      if (existingWorkOrgCount > 0) {
+      if (newOrgType !== ORG_TYPES.PERSONAL && !canCreatePaidOrg(user, ownedOrganizations)) {
         setPendingNewOrgDraft(draft);
         setPaymentOrgId(draft.orgId);
+        setPlanRequestForm(current => ({
+          ...current,
+          targetPlan: canCreatePaidOrg(user, ownedOrganizations, PLANS.PRO) ? PLANS.PRO : PLANS.BUSINESS
+        }));
         setScreen("plan-request");
-        showNotice("Complete payment to create and activate this Khata.");
+        showNotice("Choose a plan to create and activate this Khata.");
         return;
       }
       const res = await createOrganization(draft);
@@ -2888,32 +2672,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         expensesLoaded={collectionFetched?.expenses ?? false}
         incomeLoaded={collectionFetched?.income ?? false}
         canManageRecord={canManageRecord}
-      />
-    );
-  }
-
-  if (screen === "society-portal" || screen === "society-member-access") {
-    return withNotice(
-      <SocietyPortalScreen
-        screen={screen}
-        user={user}
-        customers={customers}
-        societyPortalLoading={societyPortalLoading}
-        societyPortalInvites={societyPortalInvites}
-        memberInviteForm={memberInviteForm}
-        onMemberInviteFormChange={setMemberInviteForm}
-        societyPortalForm={societyPortalForm}
-        onSocietyPortalFormChange={setSocietyPortalForm}
-        societyJoinForm={societyJoinForm}
-        onSocietyJoinFormChange={setSocietyJoinForm}
-        hasMemberPortalAccess={hasMemberPortalAccess}
-        onCreateMemberInvite={createMemberInvite}
-        onDeactivateMemberInvite={deactivateMemberInvite}
-        onPublish={publishSocietyPortalRecords}
-        onJoin={joinSocietyPortalWithInvite}
-        onLeave={leaveSocietyPortalAccess}
-        normalizeInviteCode={normalizeInviteCode}
-        onClose={() => setScreen("main")}
+        canCreateRecords={!isViewerMode}
       />
     );
   }
@@ -2944,7 +2703,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
-  if (screen === "apartment-import" && isApartmentOrg) {
+  if (screen === "apartment-import" && isApartmentOrg && !isViewerMode) {
     return withNotice(
       <Modal
         title="Apartment Data Import"
@@ -3026,7 +2785,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   if (screen === "org-records" && activeOrgSection) {
     const items = orgRecords?.[activeOrgSection.key] || [];
     return withNotice(
-      <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={openNewOrgRecord} saveLabel={`Add ${activeOrgSection.entryLabel}`}>
+      <Modal title={activeOrgSection.label} onClose={() => setScreen("main")} onSave={!isViewerMode ? openNewOrgRecord : undefined} saveLabel={`Add ${activeOrgSection.entryLabel}`}>
         {items.length === 0 ? (
           <WorkflowSetupCard
             title={`Add your first ${activeOrgSection.entryLabel.toLowerCase()}`}
@@ -3043,14 +2802,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   activeOrgSection.fields.slice(1).map(field => item[field.key]).filter(Boolean).join(" · "),
                   activeOrgSection.key === "services" ? `${Array.isArray(item.products) ? item.products.length : 0} product(s)` : ""
                 ].filter(Boolean).join(" · ")}
-                actions={[
+                actions={(canManageRecord?.(item) ?? !isViewerMode) ? [
                   { label: "Edit", onClick: () => openEditOrgRecord(item), tone: "blue" },
                   {
                     label: "Delete",
                     onClick: async () => { if (await confirm(`Remove this ${activeOrgSection.entryLabel.toLowerCase()}?`, { title: "Delete Record", confirmLabel: "Delete" })) removeOrgRecord(activeOrgSection.key, item.id); },
                     tone: "danger"
                   }
-                ]}
+                ] : []}
               />
             ))}
           </div>
@@ -3061,7 +2820,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   if (screen === "org-record-form" && activeOrgSection && orgRecordForm) {
     return withNotice(
-      <Modal title={editOrgRecord ? `Edit ${activeOrgSection.entryLabel}` : `New ${activeOrgSection.entryLabel}`} onClose={() => setScreen("org-records")} onSave={saveOrgSectionRecord} canSave={true}>
+      <Modal title={editOrgRecord ? `Edit ${activeOrgSection.entryLabel}` : `New ${activeOrgSection.entryLabel}`} onClose={() => setScreen("org-records")} onSave={(editOrgRecord ? (canManageRecord?.(editOrgRecord) ?? !isViewerMode) : !isViewerMode) ? saveOrgSectionRecord : undefined} canSave={true}>
         {activeOrgSection.fields.map(field => (
           <Field key={field.key} label={field.label} required={Boolean(field.required)}>
             {renderDynamicField(field, orgRecordForm[field.key], value => setOrgRecordForm(current => ({ ...current, [field.key]: value })))}
@@ -3256,7 +3015,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         orgName={selectedPaymentOrg?.name || account?.name || ""}
         orgId={selectedPaymentOrg?.id || activeOrgId || ""}
         user={user}
-        organizations={paymentOrganizations}
+        organizations={ownedOrganizations}
         selectedOrgId={paymentOrgId || selectedPaymentOrg?.id || ""}
         onSelectedOrgIdChange={setPaymentOrgId}
         lockedOrgSelection={Boolean(pendingNewOrgDraft)}

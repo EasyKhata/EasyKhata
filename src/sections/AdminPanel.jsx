@@ -359,7 +359,6 @@ export default function AdminPanel({ year, month }) {
     let totalOrgRecords = 0;
     let activatedUsers = 0;
     let multiOrgUsers = 0;
-    let residentPortalUsers = 0;
     let onboardingCompletedUsers = 0;
     let activeSevenDays = 0;
     let activeThirtyDays = 0;
@@ -377,7 +376,6 @@ export default function AdminPanel({ year, month }) {
       totalSessionMs += entry.totalSessionMs;
       if (entry.totalEntries > 0) activatedUsers += 1;
       if (entry.orgCount > 1) multiOrgUsers += 1;
-      if (entry.societyPortalId) residentPortalUsers += 1;
       if (entry.onboardingSeenAt) onboardingCompletedUsers += 1;
       if (entry.daysSinceActivity !== null && entry.daysSinceActivity <= 7) activeSevenDays += 1;
       if (entry.daysSinceActivity !== null && entry.daysSinceActivity <= 30) activeThirtyDays += 1;
@@ -546,7 +544,6 @@ export default function AdminPanel({ year, month }) {
         dormantUsers,
         powerUsers,
         paidAtRisk,
-        residentPortalUsers,
         onboardingCompletedUsers,
         requestBacklog,
         supportOpen: openSupportTickets.length,
@@ -601,9 +598,6 @@ export default function AdminPanel({ year, month }) {
       Number(snapshotStats?.totalUsers || 0) > 0
         ? Math.round((Number(snapshotStats?.premiumUsers || 0) / Number(snapshotStats?.totalUsers || 1)) * 100)
         : analytics.stats.premiumShare
-  };
-  const collaborationStats = {
-    residentPortalUsers: areOrgDerivationsReady ? Number(snapshotStats?.residentPortalUsers ?? analytics.stats.residentPortalUsers) : analytics.stats.residentPortalUsers
   };
   const distributionStats = {
     planMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.planMix) ? snapshotDistributions.planMix : analytics.distributions.planMix,
@@ -736,7 +730,7 @@ export default function AdminPanel({ year, month }) {
             <MetricTile label="Pending Value" value={fmtMoney(analytics.stats.monthlyPendingAmount, "Rs ")} sub={`${analytics.stats.pendingRequests} awaiting review`} color="var(--gold)" />
             <MetricTile label="Rejected" value={analytics.stats.rejectedRequests} sub="Needs follow-up" color="var(--danger)" />
             <MetricTile label="Dormant Paid" value={analytics.stats.paidAtRisk} sub="Retention risk" color="var(--danger)" />
-            <MetricTile label="Resident Portals" value={collaborationStats.residentPortalUsers} sub="Apartment adoption" color="var(--purple)" />
+            <MetricTile label="Active 30 Days" value={analytics.stats.activeThirtyDays} sub="Recent usage" color="var(--purple)" />
           </div>
         </div>
 

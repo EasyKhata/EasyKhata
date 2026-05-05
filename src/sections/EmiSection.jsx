@@ -5,6 +5,7 @@ import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 import { getPersonalEmiAmount, getPersonalEmiDueDay, getPersonalEmiEndDate } from "../utils/analytics";
 import { hasMinLength, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { RupeeDisplay } from "../components/ui/reimagined";
+import { useConfirm } from "../context/DialogContext";
 
 const INDIAN_BANKS = [
   "State Bank of India (SBI)", "HDFC Bank", "ICICI Bank", "Axis Bank", "Kotak Mahindra Bank",
@@ -87,7 +88,7 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk }) {
+function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk, canManage = true }) {
   const isPaid = (item.paidMonths || []).includes(currentMk);
   const dueDay = Number(getPersonalEmiDueDay(item) || 1);
   const endDate = getPersonalEmiEndDate(item);
@@ -133,7 +134,7 @@ function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk }) {
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+      {canManage && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <button
           type="button"
           onClick={() => onTogglePaid(item)}
@@ -154,13 +155,15 @@ function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk }) {
           style={{ padding: "6px 10px", fontSize: 11, fontWeight: 600, borderRadius: 8, border: "none", background: "transparent", color: "var(--danger)", cursor: "pointer" }}>
           Delete
         </button>
-      </div>
+      </div>}
     </div>
   );
 }
 
 export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
+  const confirm = useConfirm();
+  const isViewerMode = d.isViewerMode;
   const resolvedOrgType = getOrgType(orgType);
   const config = useMemo(() => getOrgConfig(resolvedOrgType), [resolvedOrgType]);
   const emiSection = useMemo(() => (config.extraSections || []).find(section => section.key === "loans") || null, [config]);
@@ -223,6 +226,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   }
 
   function openNew() {
+    if (isViewerMode) return;
     if (!hasHouseholdPeople) {
       openPeopleManager();
       return;
@@ -247,6 +251,7 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
   }
 
   function openEdit(record) {
+    if (!(d.canManageRecord?.(record) ?? !isViewerMode)) return;
     setEditId(record.id);
     setForm({
       ...buildBlankForm(emiSection),
@@ -271,16 +276,42 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: "" }));
   }
 
-  function togglePaid(item) {
-    const existing = item.paidMonths || [];
+  async function togglePaid(item) {
+    if (!(d.canManageRecord?.(item) ?? !isViewerMode)) return;
+    const existing = Array.isArray(item.paidMonths) ? item.paidMonths : [];
     const isPaid = existing.includes(currentMk);
-    d.updateOrgRecord("loans", {
-      ...item,
-      paidMonths: isPaid ? existing.filter(m => m !== currentMk) : [...existing, currentMk]
+    const ok = await confirm(
+      isPaid
+        ? `Mark ${item.loanName || "this EMI"} as unpaid for ${MONTHS[month]} ${year}?`
+        : `Mark ${item.loanName || "this EMI"} as paid for ${MONTHS[month]} ${year}?`,
+      {
+        title: isPaid ? "Undo EMI Payment" : "Mark EMI Paid",
+        confirmLabel: isPaid ? "Mark Unpaid" : "Mark Paid"
+      }
+    );
+    if (!ok) return;
+    await d.updateOrgRecord("loans", {
+      id: item.id,
+      paidMonths: isPaid ? existing.filter(m => m !== currentMk) : [...new Set([...existing, currentMk])]
     });
+    await d.refreshActiveOrgData?.({ includeOrgRecords: true });
+  }
+
+  async function confirmDeleteEmi(id) {
+    const item = loans.find(record => record.id === id);
+    if (!(d.canManageRecord?.(item) ?? !isViewerMode)) return;
+    if (await confirm(`Delete ${item?.loanName || "this EMI"}?`, { title: "Delete EMI", confirmLabel: "Delete" })) {
+      d.removeOrgRecord("loans", id);
+    }
   }
 
   function save() {
+    if (editId) {
+      const existing = loans.find(item => item.id === editId);
+      if (!(d.canManageRecord?.(existing) ?? !isViewerMode)) return;
+    } else if (isViewerMode) {
+      return;
+    }
     const nextErrors = {};
     if (!hasMinLength(form.loanName, 2)) nextErrors.loanName = "Enter the EMI or loan name.";
     if (!hasMinLength(form.lender, 2)) nextErrors.lender = "Enter the lender name.";
@@ -355,25 +386,25 @@ export default function EmiSection({ year, month, orgType, headerDatePicker }) {
 
         <div className="card">
           {!hasHouseholdPeople ? (
-            <WorkflowSetupCard title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel="Open People" onAction={openPeopleManager} tone="warning" />
+            <WorkflowSetupCard title="Add a person before tracking EMIs" message="Household EMI records are available only after you add at least one person in Khata." actionLabel={!isViewerMode ? "Open People" : undefined} onAction={!isViewerMode ? openPeopleManager : undefined} tone="warning" />
           ) : loans.length === 0 ? (
-            <WorkflowSetupCard title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel="Add EMI" onAction={openNew} tone="warning" />
+            <WorkflowSetupCard title="No EMI records yet" message="Add your home loan, vehicle loan, or other EMI commitments here." actionLabel={!isViewerMode ? "Add EMI" : undefined} onAction={!isViewerMode ? openNew : undefined} tone="warning" />
           ) : activeLoans.length === 0 ? (
-            <WorkflowSetupCard title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs only appear in months that fall between their start date and end date." actionLabel="Add EMI" onAction={openNew} tone="warning" />
+            <WorkflowSetupCard title={`No active EMIs for ${MONTHS[month]} ${year}`} message="EMIs only appear in months that fall between their start date and end date." actionLabel={!isViewerMode ? "Add EMI" : undefined} onAction={!isViewerMode ? openNew : undefined} tone="warning" />
           ) : filteredLoans.length === 0 ? (
             <div style={{ padding: "24px 20px", textAlign: "center", fontSize: 14, color: "var(--text-dim)" }}>
               No EMI records match this search.
             </div>
           ) : (
             filteredLoans.map(item => (
-              <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={id => d.removeOrgRecord("loans", id)} onTogglePaid={togglePaid} currentMk={currentMk} />
+              <EmiCard key={item.id} item={item} sym={sym} onEdit={openEdit} onDelete={confirmDeleteEmi} onTogglePaid={togglePaid} currentMk={currentMk} canManage={d.canManageRecord?.(item) ?? !isViewerMode} />
             ))
           )}
         </div>
       </div>
 
       {showForm && (
-        <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={save} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">
+        <Modal title={editId ? "Edit EMI" : "Add EMI"} onClose={closeForm} onSave={!isViewerMode ? save : undefined} saveLabel={editId ? "Update" : "Save"} canSave={!!String(form.loanName || "").trim()} accentColor="var(--gold)">
           <div className="ledger-form-grid">
             <div className="ledger-form-group">
               <div className="ledger-form-group-title">Primary details</div>

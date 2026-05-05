@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType, isSubscriptionActive } from "../utils/subscription";
+import { canCreatePaidOrg, getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType, isSubscriptionActive } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
@@ -31,6 +31,39 @@ const HOUSEHOLD_PRIMARY_PERSON_ID = "customer_primary_profile";
 // ── API shape ↔ DataContext shape mappers ─────────────────────────────────────
 
 // Flat API response → nested DataContext org object
+function unwrapRecords(payload, key = "") {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+
+  const directCandidates = [
+    payload.records,
+    payload.items,
+    payload.rows,
+    payload.data,
+    key ? payload[key] : null,
+    key ? payload.collections?.[key] : null,
+    key ? payload.org?.[key] : null,
+    key ? payload.organization?.[key] : null
+  ];
+
+  for (const candidate of directCandidates) {
+    if (Array.isArray(candidate)) return candidate;
+    if (candidate && typeof candidate === "object") {
+      const nested = unwrapRecords(candidate, key);
+      if (nested.length) return nested;
+    }
+  }
+
+  return [];
+}
+
+function pickApiRecords(primary, fallback = [], key = "") {
+  if (Array.isArray(primary)) return primary;
+  const unwrapped = unwrapRecords(primary, key);
+  if (unwrapped.length) return unwrapped;
+  return Array.isArray(fallback) ? fallback : [];
+}
+
 function fromApiOrg(apiOrg, collections = {}) {
   return {
     account: {
@@ -69,10 +102,10 @@ function fromApiOrg(apiOrg, collections = {}) {
     },
     budgets: apiOrg.budgets || {},
     notificationPrefs: { ...EMPTY_ORG_DATA.notificationPrefs, ...(apiOrg.notificationPrefs || {}) },
-    income: collections.income || apiOrg.income || [],
-    expenses: collections.expenses || apiOrg.expenses || [],
-    invoices: collections.invoices || apiOrg.invoices || [],
-    customers: collections.customers || apiOrg.customers || [],
+    income: pickApiRecords(collections.income ?? apiOrg.income ?? apiOrg.collections?.income, [], "income"),
+    expenses: pickApiRecords(collections.expenses ?? apiOrg.expenses ?? apiOrg.collections?.expenses, [], "expenses"),
+    invoices: pickApiRecords(collections.invoices ?? apiOrg.invoices ?? apiOrg.collections?.invoices, [], "invoices"),
+    customers: pickApiRecords(collections.customers ?? apiOrg.customers ?? apiOrg.collections?.customers, [], "customers"),
     orgRecords: collections.orgRecords || apiOrg.orgRecords || {}
   };
 }
@@ -168,6 +201,37 @@ function computeSyncDelta(baselineMap, current) {
     if (!currentMap.has(id)) deleteIds.push(id);
   }
   return { upsert, deleteIds };
+}
+
+function mergeOrgRecordsForLoad(serverRecords = {}, localRecords = {}) {
+  const merged = { ...(serverRecords || {}) };
+  Object.entries(localRecords || {}).forEach(([key, localItems]) => {
+    const serverItems = Array.isArray(merged[key]) ? merged[key] : [];
+    const byId = new Map(serverItems.filter(item => item?.id).map(item => [item.id, item]));
+    (Array.isArray(localItems) ? localItems : []).forEach(localItem => {
+      if (!localItem?.id) return;
+      const serverItem = byId.get(localItem.id);
+      if (!serverItem) {
+        byId.set(localItem.id, localItem);
+        return;
+      }
+      const serverUpdated = Date.parse(serverItem.updatedAt || serverItem.createdAt || "") || 0;
+      const localUpdated = Date.parse(localItem.updatedAt || localItem.createdAt || "") || 0;
+      const paidMonths = [
+        ...new Set([
+          ...(Array.isArray(serverItem.paidMonths) ? serverItem.paidMonths : []),
+          ...(Array.isArray(localItem.paidMonths) ? localItem.paidMonths : [])
+        ])
+      ];
+      byId.set(localItem.id, {
+        ...(localUpdated >= serverUpdated ? serverItem : localItem),
+        ...(localUpdated >= serverUpdated ? localItem : serverItem),
+        ...(paidMonths.length ? { paidMonths } : {})
+      });
+    });
+    merged[key] = Array.from(byId.values());
+  });
+  return merged;
 }
 
 function buildSharedOrgEntries(memberships = []) {
@@ -548,6 +612,7 @@ function clearSessionDraft(userId) {
 export function DataProvider({ children }) {
   const { user, setUser } = useAuth();
   const [data, setData] = useState(EMPTY_DATA);
+  const dataRef = useRef(EMPTY_DATA);
   const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
   const [ownedOrganizations, setOwnedOrganizations] = useState([]);
@@ -558,6 +623,7 @@ export function DataProvider({ children }) {
   const collectionFetchingRef = useRef({});
   const [activeSharedOrgKey, setActiveSharedOrgKey] = useState(null);
   const [activeSharedOrgRole, setActiveSharedOrgRole] = useState(null); // live role from orgMembers snapshot
+  const [sharedOrgsByKey, setSharedOrgsByKey] = useState({});
   const [ownDataReloadKey, setOwnDataReloadKey] = useState(0);
   const activeSharedOrgRef = useRef(null); // mirrors activeSharedOrgKey for use in callbacks
   const activeOrgType = getOrgType(data.account?.organizationType || user?.organizationType);
@@ -566,9 +632,17 @@ export function DataProvider({ children }) {
   const flushInFlightRef = useRef(false);
   const readOnlyNoticeAtRef = useRef(0);
   const collectionSyncRef = useRef({});
+  const activeOrgSyncQueueRef = useRef({});
+  const activeMutationQueueRef = useRef(Promise.resolve());
   // Delta write baseline: { [orgId]: { income: Map<id,serialized>, expenses: ..., ... } }
   // Initialized after each full load; updated after each successful delta sync.
   const lastSyncedRef = useRef({});
+  const requestedOwnOrgIdRef = useRef("");
+  const sharedOrgsUserIdRef = useRef("");
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   const mapOwnedOrganizations = useCallback((orgsMap = {}) => Object.entries(orgsMap || {}).map(([orgId, orgValue]) => ({
     id: orgId,
@@ -589,10 +663,29 @@ export function DataProvider({ children }) {
     )
   })), [user?.id]);
 
+  useEffect(() => {
+    if (!user?.id) {
+      sharedOrgsUserIdRef.current = "";
+      setSharedOrgsByKey({});
+      return;
+    }
+
+    const userSharedOrgs = user.sharedOrgs || {};
+    if (sharedOrgsUserIdRef.current !== user.id) {
+      sharedOrgsUserIdRef.current = user.id;
+      setSharedOrgsByKey(userSharedOrgs);
+      return;
+    }
+
+    if (Object.keys(userSharedOrgs).length) {
+      setSharedOrgsByKey(prev => ({ ...prev, ...userSharedOrgs }));
+    }
+  }, [user?.id, user?.sharedOrgs]);
+
   // Derived: shared orgs list and viewer-mode flag
   const sharedOrgs = useMemo(() =>
-    Object.entries(user?.sharedOrgs || {}).map(([key, info]) => ({ key, ...info })),
-    [user?.sharedOrgs]
+    Object.entries(sharedOrgsByKey || {}).map(([key, info]) => ({ key, ...info })),
+    [sharedOrgsByKey]
   );
 
   // Poll membership status every 30s while viewing a shared org
@@ -602,7 +695,7 @@ export function DataProvider({ children }) {
       setActiveSharedOrgRole(null);
       return undefined;
     }
-    const sharedInfo = user?.sharedOrgs?.[activeSharedOrgKey];
+    const sharedInfo = sharedOrgsByKey?.[activeSharedOrgKey];
     if (!sharedInfo?.ownerId || !sharedInfo?.orgId) {
       setActiveSharedOrgRole(null);
       return undefined;
@@ -622,6 +715,11 @@ export function DataProvider({ children }) {
             const next = { ...(prev.sharedOrgs || {}) };
             delete next[staleKey];
             return { ...prev, sharedOrgs: next };
+          });
+          setSharedOrgsByKey(prev => {
+            const next = { ...(prev || {}) };
+            delete next[staleKey];
+            return next;
           });
           activeSharedOrgRef.current = null;
           setActiveSharedOrgKey(null);
@@ -647,13 +745,13 @@ export function DataProvider({ children }) {
       }
     }, 30000);
     return () => clearInterval(intervalId);
-  }, [activeSharedOrgKey, user?.id, user?.sharedOrgs, setUser]);
+  }, [activeSharedOrgKey, sharedOrgsByKey, user?.id, setUser]);
 
   const isViewerMode = useMemo(() => {
     if (!activeSharedOrgKey) return false;
-    const role = activeSharedOrgRole ?? user?.sharedOrgs?.[activeSharedOrgKey]?.role ?? "viewer";
+    const role = activeSharedOrgRole ?? sharedOrgsByKey?.[activeSharedOrgKey]?.role ?? "viewer";
     return role === "viewer";
-  }, [activeSharedOrgKey, activeSharedOrgRole, user?.sharedOrgs]);
+  }, [activeSharedOrgKey, activeSharedOrgRole, sharedOrgsByKey]);
 
   const syncActiveOrgCollections = useCallback(async (nextState) => {
     if (!user?.id || !nextState?.activeOrgId) return;
@@ -684,17 +782,31 @@ export function DataProvider({ children }) {
         if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
         lastSyncedRef.current[orgId][key] = buildBaseline(current);
       }),
-      Object.keys(nextState.orgRecords || {}).length > 0
-        ? orgsApi.syncOrgRecords(user.id, orgId, nextState.orgRecords)
-        : Promise.resolve()
+      orgsApi.syncOrgRecords(user.id, orgId, nextState.orgRecords || {})
     ]);
   }, [user?.id]);
+
+  const queueActiveOrgSync = useCallback((nextState) => {
+    const orgId = nextState?.activeOrgId;
+    if (!orgId) return Promise.resolve();
+    const previous = activeOrgSyncQueueRef.current[orgId] || Promise.resolve();
+    const task = previous
+      .catch(() => {})
+      .then(() => syncActiveOrgCollections(nextState));
+    const trackedTask = task.finally(() => {
+      if (activeOrgSyncQueueRef.current[orgId] === trackedTask) {
+        delete activeOrgSyncQueueRef.current[orgId];
+      }
+    });
+    activeOrgSyncQueueRef.current[orgId] = trackedTask;
+    return trackedTask;
+  }, [syncActiveOrgCollections]);
 
   const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo) => {
     if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
     const orgId = sharedInfo.orgId;
-    await Promise.allSettled(
-      ORG_COLLECTION_KEYS.map(async key => {
+    await Promise.allSettled([
+      ...ORG_COLLECTION_KEYS.map(async key => {
         const current = nextState[key] || [];
         const baseline = lastSyncedRef.current[orgId]?.[key] ?? null;
         const delta = computeSyncDelta(baseline, current);
@@ -706,8 +818,9 @@ export function DataProvider({ children }) {
         }
         if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
         lastSyncedRef.current[orgId][key] = buildBaseline(current);
-      })
-    );
+      }),
+      orgsApi.syncOrgRecords(sharedInfo.ownerId, orgId, nextState.orgRecords || {})
+    ]);
   }, []);
 
   const persistSessionDraft = useCallback(() => {
@@ -825,15 +938,15 @@ export function DataProvider({ children }) {
 
   const persistState = useCallback(
     nextState => {
-      if (!user?.id) return;
+      if (!user?.id) return Promise.resolve();
 
       // In shared org (admin) mode: sync collections to owner's path only
       const sharedInfo = activeSharedOrgRef.current;
       if (sharedInfo) {
         if (!sharedInfo.isViewer) {
-          syncSharedOrgCollections(nextState, sharedInfo);
+          return syncSharedOrgCollections(nextState, sharedInfo);
         }
-        return;
+        return Promise.resolve();
       }
 
       // Optimistic local cache
@@ -841,10 +954,18 @@ export function DataProvider({ children }) {
 
       // Fire-and-forget API writes (non-blocking)
       const orgId = nextState.activeOrgId;
-      orgsApi.update(user.id, orgId, toApiOrgUpdate(nextState)).catch(err => logError("org update failed", err));
-      syncActiveOrgCollections(nextState).catch(err => logError("collection sync failed", err));
-      usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || ORG_TYPES.PERSONAL })
-        .catch(err => logError("user update failed", err));
+      const writes = Promise.allSettled([
+        orgsApi.update(user.id, orgId, toApiOrgUpdate(nextState)),
+        queueActiveOrgSync(nextState),
+        usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || ORG_TYPES.PERSONAL })
+      ]).then(results => {
+        results.forEach((result, index) => {
+          if (result.status === "rejected") {
+            const label = ["org update", "collection sync", "user update"][index];
+            logError(`${label} failed`, result.reason);
+          }
+        });
+      });
 
       setUser(prev =>
         prev
@@ -855,8 +976,10 @@ export function DataProvider({ children }) {
             }
           : prev
       );
+
+      return writes;
     },
-    [setUser, syncActiveOrgCollections, syncSharedOrgCollections, user?.id]
+    [queueActiveOrgSync, setUser, syncSharedOrgCollections, user?.id]
   );
 
   const refreshSharedMemberships = useCallback(async () => {
@@ -864,6 +987,7 @@ export function DataProvider({ children }) {
     try {
       const memberships = await orgsApi.getMemberships(user.id);
       const nextSharedOrgs = buildSharedOrgEntries(Array.isArray(memberships) ? memberships : []);
+      setSharedOrgsByKey(nextSharedOrgs);
       setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
       return nextSharedOrgs;
     } catch (err) {
@@ -871,6 +995,11 @@ export function DataProvider({ children }) {
       return null;
     }
   }, [setUser, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || user?.role === "admin") return;
+    refreshSharedMemberships();
+  }, [refreshSharedMemberships, user?.id, user?.role]);
 
   useEffect(() => {
     async function loadData() {
@@ -888,11 +1017,10 @@ export function DataProvider({ children }) {
       setLoaded(false);
 
       try {
-        // Cold-start strategy: fetch org metadata + customers eagerly; defer the large
-        // collections (income, expenses, invoices) until the user navigates to them.
-        // This cuts the initial payload from potentially thousands of rows down to just
-        // org settings + orgRecords + customers.
-        const requestedActiveOrgId = user.activeOrgId || DEFAULT_ORG_ID;
+        // Load the active org with its core records. Income/expenses are first-screen
+        // product data, and deferring them made tabs disagree with dashboard summaries.
+        const requestedActiveOrgId = requestedOwnOrgIdRef.current || user.activeOrgId || DEFAULT_ORG_ID;
+        requestedOwnOrgIdRef.current = "";
 
         // Reset per-session collection fetch flags for this load
         const freshFetched = { income: false, expenses: false, invoices: false, customers: false };
@@ -930,13 +1058,13 @@ export function DataProvider({ children }) {
         const localOrg = localData.orgs?.[resolvedActiveOrgId] || {};
 
         const [activeOrgMeta, customersPage, summary] = await Promise.all([
-          orgsApi.getFull(user.id, resolvedActiveOrgId, null, { metaOnly: true }).catch(() => null),
+          orgsApi.getFull(user.id, resolvedActiveOrgId).catch(() => null),
           orgsApi.getCollection(user.id, resolvedActiveOrgId, "customers").catch(() => null),
           orgsApi.getSummary(user.id, resolvedActiveOrgId).catch(() => EMPTY_SUMMARY)
         ]);
 
         // getCollection returns { records, hasMore, nextCursor } — unwrap the first page.
-        const customers = Array.isArray(customersPage?.records) ? customersPage.records : null;
+        const customers = customersPage ? unwrapRecords(customersPage, "customers") : null;
 
         // Build orgs map: metadata-only for non-active orgs; full local cache + fresh
         // customers + server metadata for the active org.
@@ -945,14 +1073,14 @@ export function DataProvider({ children }) {
           orgsMap[apiOrg.id] = normalizeOrgData(fromApiOrg(apiOrg));
         });
         if (activeOrgMeta) {
-          // Org settings + orgRecords come from server; large collections from local cache.
+          // Org settings come from server; orgRecords are merged with local optimistic cache.
           // Customers are fresh from server (usually small, always needed for dropdowns).
           orgsMap[resolvedActiveOrgId] = normalizeOrgData(fromApiOrg(activeOrgMeta, {
-            income:     localOrg.income    || [],
-            expenses:   localOrg.expenses  || [],
-            invoices:   localOrg.invoices  || [],
+            income:     pickApiRecords(activeOrgMeta.income ?? activeOrgMeta.collections?.income ?? activeOrgMeta, localOrg.income, "income"),
+            expenses:   pickApiRecords(activeOrgMeta.expenses ?? activeOrgMeta.collections?.expenses ?? activeOrgMeta, localOrg.expenses, "expenses"),
+            invoices:   pickApiRecords(activeOrgMeta.invoices ?? activeOrgMeta.collections?.invoices ?? activeOrgMeta, localOrg.invoices, "invoices"),
             customers:  customers          ?? localOrg.customers ?? [],
-            // orgRecords comes from activeOrgMeta directly (not overridden here)
+            orgRecords: mergeOrgRecordsForLoad(activeOrgMeta.orgRecords || {}, localOrg.orgRecords || {})
           }));
         }
 
@@ -967,12 +1095,25 @@ export function DataProvider({ children }) {
         });
 
         setOwnedOrganizations(mapOwnedOrganizations(orgsMap));
+        dataRef.current = nextState;
         setData(nextState);
 
-        // Establish delta-write baseline for customers (fetched fresh above).
-        // income/expenses/invoices baselines are set when lazily loaded.
+        // Establish delta-write baseline for loaded active-org collections.
         const loadedOrgId = activeOrgMeta?.id || resolvedActiveOrgId;
         if (!lastSyncedRef.current[loadedOrgId]) lastSyncedRef.current[loadedOrgId] = {};
+        ["income", "expenses", "invoices"].forEach(key => {
+          const records = orgsMap[loadedOrgId]?.[key];
+          if (Array.isArray(records)) {
+            lastSyncedRef.current[loadedOrgId][key] = buildBaseline(records);
+            collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: true };
+          }
+        });
+        setCollectionFetched(prev => ({
+          ...prev,
+          income: Array.isArray(orgsMap[loadedOrgId]?.income),
+          expenses: Array.isArray(orgsMap[loadedOrgId]?.expenses),
+          invoices: Array.isArray(orgsMap[loadedOrgId]?.invoices)
+        }));
         if (customers !== null) {
           lastSyncedRef.current[loadedOrgId].customers = buildBaseline(customers);
           collectionFetchedRef.current = { ...collectionFetchedRef.current, customers: true };
@@ -985,14 +1126,16 @@ export function DataProvider({ children }) {
               let allRecords = [...customers];
               while (cursor) {
                 const next = await orgsApi.getCollection(user.id, loadedOrgId, "customers", cursor).catch(() => null);
-                const batch = Array.isArray(next?.records) ? next.records : [];
+                const batch = unwrapRecords(next, "customers");
                 if (batch.length === 0) break;
                 allRecords = [...allRecords, ...batch];
                 setData(prev => {
                   const prevOrg = prev.orgs?.[loadedOrgId];
                   if (!prevOrg) return prev;
                   const merged = normalizeOrgData({ ...prevOrg, customers: mergeRecords(prevOrg.customers || [], batch) });
-                  return buildStateFromOrganizations({ orgs: { ...prev.orgs, [loadedOrgId]: merged }, activeOrgId: prev.activeOrgId, sharedLedger: prev.sharedLedger });
+                  const nextState = buildStateFromOrganizations({ orgs: { ...prev.orgs, [loadedOrgId]: merged }, activeOrgId: prev.activeOrgId, sharedLedger: prev.sharedLedger });
+                  dataRef.current = nextState;
+                  return nextState;
                 });
                 cursor = next?.nextCursor ?? null;
               }
@@ -1017,6 +1160,7 @@ export function DataProvider({ children }) {
         const memberships = await orgsApi.getMemberships(user.id).catch(() => null);
         if (memberships !== null) {
           const nextSharedOrgs = buildSharedOrgEntries(Array.isArray(memberships) ? memberships : []);
+          setSharedOrgsByKey(nextSharedOrgs);
           const currentSharedOrgs = user?.sharedOrgs || {};
           if (JSON.stringify(currentSharedOrgs) !== JSON.stringify(nextSharedOrgs)) {
             setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
@@ -1034,6 +1178,7 @@ export function DataProvider({ children }) {
           sharedLedger: null
         });
         setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
+        dataRef.current = nextState;
         setData(nextState);
       } finally {
         setLoaded(true);
@@ -1143,9 +1288,9 @@ export function DataProvider({ children }) {
 
   const update = useCallback(
     updater => {
-      if (!user?.id) return;
+      if (!user?.id) return Promise.resolve();
       // Viewer-mode members cannot write
-      if (activeSharedOrgRef.current?.isViewer) return;
+      if (activeSharedOrgRef.current?.isViewer) return Promise.resolve();
       if (readOnlyFreeMode) {
         if (typeof window !== "undefined") {
           const nowMs = Date.now();
@@ -1155,36 +1300,38 @@ export function DataProvider({ children }) {
               new CustomEvent("ledger:readonly-blocked", {
                 detail: {
                   tone: "warning",
-                  message: "Your trial has ended. Go to Settings → Manage Subscription to upgrade to Pro (Rs 69/month)."
+                  message: "Your subscription is inactive. Go to Settings > Manage Subscription to choose Pro or Business."
                 }
               })
             );
           }
         }
-        return;
+        return Promise.resolve();
       }
 
-      let nextState;
-
-      setData(prev => {
-        const proposed = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-        const nextActiveOrgId = proposed.activeOrgId || prev.activeOrgId || DEFAULT_ORG_ID;
-        nextState = buildStateFromOrganizations({
-          orgs: {
-            ...proposed.orgs,
-            [nextActiveOrgId]: extractActiveOrg({ ...proposed, activeOrgId: nextActiveOrgId })
-          },
-          activeOrgId: nextActiveOrgId,
-          sharedLedger: null
-        });
-        return nextState;
+      const prev = dataRef.current || data || EMPTY_DATA;
+      const proposed = typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
+      const nextActiveOrgId = proposed.activeOrgId || prev.activeOrgId || DEFAULT_ORG_ID;
+      const nextState = buildStateFromOrganizations({
+        orgs: {
+          ...proposed.orgs,
+          [nextActiveOrgId]: extractActiveOrg({ ...proposed, activeOrgId: nextActiveOrgId })
+        },
+        activeOrgId: nextActiveOrgId,
+        sharedLedger: null
       });
 
-      if (nextState) {
-        persistState(nextState);
-      }
+      dataRef.current = nextState;
+      setData(nextState);
+
+      const previousWrite = activeMutationQueueRef.current || Promise.resolve();
+      const writeTask = previousWrite
+        .catch(() => {})
+        .then(() => persistState(nextState));
+      activeMutationQueueRef.current = writeTask;
+      return writeTask;
     },
-    [persistState, readOnlyFreeMode, user?.id]
+    [data, persistState, readOnlyFreeMode, user?.id]
   );
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
@@ -1279,7 +1426,7 @@ export function DataProvider({ children }) {
             showProtectedRecordNotice();
             return item;
           }
-          return withAudit({ ...record, createdBy: item.createdBy, createdByName: item.createdByName, createdAt: item.createdAt });
+          return withAudit({ ...item, ...record, createdBy: item.createdBy, createdByName: item.createdByName, createdAt: item.createdAt });
         })
       }
     }));
@@ -1377,9 +1524,10 @@ export function DataProvider({ children }) {
       const expenses = pickCollection(activeOrgFull?.expenses, localOrg.expenses);
       const invoices = pickCollection(activeOrgFull?.invoices, localOrg.invoices);
       const customers = pickCollection(activeOrgFull?.customers, localOrg.customers);
-      const orgRecords = activeOrgFull?.orgRecords && typeof activeOrgFull.orgRecords === "object"
-        ? activeOrgFull.orgRecords
-        : (localOrg.orgRecords || {});
+      const orgRecords = mergeOrgRecordsForLoad(
+        activeOrgFull?.orgRecords && typeof activeOrgFull.orgRecords === "object" ? activeOrgFull.orgRecords : {},
+        localOrg.orgRecords || {}
+      );
 
       const nextOrgs = { ...data.orgs };
       nextOrgs[orgId] = normalizeOrgData(fromApiOrg(activeOrgFull || localOrg, {
@@ -1390,13 +1538,14 @@ export function DataProvider({ children }) {
         orgRecords
       }));
 
-      const nextState = buildStateFromOrganizations({
-        orgs: nextOrgs,
-        activeOrgId: orgId,
-        sharedLedger: null
-      });
+        const nextState = buildStateFromOrganizations({
+          orgs: nextOrgs,
+          activeOrgId: orgId,
+          sharedLedger: null
+        });
 
-      setData(nextState);
+        dataRef.current = nextState;
+        setData(nextState);
       setOrgSummary(summary || EMPTY_SUMMARY);
       setUserData(user.id, "appData", nextState);
       setUser(prev =>
@@ -1422,6 +1571,7 @@ export function DataProvider({ children }) {
         activeOrgId: orgId,
         sharedLedger: null
       });
+      dataRef.current = nextState;
       setData(nextState);
       persistState(nextState);
       setOwnDataReloadKey(k => k + 1);
@@ -1433,61 +1583,63 @@ export function DataProvider({ children }) {
 
   async function createOrganization(accountInput = {}) {
     if (!user?.id) return { error: "No active user found." };
-    const requestedType = getOrgType(accountInput.organizationType || user?.organizationType);
+    const { planOverride, ...cleanAccountInput } = accountInput || {};
+    const requestedType = getOrgType(cleanAccountInput.organizationType || user?.organizationType);
     // Work Khatas can repeat and are billed per Khata. Household cannot repeat.
     const isHouseholdRequest = isFreeOrgType(requestedType);
-    const hasHouseholdOrg = organizations.some(org => isHouseholdOrgType(org.organizationType));
+    const hasHouseholdOrg = currentOwnedOrganizations.some(org => isHouseholdOrgType(org.organizationType));
     if (isHouseholdRequest && hasHouseholdOrg) return { error: "Household is already your default Khata." };
 
     // One org per type — no duplicates
-    const alreadyHasType = organizations.some(o => o.organizationType === requestedType);
-    if (isHouseholdRequest && alreadyHasType) return { error: "Household is already your default Khata." };
     if (requestedType !== ORG_TYPES.PERSONAL && ![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
       return { error: "Khata type must be Household, Small Business, or Apartment." };
     }
     if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
       return { error: "Household is already your default Khata." };
     }
+    if (!isHouseholdRequest && !canCreatePaidOrg(user, currentOwnedOrganizations, planOverride || null)) {
+      return { error: "UPGRADE_REQUIRED" };
+    }
 
-    const nextOrgId = accountInput.orgId || `org_${uid()}${uid()}`;
+    const nextOrgId = cleanAccountInput.orgId || `org_${uid()}${uid()}`;
     const nextOrg = normalizeOrgData(
         {
           account: {
             ...createEmptyAccount({
-              email: accountInput.email || user.email || "",
-              phone: accountInput.phone || user.phone || "",
-              organizationType: accountInput.organizationType || user.organizationType
+              email: cleanAccountInput.email || user.email || "",
+              phone: cleanAccountInput.phone || user.phone || "",
+              organizationType: cleanAccountInput.organizationType || user.organizationType
             }),
-            ...accountInput,
-            primaryProfileName: isHouseholdOrgType(accountInput.organizationType || user.organizationType)
+            ...cleanAccountInput,
+            primaryProfileName: isHouseholdOrgType(cleanAccountInput.organizationType || user.organizationType)
               ? String(user?.name || "").trim()
               : "",
-            organizationType: getOrgType(accountInput.organizationType || user.organizationType)
+            organizationType: getOrgType(cleanAccountInput.organizationType || user.organizationType)
           }
         },
       {
         account: {
           email: user.email || "",
           phone: user.phone || "",
-          organizationType: accountInput.organizationType || user.organizationType
+          organizationType: cleanAccountInput.organizationType || user.organizationType
         }
       }
     );
 
     try {
       await orgsApi.create(user.id, nextOrgId, {
-        organizationType: getOrgType(accountInput.organizationType || user.organizationType),
-        name: accountInput.name || "",
-        email: accountInput.email || user.email || "",
-        phone: accountInput.phone || user.phone || "",
-        addressLine: accountInput.addressLine || "",
-        city: accountInput.city || "",
-        state: accountInput.state || "",
-        district: accountInput.district || "",
-        pincode: accountInput.pincode || "",
-        country: accountInput.country || "India",
-        location: accountInput.location || "",
-        address: accountInput.address || ""
+        organizationType: getOrgType(cleanAccountInput.organizationType || user.organizationType),
+        name: cleanAccountInput.name || "",
+        email: cleanAccountInput.email || user.email || "",
+        phone: cleanAccountInput.phone || user.phone || "",
+        addressLine: cleanAccountInput.addressLine || "",
+        city: cleanAccountInput.city || "",
+        state: cleanAccountInput.state || "",
+        district: cleanAccountInput.district || "",
+        pincode: cleanAccountInput.pincode || "",
+        country: cleanAccountInput.country || "India",
+        location: cleanAccountInput.location || "",
+        address: cleanAccountInput.address || ""
       });
     } catch (err) {
       return { error: err.message || "Could not create organization." };
@@ -1552,6 +1704,7 @@ export function DataProvider({ children }) {
       });
 
       setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
+      dataRef.current = nextState;
       setData(nextState);
       setUserData(user.id, "appData", nextState);
       return { success: true, activeOrgId: nextActiveOrgId };
@@ -1560,28 +1713,31 @@ export function DataProvider({ children }) {
     }
   }
 
-  const organizations = Object.entries(data.orgs || {}).map(([orgId, orgValue]) => ({
-    id: orgId,
-    name: orgValue.account?.name || "Untitled Organization",
-    organizationType: getOrgType(orgValue.account?.organizationType),
-    ownerId: user?.id || "",
-    isOwned: !activeSharedOrgKey,
-    plan: orgValue.account?.plan || "",
-    subscriptionStatus: orgValue.account?.subscriptionStatus || "",
-    subscriptionEndsAt: orgValue.account?.subscriptionEndsAt || "",
-    billingCycle: orgValue.account?.billingCycle || "",
-    hasData: Boolean(
-      orgValue.customers?.length ||
-      orgValue.income?.length ||
-      orgValue.expenses?.length ||
-      orgValue.invoices?.length ||
-      Object.keys(orgValue.orgRecords || {}).length
-    )
+  const currentOwnedOrganizations = activeSharedOrgKey && ownedOrganizations.length
+    ? ownedOrganizations
+    : mapOwnedOrganizations(data.orgs || {});
+  const sharedOrganizationOptions = sharedOrgs.map(info => ({
+    id: info.orgId,
+    key: info.key,
+    switchKey: info.key,
+    name: info.orgName || "Shared Khata",
+    organizationType: getOrgType(info.organizationType),
+    ownerId: info.ownerId || "",
+    ownerName: info.ownerName || "",
+    role: info.role || "viewer",
+    isOwned: false,
+    isShared: true,
+    plan: "",
+    subscriptionStatus: "",
+    subscriptionEndsAt: "",
+    billingCycle: "",
+    hasData: false
   }));
+  const organizations = [...currentOwnedOrganizations, ...sharedOrganizationOptions];
   const maxOrganizations = getMaxOrganizations(user);
 
   async function switchToSharedOrg(key) {
-    const sharedInfo = user?.sharedOrgs?.[key];
+    const sharedInfo = sharedOrgsByKey?.[key];
     if (!sharedInfo) return;
 
     const { ownerId, orgId } = sharedInfo;
@@ -1591,10 +1747,10 @@ export function DataProvider({ children }) {
     setActiveSharedOrgKey(key);
 
     try {
-      // Step 1: verify membership + fetch org metadata only (fast)
+      // Verify membership and load the shared org with its visible records.
       const [memberships, orgMeta, customersResult] = await Promise.all([
         orgsApi.getMemberships(user.id),
-        orgsApi.getFull(ownerId, orgId, null, { metaOnly: true }),
+        orgsApi.getFull(ownerId, orgId),
         orgsApi.getCollection(ownerId, orgId, "customers").catch(() => null)
       ]);
 
@@ -1611,6 +1767,11 @@ export function DataProvider({ children }) {
           delete next[`${ownerId}_${orgId}`];
           return { ...prev, sharedOrgs: next };
         });
+        setSharedOrgsByKey(prev => {
+          const next = { ...(prev || {}) };
+          delete next[`${ownerId}_${orgId}`];
+          return next;
+        });
         return;
       }
 
@@ -1618,25 +1779,30 @@ export function DataProvider({ children }) {
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
-      const customers = Array.isArray(customersResult?.records) ? customersResult.records
-        : Array.isArray(customersResult) ? customersResult : [];
+      const customers = unwrapRecords(customersResult, "customers");
 
       const nextState = buildStateFromOrganizations({
-        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, { customers })) },
+        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, {
+          income: pickApiRecords(orgMeta?.income ?? orgMeta?.collections?.income ?? orgMeta, [], "income"),
+          expenses: pickApiRecords(orgMeta?.expenses ?? orgMeta?.collections?.expenses ?? orgMeta, [], "expenses"),
+          invoices: pickApiRecords(orgMeta?.invoices ?? orgMeta?.collections?.invoices ?? orgMeta, [], "invoices"),
+          customers
+        })) },
         activeOrgId: orgId
       });
 
+      dataRef.current = nextState;
       setData(nextState);
 
-      // Customers are loaded; income/expenses/invoices will lazy-load on section visit.
-      // ensureCollectionLoaded uses activeSharedOrgRef.current.ownerId for the API path.
-      const freshFetched = { income: false, expenses: false, invoices: false, customers: true };
+      const freshFetched = { income: true, expenses: true, invoices: true, customers: true };
       collectionFetchedRef.current = freshFetched;
       setCollectionFetched(freshFetched);
 
-      // Baseline for customers only
       if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
       lastSyncedRef.current[orgId].customers = buildBaseline(customers);
+      lastSyncedRef.current[orgId].income = buildBaseline(pickApiRecords(orgMeta?.income ?? orgMeta?.collections?.income ?? orgMeta, [], "income"));
+      lastSyncedRef.current[orgId].expenses = buildBaseline(pickApiRecords(orgMeta?.expenses ?? orgMeta?.collections?.expenses ?? orgMeta, [], "expenses"));
+      lastSyncedRef.current[orgId].invoices = buildBaseline(pickApiRecords(orgMeta?.invoices ?? orgMeta?.collections?.invoices ?? orgMeta, [], "invoices"));
     } catch (err) {
       logError("switchToSharedOrg failed", err);
       activeSharedOrgRef.current = null;
@@ -1647,10 +1813,12 @@ export function DataProvider({ children }) {
     }
   }
 
-  function switchToOwnOrg() {
+  function switchToOwnOrg(orgId = "") {
+    requestedOwnOrgIdRef.current = orgId || "";
     activeSharedOrgRef.current = null;
     // Mark as loading immediately so components don't render with stale shared-org data
     setLoaded(false);
+    dataRef.current = EMPTY_DATA;
     setData(EMPTY_DATA);
     setActiveSharedOrgKey(null);
     setActiveSharedOrgRole(null);
@@ -1658,38 +1826,114 @@ export function DataProvider({ children }) {
     setOwnDataReloadKey(k => k + 1);
   }
 
+  const refreshActiveOrgData = useCallback(async ({ collections = [], includeOrgRecords = true } = {}) => {
+    if (!user?.id) return { error: "No active user found." };
+    const current = dataRef.current || data || EMPTY_DATA;
+    const orgId = current.activeOrgId;
+    if (!orgId) return { error: "No active organization found." };
+
+    const sharedInfo = activeSharedOrgRef.current;
+    const apiUserId = sharedInfo?.ownerId || user.id;
+    const uniqueCollections = [...new Set((collections || []).filter(key => ORG_COLLECTION_KEYS.includes(key)))];
+
+    try {
+      const [orgMeta, summary, ...collectionResults] = await Promise.all([
+        includeOrgRecords
+          ? orgsApi.getFull(apiUserId, orgId, null, { metaOnly: true }).catch(() => null)
+          : Promise.resolve(null),
+        orgsApi.getSummary(apiUserId, orgId).catch(() => EMPTY_SUMMARY),
+        ...uniqueCollections.map(async key => {
+          const records = [];
+          let cursor;
+          do {
+            const page = await orgsApi.getCollection(apiUserId, orgId, key, cursor);
+            const batch = unwrapRecords(page, key);
+            records.push(...batch);
+            cursor = page?.nextCursor ?? null;
+          } while (cursor);
+          return [key, records];
+        })
+      ]);
+
+      const base = dataRef.current || current;
+      const prevOrg = base.orgs?.[orgId] || {};
+      const collectionUpdates = Object.fromEntries(collectionResults);
+      const refreshedOrg = normalizeOrgData(fromApiOrg(orgMeta || prevOrg, {
+        income: collectionUpdates.income ?? prevOrg.income ?? [],
+        expenses: collectionUpdates.expenses ?? prevOrg.expenses ?? [],
+        invoices: collectionUpdates.invoices ?? prevOrg.invoices ?? [],
+        customers: collectionUpdates.customers ?? prevOrg.customers ?? [],
+        orgRecords: includeOrgRecords
+          ? (orgMeta?.orgRecords || prevOrg.orgRecords || {})
+          : (prevOrg.orgRecords || {})
+      }));
+      const nextState = buildStateFromOrganizations({
+        orgs: { ...base.orgs, [orgId]: refreshedOrg },
+        activeOrgId: orgId,
+        sharedLedger: null
+      });
+
+      dataRef.current = nextState;
+      setData(nextState);
+      setOrgSummary(summary || EMPTY_SUMMARY);
+      if (!sharedInfo) {
+        setUserData(user.id, "appData", nextState);
+      }
+      uniqueCollections.forEach(key => {
+        if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
+        lastSyncedRef.current[orgId][key] = buildBaseline(collectionUpdates[key] || []);
+        collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: true };
+      });
+      if (uniqueCollections.length) {
+        setCollectionFetched(prev => uniqueCollections.reduce((acc, key) => ({ ...acc, [key]: true }), prev));
+      }
+      return { success: true };
+    } catch (err) {
+      logError("refreshActiveOrgData failed", err);
+      showGlobalToast({ tone: "danger", title: "Sync error", message: "Saved, but the latest data could not be reloaded. Please try again." });
+      return { error: err.message || "Refresh failed." };
+    }
+  }, [data, user?.id]);
+
   // Fetch a collection from the server if it hasn't been loaded this session yet.
   // Safe to call multiple times — subsequent calls are no-ops once the collection is fetched.
   const ensureCollectionLoaded = useCallback(async (key) => {
-    if (collectionFetchedRef.current[key]) return;
-    if (collectionFetchingRef.current[key]) return; // already in-flight
     if (!user?.id) return;
 
-    collectionFetchingRef.current[key] = true;
-    const orgId = data.activeOrgId;
-    if (!orgId) { collectionFetchingRef.current[key] = false; return; }
+    const current = dataRef.current || data || EMPTY_DATA;
+    const orgId = current.activeOrgId;
+    if (!orgId) return;
+    const fetchKey = `${orgId}:${key}`;
+    if (collectionFetchedRef.current[key]) return;
+    if (collectionFetchingRef.current[fetchKey]) return; // already in-flight for this org
+
+    collectionFetchingRef.current[fetchKey] = true;
     // For shared orgs the API path uses the org owner's ID, not the current user's ID
     const apiUserId = activeSharedOrgRef.current?.ownerId || user.id;
 
     try {
       // Page 1 — render the UI as soon as the first page arrives
       const page1 = await orgsApi.getCollection(apiUserId, orgId, key);
-      const firstBatch = Array.isArray(page1?.records) ? page1.records
-        : Array.isArray(page1) ? page1  // backward-compat if server returns flat array
-        : [];
+      let firstBatch = unwrapRecords(page1, key);
+      if (firstBatch.length === 0) {
+        const fullOrg = await orgsApi.getFull(apiUserId, orgId).catch(() => null);
+        firstBatch = pickApiRecords(fullOrg?.[key] ?? fullOrg?.collections?.[key] ?? fullOrg, [], key);
+      }
 
       const mergeIntoState = (incoming, replace = false) => {
         setData(prev => {
-          const aid = prev.activeOrgId;
-          const prevOrg = prev.orgs?.[aid];
+          if (prev.activeOrgId !== orgId) return prev;
+          const prevOrg = prev.orgs?.[orgId];
           if (!prevOrg) return prev;
           const base = replace ? incoming : mergeRecords(prevOrg[key] || [], incoming);
           const updatedOrg = normalizeOrgData({ ...prevOrg, [key]: base });
-          return buildStateFromOrganizations({
-            orgs: { ...prev.orgs, [aid]: updatedOrg },
-            activeOrgId: aid,
+          const nextState = buildStateFromOrganizations({
+            orgs: { ...prev.orgs, [orgId]: updatedOrg },
+            activeOrgId: orgId,
             sharedLedger: prev.sharedLedger
           });
+          dataRef.current = nextState;
+          return nextState;
         });
       };
 
@@ -1705,7 +1949,7 @@ export function DataProvider({ children }) {
 
       while (cursor) {
         const nextPage = await orgsApi.getCollection(apiUserId, orgId, key, cursor);
-        const batch = Array.isArray(nextPage?.records) ? nextPage.records : [];
+        const batch = unwrapRecords(nextPage, key);
         if (batch.length === 0) break;
         allRecords = [...allRecords, ...batch];
         mergeIntoState(batch, false); // merge each subsequent page
@@ -1724,7 +1968,7 @@ export function DataProvider({ children }) {
       collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: false };
       setCollectionFetched(prev => ({ ...prev, [key]: false }));
     } finally {
-      collectionFetchingRef.current[key] = false;
+      collectionFetchingRef.current[fetchKey] = false;
     }
   }, [user?.id, data.activeOrgId]);
 
@@ -1754,6 +1998,7 @@ export function DataProvider({ children }) {
     activeSharedOrgRole,
     sharedOrgs,
     activeSharedOrgKey,
+    refreshActiveOrgData,
     refreshSharedMemberships,
     switchToSharedOrg,
     switchToOwnOrg,
@@ -1835,6 +2080,7 @@ export function DataProvider({ children }) {
     setCurrency,
     switchOrganization,
     refreshSharedMemberships,
+    refreshActiveOrgData,
     switchToSharedOrg,
     switchToOwnOrg,
     updateCustomer,
