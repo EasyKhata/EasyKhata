@@ -550,6 +550,7 @@ export function DataProvider({ children }) {
   const [data, setData] = useState(EMPTY_DATA);
   const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
+  const [ownedOrganizations, setOwnedOrganizations] = useState([]);
   // Tracks which collections have been fetched from the server this session.
   // Customers are loaded eagerly; income/expenses/invoices are loaded on demand.
   const [collectionFetched, setCollectionFetched] = useState({ income: false, expenses: false, invoices: false, customers: false });
@@ -568,6 +569,25 @@ export function DataProvider({ children }) {
   // Delta write baseline: { [orgId]: { income: Map<id,serialized>, expenses: ..., ... } }
   // Initialized after each full load; updated after each successful delta sync.
   const lastSyncedRef = useRef({});
+
+  const mapOwnedOrganizations = useCallback((orgsMap = {}) => Object.entries(orgsMap || {}).map(([orgId, orgValue]) => ({
+    id: orgId,
+    name: orgValue.account?.name || "Untitled Organization",
+    organizationType: getOrgType(orgValue.account?.organizationType),
+    ownerId: user?.id || "",
+    isOwned: true,
+    plan: orgValue.account?.plan || "",
+    subscriptionStatus: orgValue.account?.subscriptionStatus || "",
+    subscriptionEndsAt: orgValue.account?.subscriptionEndsAt || "",
+    billingCycle: orgValue.account?.billingCycle || "",
+    hasData: Boolean(
+      orgValue.customers?.length ||
+      orgValue.income?.length ||
+      orgValue.expenses?.length ||
+      orgValue.invoices?.length ||
+      Object.keys(orgValue.orgRecords || {}).length
+    )
+  })), [user?.id]);
 
   // Derived: shared orgs list and viewer-mode flag
   const sharedOrgs = useMemo(() =>
@@ -946,6 +966,7 @@ export function DataProvider({ children }) {
           sharedLedger: null
         });
 
+        setOwnedOrganizations(mapOwnedOrganizations(orgsMap));
         setData(nextState);
 
         // Establish delta-write baseline for customers (fetched fresh above).
@@ -1012,6 +1033,7 @@ export function DataProvider({ children }) {
           activeOrgId: localData.activeOrgId || DEFAULT_ORG_ID,
           sharedLedger: null
         });
+        setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
         setData(nextState);
       } finally {
         setLoaded(true);
@@ -1477,6 +1499,7 @@ export function DataProvider({ children }) {
       sharedLedger: null
     });
 
+    setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
     setData(nextState);
     persistState(nextState);
     return { success: true, orgId: nextOrgId };
@@ -1528,6 +1551,7 @@ export function DataProvider({ children }) {
         sharedLedger: null
       });
 
+      setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
       setData(nextState);
       setUserData(user.id, "appData", nextState);
       return { success: true, activeOrgId: nextActiveOrgId };
@@ -1540,6 +1564,8 @@ export function DataProvider({ children }) {
     id: orgId,
     name: orgValue.account?.name || "Untitled Organization",
     organizationType: getOrgType(orgValue.account?.organizationType),
+    ownerId: user?.id || "",
+    isOwned: !activeSharedOrgKey,
     plan: orgValue.account?.plan || "",
     subscriptionStatus: orgValue.account?.subscriptionStatus || "",
     subscriptionEndsAt: orgValue.account?.subscriptionEndsAt || "",
@@ -1732,6 +1758,7 @@ export function DataProvider({ children }) {
     switchToSharedOrg,
     switchToOwnOrg,
     organizations,
+    ownedOrganizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
     canCreateOrganization: true,
@@ -1791,6 +1818,7 @@ export function DataProvider({ children }) {
     loaded,
     maxOrganizations,
     organizations,
+    ownedOrganizations,
     readOnlyFreeMode,
     regenerateLedgerInvite,
     removeCustomer,

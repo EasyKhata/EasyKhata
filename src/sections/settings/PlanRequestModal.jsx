@@ -64,10 +64,10 @@ export default function PlanRequestModal({
             Paying for
           </div>
           <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.25 }}>
-            {displayOrgName}
+            {orgConfig.typeLabel} Khata
           </div>
-          <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 4 }}>
-            {orgConfig.typeLabel} Khata{displayOrgId ? ` • ${displayOrgId}` : ""}
+          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>
+            {displayOrgName}
           </div>
           <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, lineHeight: 1.45 }}>
             {selectedOrgActive ? "This Khata already has an active Pro plan." : "Payment will unlock Pro features for this Khata only."}
@@ -108,7 +108,7 @@ export default function PlanRequestModal({
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
               Amount to pay: Rs {amount}<br />
-              Activation target: {displayOrgName}
+              Activation target: {orgConfig.typeLabel} Khata - {displayOrgName}
             </div>
           </div>
         </Field>
