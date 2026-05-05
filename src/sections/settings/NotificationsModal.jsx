@@ -83,6 +83,14 @@ export default function NotificationsModal({ form, onFormChange, onSave, onClose
             />
           </>
         )}
+        {orgConfig.hideInvoices === true && (
+          <ToggleRow
+            label="EMI Reminders"
+            sub="Alert when household EMIs are due or coming up soon."
+            checked={form?.emiDue !== false}
+            onChange={() => onFormChange(current => ({ ...current, emiDue: current.emiDue === false ? true : false }))}
+          />
+        )}
         {orgConfig.enableBudgets !== false && (
           <ToggleRow
             label="Budget Alerts"

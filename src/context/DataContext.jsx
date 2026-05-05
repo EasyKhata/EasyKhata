@@ -349,6 +349,7 @@ const EMPTY_ORG_DATA = {
     browserEnabled: false,
     invoiceDue: true,
     overdueInvoices: true,
+    emiDue: true,
     budgetAlerts: true,
     lowBalance: true,
     spendingSpike: true
