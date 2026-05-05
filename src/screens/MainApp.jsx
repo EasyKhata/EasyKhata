@@ -1436,7 +1436,13 @@ export default function MainApp() {
     const currentDate = new Date();
     const reminders = buildReminders(data, currentDate.getFullYear(), currentDate.getMonth());
     return filterRemindersByPrefs(reminders, data.notificationPrefs || {});
-  }, [data]);
+  }, [data, dismissedIds]);
+
+  useEffect(() => {
+    const refresh = () => setDismissedIds(ids => [...ids]);
+    window.addEventListener("ek:discussion-notices-updated", refresh);
+    return () => window.removeEventListener("ek:discussion-notices-updated", refresh);
+  }, []);
 
   const inboxReminders = useMemo(
     () => liveReminders.filter(item => !dismissedIds.includes(item.id)),

@@ -21,5 +21,13 @@ service firebase.storage {
         request.resource.size < 5 * 1024 * 1024 &&
         request.resource.contentType.matches('image/.*');
     }
+
+    match /apartment-discussions/{ownerId}/{orgId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        request.resource.size < 5 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*') &&
+        request.resource.metadata.uploadedBy == request.auth.uid;
+    }
   }
 }

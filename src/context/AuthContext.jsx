@@ -36,6 +36,7 @@ function createDefaultOrgProfile({ email = "", phone = "", organizationType = OR
       browserEnabled: false,
       invoiceDue: true,
       overdueInvoices: true,
+      emiDue: true,
       budgetAlerts: true,
       lowBalance: true,
       spendingSpike: true

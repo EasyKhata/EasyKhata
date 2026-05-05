@@ -1,4 +1,12 @@
-import { isApartmentOrgData, isPersonalOrgData } from "./analytics";
+import {
+  getFinancialInvoices,
+  getInvoiceStatus,
+  getPersonalEmiAmount,
+  getScheduledEmiDate,
+  invoiceGrandTotal,
+  isApartmentOrgData,
+  isPersonalOrgData
+} from "./analytics";
 
 const PREFIX = "ledger_app_notifications";
 
@@ -37,34 +45,36 @@ export function saveSentBrowserReminderIds(userId, ids) {
 }
 
 /**
- * Build in-app reminders from the pre-computed orgSummary (fetched from the backend)
- * and the raw data arrays already in memory. No heavy dashboard calculations here.
+ * Build in-app reminders from the pre-computed orgSummary and the raw data arrays
+ * already in memory. Keep this light because it runs in the app shell.
  */
 export function buildReminders(data, year, month) {
   const summary = data.orgSummary || {};
   const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
   const reminders = [];
+  const today = new Date();
+  const todayStr = toLocalDateKey(today);
+  reminders.push(...getDiscussionNoticesForOrg(data.activeOrgId));
 
-  // ── Apartment orgs ────────────────────────────────────────────────────────
   if (isApartmentOrgData(data)) {
-    // Derive unpaid flats with a lightweight scan of this month's income entries
-    const monthIncome = (data.income || []).filter(i => {
-      const m = i.collectionMonth || i.month || (i.date ? i.date.slice(0, 7) : "");
-      return m === mk && String(i.collectionType || "").trim() === "Monthly Maintenance";
+    const monthIncome = (data.income || []).filter(item => {
+      const itemMonth = item.collectionMonth || item.month || (item.date ? item.date.slice(0, 7) : "");
+      return itemMonth === mk && String(item.collectionType || "").trim() === "Monthly Maintenance";
     });
-    // Build paid set from both customerId and flatNumber so either match counts
+
     const paidFlatIds = new Set();
-    monthIncome.forEach(i => {
-      if (i.customerId) paidFlatIds.add(String(i.customerId));
-      if (i.flatNumber) paidFlatIds.add(String(i.flatNumber).trim().toLowerCase());
+    monthIncome.forEach(item => {
+      if (item.customerId) paidFlatIds.add(String(item.customerId));
+      if (item.flatNumber) paidFlatIds.add(String(item.flatNumber).trim().toLowerCase());
     });
-    const unpaidFlats = (data.customers || []).filter(c => {
-      const byId = c.id ? paidFlatIds.has(String(c.id)) : false;
-      const byFlat = c.flatNumber ? paidFlatIds.has(String(c.flatNumber || c.name || "").trim().toLowerCase()) : false;
-      const byName = c.name ? paidFlatIds.has(String(c.name).trim().toLowerCase()) : false;
+
+    const unpaidFlats = (data.customers || []).filter(customer => {
+      const byId = customer.id ? paidFlatIds.has(String(customer.id)) : false;
+      const byFlat = customer.flatNumber ? paidFlatIds.has(String(customer.flatNumber || customer.name || "").trim().toLowerCase()) : false;
+      const byName = customer.name ? paidFlatIds.has(String(customer.name).trim().toLowerCase()) : false;
       return !byId && !byFlat && !byName;
     });
-    const totalIncome = monthIncome.reduce((s, i) => s + Number(i.amount || 0), 0);
+    const totalIncome = monthIncome.reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
     if (unpaidFlats.length > 0) {
       reminders.push({
@@ -73,9 +83,10 @@ export function buildReminders(data, year, month) {
         tab: "income",
         tone: "gold",
         title: `${unpaidFlats.length} flat(s) pending collection`,
-        message: `Collected ${formatPlainMoney(totalIncome)} this month. ${paidFlatIds.size} flat(s) covered · ${unpaidFlats.length} pending: ${unpaidFlats.slice(0, 3).map(c => c.name || c.flatNumber || "Flat").join(", ")}${unpaidFlats.length > 3 ? ` +${unpaidFlats.length - 3} more` : ""}.`
+        message: `Collected ${formatPlainMoney(totalIncome)} this month. ${paidFlatIds.size} flat(s) covered, ${unpaidFlats.length} pending: ${unpaidFlats.slice(0, 3).map(customer => customer.name || customer.flatNumber || "Flat").join(", ")}${unpaidFlats.length > 3 ? ` +${unpaidFlats.length - 3} more` : ""}.`
       });
     }
+
     if ((summary.monthNet ?? 0) < 0) {
       reminders.push({
         id: `society-loss-${mk}`,
@@ -86,13 +97,12 @@ export function buildReminders(data, year, month) {
         message: "This month is currently running at a deficit. Review pending maintenance collections and major expenses."
       });
     }
+
     return reminders;
   }
 
-  // ── Personal / household orgs ────────────────────────────────────────────
   if (isPersonalOrgData(data)) {
-    const monthNet = summary.monthNet ?? 0;
-    if (monthNet < 0) {
+    if ((summary.monthNet ?? 0) < 0) {
       reminders.push({
         id: `household-low-balance-${mk}`,
         type: "lowBalance",
@@ -103,28 +113,51 @@ export function buildReminders(data, year, month) {
       });
     }
 
-    // Upcoming EMIs: quick scan of expense records marked as EMI
-    const upcomingEmis = (data.expenses || []).filter(e => {
-      const isEmi = e.emiType === "loan" || e.isEmi || e.monthlyEmi != null;
-      if (!isEmi) return false;
-      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
-      return em === mk;
-    });
-    if (upcomingEmis.length > 0) {
+    const activeUnpaidEmis = (data.orgRecords?.loans || [])
+      .map(emi => ({
+        ...emi,
+        scheduledDate: getScheduledEmiDate(emi, year, month),
+        amount: getPersonalEmiAmount(emi)
+      }))
+      .filter(emi => {
+        const paidMonths = Array.isArray(emi.paidMonths) ? emi.paidMonths : [];
+        if (!emi.scheduledDate || paidMonths.includes(mk)) return false;
+        const startDate = String(emi.startDate || "").slice(0, 10);
+        const endDate = String(emi.endDate || "").slice(0, 10);
+        const monthStart = `${mk}-01`;
+        const monthEnd = toLocalDateKey(new Date(year, month + 1, 0));
+        return (!startDate || startDate <= monthEnd) && (!endDate || endDate >= monthStart);
+      })
+      .sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
+
+    const dueEmis = activeUnpaidEmis.filter(emi => emi.scheduledDate <= todayStr);
+    const upcomingEmis = activeUnpaidEmis.filter(emi => (
+      emi.scheduledDate >= todayStr && daysBetween(todayStr, emi.scheduledDate) <= 7
+    ));
+
+    if (dueEmis.length > 0) {
       reminders.push({
-        id: `household-emi-${mk}`,
-        type: "invoiceDue",
+        id: `household-emi-due-${mk}-${dueEmis.map(item => item.id || item.loanName || item.scheduledDate).join("-")}`,
+        type: "emiDue",
+        tab: "emi",
+        tone: "danger",
+        title: `${dueEmis.length} EMI${dueEmis.length !== 1 ? "s" : ""} due`,
+        message: `${formatPlainMoney(dueEmis.reduce((sum, emi) => sum + Number(emi.amount || 0), 0))} is due for ${mk}. ${dueEmis.slice(0, 2).map(item => item.loanName || "EMI").join(", ")}${dueEmis.length > 2 ? ` +${dueEmis.length - 2} more` : ""}.`
+      });
+    } else if (upcomingEmis.length > 0) {
+      reminders.push({
+        id: `household-emi-upcoming-${mk}-${upcomingEmis.map(item => item.id || item.loanName || item.scheduledDate).join("-")}`,
+        type: "emiDue",
         tab: "emi",
         tone: "gold",
-        title: `${upcomingEmis.length} EMI commitment(s) to watch`,
-        message: "Review your upcoming EMI due dates and balances from the EMI section."
+        title: `${upcomingEmis.length} EMI${upcomingEmis.length !== 1 ? "s" : ""} coming up`,
+        message: `Next due: ${upcomingEmis[0]?.loanName || "EMI"} on ${formatDateLabel(upcomingEmis[0]?.scheduledDate)}. Review or mark paid from EMI.`
       });
     }
 
-    // Spending ratio: use summary values (monthExpenseTotal / monthIncomeTotal)
-    const incomeT = summary.monthIncomeTotal || 0;
-    const expenseT = summary.monthExpenseTotal || 0;
-    const spendingRatio = incomeT > 0 ? (expenseT / incomeT) * 100 : expenseT > 0 ? 100 : 0;
+    const incomeTotal = summary.monthIncomeTotal || 0;
+    const expenseTotal = summary.monthExpenseTotal || 0;
+    const spendingRatio = incomeTotal > 0 ? (expenseTotal / incomeTotal) * 100 : expenseTotal > 0 ? 100 : 0;
     if (spendingRatio >= 90) {
       reminders.push({
         id: `household-spending-${mk}`,
@@ -135,38 +168,44 @@ export function buildReminders(data, year, month) {
         message: `Spending is at ${Math.round(spendingRatio)}% of earnings.`
       });
     }
+
     return reminders;
   }
 
-  // ── Generic / small_business / freelancer ────────────────────────────────
-  // Overdue invoices
-  if ((summary.overdueCount || 0) > 0) {
-    const today = new Date().toISOString().slice(0, 10);
-    const overdueIds = (data.invoices || [])
-      .filter(i => (i.status === "overdue") || (i.status === "sent" && i.dueDate && i.dueDate < today))
-      .map(i => i.id)
-      .slice(0, 10)
-      .join("-");
+  const financialInvoices = getFinancialInvoices(data.invoices || []);
+  const openInvoices = financialInvoices
+    .map(invoice => ({
+      ...invoice,
+      computedStatus: getInvoiceStatus(invoice, today),
+      total: Number(invoice.grandTotal || invoiceGrandTotal(invoice) || invoice.total || 0)
+    }))
+    .filter(invoice => invoice.computedStatus !== "paid");
+
+  const overdueInvoices = openInvoices.filter(invoice => invoice.computedStatus === "overdue");
+  if (overdueInvoices.length > 0 || (summary.overdueCount || 0) > 0) {
+    const overdueAmount = overdueInvoices.length
+      ? overdueInvoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0)
+      : Number(summary.overdueAmount || 0);
     reminders.push({
-      id: `overdue-${mk}-${overdueIds}`,
+      id: `overdue-${mk}-${overdueInvoices.map(invoice => invoice.id).slice(0, 10).join("-")}`,
       type: "overdueInvoices",
       tab: "invoices",
       tone: "danger",
-      title: `${summary.overdueCount} overdue invoice(s)`,
-      message: `Collections worth ${formatPlainMoney(summary.overdueAmount || 0)} are still pending and overdue.`
+      title: `${overdueInvoices.length || summary.overdueCount} overdue invoice(s)`,
+      message: `Collections worth ${formatPlainMoney(overdueAmount)} are overdue. Follow up from Invoices.`
     });
   }
 
-  // Invoices due within 3 days
-  const soon = new Date();
-  const soonStr = new Date(soon.getTime() + 3 * 86400_000).toISOString().slice(0, 10);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const dueSoon = (data.invoices || []).filter(i =>
-    i.status === "sent" && i.dueDate && i.dueDate >= todayStr && i.dueDate <= soonStr
-  );
+  const soonStr = toLocalDateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 3));
+  const dueSoon = openInvoices.filter(invoice => (
+    invoice.computedStatus !== "overdue"
+    && invoice.dueDate
+    && invoice.dueDate >= todayStr
+    && invoice.dueDate <= soonStr
+  ));
   if (dueSoon.length > 0) {
     reminders.push({
-      id: `due-soon-${mk}-${dueSoon.map(i => i.id).join("-")}`,
+      id: `due-soon-${mk}-${dueSoon.map(invoice => invoice.id).join("-")}`,
       type: "invoiceDue",
       tab: "invoices",
       tone: "gold",
@@ -175,19 +214,31 @@ export function buildReminders(data, year, month) {
     });
   }
 
-  // Budget alerts from backend summary
-  (summary.budgetAlerts || []).filter(b => b.pct >= 100).forEach(b => {
+  const otherPending = openInvoices.filter(invoice => (
+    invoice.computedStatus !== "overdue" && !dueSoon.some(due => due.id === invoice.id)
+  ));
+  if (otherPending.length > 0) {
     reminders.push({
-      id: `budget-${mk}-${b.category}`,
+      id: `pending-invoices-${mk}-${otherPending.map(invoice => invoice.id).slice(0, 10).join("-")}`,
+      type: "invoiceDue",
+      tab: "invoices",
+      tone: "gold",
+      title: `${otherPending.length} invoice${otherPending.length !== 1 ? "s" : ""} pending`,
+      message: `${formatPlainMoney(otherPending.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0))} is still awaiting payment.`
+    });
+  }
+
+  (summary.budgetAlerts || []).filter(item => item.pct >= 100).forEach(item => {
+    reminders.push({
+      id: `budget-${mk}-${item.category}`,
       type: "budgetAlerts",
       tab: "expenses",
       tone: "danger",
-      title: `${b.category} budget exceeded`,
-      message: `Spent ${formatPlainMoney(b.spent)} against a budget of ${formatPlainMoney(b.budget)}.`
+      title: `${item.category} budget exceeded`,
+      message: `Spent ${formatPlainMoney(item.spent)} against a budget of ${formatPlainMoney(item.budget)}.`
     });
   });
 
-  // Negative month
   if ((summary.monthNet ?? 0) < 0) {
     reminders.push({
       id: `low-balance-${mk}`,
@@ -204,12 +255,60 @@ export function buildReminders(data, year, month) {
 
 export function filterRemindersByPrefs(reminders, prefs) {
   return reminders.filter(reminder => {
-    // pendingCollections defaults to ON (not stored means enabled)
     if (reminder.type === "pendingCollections") return prefs?.pendingCollections !== false;
+    if (reminder.type === "emiDue") return prefs?.emiDue !== false;
     return prefs?.[reminder.type] !== false;
   });
 }
 
 function formatPlainMoney(value) {
   return Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function getDiscussionNoticesForOrg(activeOrgId) {
+  if (typeof localStorage === "undefined") return [];
+  try {
+    const keys = Object.keys(localStorage).filter(key => key.startsWith("ek_discussion_notices_"));
+    const notices = keys.flatMap(key => {
+      try {
+        return JSON.parse(localStorage.getItem(key) || "[]");
+      } catch {
+        return [];
+      }
+    });
+    return notices
+      .filter(item => !activeOrgId || !item.orgId || String(item.orgId) === String(activeOrgId))
+      .map(item => ({
+        id: item.id,
+        type: "discussion",
+        tab: item.tab || "discussions",
+        tone: item.tone === "danger" ? "danger" : "gold",
+        title: item.title || "Apartment discussion update",
+        message: item.message || "There is a new apartment discussion update."
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function toLocalDateKey(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function daysBetween(startDateKey, endDateKey) {
+  const start = new Date(`${startDateKey}T00:00:00`);
+  const end = new Date(`${endDateKey}T00:00:00`);
+  return Math.round((end - start) / 86400000);
+}
+
+function formatDateLabel(dateKey) {
+  if (!dateKey) return "soon";
+  try {
+    return new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  } catch {
+    return dateKey;
+  }
 }
