@@ -312,6 +312,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     updateOrgRecord,
     removeOrgRecord,
     organizations,
+    ownedOrganizations,
     activeOrgId,
     createOrganization,
     switchOrganization,
@@ -462,13 +463,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         id: pendingNewOrgDraft.orgId,
         name: pendingNewOrgDraft.name,
         organizationType: pendingNewOrgDraft.organizationType,
+        isOwned: true,
         plan: "free",
         subscriptionStatus: "pending_payment",
         subscriptionEndsAt: ""
       }];
     }
-    return organizations.filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
-  }, [organizations, pendingNewOrgDraft]);
+    return (ownedOrganizations || []).filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
+  }, [ownedOrganizations, pendingNewOrgDraft]);
   const selectedPaymentOrg = paymentOrganizations.find(org => org.id === paymentOrgId) || paymentOrganizations[0] || null;
   const selectableOrgTypeOptions = useMemo(() => {
     if (isPrimaryHouseholdOrg) {
@@ -807,7 +809,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
     if (navigationTarget.screen === "plan-request") {
       setPendingNewOrgDraft(null);
-      setPaymentOrgId(activeOrgId || "");
+      const defaultPaymentOrg = (ownedOrganizations || []).find(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
+      if (!defaultPaymentOrg) {
+        showNotice("Only Khata owners can manage subscriptions. Shared admin/view access cannot pay for this Khata.");
+        return;
+      }
+      setPaymentOrgId(defaultPaymentOrg.id);
       setScreen("plan-request");
       return;
     }
@@ -1550,6 +1557,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const targetOrgId = targetOrg?.id || "";
     const targetOrgType = getOrgType(targetOrg?.organizationType || orgType);
     const targetOrgName = String(targetOrg?.name || account?.name || "Current Khata").trim();
+    if (!pendingNewOrgDraft && targetOrg?.isOwned === false) {
+      showNotice("Only the Khata owner can pay for this subscription.");
+      return;
+    }
     if (!targetOrgId) {
       showNotice("Please select the Khata you want to upgrade before starting payment.");
       return;
@@ -2420,7 +2431,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     onClick={() => {
                       if (!reviewAccessEnabled) {
                         setPendingNewOrgDraft(null);
-                        setPaymentOrgId(activeOrgId || "");
+                        const defaultPaymentOrg = (ownedOrganizations || []).find(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
+                        if (!defaultPaymentOrg) {
+                          showNotice("Only Khata owners can manage subscriptions. Shared admin/view access cannot pay for this Khata.");
+                          return;
+                        }
+                        setPaymentOrgId(defaultPaymentOrg.id);
                         setScreen("plan-request");
                       }
                     }}
