@@ -7,33 +7,43 @@ export default function OrganizationSwitcherModal({
   onClose,
   organizations = [],
   activeOrgId,
+  activeSharedOrgKey,
   onSwitch,
   onDelete
 }) {
   const confirm = useConfirm();
   if (!open) return null;
 
-  const canDelete = organizations.length > 1;
+  const canDelete = organizations.filter(org => org.isOwned !== false).length > 1;
 
   return (
     <Modal title="Manage Khatas" onClose={onClose}>
       <div className="ledger-feed-card">
         {organizations.map(org => {
-          const isActiveOrg = org.id === activeOrgId;
+          const isActiveOrg = org.isShared
+            ? org.switchKey === activeSharedOrgKey
+            : (!activeSharedOrgKey && org.id === activeOrgId);
+          const canDeleteOrg = canDelete && org.isOwned !== false && !activeSharedOrgKey && org.organizationType !== "personal";
+          const meta = isActiveOrg
+            ? "Currently open"
+            : org.isShared
+              ? `${org.role === "admin" ? "Admin access" : "View access"}${org.ownerName ? ` from ${org.ownerName}` : ""}`
+              : "Tap Switch to move into this Khata";
+
           return (
-            <div key={org.id} className="ledger-feed-row" style={{ gap: 12 }}>
+            <div key={org.isShared ? org.switchKey : org.id} className="ledger-feed-row" style={{ gap: 12 }}>
               <div className="ledger-feed-main" style={{ minWidth: 0 }}>
                 <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {org.name}
                 </div>
-                <div className="ledger-feed-meta">{isActiveOrg ? "Currently open" : "Tap Switch to move into this Khata"}</div>
+                <div className="ledger-feed-meta">{meta}</div>
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {isActiveOrg ? (
                   <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Active</span>
                 ) : (
-                  <LoadingButton className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => onSwitch?.(org.id)} loadingLabel="Switching…">
+                  <LoadingButton className="btn-secondary" style={{ padding: "8px 12px", fontSize: 12 }} onClick={() => onSwitch?.(org)} loadingLabel="Switching...">
                     Switch
                   </LoadingButton>
                 )}
@@ -43,18 +53,18 @@ export default function OrganizationSwitcherModal({
                   style={{
                     padding: "8px 12px",
                     fontSize: 12,
-                    opacity: canDelete && org.organizationType !== "personal" ? 1 : 0.45,
-                    cursor: canDelete && org.organizationType !== "personal" ? "pointer" : "not-allowed",
-                    color: canDelete && org.organizationType !== "personal" ? "var(--danger)" : "var(--text-dim)"
+                    opacity: canDeleteOrg ? 1 : 0.45,
+                    cursor: canDeleteOrg ? "pointer" : "not-allowed",
+                    color: canDeleteOrg ? "var(--danger)" : "var(--text-dim)"
                   }}
-                  disabled={!canDelete || org.organizationType === "personal"}
+                  disabled={!canDeleteOrg}
                   onClick={async () => {
-                    if (!canDelete || org.organizationType === "personal") return;
+                    if (!canDeleteOrg) return;
                     if (await confirm(`Delete ${org.name}? This will permanently remove that Khata and all its data.`, { title: "Delete Khata", confirmLabel: "Delete" })) {
                       await onDelete?.(org.id);
                     }
                   }}
-                  loadingLabel="Deleting…"
+                  loadingLabel="Deleting..."
                 >
                   Delete
                 </LoadingButton>
@@ -66,7 +76,7 @@ export default function OrganizationSwitcherModal({
 
       {!canDelete && (
         <div style={{ marginTop: 14, fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-          You need at least one Khata, so the last one cannot be deleted.
+          You need at least one owned Khata, so the last one cannot be deleted.
         </div>
       )}
     </Modal>

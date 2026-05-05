@@ -27,6 +27,7 @@ import { RupeeDisplay } from "../components/ui/reimagined";
 import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
+import { useConfirm } from "../context/DialogContext";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const CURRENT_MONTH = TODAY.slice(0, 7);
@@ -111,12 +112,16 @@ function renderDynamicField(field, value, onChange) {
 
 export default function IncomeSection({ year, month, orgType, headerDatePicker }) {
   const d = useData();
+  const confirm = useConfirm();
   const isViewerMode = d.isViewerMode;
   const isReadOnlyFreeMode = d.isReadOnlyFreeMode;
   const { user } = useAuth();
 
   // Lazy-load income collection the first time this section mounts
-  useEffect(() => { d.ensureCollectionLoaded?.("income"); }, [d.ensureCollectionLoaded]);
+  useEffect(() => {
+    if (!d.loaded || !d.activeOrgId) return;
+    d.ensureCollectionLoaded?.("income");
+  }, [d.ensureCollectionLoaded, d.loaded, d.activeOrgId]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
   const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
@@ -155,10 +160,11 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   ), [config.hideInvoices, d.invoices, isApartmentOrg, mk]);
   const manualIncome = useMemo(() => (
     d.income.filter(item => {
+      const itemMk = item.collectionMonth || item.month || item.date?.slice(0, 7) || "";
       if (isApartmentOrg) {
-        return (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk;
+        return itemMk === mk;
       }
-      return item.month === mk;
+      return itemMk === mk;
     })
   ), [d.income, isApartmentOrg, mk]);
   const countableManualIncome = manualIncome;
@@ -277,9 +283,16 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     ].filter(Boolean).join(" · ");
 
     const canManage = d.canManageRecord?.(item) ?? !isViewerMode;
+    const confirmDeleteIncome = async event => {
+      event.stopPropagation();
+      if (!canManage) return;
+      if (await confirm(`Delete ${item.label || "this income"}?`, { title: "Delete Income", confirmLabel: "Delete" })) {
+        d.removeIncome(item.id);
+      }
+    };
     const actions = !isViewerMode && canManage ? [
       { label: "Edit", onClick: event => { event.stopPropagation(); openEdit(item); } },
-      { label: "Delete", onClick: event => { event.stopPropagation(); d.removeIncome(item.id); }, tone: "danger" }
+      { label: "Delete", onClick: confirmDeleteIncome, tone: "danger" }
     ] : [];
 
     return (
@@ -361,6 +374,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   }, [guidedField]);
 
   function openNew() {
+    if (isViewerMode) return;
     if (isReadOnlyFreeMode) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate", orgType));
       return;
@@ -393,6 +407,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openEdit(income) {
+    if (isViewerMode) return;
     if (isReadOnlyFreeMode) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate", orgType));
       return;
@@ -419,6 +434,12 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   }
 
   function save(overrides = {}) {
+    if (editId) {
+      const existing = (d.income || []).find(item => item.id === editId);
+      if (!(d.canManageRecord?.(existing) ?? !isViewerMode)) return;
+    } else if (isViewerMode) {
+      return;
+    }
     const nextForm = { ...form, ...overrides };
 
     if (isApartmentOrg && !hasApartmentFlats) {
@@ -507,6 +528,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   }
 
   function applyMaintenanceAmountToAllFlats() {
+    if (isViewerMode) return;
     const amount = Number(bulkMaintenanceAmount);
     if (!Number.isFinite(amount) || amount <= 0) return;
     const normalized = String(amount);
@@ -526,10 +548,11 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     return () => clearTimeout(t);
   }, [applyAmountToast]);
 
-  function createMaintenanceEntryForFlat(flat, triggerSuccessNotice = false) {
+  async function createMaintenanceEntryForFlat(flat, triggerSuccessNotice = false) {
+    if (isViewerMode) return;
     if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0)) return;
     const hadDues = (d.income || []).some(item => String(item?.collectionType || "").trim() === "Monthly Maintenance");
-    d.addIncome({
+    await d.addIncome({
       label: `Monthly Maintenance - ${flat.value}`,
       amount: flat.monthlyAmount,
       date: TODAY,
@@ -552,25 +575,40 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     }
   }
 
-  function markFlatAsPaid(flat) {
+  async function markFlatAsPaid(flat) {
+    if (isViewerMode) return;
     if (!flat || flat.paidEntry || !(flat.monthlyAmount > 0) || pendingFlatPayments.includes(flat.id)) return;
+    const ok = await confirm(
+      `Mark Flat ${flat.value} as paid for ${MONTHS[month]} ${year}? This will create a maintenance income entry for ${fmtMoney(flat.monthlyAmount, sym)}.`,
+      { title: "Mark Maintenance Paid", confirmLabel: "Mark Paid" }
+    );
+    if (!ok) return;
 
     setPendingFlatPayments(current => [...current, flat.id]);
     try {
-      createMaintenanceEntryForFlat(flat, true);
+      await createMaintenanceEntryForFlat(flat, true);
+      await d.refreshActiveOrgData?.({ collections: ["income"], includeOrgRecords: true });
     } finally {
       setPendingFlatPayments(current => current.filter(item => item !== flat.id));
     }
   }
 
-  function markFlatAsPending(flat) {
+  async function markFlatAsPending(flat) {
+    if (isViewerMode) return;
     if (!flat?.paidEntry?.id) return;
-    d.removeIncome(flat.paidEntry.id);
+    const ok = await confirm(
+      `Mark Flat ${flat.value} as pending for ${MONTHS[month]} ${year}? This will remove the linked maintenance income entry.`,
+      { title: "Mark Maintenance Pending", confirmLabel: "Mark Pending" }
+    );
+    if (!ok) return;
+    await d.removeIncome(flat.paidEntry.id);
+    await d.refreshActiveOrgData?.({ collections: ["income"], includeOrgRecords: true });
     setPendingFlatPayments(current => current.filter(item => item !== flat.id));
     closeForm();
   }
 
   function openBulkCollectionDraft(flat) {
+    if (isViewerMode) return;
     if (flat?.paidEntry) {
       openEdit(flat.paidEntry);
       return;
@@ -659,8 +697,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               <WorkflowSetupCard
                 title="Add flats first"
                 description="Create flat records in Khata before recording maintenance collections."
-                actionLabel="Open Flats"
-                onAction={openFlatManager}
+                actionLabel={!isViewerMode ? "Open Flats" : undefined}
+                onAction={!isViewerMode ? openFlatManager : undefined}
                 tone="accent"
               />
             ) : (
@@ -825,8 +863,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               eyebrow="Collections setup"
               title="Add flats before tracking collections"
               message="Maintenance collections need at least one flat record in Khata so each payment stays linked to the right unit."
-              actionLabel="Open Flats"
-              onAction={openFlatManager}
+              actionLabel={!isViewerMode ? "Open Flats" : undefined}
+              onAction={!isViewerMode ? openFlatManager : undefined}
               tone="accent"
             />
           ) : !hasHouseholdPeople ? (
@@ -834,8 +872,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               eyebrow="Household setup"
               title="Add a person before tracking earnings"
               message="Household earnings must be tagged to at least one person. Add your first person in Khata to keep every entry connected to the right family member."
-              actionLabel="Open People"
-              onAction={openPeopleManager}
+              actionLabel={!isViewerMode ? "Open People" : undefined}
+              onAction={!isViewerMode ? openPeopleManager : undefined}
               tone="accent"
             />
           ) : isFreelancerOrg && !hasFreelancerClients ? (
@@ -843,8 +881,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               eyebrow="Client setup"
               title="Add a client before tracking payments"
               message="Freelancer payments should be linked to a client so invoices, collections, and follow-up all stay aligned."
-              actionLabel="Open Clients"
-              onAction={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }))}
+              actionLabel={!isViewerMode ? "Open Clients" : undefined}
+              onAction={!isViewerMode ? () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })) : undefined}
               tone="accent"
             />
           ) : manualIncome.length === 0 ? (
@@ -852,8 +890,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               eyebrow={isApartmentOrg ? "Collections" : "Manual entries"}
               title={`No ${config.incomeLabel.toLowerCase()} yet`}
               message={isApartmentOrg ? `Tap "${config.incomeActionLabel}" below or use the + button to record your first maintenance collection.` : `Tap "${config.incomeActionLabel}" below or use the + button to record your first ${config.incomeEntryLabel.toLowerCase()}.`}
-              actionLabel={config.incomeActionLabel}
-              onAction={openNew}
+              actionLabel={!isViewerMode ? config.incomeActionLabel : undefined}
+              onAction={!isViewerMode ? openNew : undefined}
               tone="accent"
             />
           ) : filteredManualIncome.length === 0 ? (

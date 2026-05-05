@@ -169,7 +169,10 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   const { user } = useAuth();
 
   // Lazy-load invoices collection the first time this section mounts
-  useEffect(() => { d.ensureCollectionLoaded?.("invoices"); }, [d.ensureCollectionLoaded]);
+  useEffect(() => {
+    if (!d.loaded || !d.activeOrgId) return;
+    d.ensureCollectionLoaded?.("invoices");
+  }, [d.ensureCollectionLoaded, d.loaded, d.activeOrgId]);
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const isAdmin = user?.role === "admin";
   const effectiveOrgType = getOrgType(orgType || user?.organizationType);
@@ -406,6 +409,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openNew() {
+    if (isViewerMode) return;
     if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
@@ -422,6 +426,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openEdit(invoice) {
+    if (isViewerMode) return;
     setForm({
       ...invoice,
       status: invoice.status || getInvoiceStatus(invoice),
@@ -443,6 +448,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function openDuplicate(invoice) {
+    if (isViewerMode) return;
     if (!canUseFeature(user, "invoiceCreate", {}, effectiveOrgType)) {
       setUpgradeInfo(getUpgradeCopy("invoiceCreate", effectiveOrgType));
       return;
@@ -578,6 +584,12 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function saveInv() {
+    if (editInv) {
+      const existing = (d.invoices || []).find(item => item.id === editInv.id) || editInv;
+      if (!(d.canManageRecord?.(existing) ?? !isViewerMode)) return;
+    } else if (isViewerMode) {
+      return;
+    }
     if (!form) return;
 
     if (!hasMinLength(form.number, 3)) {
@@ -763,6 +775,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
   }
 
   function updateInvoiceStatus(invoice, status) {
+    if (!(d.canManageRecord?.(invoice) ?? !isViewerMode)) return;
     if (isApartmentOrg) return;
     const nextInvoice = {
       ...invoice,
@@ -928,8 +941,8 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
               eyebrow={isQuote ? "Quotes" : isApartmentOrg ? "Receipts & bills" : "Documents"}
               title={isAdmin ? "No subscription invoices yet" : isApartmentOrg ? "No documents yet" : `No ${documentCollectionLabel.toLowerCase()} yet`}
               message={isAdmin ? "Create invoices for subscription payments." : isQuote ? "Create your first quote to prepare pricing before sending an invoice." : isApartmentOrg ? "Create your first receipt or bill for this month." : `Create your first ${config.invoiceEntryLabel.toLowerCase()} to start tracking revenue and reminders.`}
-              actionLabel={isQuote ? "Create Quote" : config.invoiceActionLabel}
-              onAction={openNew}
+              actionLabel={!isViewerMode ? (isQuote ? "Create Quote" : config.invoiceActionLabel) : undefined}
+              onAction={!isViewerMode ? openNew : undefined}
               tone="accent"
             />
           ) : filteredMonthInv.length === 0 ? (

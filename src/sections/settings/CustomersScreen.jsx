@@ -56,6 +56,7 @@ export default function CustomersScreen({
   expensesLoaded,
   incomeLoaded,
   canManageRecord,
+  canCreateRecords = true,
 }) {
   const confirm = useConfirm();
   const sym = currency?.symbol || "Rs";
@@ -406,7 +407,7 @@ export default function CustomersScreen({
       <Modal
         title={orgConfig.customerLabel}
         onClose={onClose}
-        onSave={onOpenNewCust}
+        onSave={canCreateRecords ? onOpenNewCust : undefined}
         saveLabel={`Add ${orgConfig.customerEntryLabel}`}
       >
         {customerDirectory.length > 0 && (
@@ -488,7 +489,7 @@ export default function CustomersScreen({
           <Modal
             title={selectedCustomer.name}
             onClose={onBackToList}
-            onSave={() => onOpenEditCust(selectedCustomer)}
+            onSave={(canManageRecord?.(selectedCustomer) ?? true) ? () => onOpenEditCust(selectedCustomer) : undefined}
             saveLabel="Edit"
           >
             <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
@@ -612,7 +613,7 @@ export default function CustomersScreen({
         <Modal
           title={selectedCustomer.name}
           onClose={onBackToList}
-          onSave={() => onOpenEditCust(selectedCustomer)}
+          onSave={(canManageRecord?.(selectedCustomer) ?? true) ? () => onOpenEditCust(selectedCustomer) : undefined}
           saveLabel="Edit"
         >
           <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
@@ -690,7 +691,7 @@ export default function CustomersScreen({
       <Modal
         title={selectedCustomer.name}
         onClose={onBackToList}
-        onSave={() => onOpenEditCust(selectedCustomer)}
+        onSave={(canManageRecord?.(selectedCustomer) ?? true) ? () => onOpenEditCust(selectedCustomer) : undefined}
         saveLabel="Edit"
       >
         <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
@@ -740,7 +741,7 @@ export default function CustomersScreen({
       <Modal
         title={editCust ? `Edit ${orgConfig.customerEntryLabel}` : `New ${orgConfig.customerEntryLabel}`}
         onClose={onBackToList}
-        onSave={onSaveCust}
+        onSave={(editCust ? (canManageRecord?.(editCust) ?? true) : canCreateRecords) ? onSaveCust : undefined}
         canSave={!!custForm?.name?.trim() && (!phoneRequired || !!(custForm?.phoneNumber || "").trim())}
       >
         <Field label={orgConfig.customerNameLabel} required>

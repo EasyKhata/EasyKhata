@@ -427,9 +427,7 @@ export default function AdsManager() {
             <InsightList title="Apartment audience" rows={[
               { label: "Apartment owners", count: insights?.apartmentAudience?.apartmentOwners || 0 },
               { label: "Viewers / residents", count: insights?.apartmentAudience?.apartmentViewers || 0 },
-              { label: "Resident portal users", count: insights?.apartmentAudience?.apartmentResidentPortalUsers || 0 },
-              { label: "Shared apartment admins", count: insights?.apartmentAudience?.apartmentSharedAdmins || 0 },
-              { label: "Active apartment portals", count: insights?.apartmentAudience?.activeApartmentPortals || 0 }
+              { label: "Shared apartment admins", count: insights?.apartmentAudience?.apartmentSharedAdmins || 0 }
             ]} />
           </div>
         </section>

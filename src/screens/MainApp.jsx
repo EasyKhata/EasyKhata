@@ -16,7 +16,6 @@ import CoachMark, { useCoachMark } from "../components/CoachMark";
 import PendingInviteBanner from "../components/PendingInviteBanner";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
-import { societyApi } from "../lib/api";
 import { APP_NAME, APP_UPGRADE_URL } from "../utils/brand";
 import {
   buildReminders,
@@ -1208,7 +1207,6 @@ export default function MainApp() {
   const [isCompactMobile, setIsCompactMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 420 : false));
   const [idleWarning, setIdleWarning] = useState(false);
   const [idleCountdown, setIdleCountdown] = useState(120);
-  const [residentMemberView, setResidentMemberView] = useState(null);
   const [startGuideDismissed, setStartGuideDismissed] = useState(() => {
     try { return localStorage.getItem(getGuideDismissKey(user?.id, activeOrgId)) === "1"; } catch { return false; }
   });
@@ -1341,7 +1339,7 @@ export default function MainApp() {
 
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
-      const msg = event?.detail?.message || "Your trial has ended. Upgrade to Pro (Rs 69/month) to continue.";
+      const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro or Business in Settings to continue.";
       setReadOnlyNotice({ message: msg, key: Date.now() });
     };
     window.addEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);
@@ -1434,37 +1432,11 @@ export default function MainApp() {
       .catch(() => {});
   }, [user?.id, user?.plan, user?.role]);
 
-  const hasResidentPortalAccess = Boolean(user?.societyPortalId && user?.societyPortalRole === "member");
-
   const liveReminders = useMemo(() => {
-    if (hasResidentPortalAccess) {
-      const flatDue = residentMemberView?.flatDue || null;
-      const pendingAmount = Number(flatDue?.pendingAmount || 0);
-      if (pendingAmount <= 0) return [];
-
-      const period = String(flatDue?.period || new Date().toISOString().slice(0, 7));
-      const [yearPart, monthPart] = period.split("-");
-      const monthNumber = Number(monthPart);
-      const monthLabel = monthNumber >= 1 && monthNumber <= 12
-        ? `${MONTHS[monthNumber - 1]} ${yearPart}`
-        : period;
-
-      return [
-        {
-          id: `resident-due-${residentMemberView?.portal?.id || user?.societyPortalId || "portal"}-${period}`,
-          type: "pendingCollections",
-          tab: "org",
-          tone: "gold",
-          title: `Pending due for Flat ${flatDue?.flatNumber || user?.societyFlatNumber || "-"}`,
-          message: `${monthLabel} still has ${pendingAmount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} pending. Open the resident access section to review your dues.`
-        }
-      ];
-    }
-
     const currentDate = new Date();
     const reminders = buildReminders(data, currentDate.getFullYear(), currentDate.getMonth());
     return filterRemindersByPrefs(reminders, data.notificationPrefs || {});
-  }, [data, hasResidentPortalAccess, residentMemberView, user?.societyFlatNumber, user?.societyPortalId]);
+  }, [data]);
 
   const inboxReminders = useMemo(
     () => liveReminders.filter(item => !dismissedIds.includes(item.id)),
@@ -1523,6 +1495,58 @@ export default function MainApp() {
   const hasStartedUsingKhata = customers.length > 0 || (data.income || []).length > 0 || (data.expenses || []).length > 0 || (data.invoices || []).length > 0;
   const showStartGuide = !isAdmin && !activeSharedOrgKey && tab === "dashboard" && !startGuideDismissed && !hasStartedUsingKhata;
   const contextualQuickEntryType = tab === "income" ? "income" : tab === "expenses" ? "expense" : tab === "emi" ? "emi" : null;
+  const headerOrgOptions = useMemo(() => {
+    const owned = [];
+    const seenOwnedIds = new Set();
+    (organizations || []).forEach(org => {
+      if (!org || org.isShared || org.isOwned === false || seenOwnedIds.has(org.id)) return;
+      seenOwnedIds.add(org.id);
+      owned.push({
+        key: `own:${org.id}`,
+        id: org.id,
+        name: org.name || "My Organization",
+        organizationType: getOrgType(org.organizationType),
+        role: "Owner",
+        isOwned: true,
+        isActive: !activeSharedOrgKey && org.id === activeOrgId
+      });
+    });
+    if (!activeSharedOrgKey && activeOrgId && !seenOwnedIds.has(activeOrgId)) {
+      owned.unshift({
+        key: `own:${activeOrgId}`,
+        id: activeOrgId,
+        name: account?.name || ownOrgName || "My Organization",
+        organizationType: currentOrgType,
+        role: "Owner",
+        isOwned: true,
+        isActive: true
+      });
+    }
+
+    const shared = (sharedOrgs || []).map(org => ({
+      key: `shared:${org.key}`,
+      switchKey: org.key,
+      id: org.orgId,
+      name: org.orgName || "Shared Khata",
+      organizationType: getOrgType(org.organizationType),
+      role: org.role || "viewer",
+      isOwned: false,
+      isActive: activeSharedOrgKey === org.key
+    }));
+    return [...owned, ...shared];
+  }, [account?.name, activeOrgId, activeSharedOrgKey, currentOrgType, organizations, ownOrgName, sharedOrgs]);
+
+  const handleHeaderOrgSwitch = useCallback(async option => {
+    if (!option) return;
+    if (option.isOwned) {
+      if (activeSharedOrgKey) switchToOwnOrg(option.id);
+      else if (option.id && option.id !== activeOrgId) await switchOrganization(option.id);
+    } else if (option.switchKey) {
+      await switchToSharedOrg(option.switchKey);
+    }
+    handleNavigate({ tab: "dashboard" });
+    setShowOrgSwitcher(false);
+  }, [activeOrgId, activeSharedOrgKey, handleNavigate, switchOrganization, switchToOwnOrg, switchToSharedOrg]);
 
   useEffect(() => {
     try { setStartGuideDismissed(localStorage.getItem(getGuideDismissKey(user?.id, activeOrgId)) === "1"); } catch { setStartGuideDismissed(false); }
@@ -1534,9 +1558,10 @@ export default function MainApp() {
   }, [activeOrgId, user?.id]);
 
   const openQuickEntry = useCallback((entryType) => {
+    if (isViewerMode) return;
     setQuickEntryType(entryType || "income");
     setShowFab(true);
-  }, []);
+  }, [isViewerMode]);
 
   const handleQuickAddAction = useCallback((target) => {
     setShowFab(false);
@@ -1672,34 +1697,6 @@ export default function MainApp() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
-
-  useEffect(() => {
-    if (!hasResidentPortalAccess) {
-      setResidentMemberView(null);
-      return undefined;
-    }
-
-    let cancelled = false;
-    const period = new Date().toISOString().slice(0, 7);
-
-    async function loadResidentMemberView() {
-      try {
-        const result = await societyApi.getMemberView(period);
-        if (!cancelled) {
-          setResidentMemberView(result || null);
-        }
-      } catch {
-        if (!cancelled) {
-          setResidentMemberView(null);
-        }
-      }
-    }
-
-    loadResidentMemberView();
-    return () => {
-      cancelled = true;
-    };
-  }, [hasResidentPortalAccess, user?.societyPortalId, user?.societyFlatNumber]);
 
   const renderTabContent = useCallback(() => {
     const fallback = tab === "settings" || (isAdmin && tab === "users")
@@ -1927,8 +1924,35 @@ export default function MainApp() {
                   </button>
                   {showOrgSwitcher && (
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>
+                      {headerOrgOptions.length > 0 ? headerOrgOptions.map((org, index) => {
+                        const role = org.role || "viewer";
+                        const roleColor = org.isOwned ? "var(--jade)" : role === "admin" ? "var(--jade)" : "var(--sky)";
+                        const initials = (org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
+                        return (
+                          <React.Fragment key={org.key}>
+                            {index > 0 && <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />}
+                            <button
+                              onClick={() => handleHeaderOrgSwitch(org)}
+                              style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: org.isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: org.isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                            >
+                              <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
+                              <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name}</span>
+                                <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
+                              </span>
+                              <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: org.isOwned ? "none" : "capitalize" }}>{role}</span>
+                              {org.isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>âœ“</span>}
+                            </button>
+                          </React.Fragment>
+                        );
+                      }) : (
+                        <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.5 }}>
+                          No Khatas available.
+                        </div>
+                      )}
+                      {false && (<>
                       {/* Own org row */}
-                      <button
+                      {!activeSharedOrgKey && <button
                         onClick={() => { switchToOwnOrg(); handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
                         style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: !activeSharedOrgKey ? "color-mix(in srgb, var(--jade) 8%, var(--raised))" : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
                       >
@@ -1941,13 +1965,14 @@ export default function MainApp() {
                         </span>
                         <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
                         {!activeSharedOrgKey && <span style={{ fontSize: 12, color: "var(--jade)", flexShrink: 0 }}>✓</span>}
-                      </button>
-                      {organizations.filter(org => org.id !== activeOrgId).map(org => (
+                      </button>}
+                      {organizations.filter(org => org.isOwned !== false && org.id !== activeOrgId).map(org => (
                         <React.Fragment key={org.id}>
                           <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
                           <button
                             onClick={async () => {
-                              await switchOrganization(org.id);
+                              if (activeSharedOrgKey) switchToOwnOrg(org.id);
+                              else await switchOrganization(org.id);
                               handleNavigate({ tab: "dashboard" });
                               setShowOrgSwitcher(false);
                             }}
@@ -1998,6 +2023,7 @@ export default function MainApp() {
                           </div>
                         </>
                       )}
+                      </>)}
                     </div>
                   )}
                 </div>
@@ -2173,7 +2199,7 @@ export default function MainApp() {
       </AnimatePresence>
 
       {/* Coach marks */}
-      {!!account && !coachFabSeen && !showFab && contextualQuickEntryType && (
+      {!!account && !isViewerMode && !coachFabSeen && !showFab && contextualQuickEntryType && (
         <CoachMark
           anchorRef={fabRef}
           arrow="down"

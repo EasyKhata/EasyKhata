@@ -1,6 +1,16 @@
 import React from "react";
-import { Modal, Field, Select, Textarea } from "../../components/UI";
-import { BILLING_CYCLES, PLANS, UPI_CONFIG, getBillingAmount, isPaidActive } from "../../utils/subscription";
+import { Modal, Field, Textarea } from "../../components/UI";
+import {
+  BILLING_CYCLES,
+  PLANS,
+  PLAN_LABELS,
+  UPI_CONFIG,
+  canCreatePaidOrg,
+  getBillingAmount,
+  getOwnedPaidOrgCount,
+  getPaidOrgLimit,
+  isPaidActive
+} from "../../utils/subscription";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../../utils/orgTypes";
 import { isNative } from "../../utils/native";
 
@@ -12,73 +22,102 @@ export default function PlanRequestModal({
   onClose,
   orgType = ORG_TYPES.FREELANCER,
   orgName = "",
-  orgId = "",
   user = null,
   organizations = [],
-  selectedOrgId = "",
-  onSelectedOrgIdChange,
   lockedOrgSelection = false
 }) {
-  const selectedOrg = organizations.find(org => org.id === selectedOrgId) || null;
-  const normalizedOrgType = getOrgType(selectedOrg?.organizationType || orgType);
-  const orgConfig = getOrgConfig(normalizedOrgType);
-  const displayOrgName = String(selectedOrg?.name || orgName || "Current Khata").trim();
-  const displayOrgId = selectedOrg?.id || orgId;
-  const selectedOrgActive = Boolean(selectedOrg && isPaidActive(user, { account: selectedOrg, organizationType: selectedOrg.organizationType }));
+  const targetPlan = form.targetPlan || PLANS.PRO;
   const billingCycle = form.billingCycle || BILLING_CYCLES.MONTHLY;
-  const monthlyAmount = getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO, normalizedOrgType);
-  const yearlyAmount  = getBillingAmount(BILLING_CYCLES.YEARLY,  PLANS.PRO, normalizedOrgType);
-  const amount = billingCycle === BILLING_CYCLES.MONTHLY ? monthlyAmount : yearlyAmount;
+  const normalizedOrgType = getOrgType(orgType);
+  const orgConfig = getOrgConfig(normalizedOrgType);
+  const displayOrgName = String(orgName || "").trim();
+  const paidOrgCount = getOwnedPaidOrgCount(organizations);
+  const currentActive = isPaidActive(user);
+  const creatingNewKhata = Boolean(lockedOrgSelection && displayOrgName);
+  const planOptions = [
+    {
+      id: PLANS.PRO,
+      title: "Pro",
+      subtitle: "1 free Household + 2 paid Khatas",
+      monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO),
+      yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.PRO)
+    },
+    {
+      id: PLANS.BUSINESS,
+      title: "Business",
+      subtitle: "1 free Household + 5 paid Khatas",
+      monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.BUSINESS),
+      yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.BUSINESS)
+    }
+  ];
+  const amount = getBillingAmount(billingCycle, targetPlan);
+  const selectedLimit = getPaidOrgLimit(targetPlan);
+  const canUseSelectedPlan = !creatingNewKhata || canCreatePaidOrg(user, organizations, targetPlan);
 
   return (
     <Modal
-      title="Upgrade This Khata"
+      title={creatingNewKhata ? "Choose Plan to Create Khata" : "Manage Subscription"}
       onClose={onClose}
       onSave={onSubmit}
-      saveLabel={selectedOrgActive ? "Already Active" : submitting ? "Starting..." : isNative ? "Upgrade on Website" : "Pay Securely"}
-      canSave={!submitting && !selectedOrgActive}
+      saveLabel={submitting ? "Starting..." : isNative ? "Upgrade on Website" : `Pay Rs ${amount}`}
+      canSave={!submitting && canUseSelectedPlan}
     >
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, marginBottom: 12 }}>
-          Pro will be activated only for the Khata shown below. Other Khatas keep their own plan and billing status.
+          Subscription now applies to your account, not one specific Khata. Household remains free and does not use a paid slot.
         </div>
 
-        {organizations.length > 1 && !lockedOrgSelection && (
-          <Field label="Select Khata" required hint="Choose exactly which Khata this payment should activate.">
-            <Select value={selectedOrgId || displayOrgId} onChange={event => onSelectedOrgIdChange?.(event.target.value)}>
-              {organizations.map(org => {
-                const cfg = getOrgConfig(org.organizationType);
-                const active = isPaidActive(user, { account: org, organizationType: org.organizationType });
-                return (
-                  <option key={org.id} value={org.id}>
-                    {org.name} - {cfg.typeLabel}{active ? " - Pro active" : ""}
-                  </option>
-                );
-              })}
-            </Select>
-          </Field>
+        {creatingNewKhata && (
+          <div style={{ padding: 14, background: "var(--surface-high)", border: "1px solid var(--accent)", borderRadius: 8, marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+              Creating
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.25 }}>
+              {displayOrgName}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>
+              {orgConfig.typeLabel} Khata
+            </div>
+          </div>
         )}
 
-        <div style={{ padding: 14, background: "var(--surface-high)", border: "1px solid var(--accent)", borderRadius: 8, marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
-            Paying for
+        <Field label="Select Plan" required hint={`You are using ${paidOrgCount} paid Khata${paidOrgCount === 1 ? "" : "s"} right now.`}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            {planOptions.map(option => {
+              const selected = targetPlan === option.id;
+              const disabled = creatingNewKhata && !canCreatePaidOrg(user, organizations, option.id);
+              const price = billingCycle === BILLING_CYCLES.YEARLY ? option.yearly : option.monthly;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="btn-secondary"
+                  disabled={disabled}
+                  onClick={() => onFormChange(current => ({ ...current, targetPlan: option.id }))}
+                  style={{
+                    padding: "13px 14px",
+                    textAlign: "left",
+                    opacity: disabled ? 0.48 : 1,
+                    background: selected ? "var(--surface-pop)" : "var(--surface-high)",
+                    borderColor: selected ? "var(--accent)" : "var(--border)",
+                    color: selected ? "var(--text)" : "var(--text-sec)"
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>{option.title}</div>
+                  <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.45 }}>{option.subtitle}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", marginTop: 8 }}>Rs {price}</div>
+                  {disabled && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>Not enough Khata slots</div>}
+                </button>
+              );
+            })}
           </div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.25 }}>
-            {orgConfig.typeLabel} Khata
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-sec)", marginTop: 4 }}>
-            {displayOrgName}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--accent)", marginTop: 8, lineHeight: 1.45 }}>
-            {selectedOrgActive ? "This Khata already has an active Pro plan." : "Payment will unlock Pro features for this Khata only."}
-          </div>
-        </div>
+        </Field>
 
-        <Field label="Billing Cycle" required hint="Select the cycle you are paying for.">
+        <Field label="Billing Cycle" required>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {[
-              [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${monthlyAmount}`],
-              [BILLING_CYCLES.YEARLY,  `Yearly - Rs ${yearlyAmount}`]
+              [BILLING_CYCLES.MONTHLY, `Monthly - Rs ${getBillingAmount(BILLING_CYCLES.MONTHLY, targetPlan)}`],
+              [BILLING_CYCLES.YEARLY, `Yearly - Rs ${getBillingAmount(BILLING_CYCLES.YEARLY, targetPlan)}`]
             ].map(([value, label]) => (
               <button
                 key={value}
@@ -108,7 +147,8 @@ export default function PlanRequestModal({
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
               Amount to pay: Rs {amount}<br />
-              Activation target: {orgConfig.typeLabel} Khata - {displayOrgName}
+              Plan: {PLAN_LABELS[targetPlan]} - {selectedLimit} paid Khatas<br />
+              Current usage: {paidOrgCount}/{selectedLimit} paid Khatas{currentActive ? "" : " after activation"}
             </div>
           </div>
         </Field>
@@ -127,8 +167,7 @@ export default function PlanRequestModal({
           How activation works
         </div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          After a successful payment, Pro is applied to this Khata automatically. If you switch to another
-          Khata, that Khata may still show a different plan until it is paid separately.
+          After payment, your selected plan unlocks paid Khata slots for your account. Shared admin or viewer Khatas do not count against your limit.
         </div>
       </div>
     </Modal>

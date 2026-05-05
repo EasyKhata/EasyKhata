@@ -761,10 +761,11 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   // Eagerly load all collections so dashboard cards and analytics reflect real data
   // without requiring the user to visit each section tab first.
   useEffect(() => {
+    if (!data.loaded || !data.activeOrgId) return;
     data.ensureCollectionLoaded?.("income");
     data.ensureCollectionLoaded?.("expenses");
     data.ensureCollectionLoaded?.("invoices");
-  }, [data.ensureCollectionLoaded]);
+  }, [data.ensureCollectionLoaded, data.loaded, data.activeOrgId]);
 
   // Show setup guide for normal users on first visit
   useEffect(() => {
@@ -1714,14 +1715,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <div style={{ marginBottom: 14, padding: "12px 14px", background: reviewAccessEnabled ? "color-mix(in srgb, var(--sky) 8%, var(--canvas))" : currentPlan === PLANS.FREE ? "color-mix(in srgb, var(--saffron) 8%, var(--canvas))" : "color-mix(in srgb, var(--jade) 8%, var(--canvas))", borderRadius: 14, border: `1px solid color-mix(in srgb, ${reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)"} 22%, var(--line-2))`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
-                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Upgrade to Pro" : "Pro Trial Active"}
+                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Choose a Plan" : `${currentPlan === PLANS.BUSINESS ? "Business" : "Pro"} Active`}
               </div>
               <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
-                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Unlock reports, PDF exports, alerts, and a 30-day free trial" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "All Pro features active"}
+                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Pro gives 2 paid Khatas; Business gives 5 paid Khatas" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "Paid features active"}
               </div>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", whiteSpace: "nowrap" }}>
-              {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "Rs 69/mo" : ""}
+              {reviewAccessEnabled ? "Full access" : currentPlan === PLANS.FREE ? "From Rs 99/mo" : ""}
             </div>
           </div>
         )}

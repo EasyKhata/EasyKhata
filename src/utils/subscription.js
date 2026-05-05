@@ -27,22 +27,24 @@ export const PAYMENT_REQUEST_STATUS = {
   REJECTED: "rejected"
 };
 
-// Prices per org type. Household (personal) is permanently free — no Pro tier needed.
 export const PLAN_PRICES = {
-  [ORG_TYPES.PERSONAL]:   { pro: null },
-  [ORG_TYPES.FREELANCER]: { pro: { monthly: 69, yearly: 699 } },
-  [ORG_TYPES.APARTMENT]:  { pro: { monthly: 69, yearly: 699 } }
+  [PLANS.PRO]: { monthly: 99, yearly: 999 },
+  [PLANS.BUSINESS]: { monthly: 199, yearly: 1999 }
 };
 
-// Per-plan limits for org types that aren't fully unlimited on Pro
+export const PLAN_ORG_LIMITS = {
+  [PLANS.FREE]: 0,
+  [PLANS.PRO]: 2,
+  [PLANS.BUSINESS]: 5
+};
+
 const PLAN_LIMITS = {
   [ORG_TYPES.FREELANCER]: {
     customers: 10,
     invoicesPerCustomerPerMonth: 10
   },
   [ORG_TYPES.APARTMENT]: {
-    flats: 40,
-    invites: 40
+    flats: 40
   }
 };
 
@@ -66,14 +68,12 @@ export function isReviewAccessEnabled() {
   return REVIEW_ACCESS_ENABLED;
 }
 
-// Household (personal) is permanently free — no subscription required
 export function isFreeOrgType(orgType) {
   return orgType === ORG_TYPES.PERSONAL;
 }
 
-// Business tier has been removed — always false
-export function hasBusinessPlan(orgType) {
-  return false;
+export function hasBusinessPlan(user) {
+  return getUserPlan(user) === PLANS.BUSINESS && isSubscriptionActive(user);
 }
 
 export function getOrgPlan(org) {
@@ -88,29 +88,36 @@ export function getOrgSubscriptionEndsAt(org) {
   return org?.subscriptionEndsAt || org?.account?.subscriptionEndsAt || "";
 }
 
-// True when user/org is on an active paid plan (not trial, not expired)
-export function isPaidActive(user, org = null) {
+export function getUserPlan(user) {
+  if (isAdminUser(user)) return PLANS.BUSINESS;
+  return user?.plan || PLANS.FREE;
+}
+
+export function getPaidOrgLimit(planOrUser = PLANS.FREE) {
+  const plan = typeof planOrUser === "string" ? planOrUser : getUserPlan(planOrUser);
+  return PLAN_ORG_LIMITS[plan] ?? PLAN_ORG_LIMITS[PLANS.FREE];
+}
+
+export function getOwnedPaidOrgCount(organizations = []) {
+  return (organizations || []).filter(org => !isFreeOrgType(org?.organizationType || org?.account?.organizationType)).length;
+}
+
+export function canCreatePaidOrg(user, organizations = [], planOverride = null) {
   if (isAdminUser(user)) return true;
-  const plan = getOrgPlan(org) || getUserPlan(user);
-  if (plan !== PLANS.PRO) return false;
-  return isSubscriptionActive(user, org);
+  if (isReviewAccessEnabled()) return true;
+  const plan = planOverride || getUserPlan(user);
+  const paidLimit = getPaidOrgLimit(plan);
+  return isSubscriptionActive({ ...user, plan }) && getOwnedPaidOrgCount(organizations) < paidLimit;
 }
 
-// Per-org billing has no account-wide org cap. Household remains limited separately.
 export function getMaxOrganizations(user) {
-  return Infinity;
+  if (isAdminUser(user)) return Infinity;
+  return 1 + getPaidOrgLimit(user);
 }
 
-// Org type can be changed during trial (clears data) or on a paid plan.
-// Expired/free users are locked to their current type.
 export function canChangeOrgType(user) {
   if (isAdminUser(user)) return true;
   return isSubscriptionActive(user);
-}
-
-export function getUserPlan(user) {
-  if (isAdminUser(user)) return PLANS.PRO;
-  return user?.plan || PLANS.FREE;
 }
 
 export function getTrialEndDate(days = DEFAULT_TRIAL_DAYS) {
@@ -132,12 +139,9 @@ export function getSubscriptionEndDate(days) {
   return next.toISOString();
 }
 
-// orgType is required to look up the correct price tier
-export function getBillingAmount(cycle, plan = PLANS.PRO, orgType = ORG_TYPES.FREELANCER) {
-  const prices = PLAN_PRICES[orgType] || PLAN_PRICES[ORG_TYPES.FREELANCER];
-  const tier = prices.pro;
-  if (!tier) return 0;
-  return cycle === BILLING_CYCLES.YEARLY ? tier.yearly : tier.monthly;
+export function getBillingAmount(cycle, plan = PLANS.PRO) {
+  const prices = PLAN_PRICES[plan] || PLAN_PRICES[PLANS.PRO];
+  return cycle === BILLING_CYCLES.YEARLY ? prices.yearly : prices.monthly;
 }
 
 export function getBillingDuration(cycle) {
@@ -160,14 +164,20 @@ export function isSubscriptionActive(user, org = null) {
   if (isReviewAccessEnabled()) return true;
   const orgType = org?.organizationType || org?.account?.organizationType;
   if (orgType && isFreeOrgType(orgType)) return true;
-  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus;
-  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return true;
+  const plan = getUserPlan(user);
+  const status = user?.subscriptionStatus || getOrgSubscriptionStatus(org);
+  if (plan === PLANS.FREE && status !== SUBSCRIPTION_STATUS.TRIAL) return false;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user, org);
+  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return plan === PLANS.PRO || plan === PLANS.BUSINESS;
   return false;
 }
 
-// Read-only mode: trial expired or no active subscription.
-// Pass orgType to exempt Household users (always free, never read-only).
+export function isPaidActive(user, org = null) {
+  if (isAdminUser(user)) return true;
+  const plan = getUserPlan(user);
+  return (plan === PLANS.PRO || plan === PLANS.BUSINESS) && isSubscriptionActive(user, org);
+}
+
 export function isFreeReadOnlyMode(user, orgType, org = null) {
   if (isAdminUser(user)) return false;
   if (isReviewAccessEnabled()) return false;
@@ -175,25 +185,18 @@ export function isFreeReadOnlyMode(user, orgType, org = null) {
   return !isSubscriptionActive(user, org);
 }
 
-// usage keys by feature:
-//   customerCreate      → customerCount, flatCount
-//   invoiceCreate       → invoiceCountForCustomer (freelancer only; per customer per month)
-//   apartmentFlatCreate → flatCount
-//   societyInvite       → inviteCount
 export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FREELANCER, org = null) {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return feature !== "sharedLedger";
 
-  // Household is permanently free — all features allowed except apartment-only and reports
   if (isFreeOrgType(orgType)) {
-    if (feature === "apartmentFlatCreate" || feature === "societyInvite" || feature === "sharedLedger" || feature === "reports") return false;
+    if (feature === "apartmentFlatCreate" || feature === "sharedLedger" || feature === "reports") return false;
     return true;
   }
 
-  const plan = getOrgPlan(org) || getUserPlan(user);
+  const plan = getUserPlan(user);
   const active = isSubscriptionActive(user, org);
 
-  // Trial expired / no active plan: read-only — allow viewing and exports, block all writes
   if (!active) {
     return feature === "basicBookkeeping" || feature === "invoicePdf" || feature === "reports";
   }
@@ -206,12 +209,11 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FRE
       if (orgType === ORG_TYPES.APARTMENT) {
         return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
       }
-      return true; // personal, small_business: unlimited
+      return true;
     }
 
     case "invoiceCreate": {
       if (orgType === ORG_TYPES.FREELANCER) {
-        // usage.invoiceCountForCustomer = invoices for this customer in the current month
         return (usage.invoiceCountForCustomer || 0) < PLAN_LIMITS[ORG_TYPES.FREELANCER].invoicesPerCustomerPerMonth;
       }
       return true;
@@ -222,22 +224,14 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FRE
       return (usage.flatCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].flats;
     }
 
-    case "societyInvite": {
-      if (orgType !== ORG_TYPES.APARTMENT) return false;
-      return (usage.inviteCount || 0) < PLAN_LIMITS[ORG_TYPES.APARTMENT].invites;
-    }
-
     case "notifications":
     case "advancedAnalytics":
     case "budgets":
     case "advancedInvoice":
-      return plan === PLANS.PRO;
+      return plan === PLANS.PRO || plan === PLANS.BUSINESS;
 
     case "posSystem":
-      return false; // not launched
-
-    case "residentPortal":
-      return false; // coming soon
+      return false;
 
     case "sharedLedger":
       return false;
@@ -257,8 +251,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
         };
       }
       return {
-        title: "Trial ended",
-        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to create invoices."
+        title: "Subscription required",
+        message: "Upgrade to Pro (Rs 99/month) or Business (Rs 199/month) to create invoices."
       };
 
     case "customerCreate":
@@ -275,8 +269,8 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
         };
       }
       return {
-        title: "Trial ended",
-        message: "Your 30-day trial has ended. Upgrade to Pro (Rs 69/month) to add customers."
+        title: "Subscription required",
+        message: "Upgrade to Pro or Business to add customers."
       };
 
     case "apartmentFlatCreate":
@@ -285,40 +279,34 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
         message: "Pro plan supports up to 40 flats."
       };
 
-    case "societyInvite":
-      return {
-        title: "Invite limit reached",
-        message: "Pro plan supports up to 40 resident invites."
-      };
-
     case "invoicePdf":
       return {
         title: "PDF export",
-        message: "Upgrade to Pro to download branded invoice PDFs."
+        message: "Upgrade to Pro or Business to download branded invoice PDFs."
       };
 
     case "reports":
       return {
         title: "Reports",
-        message: "Upgrade to Pro for advanced reports, alerts, and insights."
+        message: "Upgrade to Pro or Business for advanced reports, alerts, and insights."
       };
 
     case "notifications":
       return {
-        title: "Smart alerts are a Pro feature",
-        message: "Upgrade to Pro to enable payment reminders and notification alerts."
+        title: "Smart alerts are a paid feature",
+        message: "Upgrade to Pro or Business to enable payment reminders and notification alerts."
       };
 
     case "advancedAnalytics":
       return {
-        title: "Advanced analytics are a Pro feature",
-        message: "Upgrade to Pro to unlock burn rate, savings goals, and customer intelligence."
+        title: "Advanced analytics are a paid feature",
+        message: "Upgrade to Pro or Business to unlock burn rate, savings goals, and customer intelligence."
       };
 
     case "budgets":
       return {
-        title: "Budgets are a Pro feature",
-        message: "Upgrade to Pro to set category budgets and track overspending automatically."
+        title: "Budgets are a paid feature",
+        message: "Upgrade to Pro or Business to set category budgets and track overspending automatically."
       };
 
     case "sharedLedger":
@@ -327,72 +315,58 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
         message: "Shared ledger has been retired from the app."
       };
 
-    case "residentPortal":
-      return {
-        title: "Resident portal — coming soon",
-        message: "Apartment resident read-only portal will roll out in a future update."
-      };
-
     default:
       return {
-        title: "Pro required",
-        message: "This feature requires an active Pro subscription (Rs 69/month or Rs 699/year)."
+        title: "Subscription required",
+        message: "This feature requires Pro (Rs 99/month) or Business (Rs 199/month)."
       };
   }
 }
 
-export function getPlanSummary(user, orgType, org = null) {
-  const plan = getOrgPlan(org) || getUserPlan(user);
-  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE;
+export function getPlanSummary(user, orgType, org = null, organizations = []) {
+  const plan = getUserPlan(user);
+  const status = user?.subscriptionStatus || getOrgSubscriptionStatus(org) || SUBSCRIPTION_STATUS.ACTIVE;
+  const paidCount = getOwnedPaidOrgCount(organizations);
+  const paidLimit = getPaidOrgLimit(user);
 
   if (orgType && isFreeOrgType(orgType)) {
     return {
-      title: "Household — Free",
-      message: "Household Khata is permanently free. All features are included at no cost."
+      title: "Household - Free",
+      message: "Household Khata is permanently free and does not count against your paid Khata limit."
     };
   }
 
   if (isAdminUser(user)) {
     return {
       title: "Owner access",
-      message: "You have full Pro access across all plan features."
+      message: "You have full access across all plan features."
     };
   }
 
   if (isReviewAccessEnabled()) {
     return {
       title: "Review access enabled",
-      message: "All Pro features are unlocked. No upgrade needed during the review period."
+      message: "All paid features are unlocked. No upgrade needed during the review period."
     };
   }
 
   if (status === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user, org)) {
-    const ends = formatSubscriptionDate(getOrgSubscriptionEndsAt(org) || user?.subscriptionEndsAt);
+    const ends = formatSubscriptionDate(user?.subscriptionEndsAt || getOrgSubscriptionEndsAt(org));
     return {
       title: `${PLAN_LABELS[plan] || "Pro"} trial`,
       message: ends ? `Trial access is active until ${ends}.` : "Trial access is active for a limited period."
     };
   }
 
-  if (status === SUBSCRIPTION_STATUS.TRIAL && !isTrialActive(user, org)) {
+  if (!isSubscriptionActive(user, org)) {
     return {
-      title: "Trial ended",
-      message: "Your 30-day free trial has ended. You can still view all your records. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
-    };
-  }
-
-  if (status === SUBSCRIPTION_STATUS.INACTIVE) {
-    return {
-      title: "Subscription paused",
-      message: "Your Pro subscription is inactive. Tap Manage Subscription to renew."
+      title: "Free plan",
+      message: "Household is free. Upgrade to Pro for 2 paid Khatas or Business for 5 paid Khatas."
     };
   }
 
   return {
-    title: `${PLAN_LABELS[plan] || "Free"} plan`,
-    message:
-      plan === PLANS.FREE
-        ? "Your trial has ended. You can view all your records and download reports. Upgrade to Pro (Rs 69/month or Rs 699/year) to create or edit records."
-        : `${PLAN_LABELS[plan] || "Plan"} is active.`
+    title: `${PLAN_LABELS[plan] || "Plan"} plan`,
+    message: `${paidCount}/${paidLimit} paid Khatas used. Household remains free.`
   };
 }

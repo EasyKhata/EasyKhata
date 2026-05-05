@@ -27,7 +27,7 @@ const PERSONAS = [
   },
   {
     id: "freelancer", label: "Small Business", color: "var(--blue)",
-    orgName: "Priya Design Co.", badge: "Rs 69/month",
+    orgName: "Priya Design Co.", badge: "Pro plan",
     income: 124000, expense: 18600, net: 105400,
     chart: [40, 80, 55, 95, 60, 110, 75, 120, 85, 105, 124, 98],
     transactions: [
@@ -46,7 +46,7 @@ const PERSONAS = [
   },
   {
     id: "apartment", label: "Apartment", color: "var(--purple)",
-    orgName: "Sunrise Heights CHS", badge: "Rs 69/month",
+    orgName: "Sunrise Heights CHS", badge: "Business plan",
     income: 184000, expense: 62400, net: 121600,
     chart: [160, 175, 168, 180, 172, 184, 178, 190, 182, 185, 184, 176],
     transactions: [
@@ -657,7 +657,7 @@ export default function LandingScreen({ onGetStarted }) {
                 Start Free. Upgrade When Ready.
               </h2>
               <p className="ekReveal" style={{ fontSize: 15, color: "var(--text-sec)", maxWidth: 420, margin: "0 auto" }}>
-                Household accounts are free forever. Freelancers and apartment societies get a 30-day trial, then Rs 69/month.
+                Household is free forever. Pro includes 2 paid Khatas, and Business includes 5 paid Khatas.
               </p>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
@@ -668,9 +668,14 @@ export default function LandingScreen({ onGetStarted }) {
                   cta: "Get Started Free →", primary: false,
                 },
                 {
-                  label: "Pro", price: "Rs 69", sub: "per month · 30-day free trial", color: "var(--gold)",
-                  points: ["Everything in Household", "GST invoices & quotes", "Udhaar / khata records", "Multi-org support", "CSV & PDF exports"],
-                  cta: "Start Free Trial →", primary: true,
+                  label: "Pro", price: "Rs 99", sub: "per month / Rs 999 yearly", color: "var(--gold)",
+                  points: ["Free Household", "2 paid Khatas", "GST invoices & quotes", "CSV & PDF exports", "Reports and alerts"],
+                  cta: "Choose Pro", primary: true,
+                },
+                {
+                  label: "Business", price: "Rs 199", sub: "per month / Rs 1999 yearly", color: "var(--blue)",
+                  points: ["Free Household", "5 paid Khatas", "Everything in Pro", "Multi-org operations", "Reports and alerts"],
+                  cta: "Choose Business", primary: false,
                 },
               ].map(plan => (
                 <div key={plan.label} className="ekReveal card" style={{

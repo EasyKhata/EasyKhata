@@ -71,6 +71,12 @@ export default function OrgMembersScreen({ onBack }) {
       setError("This email already has access.");
       return;
     }
+    const roleLabel = roles.find(role => role.value === inviteRole)?.label || inviteRole;
+    const ok = await confirm(
+      `Invite ${email} as ${roleLabel}? ${roleLabel === "Admin" ? "They can add records and edit/delete only their own records." : "They can view records and download reports only."}`,
+      { title: "Confirm Access", confirmLabel: "Send Invite" }
+    );
+    if (!ok) return;
     setError("");
     try {
       const invitation = await membersApi.invite(user.id, orgId, {
@@ -85,17 +91,25 @@ export default function OrgMembersScreen({ onBack }) {
     } catch (err) {
       setError(err.message || "Failed to send invite. Please try again.");
     }
-  }, [inviteEmail, inviteRole, members, orgId, orgName, user?.email, user?.id, data.account?.organizationType]);
+  }, [confirm, inviteEmail, inviteRole, members, orgId, orgName, roles, user?.email, user?.id, data.account?.organizationType]);
 
   const handleRoleChange = useCallback(async (member, newRole) => {
     if (!user?.id) return;
+    if (!member || member.role === newRole) return;
+    const newRoleLabel = roles.find(role => role.value === newRole)?.label || newRole;
+    const oldRoleLabel = roles.find(role => role.value === member.role)?.label || member.role || "current role";
+    const ok = await confirm(
+      `Change ${member.email} from ${oldRoleLabel} to ${newRoleLabel}?`,
+      { title: "Change Access", confirmLabel: "Change Role" }
+    );
+    if (!ok) return;
     try {
       await membersApi.changeRole(user.id, orgId, member.id, newRole);
       setMembers(prev => prev.map(m => m.id === member.id ? { ...m, role: newRole } : m));
     } catch {
       setError("Failed to update role.");
     }
-  }, [orgId, user?.id]);
+  }, [confirm, orgId, roles, user?.id]);
 
   const handleRemove = useCallback(async member => {
     if (!await confirm(`Remove ${member.email} from this organization?`, { title: "Remove Member", confirmLabel: "Remove" })) return;
