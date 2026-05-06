@@ -915,9 +915,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   // without requiring the user to visit each section tab first.
   useEffect(() => {
     if (!data.loaded || !data.activeOrgId) return;
-    data.ensureCollectionLoaded?.("income");
-    data.ensureCollectionLoaded?.("expenses");
-    data.ensureCollectionLoaded?.("invoices");
+    let cancelled = false;
+    (async () => {
+      for (const key of ["income", "expenses", "invoices"]) {
+        if (cancelled) return;
+        await data.ensureCollectionLoaded?.(key);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [data.ensureCollectionLoaded, data.loaded, data.activeOrgId]);
 
   // Show setup guide for normal users on first visit

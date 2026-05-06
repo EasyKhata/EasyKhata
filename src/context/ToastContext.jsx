@@ -2,10 +2,16 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { ToastNotice } from "../components/ui/feedback";
 
 const ToastContext = createContext(null);
+const TOAST_DEDUPE_MS = 10_000;
+let lastGlobalToast = { key: "", at: 0 };
 
 // Non-React code (DataContext, API layers) can fire toasts via:
 // window.dispatchEvent(new CustomEvent("app:toast", { detail: { title, message, tone } }))
 export function showGlobalToast(detail) {
+  const key = `${detail?.tone || ""}|${detail?.title || ""}|${detail?.message || ""}`;
+  const now = Date.now();
+  if (key && lastGlobalToast.key === key && now - lastGlobalToast.at < TOAST_DEDUPE_MS) return;
+  lastGlobalToast = { key, at: now };
   window.dispatchEvent(new CustomEvent("app:toast", { detail }));
 }
 

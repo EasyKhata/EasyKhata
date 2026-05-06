@@ -22,11 +22,21 @@ const EMPTY_SUMMARY = {
   computedAt: ""
 };
 import { useAuth } from "./AuthContext";
-import { logError } from "../utils/logger";
+import { logError, logWarn } from "../utils/logger";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
 const HOUSEHOLD_PRIMARY_PERSON_ID = "customer_primary_profile";
+const PENDING_ORG_TYPE_CLEAR_KEY = "pendingOrgTypeClears";
+
+function isDeviceOffline() {
+  return typeof navigator !== "undefined" && "onLine" in navigator && navigator.onLine === false;
+}
+
+function isNetworkLikeError(err) {
+  const message = String(err?.message || "");
+  return err?.status === 0 || err?.code === "NETWORK_ERROR" || err?.code === "NETWORK_TIMEOUT" || /failed to fetch|network|load failed|timeout/i.test(message);
+}
 
 // ── API shape ↔ DataContext shape mappers ─────────────────────────────────────
 
@@ -900,16 +910,18 @@ export function DataProvider({ children }) {
       if (!user?.id || !sessionRef.current || flushInFlightRef.current) return;
 
       captureSessionTick();
+      const sessionDraft = sessionRef.current;
+      if (!sessionDraft) return;
 
-      const totalMs = Math.round(sessionRef.current.pendingTotalMs || 0);
+      const totalMs = Math.round(sessionDraft.pendingTotalMs || 0);
       if (totalMs < (force ? SESSION_MIN_FLUSH_MS : SESSION_FLUSH_INTERVAL_MS)) {
         persistSessionDraft();
         return;
       }
 
-      const byOrg = { ...(sessionRef.current.pendingByOrg || {}) };
-      sessionRef.current.pendingTotalMs = 0;
-      sessionRef.current.pendingByOrg = {};
+      const byOrg = { ...(sessionDraft.pendingByOrg || {}) };
+      sessionDraft.pendingTotalMs = 0;
+      sessionDraft.pendingByOrg = {};
       persistSessionDraft();
 
       const nowIso = new Date().toISOString();
@@ -924,14 +936,16 @@ export function DataProvider({ children }) {
         await usersApi.update(user.id, updates);
         setUser(prev => (prev ? { ...prev, lastActivityAt: nowIso } : prev));
       } catch (err) {
-        sessionRef.current.pendingTotalMs = (sessionRef.current.pendingTotalMs || 0) + totalMs;
-        sessionRef.current.pendingByOrg = Object.entries(byOrg).reduce((acc, [orgId, orgMs]) => {
-          acc[orgId] = (sessionRef.current.pendingByOrg?.[orgId] || 0) + orgMs;
+        const currentSession = sessionRef.current;
+        if (!currentSession) return;
+        currentSession.pendingTotalMs = (currentSession.pendingTotalMs || 0) + totalMs;
+        currentSession.pendingByOrg = Object.entries(byOrg).reduce((acc, [orgId, orgMs]) => {
+          acc[orgId] = (currentSession.pendingByOrg?.[orgId] || 0) + orgMs;
           return acc;
-        }, { ...(sessionRef.current.pendingByOrg || {}) });
+        }, { ...(currentSession.pendingByOrg || {}) });
       } finally {
         flushInFlightRef.current = false;
-        persistSessionDraft();
+        if (sessionRef.current) persistSessionDraft();
       }
     },
     [captureSessionTick, persistSessionDraft, setUser, user?.id]
@@ -1056,6 +1070,16 @@ export function DataProvider({ children }) {
         const resolvedActiveOrgId = (allOrgs || []).some(org => org.id === effectiveActiveOrgId)
           ? effectiveActiveOrgId
           : (allOrgs?.[0]?.id || DEFAULT_ORG_ID);
+        if (resolvedActiveOrgId !== requestedActiveOrgId && (allOrgs || []).some(org => org.id === resolvedActiveOrgId)) {
+          const resolvedOrg = (allOrgs || []).find(org => org.id === resolvedActiveOrgId);
+          usersApi.update(user.id, {
+            activeOrgId: resolvedActiveOrgId,
+            organizationType: getOrgType(resolvedOrg?.organizationType || user.organizationType)
+          }).catch(err => logError("activeOrgId repair failed", err, {
+            requestedActiveOrgId,
+            resolvedActiveOrgId
+          }));
+        }
         const localOrg = localData.orgs?.[resolvedActiveOrgId] || {};
 
         const [activeOrgMeta, customersPage, summary] = await Promise.all([
@@ -1337,26 +1361,100 @@ export function DataProvider({ children }) {
 
   const setCurrency = cur => update(d => ({ ...d, currency: cur }));
   const saveAccount = acc => update(d => ({ ...d, account: acc }));
+  const readPendingOrgTypeClears = useCallback(() => {
+    if (!user?.id) return [];
+    const pending = getUserData(user.id, PENDING_ORG_TYPE_CLEAR_KEY);
+    return Array.isArray(pending) ? pending : [];
+  }, [user?.id]);
+
+  const writePendingOrgTypeClears = useCallback((items) => {
+    if (!user?.id) return;
+    setUserData(user.id, PENDING_ORG_TYPE_CLEAR_KEY, Array.isArray(items) ? items : []);
+  }, [user?.id]);
+
+  const enqueueOrgTypeClear = useCallback((orgId) => {
+    if (!user?.id || !orgId) return;
+    const pending = readPendingOrgTypeClears();
+    const exists = pending.some(item => item?.orgId === orgId);
+    if (!exists) {
+      writePendingOrgTypeClears([...pending, { orgId, queuedAt: new Date().toISOString() }]);
+    }
+  }, [readPendingOrgTypeClears, user?.id, writePendingOrgTypeClears]);
+
+  const clearOrgTypeCollections = useCallback(async (orgId) => {
+    if (!user?.id || !orgId) return;
+    const operations = [
+      ["income", () => orgsApi.syncCollection(user.id, orgId, "income", [])],
+      ["expenses", () => orgsApi.syncCollection(user.id, orgId, "expenses", [])],
+      ["invoices", () => orgsApi.syncCollection(user.id, orgId, "invoices", [])],
+      ["customers", () => orgsApi.syncCollection(user.id, orgId, "customers", [])],
+      ["orgRecords", () => orgsApi.clearOrgRecords(user.id, orgId)]
+    ];
+    const results = await Promise.allSettled(operations.map(([, run]) => run()));
+    const failed = results
+      .map((result, index) => result.status === "rejected" ? { op: operations[index][0], reason: result.reason } : null)
+      .filter(Boolean);
+    if (failed.length) {
+      const error = new Error(`Org type clear failed for ${failed.map(item => item.op).join(", ")}`);
+      error.code = failed.some(item => isNetworkLikeError(item.reason)) ? "NETWORK_ERROR" : "ORG_TYPE_CLEAR_FAILED";
+      error.failures = failed.map(item => item.op);
+      throw error;
+    }
+  }, [user?.id]);
+
+  const flushPendingOrgTypeClears = useCallback(async () => {
+    if (!user?.id || isDeviceOffline()) return;
+    const pending = readPendingOrgTypeClears();
+    if (!pending.length) return;
+
+    const remaining = [];
+    for (const item of pending) {
+      try {
+        await clearOrgTypeCollections(item.orgId);
+      } catch (err) {
+        remaining.push(item);
+        if (!isNetworkLikeError(err)) {
+          logError("Pending org type clear failed", err, { orgId: item.orgId });
+        }
+      }
+    }
+    writePendingOrgTypeClears(remaining);
+  }, [clearOrgTypeCollections, readPendingOrgTypeClears, user?.id, writePendingOrgTypeClears]);
+
   const resetForOrgTypeChange = (nextAccount) => {
     update(d => buildResetData(d, nextAccount));
     const orgId = data.activeOrgId;
     if (user?.id && orgId) {
-      Promise.allSettled([
-        orgsApi.syncCollection(user.id, orgId, "income", []),
-        orgsApi.syncCollection(user.id, orgId, "expenses", []),
-        orgsApi.syncCollection(user.id, orgId, "invoices", []),
-        orgsApi.syncCollection(user.id, orgId, "customers", []),
-        orgsApi.clearOrgRecords(user.id, orgId)
-      ]).then(results => {
-        results.forEach((result, index) => {
-          if (result.status === "rejected") {
-            const op = ["income", "expenses", "invoices", "customers", "orgRecords"][index];
-            logError(`resetForOrgTypeChange failed to clear ${op}`, result.reason);
+      if (isDeviceOffline()) {
+        enqueueOrgTypeClear(orgId);
+        showGlobalToast({
+          tone: "warning",
+          title: "Offline mode",
+          message: "Changes are saved locally and will sync when you're back online."
+        });
+        return;
+      }
+      clearOrgTypeCollections(orgId)
+        .catch(err => {
+          enqueueOrgTypeClear(orgId);
+          const ctx = { orgId, code: err?.code, failures: err?.failures || [] };
+          if (isNetworkLikeError(err)) {
+            logWarn("resetForOrgTypeChange queued clear retry", ctx);
+          } else {
+            logError("resetForOrgTypeChange queued clear retry", err, ctx);
           }
         });
-      });
     }
   };
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    flushPendingOrgTypeClears();
+    if (typeof window === "undefined") return undefined;
+    const onOnline = () => flushPendingOrgTypeClears();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [flushPendingOrgTypeClears, user?.id]);
+
   const saveGoals = goals => update(d => ({ ...d, goals: { ...d.goals, ...goals } }));
   const saveBudgets = budgets => update(d => ({ ...d, budgets: { ...budgets } }));
   const saveNotificationPrefs = notificationPrefs => update(d => ({ ...d, notificationPrefs: { ...d.notificationPrefs, ...notificationPrefs } }));

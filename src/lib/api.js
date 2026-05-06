@@ -1,6 +1,7 @@
 import { auth } from "../firebase";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const REQUEST_TIMEOUT_MS = 12_000;
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 // Attaches the current Firebase ID token as Bearer on every request.
@@ -18,29 +19,56 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchWithRetry(url, options, method) {
+async function fetchWithRetry(url, options, method, path) {
   const maxAttempts = RETRYABLE_METHODS.has(method) ? 3 : 1;
   let lastError;
+  const startedAt = Date.now();
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      return await fetch(url, options);
+      return await fetch(url, { ...options, signal: controller.signal });
     } catch (err) {
       lastError = err;
+      if (lastError && typeof lastError === "object") {
+        lastError.attempt = attempt;
+        lastError.attempts = maxAttempts;
+      }
       if (attempt === maxAttempts) break;
       await sleep(450 * attempt);
+    } finally {
+      clearTimeout(timeout);
     }
   }
   if (lastError && typeof lastError === "object") {
     lastError.status = 0;
     lastError.code = lastError.code || "NETWORK_ERROR";
     lastError.method = method;
+    lastError.path = path;
     lastError.url = url;
+    lastError.durationMs = Date.now() - startedAt;
+    lastError.online = typeof navigator !== "undefined" && "onLine" in navigator ? navigator.onLine : null;
+    if (lastError.name === "AbortError") {
+      lastError.code = "NETWORK_TIMEOUT";
+      lastError.timeoutMs = REQUEST_TIMEOUT_MS;
+    }
   }
   throw lastError;
 }
 
 async function request(method, path, body) {
-  const token = await getIdToken();
+  let token;
+  try {
+    token = await getIdToken();
+  } catch (err) {
+    if (err && typeof err === "object") {
+      err.method = method;
+      err.path = path;
+      err.code = err.code || "AUTH_TOKEN_ERROR";
+      err.online = typeof navigator !== "undefined" && "onLine" in navigator ? navigator.onLine : null;
+    }
+    throw err;
+  }
 
   const res = await fetchWithRetry(`${BASE_URL}${path}`, {
     method,
@@ -49,12 +77,14 @@ async function request(method, path, body) {
       "Authorization": `Bearer ${token}`
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {})
-  }, method);
+  }, method, path);
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     const error = new Error(err.error || `Request failed: ${res.status}`);
     error.status = res.status;
+    error.method = method;
+    error.path = path;
     throw error;
   }
 
