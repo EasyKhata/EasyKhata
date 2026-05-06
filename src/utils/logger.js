@@ -8,6 +8,8 @@ const LOG_ENDPOINT = import.meta.env.VITE_LOG_ENDPOINT || "";
 const EVENT_ENDPOINT =
   import.meta.env.VITE_EVENT_ENDPOINT ||
   (LOG_ENDPOINT ? LOG_ENDPOINT.replace("recordclientlog", "recordclientevent") : "");
+const LOG_DEDUPE_MS = 60_000;
+const recentLogs = new Map();
 
 function getClientContext() {
   return {
@@ -16,11 +18,35 @@ function getClientContext() {
     route: typeof window !== "undefined" ? window.location.pathname : null,
     userAgent: typeof navigator !== "undefined" ? navigator.userAgent : null,
     platform: typeof navigator !== "undefined" ? navigator.platform : null,
+    online: typeof navigator !== "undefined" && "onLine" in navigator ? navigator.onLine : null,
     appVersion: import.meta.env.VITE_APP_VERSION ?? null
   };
 }
 
+function shouldSuppressLog(level, label, error, ctx) {
+  const code = error?.code || ctx?.code || "";
+  const status = error?.status ?? ctx?.status ?? "";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const path = ctx?.path || error?.path || "";
+  const method = ctx?.method || error?.method || "";
+  const isNetworkNoise =
+    status === 0 ||
+    code === "NETWORK_ERROR" ||
+    /failed to fetch|network|load failed|abort|timeout/i.test(message);
+
+  if (!isNetworkNoise) return false;
+
+  const key = [level, label, code, status, method, path].join("|");
+  const now = Date.now();
+  const last = recentLogs.get(key) || 0;
+  if (now - last < LOG_DEDUPE_MS) return true;
+  recentLogs.set(key, now);
+  return false;
+}
+
 async function writeLog(level, label, error, ctx) {
+  if (shouldSuppressLog(level, label, error, ctx)) return;
+
   const message = error instanceof Error ? error.message : String(error ?? "");
   const stack   = error instanceof Error ? (error.stack || "").slice(0, 2000) : "";
   const payload = {
@@ -29,6 +55,16 @@ async function writeLog(level, label, error, ctx) {
     message,
     stack,
     errorCode: error?.code ?? null,
+    errorMeta: error && typeof error === "object" ? JSON.stringify({
+      status: error.status ?? null,
+      method: error.method ?? null,
+      path: error.path ?? null,
+      durationMs: error.durationMs ?? null,
+      attempt: error.attempt ?? null,
+      attempts: error.attempts ?? null,
+      online: error.online ?? null,
+      timeoutMs: error.timeoutMs ?? null
+    }).slice(0, 500) : null,
     ...getClientContext(),
     ctx: ctx ? JSON.stringify(ctx).slice(0, 500) : null,
   };
