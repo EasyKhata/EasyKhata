@@ -164,8 +164,9 @@ export function isSubscriptionActive(user, org = null) {
   if (isReviewAccessEnabled()) return true;
   const orgType = org?.organizationType || org?.account?.organizationType;
   if (orgType && isFreeOrgType(orgType)) return true;
-  const plan = getUserPlan(user);
-  const status = user?.subscriptionStatus || getOrgSubscriptionStatus(org);
+  const orgPlan = getOrgPlan(org);
+  const plan = orgPlan || getUserPlan(user);
+  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus;
   if (plan === PLANS.FREE && status !== SUBSCRIPTION_STATUS.TRIAL) return false;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user, org);
   if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return plan === PLANS.PRO || plan === PLANS.BUSINESS;
@@ -174,7 +175,7 @@ export function isSubscriptionActive(user, org = null) {
 
 export function isPaidActive(user, org = null) {
   if (isAdminUser(user)) return true;
-  const plan = getUserPlan(user);
+  const plan = getOrgPlan(org) || getUserPlan(user);
   return (plan === PLANS.PRO || plan === PLANS.BUSINESS) && isSubscriptionActive(user, org);
 }
 
@@ -194,7 +195,7 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FRE
     return true;
   }
 
-  const plan = getUserPlan(user);
+  const plan = getOrgPlan(org) || getUserPlan(user);
   const active = isSubscriptionActive(user, org);
 
   if (!active) {
