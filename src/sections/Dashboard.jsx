@@ -932,13 +932,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
   // Never show the setup guide when viewing a shared org — it belongs to the member's own account
   useEffect(() => {
-    if (activeSharedOrgKey || !data.loaded || !user?.id || user?.onboardingSeenAt) {
+    if (activeSharedOrgKey || !data.loaded || data.offlineMode || !user?.id || user?.offlineProfile || user?.onboardingSeenAt) {
       setShowSetupGuide(false);
       return;
     }
     const ownedOrganizations = Array.isArray(data.organizations) ? data.organizations : [];
     setShowSetupGuide(ownedOrganizations.length === 1);
-  }, [activeSharedOrgKey, data.loaded, data.organizations, user?.id, user?.onboardingSeenAt]);
+  }, [activeSharedOrgKey, data.loaded, data.offlineMode, data.organizations, user?.id, user?.offlineProfile, user?.onboardingSeenAt]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;

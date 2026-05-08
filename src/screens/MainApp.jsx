@@ -1148,6 +1148,8 @@ export default function MainApp() {
   const data = useData();
   const {
     account,
+    offlineMode,
+    syncStatus,
     isReadOnlyFreeMode,
     isViewerMode,
     activeSharedOrgRole,
@@ -1778,16 +1780,46 @@ export default function MainApp() {
     }).filter(Boolean);
   }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isViewerMode]);
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
+  const syncNotice = offlineMode || user?.offlineProfile
+    ? {
+        title: "Showing saved data",
+        message: "Connection is unstable. You can keep using EasyKhata; changes will sync when the network improves.",
+        tone: "warning"
+      }
+    : syncStatus === "syncing"
+      ? {
+          title: "Syncing latest data",
+          message: "Your saved data is available now. We are refreshing the latest records in the background.",
+          tone: "info"
+        }
+      : null;
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative", display: "flex" }}>
 
       {/* Fixed banners at the top, above sidebar/content */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200, pointerEvents: 'none' }}>
-        {isReadOnlyFreeMode && !isAdmin && showFreeBanner && (
+        {syncNotice && (
           <div style={{
             margin: '0 auto',
             marginTop: 12,
+            width: "min(calc(100% - 16px), 760px)",
+            padding: '10px 12px',
+            borderRadius: 12,
+            border: `1px solid ${syncNotice.tone === "warning" ? "var(--gold)" : "var(--blue)"}`,
+            background: syncNotice.tone === "warning" ? "var(--gold-deep)" : "var(--blue-deep)",
+            color: syncNotice.tone === "warning" ? "var(--gold)" : "var(--blue)",
+            boxShadow: '0 4px 24px rgba(0,0,0,0.10)',
+            pointerEvents: 'auto'
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 800 }}>{syncNotice.title}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.45, marginTop: 2 }}>{syncNotice.message}</div>
+          </div>
+        )}
+        {isReadOnlyFreeMode && !isAdmin && showFreeBanner && (
+          <div style={{
+            margin: '0 auto',
+            marginTop: syncNotice ? 8 : 12,
             width: "min(calc(100% - 16px), 760px)",
             padding: '10px 12px',
             borderRadius: 12,

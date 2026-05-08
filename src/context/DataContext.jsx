@@ -626,6 +626,8 @@ export function DataProvider({ children }) {
   const dataRef = useRef(EMPTY_DATA);
   const [orgSummary, setOrgSummary] = useState(EMPTY_SUMMARY);
   const [loaded, setLoaded] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("idle");
   const [ownedOrganizations, setOwnedOrganizations] = useState([]);
   // Tracks which collections have been fetched from the server this session.
   // Customers are loaded eagerly; income/expenses/invoices are loaded on demand.
@@ -795,6 +797,13 @@ export function DataProvider({ children }) {
       }),
       orgsApi.syncOrgRecords(user.id, orgId, nextState.orgRecords || {})
     ]);
+    const failed = results.filter(result => result.status === "rejected");
+    if (failed.length) {
+      const error = new Error("Collection sync failed");
+      error.code = failed.some(result => isNetworkLikeError(result.reason)) ? "NETWORK_ERROR" : "COLLECTION_SYNC_FAILED";
+      error.failures = failed.map(result => result.reason);
+      throw error;
+    }
   }, [user?.id]);
 
   const queueActiveOrgSync = useCallback((nextState) => {
@@ -816,7 +825,7 @@ export function DataProvider({ children }) {
   const syncSharedOrgCollections = useCallback(async (nextState, sharedInfo) => {
     if (!sharedInfo?.ownerId || !sharedInfo?.orgId) return;
     const orgId = sharedInfo.orgId;
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       ...ORG_COLLECTION_KEYS.map(async key => {
         const current = nextState[key] || [];
         const baseline = lastSyncedRef.current[orgId]?.[key] ?? null;
@@ -966,6 +975,7 @@ export function DataProvider({ children }) {
 
       // Optimistic local cache
       setUserData(user.id, "appData", nextState);
+      setSyncStatus("syncing");
 
       // Fire-and-forget API writes (non-blocking)
       const orgId = nextState.activeOrgId;
@@ -980,6 +990,15 @@ export function DataProvider({ children }) {
             logError(`${label} failed`, result.reason);
           }
         });
+        const rejected = results.filter(result => result.status === "rejected");
+        if (rejected.length) {
+          const networkFailure = rejected.some(result => isNetworkLikeError(result.reason));
+          setOfflineMode(networkFailure);
+          setSyncStatus(networkFailure ? "offline" : "error");
+        } else {
+          setOfflineMode(false);
+          setSyncStatus("synced");
+        }
       });
 
       setUser(prev =>
@@ -1025,11 +1044,33 @@ export function DataProvider({ children }) {
         lastSyncedRef.current = {};
         setData(EMPTY_DATA);
         setOrgSummary(EMPTY_SUMMARY);
+        setOfflineMode(false);
+        setSyncStatus("idle");
         setLoaded(true);
         return;
       }
 
-      setLoaded(false);
+      const localData = getUserData(user.id, "appData") || EMPTY_DATA;
+      const hasLocalOrgs = Boolean(localData?.orgs && Object.keys(localData.orgs || {}).length);
+      if (hasLocalOrgs) {
+        const cachedState = buildStateFromOrganizations({
+          orgs: normalizeOrgCollection(localData, {
+            account: { email: user?.email || "", phone: user?.phone || "", organizationType: user?.organizationType }
+          }),
+          activeOrgId: localData.activeOrgId || user.activeOrgId || DEFAULT_ORG_ID,
+          sharedLedger: null
+        });
+        setOwnedOrganizations(mapOwnedOrganizations(cachedState.orgs));
+        dataRef.current = cachedState;
+        setData(cachedState);
+        setOrgSummary(cachedState.summary || EMPTY_SUMMARY);
+        setLoaded(true);
+        setOfflineMode(Boolean(user?.offlineProfile));
+        setSyncStatus(user?.offlineProfile ? "offline" : "syncing");
+      } else {
+        setLoaded(false);
+        setSyncStatus("syncing");
+      }
 
       try {
         // Load the active org with its core records. Income/expenses are first-screen
@@ -1043,7 +1084,6 @@ export function DataProvider({ children }) {
         setCollectionFetched(freshFetched);
 
         // Read local cache — income/expenses/invoices come from here until lazily refreshed
-        const localData = getUserData(user.id, "appData") || EMPTY_DATA;
         let allOrgs = await orgsApi.list(user.id);
         let effectiveActiveOrgId = requestedActiveOrgId;
 
@@ -1171,6 +1211,8 @@ export function DataProvider({ children }) {
 
         setOrgSummary(summary || EMPTY_SUMMARY);
         setUserData(user.id, "appData", nextState);
+        setOfflineMode(false);
+        setSyncStatus("synced");
         setUser(prev =>
           prev ? {
             ...prev,
@@ -1194,7 +1236,6 @@ export function DataProvider({ children }) {
       } catch (err) {
         logError("loadData failed, using local cache", err);
         showGlobalToast({ tone: "warning", title: "Offline mode", message: "Couldn't reach server — showing locally cached data." });
-        const localData = getUserData(user.id, "appData") || EMPTY_DATA;
         const nextState = buildStateFromOrganizations({
           orgs: normalizeOrgCollection(localData, {
             account: { email: user?.email || "", phone: user?.phone || "", organizationType: user?.organizationType }
@@ -1205,13 +1246,15 @@ export function DataProvider({ children }) {
         setOwnedOrganizations(mapOwnedOrganizations(nextState.orgs));
         dataRef.current = nextState;
         setData(nextState);
+        setOfflineMode(true);
+        setSyncStatus("offline");
       } finally {
         setLoaded(true);
       }
     }
 
     loadData();
-  }, [setUser, user?.email, user?.id, user?.organizationType, user?.phone, ownDataReloadKey]);
+  }, [mapOwnedOrganizations, setUser, user?.activeOrgId, user?.email, user?.id, user?.offlineProfile, user?.organizationType, user?.phone, ownDataReloadKey]);
 
   useEffect(() => {
     if (!user?.id || !loaded) {
@@ -2090,6 +2133,8 @@ export function DataProvider({ children }) {
   const contextValue = useMemo(() => ({
     ...data,
     loaded,
+    offlineMode,
+    syncStatus,
     orgSummary,
     isReadOnlyFreeMode: readOnlyFreeMode,
     isViewerMode,
@@ -2160,6 +2205,8 @@ export function DataProvider({ children }) {
     joinSharedLedger,
     leaveSharedLedger,
     loaded,
+    offlineMode,
+    syncStatus,
     maxOrganizations,
     organizations,
     ownedOrganizations,

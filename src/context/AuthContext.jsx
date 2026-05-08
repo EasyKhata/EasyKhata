@@ -9,7 +9,7 @@ import {
 } from "firebase/auth";
 import { auth } from "../firebase";
 import { usersApi } from "../lib/api";
-import { clearCurrentUser, getUserData, setCurrentUser } from "../utils/storage";
+import { clearCurrentUser, getUserData, setCurrentUser, setUserData } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
@@ -96,16 +96,19 @@ function isNetworkProfileError(err) {
 function buildOfflineProfile(firebaseUser) {
   const cachedData = getUserData(firebaseUser.uid, "appData") || {};
   const cachedAccount = cachedData.account || {};
+  const cachedProfile = getUserData(firebaseUser.uid, "profile") || {};
   return {
     id: firebaseUser.uid,
-    name: firebaseUser.displayName || cachedAccount.name || "",
-    email: firebaseUser.email || cachedAccount.email || "",
-    phone: firebaseUser.phoneNumber || cachedAccount.phone || "",
-    phoneCountryCode: cachedAccount.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+    name: firebaseUser.displayName || cachedProfile.name || cachedAccount.name || "",
+    email: firebaseUser.email || cachedProfile.email || cachedAccount.email || "",
+    phone: firebaseUser.phoneNumber || cachedProfile.phone || cachedAccount.phone || "",
+    phoneCountryCode: cachedProfile.phoneCountryCode || cachedAccount.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
     activeOrgId: cachedData.activeOrgId || DEFAULT_ORG_ID,
-    organizationType: getOrgType(cachedAccount.organizationType || ORG_TYPES.PERSONAL),
+    organizationType: getOrgType(cachedProfile.organizationType || cachedAccount.organizationType || ORG_TYPES.PERSONAL),
+    onboardingSeenAt: cachedProfile.onboardingSeenAt || "__offline_profile__",
     legalAccepted: true,
-    orgs: cachedData.orgs || {}
+    orgs: cachedData.orgs || {},
+    offlineProfile: true
   };
 }
 
@@ -225,6 +228,7 @@ export function AuthProvider({ children }) {
       address: profile?.address || buildLocationLabel({ addressLine: profile?.addressLine, city: profile?.city, district: profile?.district, state: profile?.state, pincode: profile?.pincode, country: profile?.country }),
       role: profile?.role || "user",
       onboardingSeenAt: profile?.onboardingSeenAt || "",
+      offlineProfile: Boolean(profile?.offlineProfile),
       lastActivityAt: profile?.lastActivityAt || profile?.updatedAt || profile?.createdAt || "",
       activeOrgId,
       organizationType: getOrgType(activeOrg?.account?.organizationType || profile?.organizationType || profile?.account?.organizationType),
@@ -250,6 +254,7 @@ export function AuthProvider({ children }) {
     try {
       const fresh = await usersApi.get(firebaseUser.uid);
       if (fresh?.id) {
+        setUserData(firebaseUser.uid, "profile", fresh);
         setUser(prev => prev ? buildSessionUser(firebaseUser, fresh) : prev);
       }
     } catch {
@@ -336,6 +341,7 @@ export function AuthProvider({ children }) {
               phone: existing.phone || firebaseUser.phoneNumber || "",
               phoneCountryCode: existing.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE
             });
+            setUserData(firebaseUser.uid, "profile", profile || {});
             setUser(buildSessionUser(firebaseUser, profile || {}));
             setCurrentUser(firebaseUser.uid);
             setPendingSetup(null);
@@ -364,6 +370,7 @@ export function AuthProvider({ children }) {
         }
 
         const profile = await ensureUserProfile(firebaseUser);
+        setUserData(firebaseUser.uid, "profile", profile || {});
         setUser(buildSessionUser(firebaseUser, profile || {}));
         setCurrentUser(firebaseUser.uid);
         setPendingSetup(null);
@@ -462,6 +469,7 @@ async function signInWithGoogle() {
         phone,
         phoneCountryCode
       });
+      setUserData(pendingSetup.firebaseUser.uid, "profile", profile || {});
 
       if (profile?.blocked) {
         await signOut(auth);
@@ -515,7 +523,11 @@ async function signInWithGoogle() {
         nextUpdates.phoneCountryCode = nextUpdates.phoneCountryCode || user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
       }
       await usersApi.update(auth.currentUser.uid, nextUpdates);
-      setUser(prev => (prev ? { ...prev, ...nextUpdates } : prev));
+      setUser(prev => {
+        const next = prev ? { ...prev, ...nextUpdates, offlineProfile: false } : prev;
+        if (next) setUserData(auth.currentUser.uid, "profile", next);
+        return next;
+      });
       return { success: true };
     } catch (err) {
       return { error: err.message || "Failed to update profile." };
