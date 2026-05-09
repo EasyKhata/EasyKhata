@@ -6,6 +6,7 @@ import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } fr
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
 import { orgsApi, usersApi, membersApi } from "../lib/api";
 import { showGlobalToast } from "./ToastContext";
+import { clearPendingSync, hasPendingSync, listPendingSyncs, markPendingSync } from "../utils/pendingSyncs";
 
 const EMPTY_SUMMARY = {
   currentMonth: "",
@@ -651,7 +652,13 @@ export function DataProvider({ children }) {
   // Initialized after each full load; updated after each successful delta sync.
   const lastSyncedRef = useRef({});
   const requestedOwnOrgIdRef = useRef("");
+  // Tracks whether we've already auto-retried the bootstrap load for the current user
+  // after a transient network-timeout, so we don't loop on persistent failures.
+  const bootstrapRetriedRef = useRef(null);
   const sharedOrgsUserIdRef = useRef("");
+  // Wall-clock timestamp of the last successful bootstrap load. Used by the resume
+  // listener to decide if we need to refresh after the user returns from background.
+  const lastLoadedAtRef = useRef(0);
 
   useEffect(() => {
     dataRef.current = data;
@@ -769,7 +776,7 @@ export function DataProvider({ children }) {
   const syncActiveOrgCollections = useCallback(async (nextState) => {
     if (!user?.id || !nextState?.activeOrgId) return;
     const orgId = nextState.activeOrgId;
-    await Promise.allSettled([
+    const results = await Promise.allSettled([
       ...ORG_COLLECTION_KEYS.map(async key => {
         const current = nextState[key] || [];
         const fetched  = collectionFetchedRef.current[key];
@@ -799,11 +806,17 @@ export function DataProvider({ children }) {
     ]);
     const failed = results.filter(result => result.status === "rejected");
     if (failed.length) {
+      // Mark this org as having unsynced local changes — drainPendingSyncs() will
+      // retry on the next resume / online event so changes don't sit forever on
+      // device when the user goes offline mid-edit.
+      markPendingSync(user.id, orgId);
       const error = new Error("Collection sync failed");
       error.code = failed.some(result => isNetworkLikeError(result.reason)) ? "NETWORK_ERROR" : "COLLECTION_SYNC_FAILED";
       error.failures = failed.map(result => result.reason);
       throw error;
     }
+    // All collection writes succeeded — clear the persistent retry flag.
+    clearPendingSync(user.id, orgId);
   }, [user?.id]);
 
   const queueActiveOrgSync = useCallback((nextState) => {
@@ -1121,12 +1134,51 @@ export function DataProvider({ children }) {
           }));
         }
         const localOrg = localData.orgs?.[resolvedActiveOrgId] || {};
+        const hasLocalActiveOrg = Boolean(
+          localOrg && (
+            (Array.isArray(localOrg.income)    && localOrg.income.length)    ||
+            (Array.isArray(localOrg.expenses)  && localOrg.expenses.length)  ||
+            (Array.isArray(localOrg.invoices)  && localOrg.invoices.length)  ||
+            (Array.isArray(localOrg.customers) && localOrg.customers.length) ||
+            (localOrg.orgRecords && Object.keys(localOrg.orgRecords).length)
+          )
+        );
 
-        const [activeOrgMeta, customersPage, summary] = await Promise.all([
-          orgsApi.getFull(user.id, resolvedActiveOrgId).catch(() => null),
+        // Pick the cheapest /full call we can. /full is the heaviest endpoint — sending
+        // *every* income/expense/invoice/customer back to the client is what makes the
+        // bootstrap fragile on slow networks. Two reductions:
+        //   1) Returning user with local cache → pass since=lastSyncedAt so the server
+        //      only ships records changed since then. Usually 0 records, ~1 KB payload.
+        //   2) New device with no cache → use ?meta=1 to skip collections entirely on
+        //      this call, then load each collection paginated in parallel below.
+        // Either way we avoid the 100 KB+ monolithic JSON that kept timing out.
+        const cachedSyncedAt = getSyncedAt(user.id, resolvedActiveOrgId);
+        const useIncremental = hasLocalActiveOrg && cachedSyncedAt;
+        const fullOpts = useIncremental ? { metaOnly: false } : { metaOnly: true };
+        const sinceParam = useIncremental ? cachedSyncedAt : null;
+
+        let getFullError = null;
+        const collectionFetches = useIncremental
+          ? [Promise.resolve(null), Promise.resolve(null), Promise.resolve(null)]
+          : [
+              orgsApi.getCollection(user.id, resolvedActiveOrgId, "income").catch(() => null),
+              orgsApi.getCollection(user.id, resolvedActiveOrgId, "expenses").catch(() => null),
+              orgsApi.getCollection(user.id, resolvedActiveOrgId, "invoices").catch(() => null)
+            ];
+
+        const [activeOrgMeta, customersPage, summary, incomePage, expensesPage, invoicesPage] = await Promise.all([
+          orgsApi.getFull(user.id, resolvedActiveOrgId, sinceParam, fullOpts).catch(err => { getFullError = err; return null; }),
           orgsApi.getCollection(user.id, resolvedActiveOrgId, "customers").catch(() => null),
-          orgsApi.getSummary(user.id, resolvedActiveOrgId).catch(() => EMPTY_SUMMARY)
+          orgsApi.getSummary(user.id, resolvedActiveOrgId).catch(() => EMPTY_SUMMARY),
+          ...collectionFetches
         ]);
+
+        // If /full failed and we have nothing cached for this org, propagate the error so
+        // the outer catch can run its retry / offline-toast logic. Showing a half-empty
+        // screen with no transactions is a worse UX than an honest "couldn't load" state.
+        if (!activeOrgMeta && !hasLocalActiveOrg) {
+          throw getFullError || new Error("Failed to load active org data.");
+        }
 
         // getCollection returns { records, hasMore, nextCursor } — unwrap the first page.
         const customers = customersPage ? unwrapRecords(customersPage, "customers") : null;
@@ -1138,15 +1190,69 @@ export function DataProvider({ children }) {
           orgsMap[apiOrg.id] = normalizeOrgData(fromApiOrg(apiOrg));
         });
         if (activeOrgMeta) {
-          // Org settings come from server; orgRecords are merged with local optimistic cache.
-          // Customers are fresh from server (usually small, always needed for dropdowns).
+          // Three response shapes to handle:
+          //   • isPartial=true  → /full?since=… returned only deltas; merge into local cache.
+          //   • isMetaOnly=true → /full?meta=1 returned settings only; collections come from
+          //     the parallel /collection calls (or local cache if a page failed).
+          //   • neither (legacy full payload) → server returned everything; replace.
+          const isPartial  = Boolean(activeOrgMeta.isPartial);
+          const isMetaOnly = Boolean(activeOrgMeta.isMetaOnly);
+
+          const resolveCollection = (key, deltaFromMeta, paginatedPage) => {
+            const local = Array.isArray(localOrg[key]) ? localOrg[key] : [];
+            if (isPartial) {
+              // Server sent only changed records — merge them on top of cached arrays.
+              const delta = Array.isArray(deltaFromMeta) ? deltaFromMeta : [];
+              return mergeRecords(local, delta);
+            }
+            if (isMetaOnly) {
+              // Settings-only response — use the paginated collection page; if that
+              // failed, fall back to local cache so the screen isn't empty.
+              if (paginatedPage) {
+                const records = unwrapRecords(paginatedPage, key);
+                return records.length ? records : local;
+              }
+              return local;
+            }
+            // Legacy full payload — primary wins, local is fallback.
+            return pickApiRecords(deltaFromMeta ?? activeOrgMeta.collections?.[key] ?? activeOrgMeta, local, key);
+          };
+
           orgsMap[resolvedActiveOrgId] = normalizeOrgData(fromApiOrg(activeOrgMeta, {
-            income:     pickApiRecords(activeOrgMeta.income ?? activeOrgMeta.collections?.income ?? activeOrgMeta, localOrg.income, "income"),
-            expenses:   pickApiRecords(activeOrgMeta.expenses ?? activeOrgMeta.collections?.expenses ?? activeOrgMeta, localOrg.expenses, "expenses"),
-            invoices:   pickApiRecords(activeOrgMeta.invoices ?? activeOrgMeta.collections?.invoices ?? activeOrgMeta, localOrg.invoices, "invoices"),
+            income:     resolveCollection("income",    activeOrgMeta.income,    incomePage),
+            expenses:   resolveCollection("expenses",  activeOrgMeta.expenses,  expensesPage),
+            invoices:   resolveCollection("invoices",  activeOrgMeta.invoices,  invoicesPage),
             customers:  customers          ?? localOrg.customers ?? [],
             orgRecords: mergeOrgRecordsForLoad(activeOrgMeta.orgRecords || {}, localOrg.orgRecords || {})
           }));
+
+          // Persist the new sync watermark for the next incremental fetch.
+          if (activeOrgMeta.syncedAt) {
+            setSyncedAt(user.id, resolvedActiveOrgId, activeOrgMeta.syncedAt);
+          }
+        } else {
+          // /full failed but we have a local cache for this org — keep the user in the app
+          // with cached data instead of a blank screen. The metadata from list() is preserved
+          // (org name, currency, etc.), only the collections come from cache.
+          const apiOrgEntry = (allOrgs || []).find(o => o.id === resolvedActiveOrgId);
+          orgsMap[resolvedActiveOrgId] = normalizeOrgData(fromApiOrg(apiOrgEntry || {}, {
+            income:     Array.isArray(localOrg.income)     ? localOrg.income     : [],
+            expenses:   Array.isArray(localOrg.expenses)   ? localOrg.expenses   : [],
+            invoices:   Array.isArray(localOrg.invoices)   ? localOrg.invoices   : [],
+            customers:  customers ?? (Array.isArray(localOrg.customers) ? localOrg.customers : []),
+            orgRecords: localOrg.orgRecords || {}
+          }));
+          showGlobalToast({
+            tone: "warning",
+            title: "Connection slow",
+            message: "Showing cached data — couldn't refresh from server. Your latest changes will sync once the connection improves."
+          });
+          // Schedule a single background retry — by then the cold backend has likely warmed
+          // up and the user shouldn't have to manually pull-to-refresh.
+          if (bootstrapRetriedRef.current !== user?.id) {
+            bootstrapRetriedRef.current = user?.id;
+            setTimeout(() => setOwnDataReloadKey(k => k + 1), 6_000);
+          }
         }
 
         if (!orgsMap[resolvedActiveOrgId]) {
@@ -1213,6 +1319,8 @@ export function DataProvider({ children }) {
         setUserData(user.id, "appData", nextState);
         setOfflineMode(false);
         setSyncStatus("synced");
+        bootstrapRetriedRef.current = null;
+        lastLoadedAtRef.current = Date.now();
         setUser(prev =>
           prev ? {
             ...prev,
@@ -1235,7 +1343,33 @@ export function DataProvider({ children }) {
         }
       } catch (err) {
         logError("loadData failed, using local cache", err);
-        showGlobalToast({ tone: "warning", title: "Offline mode", message: "Couldn't reach server — showing locally cached data." });
+        // Distinguish three failure modes so the user gets an honest message and we
+        // can auto-retry the right cases:
+        //   1) Device truly offline → tell them to reconnect, fall back to cache.
+        //   2) Online but request timed out and we have NO cached data → most likely a
+        //      cold backend or flaky link. Auto-retry once after a short delay before
+        //      surfacing an "offline" state, since the empty-data screen is misleading.
+        //   3) Online and we already have cached data → show cache, advise we'll retry
+        //      in the background.
+        const deviceOffline = isDeviceOffline();
+        const timedOut      = err?.code === "NETWORK_TIMEOUT" || /timeout/i.test(String(err?.message || ""));
+
+        if (!deviceOffline && timedOut && !hasLocalOrgs && bootstrapRetriedRef.current !== user?.id) {
+          // First-time login on a slow/flaky network with a cold backend. Don't drop into
+          // offline mode yet — try once more after the backend has had time to wake.
+          bootstrapRetriedRef.current = user?.id;
+          showGlobalToast({ tone: "info", title: "Connecting…", message: "Server is taking a moment to wake up. Retrying…" });
+          setTimeout(() => setOwnDataReloadKey(k => k + 1), 4_000);
+          return;
+        }
+
+        showGlobalToast(
+          deviceOffline
+            ? { tone: "warning", title: "You're offline", message: "Showing locally cached data." }
+            : hasLocalOrgs
+              ? { tone: "warning", title: "Couldn't reach server", message: "Showing cached data — we'll keep trying in the background." }
+              : { tone: "warning", title: "Connection slow", message: "Couldn't reach the server. Pull down to retry once your connection improves." }
+        );
         const nextState = buildStateFromOrganizations({
           orgs: normalizeOrgCollection(localData, {
             account: { email: user?.email || "", phone: user?.phone || "", organizationType: user?.organizationType }
@@ -1353,6 +1487,80 @@ export function DataProvider({ children }) {
       window.removeEventListener("beforeunload", handlePageHide);
     };
   }, [captureSessionTick, data.activeOrgId, flushSessionAnalytics, loaded, persistSessionDraft, registerSessionVisit, user?.id]);
+
+  // Drain any pending sync flags that survived an app restart. A user who went
+  // offline mid-edit, closed the app, and came back online has unsynced local
+  // changes — the data is safe in localStorage but never reached the server.
+  // We replay the sync using the current (already-restored) local state.
+  const drainPendingSyncs = useCallback(() => {
+    if (!user?.id || !loaded) return;
+    const orgs = listPendingSyncs(user.id);
+    if (orgs.length === 0) return;
+    const state = dataRef.current;
+    if (!state?.activeOrgId) return;
+    if (orgs.includes(state.activeOrgId)) {
+      // Re-fire the existing sync path — it computes deltas from current state and
+      // clears the pending flag itself on success / re-marks on failure.
+      queueActiveOrgSync(state).catch(() => {});
+    }
+    // Non-active orgs with pending changes will drain when the user switches to
+    // them (the org-switch path also calls queueActiveOrgSync). No extra work here.
+  }, [user?.id, loaded, queueActiveOrgSync]);
+
+  // Refresh stale data when the user returns to the app after background.
+  //
+  // On Android, an active session can sit in the background for hours while the
+  // user is in another app. Without this, the dashboard shows yesterday's totals
+  // until they manually pull-to-refresh. We bump the reload key (which re-runs
+  // loadData with the since=lastSyncedAt path → tiny incremental payload) when:
+  //   • The native appStateChange event reports isActive=true, OR
+  //   • document.visibilitychange flips back to "visible",
+  // AND the last successful load was more than RESUME_REFRESH_THRESHOLD_MS ago.
+  // The threshold avoids hammering the API for quick app switches.
+  useEffect(() => {
+    if (!user?.id || !loaded) return undefined;
+
+    const RESUME_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 min
+
+    function maybeRefresh() {
+      // Always try to drain unsynced local changes — they're cheap to retry and
+      // the user expects their offline edits to land as soon as connectivity is back.
+      drainPendingSyncs();
+      const last = lastLoadedAtRef.current;
+      if (!last) return;
+      if (Date.now() - last < RESUME_REFRESH_THRESHOLD_MS) return;
+      setOwnDataReloadKey(k => k + 1);
+    }
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") maybeRefresh();
+    }
+
+    function handleOnline() {
+      // The browser/WebView reports the connection came back — drain immediately
+      // even if the app was already foregrounded.
+      drainPendingSyncs();
+    }
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("online", handleOnline);
+
+    let nativeListener;
+    import("@capacitor/app").then(({ App: CapApp }) => {
+      nativeListener = CapApp.addListener("appStateChange", ({ isActive }) => {
+        if (isActive) maybeRefresh();
+      });
+    }).catch(() => {});
+
+    // Also try once on mount — covers the "edited offline → app killed → reopened" case.
+    drainPendingSyncs();
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("online", handleOnline);
+      if (nativeListener) nativeListener.then(h => h.remove()).catch(() => {});
+    };
+  }, [user?.id, loaded, drainPendingSyncs]);
 
   const update = useCallback(
     updater => {

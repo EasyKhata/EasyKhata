@@ -225,29 +225,48 @@ export default function AdminSupportSection() {
     fetchTickets(value);
   }
 
+  // Patch one ticket in local state. Avoids the previous full re-fetch on every
+  // status change / reply, which discarded scroll position and any extra pages
+  // the admin had loaded.
+  function patchTicketLocally(ticketId, patcher) {
+    setTickets(prev => prev.map(t => (t.id === ticketId ? patcher(t) : t)));
+  }
+
   async function updateStatus(ticket, status) {
+    setError("");
+    const before = ticket.status;
+    patchTicketLocally(ticket.id, t => ({ ...t, status }));
     try {
-      await adminApi.updateSupportTicket(ticket.id, { status });
-      await fetchTickets();
+      const updated = await adminApi.updateSupportTicket(ticket.id, { status });
+      // The server returns the canonical row — adopt it so we stay in sync.
+      patchTicketLocally(ticket.id, () => ({ ...updated, messages: normalizeSupportMessages(updated) }));
     } catch (err) {
+      patchTicketLocally(ticket.id, t => ({ ...t, status: before }));
       logError("Support status update error", err);
-      setError("Unable to update status.");
+      setError(err?.message || "Unable to update status.");
     }
   }
 
   async function sendReply(ticket) {
     const draft = String(replyDrafts?.[ticket.id] || "").trim();
     if (!draft) return;
+    setError("");
     setReplyingTicketId(ticket.id);
+
+    // Idempotency token — if the network blips and we retry, the server uses this
+    // to skip the duplicate append rather than posting two replies. Stable across
+    // retries until the message is cleared from the draft on success.
+    const clientMessageId = `c-${ticket.id}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
     try {
-      await adminApi.updateSupportTicket(ticket.id, { reply: draft });
+      const updated = await adminApi.updateSupportTicket(ticket.id, { reply: draft, clientMessageId });
+      patchTicketLocally(ticket.id, () => ({ ...updated, messages: normalizeSupportMessages(updated) }));
       setReplyDrafts(c => ({ ...c, [ticket.id]: "" }));
       setShowQuickReplies(false);
-      await fetchTickets();
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 150);
     } catch (err) {
       logError("Support reply error", err);
-      setError("Unable to send reply.");
+      setError(err?.message || "Unable to send reply.");
     } finally {
       setReplyingTicketId("");
     }
@@ -522,6 +541,11 @@ export default function AdminSupportSection() {
           {tickets.length}{total > tickets.length ? ` of ${total}` : ""} ticket{tickets.length !== 1 ? "s" : ""}
           {searchTerm.trim() && visibleTickets.length !== tickets.length ? ` · ${visibleTickets.length} match` : ""}
         </div>
+        {searchTerm.trim() && hasMore && (
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--gold)" }}>
+            Search only covers the {tickets.length} tickets loaded so far — older tickets are not searched until you "Load more".
+          </div>
+        )}
       </div>
 
       {error && <div className="card" style={{ marginBottom: 14, color: "var(--danger)", fontSize: 13 }}>{error}</div>}

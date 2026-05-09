@@ -6,6 +6,8 @@ import {
   TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
+import { consumeBackHandler, hasBackHandler } from "../utils/backStack";
+import { showGlobalToast } from "../context/ToastContext";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useConfirm } from "../context/DialogContext";
@@ -1388,16 +1390,35 @@ export default function MainApp() {
     return () => window.clearTimeout(timeout);
   }, [readOnlyNotice]);
 
-  // Android hardware back button — go back within app instead of exiting
+  // Android hardware back button. Resolution order, most-specific first:
+  //   1) Topmost dismissable overlay (modal/drawer) registered via backStack → close it.
+  //   2) Not on the dashboard tab → go to dashboard.
+  //   3) On dashboard, first press → toast "Press back again to exit".
+  //   4) On dashboard, second press within 2 s → exit the app.
+  //
+  // The 2 s window matches Android platform conventions (Gmail, Maps, etc.) and
+  // prevents accidental exits while still letting the user actually leave the app.
+  const lastBackPressRef = useRef(0);
   useEffect(() => {
     if (!isNative) return undefined;
     let cleanup = () => {};
     import("@capacitor/app").then(({ App: CapApp }) => {
       const listener = CapApp.addListener("backButton", () => {
+        if (hasBackHandler()) {
+          consumeBackHandler();
+          return;
+        }
         if (tab !== "dashboard") {
           setTab("dashboard");
+          return;
         }
-        // If already on dashboard, do nothing (don't exit)
+        const now = Date.now();
+        if (now - lastBackPressRef.current < 2_000) {
+          CapApp.exitApp().catch(() => {});
+          return;
+        }
+        lastBackPressRef.current = now;
+        showGlobalToast({ tone: "info", title: "Press back again to exit", message: "" });
       });
       cleanup = () => listener.then(h => h.remove()).catch(() => {});
     }).catch(() => {});

@@ -28,6 +28,7 @@ import Collapsible from "../components/Collapsible";
 import { getPersonalMemberOptions } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { useAuth } from "../context/AuthContext";
+import { openExternal } from "../utils/openExternal";
 import { canUseFeature, getUpgradeCopy } from "../utils/subscription";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import { logError } from "../utils/logger";
@@ -387,8 +388,8 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }
 
   function openReceipt(url) {
-    if (!url || typeof window === "undefined") return;
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (!url) return;
+    openExternal(url);
   }
 
   function saveBudgets() {

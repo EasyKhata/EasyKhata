@@ -4,6 +4,7 @@ import { db } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { logError, logEvent } from "../utils/logger";
+import { openExternal } from "../utils/openExternal";
 import { getUserPlan } from "../utils/subscription";
 import { getOrgType } from "../utils/orgTypes";
 
@@ -132,7 +133,7 @@ export default function AdCarousel({ placement = "dashboard_carousel" }) {
     } catch (err) {
       logError("ad_click_failed", err, { campaignId: current.id });
     }
-    if (ctaUrl) window.open(ctaUrl, "_blank", "noopener,noreferrer");
+    if (ctaUrl) openExternal(ctaUrl);
   }
 
   if (!current.imageUrl) return null;

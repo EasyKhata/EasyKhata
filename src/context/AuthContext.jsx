@@ -8,12 +8,12 @@ import {
   signOut
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { usersApi } from "../lib/api";
-import { clearCurrentUser, getUserData, setCurrentUser, setUserData } from "../utils/storage";
+import { usersApi, warmupBackend } from "../lib/api";
+import { clearAllUserData, clearCurrentUser, getUserData, setCurrentUser, setUserData } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
-import { logError, logEvent } from "../utils/logger";
+import { logError, logEvent, setCrashUser } from "../utils/logger";
 import { isNative } from "../utils/native";
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { signInWithCredential } from "firebase/auth";
@@ -279,10 +279,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
+    // Warm up the backend at app start — Firebase will fire onAuthStateChanged
+    // shortly after for returning sessions, and we want the server awake before
+    // the first authenticated request lands.
+    warmupBackend();
+
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       if (!firebaseUser) {
         firebaseUserRef.current = null;
         clearCurrentUser();
+        setCrashUser(null);
         setPendingSetup(null);
         setUser(null);
         setLoading(false);
@@ -290,6 +296,9 @@ export function AuthProvider({ children }) {
       }
 
       firebaseUserRef.current = firebaseUser;
+      // Tag native crash reports with the user id so we can correlate a crash to
+      // the account that hit it without ever logging PII like email.
+      setCrashUser(firebaseUser.uid);
 
       // If setup is in progress (completing org type selection), don't re-process
       if (setupInProgressRef.current) return;
@@ -428,6 +437,10 @@ export function AuthProvider({ children }) {
 
 async function signInWithGoogle() {
   logEvent("login_started", { provider: "google" });
+  // Fire-and-forget: wake the backend while the Google account-picker is open.
+  // Backend cold-start (~5–10 s on Railway) overlaps with the user's auth flow,
+  // so by the time we issue the first authenticated request the server is warm.
+  warmupBackend();
   try {
     const result = await FirebaseAuthentication.signInWithGoogle({
   mode: 'explicit'
@@ -540,6 +553,9 @@ async function signInWithGoogle() {
     await signOut(auth);
     clearCurrentUser();
     if (userId) {
+      // Purge all cached financial data for this user. Replaces the old
+      // sessionStorage auto-clear (which was unreliable on Android WebView).
+      clearAllUserData(userId);
       try { localStorage.removeItem(`ledger-session-analytics:${userId}`); } catch {}
     }
     setUser(null);
@@ -554,6 +570,7 @@ async function signInWithGoogle() {
     // Delete Firebase Auth account
     if (auth.currentUser) await firebaseDeleteUser(auth.currentUser);
     clearCurrentUser();
+    clearAllUserData(userId);
     try { localStorage.removeItem(`ledger-session-analytics:${userId}`); } catch {}
     setUser(null);
     setPendingSetup(null);

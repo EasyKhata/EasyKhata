@@ -1,21 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
-  deleteDoc,
-  doc,
   getDocs,
   limit,
-  query,
-  serverTimestamp,
-  updateDoc
+  orderBy,
+  query
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { BarChart3, ExternalLink, Megaphone, Pause, Play, Plus, Save, Trash2, X } from "lucide-react";
 import { db, storage } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
+import { useConfirm } from "../context/DialogContext";
 import { logError } from "../utils/logger";
+import { openExternal } from "../utils/openExternal";
 import { ORG_TYPES } from "../utils/orgTypes";
 import { PLANS } from "../utils/subscription";
 import { adminApi } from "../lib/api";
@@ -143,6 +141,7 @@ function InsightList({ title, rows, empty = "No data yet" }) {
 export default function AdsManager() {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
+  const confirm = useConfirm();
   const [campaigns, setCampaigns] = useState([]);
   const [events, setEvents] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -161,9 +160,17 @@ export default function AdsManager() {
     setLoading(true);
     setInsightsError("");
     try {
+      // ad_events: order by ts desc and cap at 1000 — without orderBy Firestore
+      // returns *any* 1000 docs (effectively oldest-first), which made the CTR
+      // tile drift toward zero as the campaign matured. Fall back to an
+      // unordered query if the composite index for "ts" hasn't been deployed yet.
+      const eventsQuery = query(collection(db, "ad_events"), orderBy("ts", "desc"), limit(1000));
+      const eventsFallback = query(collection(db, "ad_events"), limit(1000));
+      const eventsPromise = getDocs(eventsQuery).catch(() => getDocs(eventsFallback));
+
       const [campaignSnap, eventSnap, audienceInsights] = await Promise.all([
         getDocs(collection(db, "ad_campaigns")),
-        getDocs(query(collection(db, "ad_events"), limit(1000))),
+        eventsPromise,
         adminApi.getAdAudienceInsights().catch(err => {
           setInsightsError(err.message || "Audience insights are unavailable.");
           return null;
@@ -224,6 +231,8 @@ export default function AdsManager() {
     setForm(EMPTY_FORM);
   }
 
+  // Plain JSON for the REST endpoint — no Firestore-only sentinels (serverTimestamp
+   // etc.). The server stamps updatedAt/updatedBy itself for the audit log.
   function buildPayload() {
     return {
       businessName: form.businessName.trim(),
@@ -231,7 +240,6 @@ export default function AdsManager() {
       body: form.body.trim(),
       category: form.category.trim(),
       imageUrl: form.imageUrl.trim(),
-      placement: "dashboard_carousel",
       ctaType: form.ctaType,
       ctaLabel: form.ctaLabel.trim() || "View offer",
       ctaValue: form.ctaValue.trim(),
@@ -244,9 +252,7 @@ export default function AdsManager() {
       targetPlans: form.targetPlans || ["all"],
       targetCountries: splitCsv(form.targetCountriesText),
       targetStates: splitCsv(form.targetStatesText),
-      targetCities: splitCsv(form.targetCitiesText),
-      updatedAt: serverTimestamp(),
-      updatedBy: user?.email || user?.id || ""
+      targetCities: splitCsv(form.targetCitiesText)
     };
   }
 
@@ -260,6 +266,24 @@ export default function AdsManager() {
     return `${Date.now()}-${base}.${ext}`;
   }
 
+  // Read the image and resolve { width, height }. Used to reject extreme aspect
+  // ratios and tiny images that render badly in the dashboard carousel.
+  function readImageDimensions(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Could not read image"));
+      };
+      img.src = url;
+    });
+  }
+
   async function uploadImage(file) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -270,6 +294,27 @@ export default function AdsManager() {
       showToast({ title: "Image too large", message: "Please keep ad images below 2 MB. Around 800 x 800 px works best.", tone: "warning" });
       return;
     }
+
+    // Dimension guardrails — extreme aspect ratios get cropped strangely by the
+    // dashboard carousel and tiny images blur out. The 0.4–2.5 ratio window covers
+    // square, landscape banner, and tall posters but rejects panoramas / strips.
+    let dims = null;
+    try {
+      dims = await readImageDimensions(file);
+    } catch {
+      showToast({ title: "Could not read image", message: "Try a different file.", tone: "warning" });
+      return;
+    }
+    if (Math.min(dims.width, dims.height) < 400) {
+      showToast({ title: "Image too small", message: `Use at least 400 px on each side. This file is ${dims.width} x ${dims.height}.`, tone: "warning" });
+      return;
+    }
+    const ratio = dims.width / dims.height;
+    if (ratio < 0.4 || ratio > 2.5) {
+      showToast({ title: "Aspect ratio looks off", message: `Recommended close to square. This file is ${dims.width} x ${dims.height}.`, tone: "warning" });
+      return;
+    }
+
     setUploadingImage(true);
     try {
       const imageRef = ref(storage, `ad-assets/${user.id}/${safeFileName(file)}`);
@@ -288,8 +333,15 @@ export default function AdsManager() {
     }
   }
 
+  // All campaign mutations now go through the backend (adminApi.*AdCampaign). The
+  // server validates fields, enforces manager-email access, and writes an audit
+  // entry. Reads still go directly to Firestore for AdCarousel performance.
   async function saveCampaign(e) {
     e.preventDefault();
+    if (uploadingImage) {
+      showToast({ title: "Upload in progress", message: "Wait for the image upload to finish before saving.", tone: "warning" });
+      return;
+    }
     if (!form.imageUrl.trim()) {
       showToast({ title: "Image required", message: "Upload an ad image or paste an image URL before saving.", tone: "warning" });
       return;
@@ -297,49 +349,53 @@ export default function AdsManager() {
     setSaving(true);
     try {
       const payload = buildPayload();
-      if (editingId) {
-        await updateDoc(doc(db, "ad_campaigns", editingId), payload);
-      } else {
-        await addDoc(collection(db, "ad_campaigns"), {
-          ...payload,
-          createdAt: serverTimestamp(),
-          createdBy: user?.email || user?.id || ""
-        });
-      }
+      const saved = editingId
+        ? await adminApi.updateAdCampaign(editingId, payload)
+        : await adminApi.createAdCampaign(payload);
+      // Patch local state instead of full reload — keeps event metrics intact.
+      setCampaigns(prev => editingId
+        ? prev.map(c => (c.id === editingId ? { ...c, ...saved } : c))
+        : [{ ...saved }, ...prev]
+      );
       showToast({ title: editingId ? "Campaign updated" : "Campaign created", message: "Dashboard ads will pick this up automatically.", tone: "success" });
       resetForm();
-      await load();
     } catch (err) {
       logError("ads_manager_save_failed", err);
-      showToast({ title: "Could not save campaign", message: err.message || "Please check Firebase rules.", tone: "danger" });
+      showToast({ title: "Could not save campaign", message: err.message || "Please try again.", tone: "danger" });
     } finally {
       setSaving(false);
     }
   }
 
   async function setStatus(campaign, status) {
+    const before = campaign.status;
+    setCampaigns(prev => prev.map(c => (c.id === campaign.id ? { ...c, status } : c)));
     try {
-      await updateDoc(doc(db, "ad_campaigns", campaign.id), {
-        status,
-        updatedAt: serverTimestamp(),
-        updatedBy: user?.email || user?.id || ""
-      });
-      await load();
+      await adminApi.updateAdCampaign(campaign.id, { ...campaign, status });
     } catch (err) {
+      // Roll back on failure.
+      setCampaigns(prev => prev.map(c => (c.id === campaign.id ? { ...c, status: before } : c)));
       logError("ads_manager_status_failed", err, { campaignId: campaign.id, status });
-      showToast({ title: "Status update failed", message: err.message || "Please check Firebase rules.", tone: "danger" });
+      showToast({ title: "Status update failed", message: err.message || "Please try again.", tone: "danger" });
     }
   }
 
   async function removeCampaign(campaign) {
-    const ok = window.confirm(`Delete "${campaign.title}"? This removes the campaign, not old click/impression events.`);
+    // useConfirm() — works inside the Capacitor WebView. Native window.confirm
+    // can render blank on Android.
+    const ok = await confirm(
+      `Delete "${campaign.title}"? This removes the campaign, not old click/impression events.`,
+      { title: "Delete campaign", confirmLabel: "Delete", danger: true }
+    );
     if (!ok) return;
+    const before = campaigns;
+    setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
     try {
-      await deleteDoc(doc(db, "ad_campaigns", campaign.id));
-      await load();
+      await adminApi.deleteAdCampaign(campaign.id);
     } catch (err) {
+      setCampaigns(before);
       logError("ads_manager_delete_failed", err, { campaignId: campaign.id });
-      showToast({ title: "Delete failed", message: err.message || "Please check Firebase rules.", tone: "danger" });
+      showToast({ title: "Delete failed", message: err.message || "Please try again.", tone: "danger" });
     }
   }
 
@@ -367,7 +423,21 @@ export default function AdsManager() {
             <h1>Ads Manager</h1>
             <p>Create sponsored dashboard cards for selected org types, plan types, and locations.</p>
           </div>
-          <a className="btn-secondary" href="/" aria-label="Back to app">Back to app</a>
+          {/* Use a soft history navigation — `<a href="/">` triggers a full WebView
+              reload inside Capacitor, which discards app state. history.back() falls
+              back to "/" if there's nothing to pop. */}
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={() => {
+              if (typeof window === "undefined") return;
+              if (window.history.length > 1) window.history.back();
+              else window.location.assign("/");
+            }}
+            aria-label="Back to app"
+          >
+            Back to app
+          </button>
         </header>
 
         <div className="ads-manager-tabs" role="tablist" aria-label="Ads manager sections">
@@ -618,7 +688,7 @@ export default function AdsManager() {
                   <div>{ctr}% CTR</div>
                 </div>
                 <div className="ads-campaign-actions">
-                  {campaign.ctaValue && <button type="button" className="btn-secondary" onClick={() => window.open(campaign.ctaValue.startsWith("http") ? campaign.ctaValue : `https://${campaign.ctaValue}`, "_blank", "noopener,noreferrer")}><ExternalLink size={14} /></button>}
+                  {campaign.ctaValue && <button type="button" className="btn-secondary" onClick={() => openExternal(campaign.ctaValue.startsWith("http") ? campaign.ctaValue : `https://${campaign.ctaValue}`)}><ExternalLink size={14} /></button>}
                   <button type="button" className="btn-secondary" onClick={() => startEdit(campaign)}>Edit</button>
                   {campaign.status === "active" ? (
                     <button type="button" className="btn-secondary" onClick={() => setStatus(campaign, "paused")}><Pause size={14} /></button>

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
+import { pushBackHandler } from "../../utils/backStack";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -14,6 +15,10 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = previousOverflow; };
   }, []);
+
+  // Register with the global back-button stack so the Android hardware back key
+  // closes this modal first instead of jumping tabs or exiting the app.
+  useEffect(() => onClose ? pushBackHandler(onClose) : undefined, [onClose]);
 
   useEffect(() => {
     const surface = surfaceRef.current;

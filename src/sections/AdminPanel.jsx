@@ -196,7 +196,6 @@ export default function AdminPanel({ year, month }) {
   const [users, setUsers] = useState([]);
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
-  const [globalSnapshot, setGlobalSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
   const [adminError, setAdminError] = useState("");
   const [exporting, setExporting] = useState("");
@@ -213,7 +212,10 @@ export default function AdminPanel({ year, month }) {
     try {
       const [usersResult, requests, tickets] = await Promise.all([
         adminApi.listUsers(1, 500),
-        adminApi.listPaymentRequests().catch(() => []),
+        // 200 is the server-side cap; covers everything for 12 testers and the early
+        // user base. Replace with full pagination if the admin panel ever needs to
+        // analyse historical requests beyond this window.
+        adminApi.listPaymentRequests(1, 200).catch(() => []),
         adminApi.listSupportTickets().catch(() => [])
       ]);
 
@@ -579,53 +581,27 @@ export default function AdminPanel({ year, month }) {
     };
   }, [monthKey, paymentRequests, supportTickets, users]);
 
-  const snapshotStats = globalSnapshot?.stats || null;
-  const snapshotCurrentMonth = globalSnapshot?.periods?.currentMonth || null;
-  const snapshotDerivations = globalSnapshot?.derivations || null;
-  const snapshotDistributions = globalSnapshot?.distributions || null;
-  const snapshotReadiness = globalSnapshot?.readiness || null;
-  const snapshotGeneratedAt = globalSnapshot?.generatedAt ? new Date(globalSnapshot.generatedAt) : null;
-  const isCurrentMonthSelected = monthKey === new Date().toISOString().slice(0, 7);
-  const areOrgDerivationsReady = Boolean(snapshotDerivations?.orgCollectionsReady);
+  // Stats render directly from the live `analytics` memo. A previous version had a
+  // `globalSnapshot` branch intended to read from a server-side aggregation endpoint,
+  // but the endpoint was never built and the snapshot state was never populated, so
+  // every conditional fell through to the live calc. The branch has been removed for
+  // clarity; if/when the snapshot endpoint lands, replace these references rather
+  // than re-introducing the dual-path mess.
   const executiveStats = {
-    totalUsers: Number(snapshotStats?.totalUsers ?? analytics.stats.totalUsers),
-    activeUsers: Number(snapshotStats?.activeUsers ?? analytics.stats.activeUsers),
-    premiumUsers: Number(snapshotStats?.premiumUsers ?? analytics.stats.premiumUsers),
-    totalOrganizations: areOrgDerivationsReady ? Number(snapshotStats?.totalOrganizations ?? analytics.stats.totalOrganizations) : analytics.stats.totalOrganizations,
-    multiOrgUsers: areOrgDerivationsReady ? Number(snapshotStats?.multiOrgUsers ?? analytics.stats.multiOrgUsers) : analytics.stats.multiOrgUsers,
-    pendingRequests: Number(snapshotStats?.pendingRequests ?? analytics.stats.pendingRequests),
-    premiumShare:
-      Number(snapshotStats?.totalUsers || 0) > 0
-        ? Math.round((Number(snapshotStats?.premiumUsers || 0) / Number(snapshotStats?.totalUsers || 1)) * 100)
-        : analytics.stats.premiumShare
+    totalUsers: analytics.stats.totalUsers,
+    activeUsers: analytics.stats.activeUsers,
+    premiumUsers: analytics.stats.premiumUsers,
+    totalOrganizations: analytics.stats.totalOrganizations,
+    multiOrgUsers: analytics.stats.multiOrgUsers,
+    pendingRequests: analytics.stats.pendingRequests,
+    premiumShare: analytics.stats.premiumShare
   };
-  const distributionStats = {
-    planMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.planMix) ? snapshotDistributions.planMix : analytics.distributions.planMix,
-    statusMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.statusMix) ? snapshotDistributions.statusMix : analytics.distributions.statusMix,
-    orgTypeMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.orgTypeMix) ? snapshotDistributions.orgTypeMix : analytics.distributions.orgTypeMix,
-    locationMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.locationMix) ? snapshotDistributions.locationMix : analytics.distributions.locationMix,
-    genderMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.genderMix) ? snapshotDistributions.genderMix : analytics.distributions.genderMix,
-    ageMix: areOrgDerivationsReady && Array.isArray(snapshotDistributions?.ageMix) ? snapshotDistributions.ageMix : analytics.distributions.ageMix
-  };
-  const readinessStats = {
-    locationCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.locationCoverage ?? analytics.readiness.locationCoverage) : analytics.readiness.locationCoverage,
-    genderCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.genderCoverage ?? analytics.readiness.genderCoverage) : analytics.readiness.genderCoverage,
-    ageCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.ageCoverage ?? analytics.readiness.ageCoverage) : analytics.readiness.ageCoverage,
-    sessionCoverage: areOrgDerivationsReady ? Number(snapshotReadiness?.sessionCoverage ?? analytics.readiness.sessionCoverage) : analytics.readiness.sessionCoverage
-  };
+  const distributionStats = analytics.distributions;
+  const readinessStats = analytics.readiness;
   const currentPeriodStats = {
-    approvedAmount:
-      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
-        ? Number(snapshotCurrentMonth?.approvedAmount ?? analytics.stats.monthlyApprovedAmount)
-        : analytics.stats.monthlyApprovedAmount,
-    newUsers:
-      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
-        ? Number(snapshotCurrentMonth?.newUsers ?? analytics.stats.newUsersThisMonth)
-        : analytics.stats.newUsersThisMonth,
-    newPremiumUsers:
-      isCurrentMonthSelected && snapshotCurrentMonth?.key === monthKey
-        ? Number(snapshotCurrentMonth?.newPremiumUsers ?? analytics.stats.newPremiumUsersThisMonth)
-        : analytics.stats.newPremiumUsersThisMonth
+    approvedAmount: analytics.stats.monthlyApprovedAmount,
+    newUsers: analytics.stats.newUsersThisMonth,
+    newPremiumUsers: analytics.stats.newPremiumUsersThisMonth
   };
 
   if (loading) {
@@ -645,7 +621,7 @@ export default function AdminPanel({ year, month }) {
           <div className="section-label" style={{ marginBottom: 2 }}>Admin Overview</div>
           <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
             {selectedPeriodLabel}
-            {snapshotGeneratedAt ? ` · Updated ${snapshotGeneratedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : " · Live data"}
+            {" · Live data"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
