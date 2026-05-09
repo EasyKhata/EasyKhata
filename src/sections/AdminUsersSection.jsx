@@ -117,18 +117,37 @@ export default function AdminUsersSection() {
     }, { total: 0, active: 0, blocked: 0, premium: 0, trial: 0, multiOrg: 0, activated: 0, dormant: 0 });
   }, [users]);
 
+  // Patch a user in local state instead of refetching all loaded pages. The previous
+  // implementation called fetchAdminData() after every action, which reset to page 1
+  // and discarded any extra pages the admin had loaded — annoying when triaging a
+  // long list. Optimistic patches keep their place in the list intact.
+  function patchUserLocally(userId, updates) {
+    setUsers(prev => prev.map(u => (u.id === userId ? { ...u, ...updates } : u)));
+  }
+
   async function toggleBlock(id, blocked) {
     if (id === user.id) {
       setAdminError("You cannot block your own account.");
       return;
     }
+    const target = users.find(u => u.id === id);
+    const verb = blocked ? "Unblock" : "Block";
+    const confirmed = await confirm(
+      `${verb} ${target?.name || target?.email || "this user"}?${blocked ? "" : " They will be signed out and unable to access their account."}`,
+      { title: `${verb} user`, confirmLabel: verb, danger: !blocked }
+    );
+    if (!confirmed) return;
+
     setAdminError("");
+    const next = !blocked;
+    patchUserLocally(id, { blocked: next });
     try {
-      await adminApi.updateUser(id, { blocked: !blocked });
-      fetchAdminData();
+      await adminApi.updateUser(id, { blocked: next });
     } catch (err) {
+      // Roll back optimistic update on failure.
+      patchUserLocally(id, { blocked });
       logError("Block/unblock error", err);
-      setAdminError("Unable to update the user's block status. Please try again.");
+      setAdminError(err?.message || "Unable to update the user's block status. Please try again.");
     }
   }
 
@@ -137,43 +156,65 @@ export default function AdminUsersSection() {
       setAdminError("You cannot delete your own admin account.");
       return;
     }
-    const confirmed = await confirm(`Delete ${member.name || member.email}? This will permanently remove their account and all data.`, { title: "Delete User", confirmLabel: "Delete Permanently" });
+    const confirmed = await confirm(`Delete ${member.name || member.email}? This will permanently remove their account and all data.`, { title: "Delete User", confirmLabel: "Delete Permanently", danger: true });
     if (!confirmed) return;
 
     setAdminError("");
     try {
       await adminApi.deleteUser(member.id);
-      fetchAdminData();
+      // Remove just this user — keep the rest of the loaded list intact.
+      setUsers(prev => prev.filter(u => u.id !== member.id));
     } catch (err) {
       logError("Delete user error", err);
-      setAdminError("Unable to delete the user profile right now. Please try again.");
+      setAdminError(err?.message || "Unable to delete the user profile right now. Please try again.");
     }
   }
 
   async function updateUserPlan(member, plan) {
+    if (plan === member.plan) return;
+    const planLabel = plan === PLANS.PRO ? "Pro" : plan === PLANS.BUSINESS ? "Business" : "Free";
+    const isDowngrade = (member.plan === PLANS.PRO && plan === PLANS.FREE)
+      || (member.plan === PLANS.BUSINESS && plan !== PLANS.BUSINESS);
+    const confirmed = await confirm(
+      `Change ${member.name || member.email}'s plan to ${planLabel}?${isDowngrade ? " This will immediately downgrade their access." : ""}`,
+      { title: "Change plan", confirmLabel: `Set ${planLabel}`, danger: isDowngrade }
+    );
+    if (!confirmed) return;
+
     setAdminError("");
+    const updates = { plan, subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE };
+    if (plan === PLANS.FREE) updates.subscriptionEndsAt = "";
+    const before = { plan: member.plan, subscriptionStatus: member.subscriptionStatus, subscriptionEndsAt: member.subscriptionEndsAt };
+    patchUserLocally(member.id, updates);
     try {
-      const updates = { plan, subscriptionStatus: SUBSCRIPTION_STATUS.ACTIVE };
-      if (plan === PLANS.FREE) updates.subscriptionEndsAt = "";
       await adminApi.updateUser(member.id, updates);
-      fetchAdminData();
     } catch (err) {
+      patchUserLocally(member.id, before);
       logError("Update plan error", err);
-      setAdminError("Unable to update the user's plan. Please try again.");
+      setAdminError(err?.message || "Unable to update the user's plan. Please try again.");
     }
   }
 
   async function updateSubscriptionStatus(member, subscriptionStatus) {
+    if (subscriptionStatus === member.subscriptionStatus) return;
+    const confirmed = await confirm(
+      `Set ${member.name || member.email}'s subscription to ${subscriptionStatus}?`,
+      { title: "Change subscription status", confirmLabel: "Update" }
+    );
+    if (!confirmed) return;
+
     setAdminError("");
+    const updates = { subscriptionStatus };
+    if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = getTrialEndDate();
+    if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = "";
+    const before = { subscriptionStatus: member.subscriptionStatus, subscriptionEndsAt: member.subscriptionEndsAt };
+    patchUserLocally(member.id, updates);
     try {
-      const updates = { subscriptionStatus };
-      if (subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = getTrialEndDate();
-      if (subscriptionStatus !== SUBSCRIPTION_STATUS.TRIAL) updates.subscriptionEndsAt = "";
       await adminApi.updateUser(member.id, updates);
-      fetchAdminData();
     } catch (err) {
+      patchUserLocally(member.id, before);
       logError("Update subscription status error", err);
-      setAdminError("Unable to update the user's subscription status. Please try again.");
+      setAdminError(err?.message || "Unable to update the user's subscription status. Please try again.");
     }
   }
 
@@ -199,6 +240,11 @@ export default function AdminUsersSection() {
         </div>
       )}
 
+      <div style={{ marginBottom: 6, fontSize: 11, color: "var(--text-dim)" }}>
+        {hasMoreUsers
+          ? `Counts below reflect the ${users.length} loaded user${users.length === 1 ? "" : "s"} — load more to see full totals.`
+          : `Counts below cover all ${users.length} user${users.length === 1 ? "" : "s"}.`}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 12 }}>
         {[
           ["Active", userStats.active, "var(--accent)"],

@@ -12,9 +12,24 @@ async function ensureJsPDF() {
 
 async function savePdf(doc, filename) {
   if (isNative) {
-    const { Browser } = await import("@capacitor/browser");
-    const dataUri = doc.output("datauristring");
-    await Browser.open({ url: dataUri });
+    const [{ Filesystem, Directory }, { Share }] = await Promise.all([
+      import("@capacitor/filesystem"),
+      import("@capacitor/share")
+    ]);
+    const safeFilename = filename.replace(/[\\/:*?"<>|]+/g, "-") || "invoice.pdf";
+    const base64 = doc.output("datauristring").split(",")[1];
+    const saved = await Filesystem.writeFile({
+      path: safeFilename,
+      data: base64,
+      directory: Directory.Cache,
+      recursive: true
+    });
+    await Share.share({
+      title: safeFilename,
+      text: "Invoice PDF",
+      url: saved.uri,
+      dialogTitle: "Save or share invoice"
+    });
   } else {
     doc.save(filename);
   }

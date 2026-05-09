@@ -1,7 +1,11 @@
 import { auth } from "../firebase";
 
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
-const REQUEST_TIMEOUT_MS = 12_000;
+// 20 s covers Railway cold-start (5–10 s for container wake + Firebase init + Postgres
+// connect) plus normal latency on a marginal mobile network. The previous 12 s window
+// timed out the very first call after the backend went idle, even though the user's
+// connection was good enough for streaming services.
+const REQUEST_TIMEOUT_MS = 20_000;
 
 // ── Core fetch wrapper ────────────────────────────────────────────────────────
 // Attaches the current Firebase ID token as Bearer on every request.
@@ -35,7 +39,11 @@ async function fetchWithRetry(url, options, method, path) {
         lastError.attempts = maxAttempts;
       }
       if (attempt === maxAttempts) break;
-      await sleep(450 * attempt);
+      // Exponential backoff with jitter — bursty linear retries hit the same congested
+      // window on a flaky network. Spread retries across 0.8 s, 1.6 s (+ random 0–400 ms).
+      const baseDelay = 800 * Math.pow(2, attempt - 1);
+      const jitter    = Math.random() * 400;
+      await sleep(baseDelay + jitter);
     } finally {
       clearTimeout(timeout);
     }
@@ -98,6 +106,27 @@ const api = {
   patch:  (path, body)  => request("PATCH",  path, body),
   delete: (path)        => request("DELETE", path)
 };
+
+// Fire-and-forget warmup ping. Called when the user begins Google sign-in so the
+// backend (often cold on Railway) wakes up while Google's auth popup is open. By
+// the time the user picks their account and we call usersApi.get, the server is
+// already warm — saving the post-auth window from a 10 s cold-start timeout.
+let warmupInFlight = null;
+export function warmupBackend() {
+  if (warmupInFlight) return warmupInFlight;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  warmupInFlight = fetch(`${BASE_URL}/health`, { signal: controller.signal })
+    .catch(() => {})
+    .finally(() => {
+      clearTimeout(timeout);
+      // Allow another warmup attempt 60 s later — if the user signs in slowly
+      // and we end up reusing this promise long after it resolved, fine; but
+      // a stale rejection shouldn't block future attempts.
+      setTimeout(() => { warmupInFlight = null; }, 60_000);
+    });
+  return warmupInFlight;
+}
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 
@@ -292,13 +321,24 @@ export const adminApi = {
   updateSupportTicket: (ticketId, updates) =>
     api.put(`/admin/support-tickets/${ticketId}`, updates),
 
-  // Payment requests
-  listPaymentRequests: () =>
-    api.get("/admin/payment-requests"),
+  // Payment requests (paginated). Server returns { requests, total, page, hasMore }.
+  listPaymentRequests: (page = 1, limit = 100, status) =>
+    api.get(`/admin/payment-requests?page=${page}&limit=${limit}${status ? `&status=${status}` : ""}`),
 
   updatePaymentRequest: (requestId, updates) =>
     api.put(`/admin/payment-requests/${requestId}`, updates),
 
   getAdAudienceInsights: () =>
-    api.get("/admin/ad-audience-insights")
+    api.get("/admin/ad-audience-insights"),
+
+  // Ad campaigns — server-mediated CRUD so writes are audited and validated.
+  // Reads are still done directly from Firestore for AdCarousel performance.
+  createAdCampaign: (payload) =>
+    api.post("/admin/ad-campaigns", payload),
+
+  updateAdCampaign: (campaignId, payload) =>
+    api.put(`/admin/ad-campaigns/${campaignId}`, payload),
+
+  deleteAdCampaign: (campaignId) =>
+    api.delete(`/admin/ad-campaigns/${campaignId}`)
 };

@@ -17,8 +17,8 @@ android {
         applicationId "net.easykhata.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 40
-        versionName "1.0.40"
+        versionCode 41
+        versionName "1.0.41"
     }
 
     buildTypes {
@@ -54,6 +54,9 @@ try {
     def servicesJSON = file('google-services.json')
     if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
+        // Must come after google-services. Uploads R8/ProGuard mapping files so
+        // crash stack traces are deobfuscated in Crashlytics.
+        apply plugin: 'com.google.firebase.crashlytics'
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")

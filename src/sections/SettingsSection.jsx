@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfirm } from "../context/DialogContext";
 import { isNative } from "../utils/native";
+import { openExternal } from "../utils/openExternal";
 import { supportApi, adminApi, orgsApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
@@ -1539,7 +1540,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const body = encodeURIComponent(
       `Hello,\n\nI have completed the payment for EazyKhata.\n\nPlan: ${PLAN_LABELS[targetPlan] || targetPlan}\nBilling cycle: ${planRequestForm.billingCycle || BILLING_CYCLES.MONTHLY}\nAmount: Rs ${amount}\nKhata context: ${paymentOrgName}\nKhata type: ${getOrgConfig(targetOrgType)?.typeLabel || targetOrgType}\n\nPlease find my payment screenshot attached.\n\nThanks.`
     );
-    window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+    openExternal(`mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
   }
 
   function buildSupportContext() {
@@ -1560,7 +1561,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const body = encodeURIComponent(
       `Hello EazyKhata Support,\n\nTopic: ${topicLabel}\n\n${message ? `${message}\n\n` : ""}Support context:\n${buildSupportContext()}\n\nPlease help me with this issue.\n`
     );
-    window.location.href = `mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`;
+    openExternal(`mailto:${APP_SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
   }
 
   async function copySupportContext() {

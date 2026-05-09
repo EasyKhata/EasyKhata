@@ -1,6 +1,52 @@
 import { auth } from "../firebase";
+import { isNative } from "./native";
 
 const isDev = import.meta.env.DEV;
+
+// Lazy-loaded Crashlytics handle. We import dynamically so the web build doesn't
+// pull the native plugin into the chunk graph.
+let crashlyticsPromise = null;
+function getCrashlytics() {
+  if (!isNative) return Promise.resolve(null);
+  if (!crashlyticsPromise) {
+    crashlyticsPromise = import("@capacitor-firebase/crashlytics")
+      .then(m => m.FirebaseCrashlytics)
+      .catch(() => null);
+  }
+  return crashlyticsPromise;
+}
+
+async function reportToCrashlytics(level, label, error, ctx) {
+  if (isDev || !isNative) return;
+  const Crashlytics = await getCrashlytics();
+  if (!Crashlytics) return;
+  try {
+    const message = error instanceof Error ? error.message : String(error ?? label);
+    const stack   = error instanceof Error ? error.stack : "";
+    const summary = `[${level}] ${label}: ${message}`;
+    // recordException accepts a stacktrace; log() adds context for the next crash.
+    if (ctx) {
+      try { await Crashlytics.log({ message: `${label}: ${JSON.stringify(ctx).slice(0, 500)}` }); } catch { /* ignore */ }
+    }
+    await Crashlytics.recordException({
+      message: summary,
+      stacktrace: stack ? [{ fileName: "", lineNumber: 0, methodName: stack.slice(0, 1000) }] : undefined
+    });
+  } catch {
+    // Crashlytics must never break the app.
+  }
+}
+
+// Set the Crashlytics user identifier so a crash report can be tied to the
+// account that hit it. Call this from AuthContext after sign-in.
+export async function setCrashUser(userId) {
+  if (isDev || !isNative) return;
+  const Crashlytics = await getCrashlytics();
+  if (!Crashlytics) return;
+  try {
+    if (userId) await Crashlytics.setUserId({ userId });
+  } catch { /* ignore */ }
+}
 
 // Cloud Function URL — set VITE_LOG_ENDPOINT in .env to the recordClientLog URL.
 // Falls back to no-op if not configured so dev/CI builds are unaffected.
@@ -100,6 +146,7 @@ export function logError(label, error, ctx) {
     return;
   }
   writeLog("error", label, error, ctx);
+  reportToCrashlytics("error", label, error, ctx);
 }
 
 export function logWarn(label, ctx) {

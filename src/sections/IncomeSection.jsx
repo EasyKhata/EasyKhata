@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useData } from "../context/DataContext";
 import { useAuth } from "../context/AuthContext";
+import { openExternal } from "../utils/openExternal";
 import { getUpgradeCopy } from "../utils/subscription";
 import {
   DateSelectInput,
@@ -651,7 +652,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
         ].join("\n");
 
     const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    openExternal(url);
   }
 
   if (!d.loaded) {
