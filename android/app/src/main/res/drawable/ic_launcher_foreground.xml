@@ -1,31 +1,49 @@
+<!--
+  Adaptive icon foreground.
+
+  Android adaptive icons render inside a 108dp canvas, but only the inner ~66dp
+  is GUARANTEED visible across launcher mask shapes (round, squircle, square,
+  teardrop). Anything outside that zone may be clipped — which is what was
+  happening to the K's left bar and the orange dot when launchers used round.
+
+  The fix is the outer <group>: it scales the actual drawing to 65% and offsets
+  by 17.5 units, so the original 100-unit composition now occupies the inner
+  65 units of a 100-unit viewport (well within the safe zone).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="100"
     android:viewportHeight="100">
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M18,18h12a6,6 0 0,1 6,6v52a6,6 0 0,1 -6,6h-12a6,6 0 0,1 -6,-6v-52a6,6 0 0,1 6,-6z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M18,18h40a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-40a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
-    <path
-        android:fillColor="#28C76F"
-        android:pathData="M18,44h30a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-30a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M18,70h40a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-40a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="12"
-        android:strokeLineCap="round"
-        android:pathData="M40,50 L74,18" />
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="12"
-        android:strokeLineCap="round"
-        android:pathData="M40,50 L74,82" />
-    <path
-        android:fillColor="#F4A261"
-        android:pathData="M82,18a8,8 0 1,1 -16,0a8,8 0 1,1 16,0z" />
+    <group
+        android:translateX="17.5"
+        android:translateY="17.5"
+        android:scaleX="0.65"
+        android:scaleY="0.65">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M18,18h12a6,6 0 0,1 6,6v52a6,6 0 0,1 -6,6h-12a6,6 0 0,1 -6,-6v-52a6,6 0 0,1 6,-6z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M18,18h40a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-40a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
+        <path
+            android:fillColor="#28C76F"
+            android:pathData="M18,44h30a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-30a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M18,70h40a6,6 0 0,1 6,6v0a6,6 0 0,1 -6,6h-40a6,6 0 0,1 -6,-6v0a6,6 0 0,1 6,-6z" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="12"
+            android:strokeLineCap="round"
+            android:pathData="M40,50 L74,18" />
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="12"
+            android:strokeLineCap="round"
+            android:pathData="M40,50 L74,82" />
+        <path
+            android:fillColor="#F4A261"
+            android:pathData="M82,18a8,8 0 1,1 -16,0a8,8 0 1,1 16,0z" />
+    </group>
 </vector>

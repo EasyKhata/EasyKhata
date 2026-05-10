@@ -423,7 +423,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     }
     if (!hasMinLength(form.label, 2)) nextErrors.label = `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
     if (!isPositiveAmount(form.amount)) nextErrors.amount = "Enter an amount greater than 0.";
-    if (isPersonalOrg && !String(form.personName || "").trim()) nextErrors.personName = "Select a household person before saving.";
+    if (isPersonalOrg && !String(form.personName || "").trim()) nextErrors.personName = "Select a family member before saving.";
     if (!isValidDateValue(form.date)) {
       nextErrors.date = `Choose the ${config.expensesEntryLabel.toLowerCase()} date.`;
     } else if (isFutureDateValue(form.date)) {
@@ -880,9 +880,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 </Select>
               </Field>
               {isFreelancerOrg && String(form.category || "").toLowerCase() === "payroll" && (
-                <Field label="Staff Member">
+                <Field label="Employee">
                   <Select value={form.staffMemberName || ""} onChange={e => setForm(current => ({ ...current, staffMemberName: e.target.value, label: current.label || (e.target.value ? `${e.target.value} Salary` : "") }))}>
-                    <option value="">{staffOptions.length ? "Select staff member" : "No staff added yet — add in Settings"}</option>
+                    <option value="">{staffOptions.length ? "Select employee" : "No employees added yet — add in Settings"}</option>
                     {staffOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </Select>
                 </Field>
@@ -933,14 +933,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                 {isPersonalOrg && field.key === "personName"
                   ? (
                     <Select error={errors.personName} value={form.personName || ""} onChange={e => { setForm(current => ({ ...current, personName: e.target.value, label: current.label || `${e.target.value} ${config.expensesEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
-                      <option value="">{peopleOptions.length ? "Select person" : "Add people in Settings first"}</option>
+                      <option value="">{peopleOptions.length ? "Select family member" : "Add family members in Settings first"}</option>
                       {peopleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
                   )
                   : isFreelancerOrg && field.key === "clientName"
                     ? (
                       <Select value={form.clientName || ""} onChange={e => setForm(current => ({ ...current, clientName: e.target.value }))}>
-                        <option value="">{clientOptions.length ? "Select client (optional)" : "Add clients in Settings first"}</option>
+                        <option value="">{clientOptions.length ? "Select customer (optional)" : "Add customers in Settings first"}</option>
                         {clientOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </Select>
                     )

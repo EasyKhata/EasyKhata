@@ -6,6 +6,7 @@ import { DialogProvider } from "./context/DialogContext";
 import { ToastProvider } from "./context/ToastContext";
 import { DashboardSkeleton } from "./components/UI";
 import BrandLogo from "./components/BrandLogo";
+import LaunchIntro from "./components/LaunchIntro";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { APP_SUPPORT_LABEL } from "./utils/brand";
 import { isNative, isAndroid } from "./utils/native";
@@ -30,17 +31,11 @@ const LandingScreen = lazy(() => import("./screens/LandingScreen"));
 const AdsManager = lazy(() => import("./sections/AdsManager"));
 
 function AppRouter() {
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, pendingSetup } = useAuth();
   const isAdsManagerRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/ads-manager");
   // Track at mount whether a user was previously signed in (before Firebase resolves).
   // This lets returning users skip the landing page and see the app skeleton instead.
   const wasSignedIn = useRef(!!getCurrentUser());
-  const [showLanding, setShowLanding] = React.useState(!wasSignedIn.current);
-
-  // Once Firebase resolves a logged-in user, never show landing again this session.
-  useEffect(() => {
-    if (user) setShowLanding(false);
-  }, [user]);
 
   // Returning user: Firebase is still loading — show skeleton, not landing
   if (loading && wasSignedIn.current) {
@@ -67,25 +62,24 @@ function AppRouter() {
   }
 
   if (!user) {
-    // Show landing immediately — Firebase loads in background, doesn't block render
-    if (showLanding) {
+    // The sign-in wizard (phone / khata type / khata profile) is hosted by
+    // AuthScreen and is gated by `pendingSetup` from AuthContext. New users
+    // who just authenticated via Google but haven't filled out the wizard see
+    // it here. Returning users with a complete profile never hit this branch.
+    if (pendingSetup) {
       return (
-        <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
-          <LandingScreen onGetStarted={() => setShowLanding(false)} />
+        <Suspense fallback={<DashboardSkeleton />}>
+          <AuthScreen />
         </Suspense>
       );
     }
-    // After "Get Started" — show skeleton while Firebase finishes, then auth screen
-    if (loading) {
-      return (
-        <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-          <DashboardSkeleton />
-        </div>
-      );
-    }
+    // Otherwise show the marketing landing page. Sign-in is now triggered
+    // from CTAs ON the landing page itself — no intermediate empty AuthScreen
+    // step. Firebase auth resolution is a background task; while it runs we
+    // keep showing landing so the user can keep reading or click sign-in.
     return (
-      <Suspense fallback={<DashboardSkeleton />}>
-        <AuthScreen />
+      <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
+        <LandingScreen />
       </Suspense>
     );
   }
@@ -130,6 +124,11 @@ function AppRouter() {
 }
 
 export default function App() {
+  // Cold-start launch animation overlay. Renders for ~1.1 s while the actual
+  // app mounts behind it; self-removes via internal timer. Only fires once per
+  // page load thanks to the useState initializer running only on mount.
+  const [introDone, setIntroDone] = React.useState(false);
+
   return (
     <ErrorBoundary>
       <ThemeProvider>
@@ -139,6 +138,7 @@ export default function App() {
               <ErrorBoundary>
                 <AppRouter />
               </ErrorBoundary>
+              {!introDone && <LaunchIntro onDone={() => setIntroDone(true)} />}
             </ToastProvider>
           </DialogProvider>
         </AuthProvider>

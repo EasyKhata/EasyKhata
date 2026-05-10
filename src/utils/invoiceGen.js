@@ -487,7 +487,7 @@ export async function downloadPayslip(payslip, account, sym) {
   await ensureJsPDF();
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
-  const staffName = safeText(payslip.staffMemberName || "Staff");
+  const staffName = safeText(payslip.staffMemberName || "Employee");
   const payPeriod = String(payslip.payPeriod || "");
   const periodLabel = payPeriod
     ? new Date(`${payPeriod}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" })

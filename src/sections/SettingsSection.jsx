@@ -1161,8 +1161,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const cleanPhoneNumber = sanitizePhoneDigits(staffForm?.phoneNumber || "");
     const cleanPhoneCountryCode = staffForm?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE;
     const cleanPhone = buildPhoneNumber(cleanPhoneCountryCode, cleanPhoneNumber);
-    if (!name) { showNotice("Please enter the staff member name."); return; }
-    if (!cleanPhoneNumber) { showNotice("Please enter the staff member phone number."); return; }
+    if (!name) { showNotice("Please enter the employee name."); return; }
+    if (!cleanPhoneNumber) { showNotice("Please enter the employee phone number."); return; }
     const payload = {
       name,
       phone: cleanPhone,
@@ -1942,9 +1942,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               )}
               {isFreelancerOrg && (
                 <MenuRow
-                  icon="S"
-                  label="Staff"
-                  sub={`${(orgRecords?.staff || []).length} staff member(s)`}
+                  icon="E"
+                  label="Employees"
+                  sub={`${(orgRecords?.staff || []).length} employee(s)`}
                   onClick={() => { setScreen("staff"); dismissStaffCoach(); }}
                 />
               )}
@@ -1958,8 +1958,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     onKeyDown={e => e.key === "Enter" && (setScreen("staff"), dismissStaffCoach())}
                     style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
                   >
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)" }}>Add your first staff member here</div>
-                    <div style={{ fontSize: 11, color: "var(--text-sec)" }}>Tap to open Staff →</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)" }}>Add your first employee here</div>
+                    <div style={{ fontSize: 11, color: "var(--text-sec)" }}>Tap to open Employees →</div>
                   </div>
                   <button
                     type="button"

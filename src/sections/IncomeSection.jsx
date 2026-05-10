@@ -468,11 +468,11 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       return;
     }
     if (isPersonalOrg && !String(nextForm.personName || "").trim()) {
-      setErrors(prev => ({ ...prev, personName: "Select a household person before saving." }));
+      setErrors(prev => ({ ...prev, personName: "Select a family member before saving." }));
       return;
     }
     if (isFreelancerOrg && !String(nextForm.clientName || "").trim()) {
-      setErrors(prev => ({ ...prev, clientName: "Select a client before saving." }));
+      setErrors(prev => ({ ...prev, clientName: "Select a customer before saving." }));
       return;
     }
     if (isApartmentOrg && !String(nextForm.residentName || "").trim()) {
@@ -879,10 +879,10 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
             />
           ) : isFreelancerOrg && !hasFreelancerClients ? (
             <WorkflowSetupCard
-              eyebrow="Client setup"
-              title="Add a client before tracking payments"
-              message="Freelancer payments should be linked to a client so invoices, collections, and follow-up all stay aligned."
-              actionLabel={!isViewerMode ? "Open Clients" : undefined}
+              eyebrow="Customer setup"
+              title="Add a customer before tracking payments"
+              message="Business payments should be linked to a customer so invoices, collections, and follow-up all stay aligned."
+              actionLabel={!isViewerMode ? "Open Customers" : undefined}
               onAction={!isViewerMode ? () => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })) : undefined}
               tone="accent"
             />
@@ -1002,7 +1002,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                 <Field key={field.key} label={field.label} required={isFreelancerOrg && field.key === "clientName"} error={errors[field.key]}>
                   {isPersonalOrg && field.key === "personName" ? (
                     <Select error={errors.personName} value={form.personName || ""} onChange={event => { setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
-                      <option value="">{peopleOptions.length ? "Select person" : "Add people in Settings first"}</option>
+                      <option value="">{peopleOptions.length ? "Select family member" : "Add family members in Settings first"}</option>
                       {peopleOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
@@ -1034,7 +1034,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                     <Input value={form.residentName || ""} placeholder="Owner auto-fills from flat" readOnly />
                   ) : field.key === "clientName" ? (
                     <Select error={errors.clientName} value={form.clientName || ""} onChange={event => { setForm(current => ({ ...current, clientName: event.target.value, label: current.label || `${event.target.value} Payment` })); if (errors.clientName) setErrors(prev => ({ ...prev, clientName: "" })); }}>
-                      <option value="">{clientOptions.length ? "Select client" : "Add clients in Settings first"}</option>
+                      <option value="">{clientOptions.length ? "Select customer" : "Add customers in Settings first"}</option>
                       {clientOptions.map(option => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}

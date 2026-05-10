@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import BrandLogo from "../components/BrandLogo";
 import { APP_NAME, APP_TAGLINE } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
+import { useAuth } from "../context/AuthContext";
 
 // ── DATA ─────────────────────────────────────────────────────────────────────
 
@@ -342,6 +343,30 @@ export default function LandingScreen({ onGetStarted }) {
   const persona = PERSONAS.find(p => p.id === personaId);
   useReveal();
 
+  // Inline sign-in: every CTA on this page now triggers Google sign-in
+  // directly. The previous flow routed CTAs to a separate AuthScreen with a
+  // single Google button — pure friction, since the user had already decided
+  // to sign up by tapping the CTA. signInWithGoogle is no-op if already
+  // signed in (returning users go straight to MainApp via App.jsx routing).
+  const { signInWithGoogle } = useAuth();
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState("");
+
+  const handleSignIn = useCallback(async () => {
+    if (signingIn) return;
+    setSignInError("");
+    setSigningIn(true);
+    try {
+      // onGetStarted is kept as a back-compat hook in case the host needs to
+      // know a sign-in attempt was kicked off (e.g. analytics). It's optional.
+      onGetStarted?.();
+      const res = await signInWithGoogle();
+      if (res?.error) setSignInError(res.error);
+    } finally {
+      setSigningIn(false);
+    }
+  }, [onGetStarted, signInWithGoogle, signingIn]);
+
   useEffect(() => {
     const el = document.getElementById("ek-landing-scroll");
     if (!el) return;
@@ -392,7 +417,9 @@ export default function LandingScreen({ onGetStarted }) {
         }}>
           <BrandLogo compact showTagline={false} />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={onGetStarted} className="btn-primary" style={{ padding: "9px 20px", fontSize: 13 }}>Sign In →</button>
+            <button onClick={handleSignIn} disabled={signingIn} className="btn-primary" style={{ padding: "9px 20px", fontSize: 13, opacity: signingIn ? 0.7 : 1 }}>
+              {signingIn ? "Signing in…" : "Sign In →"}
+            </button>
           </div>
         </nav>
 
@@ -438,12 +465,14 @@ export default function LandingScreen({ onGetStarted }) {
               </p>
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
-                <button onClick={onGetStarted} className="btn-primary ek-cta-btn" style={{
+                <button onClick={handleSignIn} disabled={signingIn} className="btn-primary ek-cta-btn" style={{
                   padding: "14px 30px", fontSize: 15,
                   boxShadow: "0 4px 24px color-mix(in srgb, var(--accent) 32%, transparent)",
                   transition: "transform 0.15s, box-shadow 0.15s",
+                  opacity: signingIn ? 0.7 : 1,
+                  cursor: signingIn ? "wait" : "pointer"
                 }}>
-                  Get Started Free →
+                  {signingIn ? "Signing in…" : "Get Started Free →"}
                 </button>
                 <a href="#personas" className="btn-secondary ek-cta-btn" style={{
                   padding: "14px 22px", fontSize: 15, textDecoration: "none",
@@ -453,6 +482,12 @@ export default function LandingScreen({ onGetStarted }) {
                   See it in action →
                 </a>
               </div>
+
+              {signInError && (
+                <div role="alert" style={{ fontSize: 13, color: "var(--danger)", marginBottom: 14, lineHeight: 1.5, maxWidth: 420 }}>
+                  {signInError}
+                </div>
+              )}
 
               <div style={{ fontSize: 12, color: "var(--text-sec)", marginBottom: 28 }}>
                 No credit card · Household plan is free forever
@@ -598,8 +633,8 @@ export default function LandingScreen({ onGetStarted }) {
                   </div>
                 </div>
 
-                <button onClick={onGetStarted} className="btn-primary" style={{ width: "100%", padding: "13px" }}>
-                  Start your {persona.label} Khata →
+                <button onClick={handleSignIn} disabled={signingIn} className="btn-primary" style={{ width: "100%", padding: "13px", opacity: signingIn ? 0.7 : 1 }}>
+                  {signingIn ? "Signing in…" : `Start your ${persona.label} Khata →`}
                 </button>
               </div>
             </div>
@@ -694,10 +729,11 @@ export default function LandingScreen({ onGetStarted }) {
                     ))}
                   </div>
                   <button
-                    onClick={onGetStarted}
+                    onClick={handleSignIn}
+                    disabled={signingIn}
                     className={plan.primary ? "btn-primary" : "btn-secondary"}
-                    style={{ width: "100%", padding: "12px", fontSize: 14 }}
-                  >{plan.cta}</button>
+                    style={{ width: "100%", padding: "12px", fontSize: 14, opacity: signingIn ? 0.7 : 1 }}
+                  >{signingIn ? "Signing in…" : plan.cta}</button>
                 </div>
               ))}
             </div>
@@ -722,12 +758,18 @@ export default function LandingScreen({ onGetStarted }) {
                 Join thousands of households, freelancers, and apartment societies who trust {APP_NAME} to keep their khata clean.
               </p>
               <button
-                onClick={onGetStarted}
+                onClick={handleSignIn}
+                disabled={signingIn}
                 className="btn-primary ek-cta-btn"
-                style={{ padding: "16px 44px", fontSize: 16, boxShadow: "0 6px 28px color-mix(in srgb, var(--accent) 35%, transparent)", transition: "transform 0.15s" }}
+                style={{ padding: "16px 44px", fontSize: 16, boxShadow: "0 6px 28px color-mix(in srgb, var(--accent) 35%, transparent)", transition: "transform 0.15s", opacity: signingIn ? 0.7 : 1, cursor: signingIn ? "wait" : "pointer" }}
               >
-                Get Started Free →
+                {signingIn ? "Signing in…" : "Get Started Free →"}
               </button>
+              {signInError && (
+                <div role="alert" style={{ fontSize: 13, color: "var(--danger)", marginTop: 12, lineHeight: 1.5 }}>
+                  {signInError}
+                </div>
+              )}
               <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 14 }}>
                 Sign in with Google · Takes 2 minutes
               </div>
