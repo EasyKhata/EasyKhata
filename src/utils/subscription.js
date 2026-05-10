@@ -164,9 +164,31 @@ export function isSubscriptionActive(user, org = null) {
   if (isReviewAccessEnabled()) return true;
   const orgType = org?.organizationType || org?.account?.organizationType;
   if (orgType && isFreeOrgType(orgType)) return true;
+
+  // Pick the more permissive of (user-level, org-level). Either side can be the
+  // canonical source depending on the propagation window:
+  //   • Just paid via Razorpay → user-level is updated first, org-level may lag
+  //     by a few seconds while the Cloud Function syncs to Postgres.
+  //   • Org-specific admin overrides → org-level is the source of truth.
+  // Honouring the higher-tier side closes the "paid but UI says free" hole
+  // without weakening the org-type free-pass check above.
   const orgPlan = getOrgPlan(org);
-  const plan = orgPlan || getUserPlan(user);
-  const status = getOrgSubscriptionStatus(org) || user?.subscriptionStatus;
+  const userPlan = getUserPlan(user);
+  const orgStatus = getOrgSubscriptionStatus(org);
+  const userStatus = user?.subscriptionStatus;
+
+  // If the user-level plan is paid + active, accept it even if the org row is
+  // still on the pre-payment values. Same for trial.
+  if ((userPlan === PLANS.PRO || userPlan === PLANS.BUSINESS) && userStatus === SUBSCRIPTION_STATUS.ACTIVE) {
+    return true;
+  }
+  if (userStatus === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user, null)) {
+    return true;
+  }
+
+  // Otherwise fall back to the org-level evaluation (the previous behavior).
+  const plan = orgPlan || userPlan;
+  const status = orgStatus || userStatus;
   if (plan === PLANS.FREE && status !== SUBSCRIPTION_STATUS.TRIAL) return false;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user, org);
   if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return plan === PLANS.PRO || plan === PLANS.BUSINESS;

@@ -582,14 +582,36 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     const nextEndDate = computeSubscriptionEndDate(currentUser.subscriptionEndsAt || "", duration);
     const nowIso = new Date().toISOString();
 
-    tx.set(userRef, {
+    // Build the user-document patch. When the payment is scoped to a specific org
+    // (the typical case — orgId !== "account_plan"), also write an entry to
+    // orgSubscriptions[orgId]. The existing syncSubscriptionToPostgres trigger
+    // watches that map and propagates per-org changes to Postgres via
+    // /internal/users/:uid/orgs/:orgId/subscription. Without this write the
+    // server's Organization row stayed on its old plan ("trial" or "free") even
+    // though the user paid — producing the "I paid but the app says I'm free"
+    // failure mode after the org-level trial swept itself to inactive.
+    const userPatch = {
       plan: requestedPlan,
       subscriptionStatus: "active",
       subscriptionEndsAt: nextEndDate,
       trialEligible: false,
       updatedAt: nowIso,
       lastActivityAt: nowIso
-    }, { merge: true });
+    };
+    if (orgId && orgId !== "account_plan") {
+      // Firestore set({merge:true}) deep-merges map fields, so this writes the
+      // single new orgId entry while preserving any other orgs' subscriptions.
+      userPatch.orgSubscriptions = {
+        [orgId]: {
+          plan: requestedPlan,
+          subscriptionStatus: "active",
+          subscriptionEndsAt: nextEndDate,
+          billingCycle,
+          updatedAt: nowIso
+        }
+      };
+    }
+    tx.set(userRef, userPatch, { merge: true });
 
     tx.set(
       requestRef,

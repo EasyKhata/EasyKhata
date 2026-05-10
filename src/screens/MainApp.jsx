@@ -1951,10 +1951,14 @@ export default function MainApp() {
         <div className="menu-glass" style={{ position: "sticky", top: 0, zIndex: 110, background: "var(--bg)", borderBottom: "1px solid color-mix(in srgb, var(--border) 70%, transparent)", paddingTop: isMobile ? "env(safe-area-inset-top, 0px)" : undefined }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: isMobile ? (isCompactMobile ? "8px 10px" : "9px 12px") : "10px 20px", gap: isCompactMobile ? 6 : 8 }}>
 
-            {/* Left: OrgAvatar + Org Name + Type badge — tappable to go to dashboard */}
+            {/* Left: profile icon — opens the Settings tab so the user can drill
+                into Profile / Plan / Support from there. We used to drop them
+                straight into the Profile edit modal, but the onboarding wizard
+                already collects all that info, so most clicks were the user
+                trying to reach Settings, not edit their profile. */}
             <button
-              onClick={() => handleNavigate({ tab: "settings", screen: "profile" })}
-              title="Open profile"
+              onClick={() => handleNavigate({ tab: "settings" })}
+              title="Open Settings"
               style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
             >
               <User size={isCompactMobile ? 14 : 16} strokeWidth={2.1} />
