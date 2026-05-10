@@ -8,7 +8,7 @@ import {
   signOut
 } from "firebase/auth";
 import { auth } from "../firebase";
-import { usersApi, warmupBackend } from "../lib/api";
+import { usersApi, orgsApi, warmupBackend } from "../lib/api";
 import { clearAllUserData, clearCurrentUser, getUserData, setCurrentUser, setUserData } from "../utils/storage";
 import { buildLocationLabel, getAgeGroupFromDateOfBirth, parseLocationFields, splitPhoneNumber, DEFAULT_PHONE_COUNTRY_CODE } from "../utils/profile";
 import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
@@ -120,6 +120,50 @@ export function AuthProvider({ children }) {
   const [pendingSetup, setPendingSetup] = useState(null); // { firebaseUser, name, email }
   const setupInProgressRef = useRef(false);
   const firebaseUserRef = useRef(null);
+
+  // Decides whether the loaded profile is complete enough to enter the app or if
+  // we need to bounce the user to the setup wizard. Returns true if the wizard
+  // should be shown (and sets pendingSetup as a side effect); false if the user
+  // is fine to land on the dashboard.
+  function gateOnKhataProfile(firebaseUser, profile) {
+    if (!profile) return false;
+    const orgs = Array.isArray(profile.organizations) ? profile.organizations : [];
+    if (orgs.length === 0) {
+      // No org at all — extremely unusual but recoverable via the wizard.
+      setPendingSetup({
+        firebaseUser,
+        name: profile.name || firebaseUser.displayName || "",
+        email: profile.email || firebaseUser.email || "",
+        existingPhone: profile.phone || "",
+        existingPhoneCountryCode: profile.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+        existingOrgType: profile.organizationType || ORG_TYPES.PERSONAL,
+        skipPhoneStep: Boolean(profile.phone)
+      });
+      setUser(null);
+      logEvent("setup_shown", { reason: "no_org" });
+      return true;
+    }
+    const activeOrgId = profile.activeOrgId || orgs[0].id;
+    const activeOrg = orgs.find(o => o.id === activeOrgId) || orgs[0];
+    const orgName = String(activeOrg?.name || "").trim();
+    if (!orgName) {
+      setPendingSetup({
+        firebaseUser,
+        name: profile.name || firebaseUser.displayName || "",
+        email: profile.email || firebaseUser.email || "",
+        existingPhone: profile.phone || "",
+        existingPhoneCountryCode: profile.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+        existingOrgType: activeOrg?.organizationType || profile.organizationType || ORG_TYPES.PERSONAL,
+        existingOrgId: activeOrg?.id || "org_primary",
+        // Skip the phone step if we already have a number — most returning users will.
+        skipPhoneStep: Boolean(profile.phone)
+      });
+      setUser(null);
+      logEvent("setup_shown", { reason: "khata_profile_incomplete" });
+      return true;
+    }
+    return false;
+  }
 
   async function ensureUserProfile(firebaseUser, profileOverrides = {}) {
     const normalizedOverrides = profileOverrides && typeof profileOverrides === "object" ? profileOverrides : {};
@@ -351,10 +395,15 @@ export function AuthProvider({ children }) {
               phoneCountryCode: existing.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE
             });
             setUserData(firebaseUser.uid, "profile", profile || {});
-            setUser(buildSessionUser(firebaseUser, profile || {}));
-            setCurrentUser(firebaseUser.uid);
-            setPendingSetup(null);
-            logEvent("returning_user_migrated", { reason: "legal_not_accepted" });
+            // Returning users still need their khata profile filled in if the org
+            // row has no name — fall through to the shared completeness check
+            // below instead of unconditionally letting them onto the dashboard.
+            if (!gateOnKhataProfile(firebaseUser, profile)) {
+              setUser(buildSessionUser(firebaseUser, profile || {}));
+              setCurrentUser(firebaseUser.uid);
+              setPendingSetup(null);
+              logEvent("returning_user_migrated", { reason: "legal_not_accepted" });
+            }
             setLoading(false);
             return;
           }
@@ -380,6 +429,18 @@ export function AuthProvider({ children }) {
 
         const profile = await ensureUserProfile(firebaseUser);
         setUserData(firebaseUser.uid, "profile", profile || {});
+
+        // If the user has no khata profile filled in (org name empty), force them
+        // through the setup wizard before they can reach the dashboard. Catches:
+        //   • Brand-new users mid-onboarding who refreshed before completing it.
+        //   • Pre-launch testers whose accounts were created with the older flow.
+        // gateOnKhataProfile returns true and sets pendingSetup itself if a gate
+        // was needed; we just skip the dashboard handoff in that case.
+        if (gateOnKhataProfile(firebaseUser, profile)) {
+          setLoading(false);
+          return;
+        }
+
         setUser(buildSessionUser(firebaseUser, profile || {}));
         setCurrentUser(firebaseUser.uid);
         setPendingSetup(null);
@@ -470,17 +531,27 @@ async function signInWithGoogle() {
     return { error: "Sign-in failed. Please try again." };
   }
 }
-  // Called from the first-time setup modal after org type + phone are collected
-  async function completeSetup({ phone, phoneCountryCode }) {
+  // Called from the first-time setup wizard after phone + DOB + khata type + khata
+  // profile are all collected. Provisions the user, then immediately writes the org
+  // profile (name, address, etc.) so the user lands on a fully-set-up dashboard
+  // rather than an empty workspace they have to configure later.
+  //
+  // orgProfile is optional only because pre-existing testers may already have an
+  // org row and just need their phone collected. For brand-new accounts the wizard
+  // should always pass it.
+  async function completeSetup({ phone, phoneCountryCode, dateOfBirth, ageGroup, organizationType, orgProfile }) {
     if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
     setupInProgressRef.current = true;
     try {
+      const orgType = getOrgType(organizationType || ORG_TYPES.PERSONAL);
       const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
         name: pendingSetup.name,
         email: pendingSetup.email,
-        organizationType: ORG_TYPES.PERSONAL,
+        organizationType: orgType,
         phone,
-        phoneCountryCode
+        phoneCountryCode,
+        dateOfBirth: dateOfBirth || "",
+        ageGroup: ageGroup || ""
       });
       setUserData(pendingSetup.firebaseUser.uid, "profile", profile || {});
 
@@ -491,11 +562,63 @@ async function signInWithGoogle() {
         return { error: "Your account has been blocked. Contact admin." };
       }
 
+      // Resolve which org to populate. ensureUserProfile creates "org_primary" for
+      // new users; returning users may already have a different active org.
+      const orgs = Array.isArray(profile?.organizations) ? profile.organizations : [];
+      const activeOrgId = profile?.activeOrgId || orgs[0]?.id || "org_primary";
+
+      // Push the khata profile to the org. We only do this when the wizard supplied
+      // a profile — phone-only flows (legacy or recovery) skip it.
+      if (orgProfile && (orgProfile.name || "").trim()) {
+        try {
+          const orgUpdate = {
+            organizationType: orgType,
+            name: String(orgProfile.name || "").trim(),
+            addressLine: String(orgProfile.addressLine || "").trim(),
+            city: String(orgProfile.city || "").trim(),
+            district: String(orgProfile.district || "").trim(),
+            state: String(orgProfile.state || "").trim(),
+            pincode: String(orgProfile.pincode || "").trim(),
+            country: String(orgProfile.country || "India").trim(),
+            // Optional contact fields (used for invoices on non-personal orgs)
+            email: String(orgProfile.email || "").trim(),
+            phone: String(orgProfile.phone || "").trim(),
+            gstin: String(orgProfile.gstin || "").trim()
+          };
+          await orgsApi.update(pendingSetup.firebaseUser.uid, activeOrgId, orgUpdate);
+          // Reflect the updated org in the locally cached profile so the dashboard
+          // doesn't render with stale empty fields before the next refetch.
+          if (Array.isArray(profile.organizations)) {
+            profile.organizations = profile.organizations.map(org =>
+              org.id === activeOrgId ? { ...org, ...orgUpdate } : org
+            );
+          }
+        } catch (err) {
+          // Don't hard-fail — the user account exists, they can edit the profile in
+          // Settings. Log so we can track if this happens often on flaky networks.
+          logError("Setup org profile update failed", err);
+        }
+      }
+
+      // Mark onboarding as seen. The Dashboard renders a separate OnboardingGuide
+      // component that prompts the user to pick a khata type and name whenever
+      // user.onboardingSeenAt is empty. Without this write the user would land
+      // on the dashboard and immediately face the same questions they just
+      // answered in the wizard. The Dashboard guide is preserved as a fallback
+      // for any path that bypasses the wizard.
+      try {
+        const onboardingTimestamp = new Date().toISOString();
+        await usersApi.update(pendingSetup.firebaseUser.uid, { onboardingSeenAt: onboardingTimestamp });
+        if (profile) profile.onboardingSeenAt = onboardingTimestamp;
+      } catch (err) {
+        logError("Setup onboardingSeenAt update failed", err);
+      }
+
       const sessionUser = buildSessionUser(pendingSetup.firebaseUser, profile);
       setUser(sessionUser);
       setCurrentUser(sessionUser.id);
       setPendingSetup(null);
-      logEvent("setup_completed");
+      logEvent("setup_completed", { orgType });
       return { success: true };
     } catch (err) {
       logError("Setup error", err);

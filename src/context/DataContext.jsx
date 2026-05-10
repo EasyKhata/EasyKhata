@@ -1100,11 +1100,17 @@ export function DataProvider({ children }) {
         let allOrgs = await orgsApi.list(user.id);
         let effectiveActiveOrgId = requestedActiveOrgId;
 
-        const hasHouseholdOrg = (allOrgs || []).some(org => isHouseholdOrgType(org.organizationType));
-        if ((allOrgs || []).length === 0 || (!hasHouseholdOrg && (allOrgs || []).length < 2)) {
-          const householdOrgId = (allOrgs || []).length === 0
-            ? (requestedActiveOrgId || DEFAULT_ORG_ID)
-            : `org_${uid()}${uid()}`;
+        // Recovery-only auto-create: if a user somehow ends up with zero orgs
+        // (e.g. their last org was deleted manually), spin up a default household
+        // so the dashboard isn't broken. We do NOT auto-add a household alongside
+        // an existing work-org — the onboarding wizard already lets the user pick
+        // their khata type explicitly. The previous behaviour silently added a
+        // second org whenever the user picked Small Business / Apartment, which
+        // pushed organizations.length to 2 and made MainApp's "switch between
+        // your khatas" coach-mark fire on first launch — perceived as the app
+        // asking the user to pick an org again.
+        if ((allOrgs || []).length === 0) {
+          const householdOrgId = requestedActiveOrgId || DEFAULT_ORG_ID;
           try {
             await orgsApi.create(user.id, householdOrgId, {
               organizationType: ORG_TYPES.PERSONAL,

@@ -1,12 +1,10 @@
 import React from "react";
 import { Modal, Field, Input, Select, PhoneNumberInput } from "../../components/UI";
 import {
-  COUNTRY_OPTIONS,
   MONTH_OPTIONS,
   PHONE_COUNTRY_OPTIONS,
   getBirthDayOptions,
-  getBirthYearOptions,
-  getStateProvinceOptions
+  getBirthYearOptions
 } from "../../utils/profile";
 
 const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not to say"];
@@ -22,7 +20,6 @@ const GENDER_OPTIONS = ["", "Female", "Male", "Non-binary", "Other", "Prefer not
  *   user         auth user object (role, etc.)
  */
 export default function ProfileModal({ form, onFormChange, onSave, onClose, user }) {
-  const stateProvinceOptions = React.useMemo(() => getStateProvinceOptions(form.country), [form.country]);
   const birthYearOptions = React.useMemo(() => getBirthYearOptions(), []);
   const birthDayOptions = React.useMemo(() => getBirthDayOptions(form.birthMonth, form.birthYear), [form.birthMonth, form.birthYear]);
 
@@ -107,53 +104,11 @@ export default function ProfileModal({ form, onFormChange, onSave, onClose, user
         </Select>
       </Field>
 
-      <Field label="Address Line" hint="House number, street, road, or locality.">
-        <Input
-          placeholder="Flat 12, MG Road"
-          value={form.addressLine}
-          onChange={event => onFormChange(current => ({ ...current, addressLine: event.target.value }))}
-          autoComplete="address-line1"
-        />
-      </Field>
-
-      <div className="desktop-grid-2">
-        <Field label="City" required hint="Used for market-level segmentation.">
-          <Input
-            placeholder="Hyderabad"
-            value={form.city}
-            onChange={event => onFormChange(current => ({ ...current, city: event.target.value }))}
-            autoComplete="address-level2"
-          />
-        </Field>
-        <Field label="Country" required>
-          <Select
-            value={form.country}
-            onChange={event => onFormChange(current => ({ ...current, country: event.target.value }))}
-          >
-            {COUNTRY_OPTIONS.map(option => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </Select>
-        </Field>
-      </div>
-
-      <Field label="State / Province" required>
-        <Select
-          value={form.state}
-          onChange={event => onFormChange(current => ({ ...current, state: event.target.value }))}
-        >
-          <option value="">Select state / province</option>
-          {stateProvinceOptions.map(option => (
-            <option key={option} value={option}>{option}</option>
-          ))}
-        </Select>
-      </Field>
-
       <div className="card" style={{ padding: 14 }}>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
           {user?.role === "admin"
-            ? "This information belongs to your sign-in identity and admin account. Structured phone, date of birth, and location improve aggregate admin insights, not person-level tracking."
-            : "This information belongs to your sign-in identity. Organization name, GSTIN, org phone, and invoice details stay in the organization profile. Structured phone, date of birth, and location improve aggregate product and marketing insights."}
+            ? "This information belongs to your sign-in identity and admin account. Date of birth helps with aggregate admin insights, not person-level tracking."
+            : "This information belongs to your sign-in identity. Organization name, GSTIN, address, and invoice details stay in the Khata profile. Date of birth helps with aggregate product insights."}
         </div>
       </div>
     </Modal>

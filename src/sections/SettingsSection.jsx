@@ -794,12 +794,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       birthMonth: userForm.birthMonth,
       birthYear: userForm.birthYear
     });
-    const cleanAddressLine = String(userForm.addressLine || "").trim();
-    const cleanCity = String(userForm.city || "").trim();
-    const cleanState = String(userForm.state || "").trim();
-    const cleanCountry = String(userForm.country || "").trim();
-    const cleanLocation = buildLocationLabel({ city: cleanCity, state: cleanState, country: cleanCountry });
-    const cleanAddress = buildLocationLabel({ addressLine: cleanAddressLine, city: cleanCity, state: cleanState, country: cleanCountry });
+    // Personal address fields were removed from the profile UI — addresses now live
+    // on the Khata (org) profile only. We keep the existing values intact rather
+    // than wiping them, so users who had a personal address from the old form
+    // don't lose it from their User row.
 
     if (!isValidName(cleanName)) {
       showNotice("Please enter your full name.");
@@ -817,10 +815,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid date of birth.");
       return;
     }
-    if (!cleanCity || !cleanState || !cleanCountry) {
-      showNotice("Please enter your city, state, and country.");
-      return;
-    }
 
     const res = await updateProfile({
       name: cleanName,
@@ -829,13 +823,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       phoneCountryCode: cleanPhoneCountryCode,
       gender: cleanGender,
       dateOfBirth: cleanDateOfBirth,
-      ageGroup: getAgeGroupFromDateOfBirth(cleanDateOfBirth),
-      addressLine: cleanAddressLine,
-      city: cleanCity,
-      state: cleanState,
-      country: cleanCountry,
-      location: cleanLocation,
-      address: cleanAddress
+      ageGroup: getAgeGroupFromDateOfBirth(cleanDateOfBirth)
     });
     if (res?.error) {
       showNotice(res.error);
