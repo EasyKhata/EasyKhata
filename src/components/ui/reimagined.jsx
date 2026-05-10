@@ -1,22 +1,46 @@
 import React, { useEffect, useRef, useState } from "react";
 
 // ── RupeeDisplay ──────────────────────────────────────────────────────────────
-// Typographic hero rupee amount with optional count-up animation
+// Typographic hero rupee amount with optional count-up animation. When `amount`
+// changes (e.g. user adds an income entry, dashboard recalculates), we ticker
+// from the *previous* displayed value to the new one — not from 0 every time.
+// Tickering from 0 looked aggressive on every dashboard refresh; ticking from
+// the prior value feels like the number is just "updating".
 export function RupeeDisplay({ amount = 0, color = "var(--jade)", size = 52, animate = false }) {
   const [displayed, setDisplayed] = useState(animate ? 0 : amount);
+  const fromRef = useRef(animate ? 0 : amount);
+  const rafRef = useRef(null);
 
   useEffect(() => {
-    if (!animate) { setDisplayed(amount); return; }
+    if (!animate) { fromRef.current = amount; setDisplayed(amount); return; }
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    const from = fromRef.current;
+    const to = amount;
+    if (from === to) { setDisplayed(to); return; }
+
+    // Shorter for small deltas, longer for big jumps. Caps at 1100ms so a
+    // big change doesn't drag.
+    const duration = Math.min(1100, 450 + Math.min(650, Math.abs(to - from) / 2));
     let start = null;
-    const duration = 1100;
-    const raf = (ts) => {
+
+    const tick = (ts) => {
       if (!start) start = ts;
       const p = Math.min((ts - start) / duration, 1);
       const ease = 1 - Math.pow(1 - p, 4);
-      setDisplayed(Math.round(ease * amount));
-      if (p < 1) requestAnimationFrame(raf);
+      const value = from + (to - from) * ease;
+      setDisplayed(Math.round(value));
+      if (p < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = to;
+        rafRef.current = null;
+      }
     };
-    requestAnimationFrame(raf);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, [amount, animate]);
 
   const isNeg = displayed < 0;

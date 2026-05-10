@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { pushBackHandler } from "../../utils/backStack";
+import { hapticMedium } from "../../utils/haptics";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -61,6 +62,9 @@ export function Modal({ title, onClose, onSave, saveLabel = "Save", canSave = tr
 
   const handleSave = useCallback(async () => {
     if (!canSave || isSaving) return;
+    // Medium haptic the moment Save is pressed — gives the user immediate
+    // physical confirmation of the action even before the network round-trip.
+    hapticMedium();
     setIsSaving(true);
     try {
       await Promise.resolve(onSave?.());

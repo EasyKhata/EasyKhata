@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { AnimatePresence, motion, LayoutGroup } from "framer-motion";
 import { useConfirm } from "../../context/DialogContext";
 import {
   Modal, Field, Input, Select, PhoneNumberInput,
@@ -366,21 +367,41 @@ export default function CustomersScreen({
             ...(!isProtectedProfile ? [{ label: "Delete", onClick: async () => { if (await confirm(`Remove ${customer.name}?`, { title: "Delete", confirmLabel: "Delete" })) onRemoveCustomer(customer.id); }, tone: "danger" }] : [])
           ] : []}
         />
-        {isExpanded && (
-          <div style={{
-            background: "color-mix(in srgb, var(--accent) 5%, var(--surface-high))",
-            borderTop: "1px solid var(--border)",
-            borderBottom: isLast ? "none" : "1px solid var(--border)",
-            marginBottom: isLast ? 0 : undefined
-          }}>
-            {isApartmentOrg
-              ? <ApartmentBrief customer={customer} />
-              : orgConfig.showCustomerFinancials === false
-                ? <HouseholdBrief customer={customer} />
-                : <FreelanceBrief customer={customer} />
-            }
-          </div>
-        )}
+        {/* Smooth height + opacity expand/collapse — the panel "grows out" of
+            the row rather than snapping in. Combined with the row's own
+            framer-motion press-depress, it feels like the row is unfolding to
+            reveal its detail. */}
+        <AnimatePresence initial={false}>
+          {isExpanded && (
+            <motion.div
+              key="expand"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ height: { type: "spring", stiffness: 320, damping: 36, mass: 0.7 }, opacity: { duration: 0.18 } }}
+              style={{
+                overflow: "hidden",
+                background: "color-mix(in srgb, var(--accent) 5%, var(--surface-high))",
+                borderTop: "1px solid var(--border)",
+                borderBottom: isLast ? "none" : "1px solid var(--border)",
+                marginBottom: isLast ? 0 : undefined
+              }}
+            >
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.06, duration: 0.18 }}
+              >
+                {isApartmentOrg
+                  ? <ApartmentBrief customer={customer} />
+                  : orgConfig.showCustomerFinancials === false
+                    ? <HouseholdBrief customer={customer} />
+                    : <FreelanceBrief customer={customer} />
+                }
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </>
     );
   }

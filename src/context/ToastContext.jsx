@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { ToastNotice } from "../components/ui/feedback";
+import { hapticError, hapticLight, hapticSuccess } from "../utils/haptics";
 
 const ToastContext = createContext(null);
 const TOAST_DEDUPE_MS = 10_000;
@@ -20,6 +21,12 @@ export function ToastProvider({ children }) {
 
   const showToast = useCallback(({ title, message, tone = "danger" }) => {
     setNotice({ title, message, tone });
+    // Map toast tone → haptic pattern. Success / error get distinctive vibrations
+    // so the user feels the outcome before reading the toast; everything else
+    // gets a subtle tap that simply confirms "something happened".
+    if (tone === "success") hapticSuccess();
+    else if (tone === "danger") hapticError();
+    else hapticLight();
   }, []);
 
   const clearToast = useCallback(() => {

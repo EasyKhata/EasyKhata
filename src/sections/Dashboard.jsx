@@ -2,6 +2,7 @@
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
 import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEntry } from "../components/ui/reimagined";
+import Tilt3D from "../components/Tilt3D";
 import { logError } from "../utils/logger";
 import {
   getPersonalEmiDueDay,
@@ -1088,8 +1089,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       ];
   const personalSummary = !hasCustomerRecord
     ? {
-        title: "Set up your household workspace",
-        subtitle: "Add one family member first, then record income, spending, and EMIs against the right person."
+        // Workspace is already created during onboarding; the next concrete
+        // step is adding the first family member so entries can be tagged.
+        title: "Add your first family member",
+        subtitle: "Tag every income, expense, and EMI to the right person so the dashboard can split things by member."
       }
     : !hasIncomeRecord
       ? {
@@ -1267,8 +1270,18 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       <div className="ledger-screen">
         <div className="ledger-block">
 
-          {/* Hero card */}
-          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+          {/* Hero card — wrapped in Tilt3D so the whole apartment hero responds
+              to pointer motion. Tilt is local to the card (pointermove/leave on
+              the wrapper) so vertical scrolling on touch is unaffected. */}
+          <Tilt3D
+            className="card-leather hero-presence anim-fade-up"
+            style={{
+              margin: "0 0 14px",
+              padding: "22px 22px 18px",
+              "--hero-glow": overallBalance >= 0 ? "var(--orchid)" : "var(--ember)",
+              borderRadius: "var(--radius-lg, 18px)"
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="section-eyebrow" style={{ marginBottom: 6 }}>
@@ -1295,7 +1308,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               </div>
               <ProgressLine value={paidFlats} max={Math.max(totalFlats, 1)} color={healthColor} />
             </div>
-          </div>
+          </Tilt3D>
 
           {dashboardAds}
 
@@ -1357,7 +1370,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" message="Tap the + button at the bottom to add a maintenance collection or society expense." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
+              <WorkflowSetupCard title="No entries yet" message="Use the button below to record your first maintenance collection or society expense." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
 
@@ -1404,7 +1417,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         <div className="ledger-block">
 
           {/* Hero card */}
-          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+          <Tilt3D
+            className="card-leather hero-presence anim-fade-up"
+            style={{
+              margin: "0 0 14px",
+              padding: "22px 22px 18px",
+              "--hero-glow": netAfterEmi >= 0 ? "var(--jade)" : "var(--ember)",
+              borderRadius: "var(--radius-lg, 18px)"
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="section-eyebrow" style={{ marginBottom: 6 }}>
@@ -1434,7 +1455,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               </div>
               <ProgressLine value={Number(stats.totalExpense || 0)} max={Math.max(Number(stats.totalIncome || 0), 1)} color={spendPct < 65 ? "var(--jade)" : spendPct < 85 ? "var(--saffron)" : "var(--ember)"} />
             </div>
-          </div>
+          </Tilt3D>
 
           {dashboardAds}
 
@@ -1456,8 +1477,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="anim-fade-up-2">
               <WorkflowSetupCard
                 eyebrow="Get started"
-                title="Tap + to record your first entry"
-                message="Use the + button at the bottom to add income or an expense. Or tap below to go directly to the income section."
+                title="Record your first entry"
+                message="Tap below to jump straight into Income or Expenses — that's where you'll add new entries from."
                 actionLabel="Add Income →"
                 onAction={() => onNav("income")}
                 secondaryActionLabel="Add Expense"
@@ -1515,7 +1536,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 ))}
               </div>
             ) : (
-              <WorkflowSetupCard title="No entries yet" message="Tap the + button at the bottom to add your first income, expense, or EMI." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
+              <WorkflowSetupCard title="No entries yet" message="Open Income, Expenses, or EMIs below to record your first entry." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
             )}
           </div>
 
@@ -1584,7 +1605,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
         <div className="ledger-block">
 
           {/* Hero card */}
-          <div className="card-leather anim-fade-up" style={{ margin: "0 0 14px", padding: "22px 22px 18px" }}>
+          <Tilt3D
+            className="card-leather hero-presence anim-fade-up"
+            style={{
+              margin: "0 0 14px",
+              padding: "22px 22px 18px",
+              "--hero-glow": netEarnings >= 0 ? "var(--sky)" : "var(--ember)",
+              borderRadius: "var(--radius-lg, 18px)"
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div className="section-eyebrow" style={{ marginBottom: 6 }}>
@@ -1607,7 +1636,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               </div>
               <ProgressLine value={collected} max={Math.max(collected + expenses, 1)} color="var(--sky)" />
             </div>
-          </div>
+          </Tilt3D>
 
           {dashboardAds}
 
@@ -1660,8 +1689,8 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div className="anim-fade-up-2">
               <WorkflowSetupCard
                 eyebrow="Get started"
-                title="Tap + to record your first entry"
-                message="Use the + button at the bottom to log a payment or expense. Or tap below to go to Payments or raise an invoice."
+                title="Record your first entry"
+                message="Tap below to log a payment in Payments, or jump to Invoices to raise your first invoice."
                 actionLabel="Log Payment →"
                 onAction={() => onNav("income")}
                 secondaryActionLabel="New Invoice"

@@ -1,4 +1,5 @@
 import React from "react";
+import { motion } from "framer-motion";
 
 function renderWorkflowBadge(badge, index) {
   if (!badge) return null;
@@ -110,19 +111,17 @@ export function WorkflowRecordCard({
 }) {
   const clickable = typeof onClick === "function";
 
-  return (
-    <div
-      className={`workflow-record-card${clickable ? " clickable" : ""}`}
-      onClick={onClick}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onKeyDown={clickable ? event => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onClick?.();
-        }
-      } : undefined}
-    >
+  // If a destructive (tone="danger") action is present we expose a swipe-left
+  // gesture in addition to the inline button — drag the row left past the
+  // threshold and release to trigger the action. The inline button stays for
+  // discoverability and desktop users.
+  const dangerAction = Array.isArray(actions)
+    ? actions.find(a => a && a.tone === "danger")
+    : null;
+  const swipeEnabled = Boolean(dangerAction);
+
+  const inner = (
+    <>
       {avatar && <div className="workflow-record-avatar">{avatar}</div>}
       <div className="workflow-record-main">
         <div className="workflow-record-head">
@@ -142,6 +141,89 @@ export function WorkflowRecordCard({
           {actions ? <div className="workflow-record-actions">{Array.isArray(actions) ? actions.map(renderWorkflowAction) : actions}</div> : null}
         </div>
       )}
+    </>
+  );
+
+  if (!swipeEnabled) {
+    // Non-destructive rows: original press-depress + click behaviour.
+    const Component = clickable ? motion.div : "div";
+    const motionProps = clickable
+      ? {
+          whileTap: { scale: 0.97 },
+          transition: { type: "spring", stiffness: 500, damping: 30, mass: 0.5 }
+        }
+      : {};
+    return (
+      <Component
+        className={`workflow-record-card${clickable ? " clickable" : ""}`}
+        onClick={onClick}
+        role={clickable ? "button" : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        onKeyDown={clickable ? event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick?.();
+          }
+        } : undefined}
+        {...motionProps}
+      >
+        {inner}
+      </Component>
+    );
+  }
+
+  return (
+    <SwipeableRecordCard
+      clickable={clickable}
+      onClick={onClick}
+      dangerAction={dangerAction}
+    >
+      {inner}
+    </SwipeableRecordCard>
+  );
+}
+
+// Internal — handles the drag gesture and the destructive backdrop reveal.
+// Kept here (not exported) because it's tightly coupled to record-card markup.
+function SwipeableRecordCard({ clickable, onClick, dangerAction, children }) {
+  const SWIPE_REVEAL = 84;     // backdrop width
+  const SWIPE_TRIGGER = 64;    // release past this → fire the action
+
+  return (
+    <div className="workflow-record-card-swipe-wrap">
+      {/* Destructive backdrop — only visible during the drag. */}
+      <div className="workflow-record-card-swipe-backdrop" aria-hidden="true">
+        <span>{dangerAction.label || "Delete"}</span>
+      </div>
+
+      <motion.div
+        className={`workflow-record-card${clickable ? " clickable" : ""}`}
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: -SWIPE_REVEAL, right: 0 }}
+        dragElastic={{ left: 0.18, right: 0 }}
+        whileTap={{ scale: 0.97 }}
+        transition={{ type: "spring", stiffness: 500, damping: 30, mass: 0.5 }}
+        onClick={onClick}
+        role={clickable ? "button" : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        onKeyDown={clickable ? event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onClick?.();
+          }
+        } : undefined}
+        onDragEnd={(_, info) => {
+          // Past trigger → fire the destructive action with a synthetic event so
+          // existing handlers that call event.stopPropagation() don't blow up.
+          if (Math.abs(info.offset.x) >= SWIPE_TRIGGER && info.offset.x < 0) {
+            const fakeEvent = { stopPropagation() {}, preventDefault() {} };
+            try { dangerAction.onClick?.(fakeEvent); } catch { /* ignore */ }
+          }
+        }}
+      >
+        {children}
+      </motion.div>
     </div>
   );
 }

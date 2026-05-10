@@ -69,10 +69,10 @@ export const ORG_TYPE_CONFIGS = {
     invoicesLabel: "Udhaar / Credit",
     invoiceEntryLabel: "Udhaar / Credit Record",
     invoiceActionLabel: "Add Udhaar / Credit",
-    customerLabel: "People",
-    customerEntryLabel: "Person",
-    customerNameLabel: "Person Name",
-    customerNamePlaceholder: "Family member, friend, or contact name",
+    customerLabel: "Family",
+    customerEntryLabel: "Family Member",
+    customerNameLabel: "Member Name",
+    customerNamePlaceholder: "Family member name",
     profileNameLabel: "Household Name",
     profileNamePlaceholder: "E.g. Family Budget",
     accountIntro: "Use this profile for your household or personal finance records.",
@@ -114,18 +114,20 @@ export const ORG_TYPE_CONFIGS = {
     expensesEntryLabel: "Expense",
     expensesActionLabel: "Add Expense",
     invoicesLabel: "Bills / Invoices",
-    customerLabel: "Clients",
-    customerEntryLabel: "Client",
-    customerNameLabel: "Client Name",
-    customerNamePlaceholder: "Client or studio name",
+    customerLabel: "Customers",
+    customerEntryLabel: "Customer",
+    customerNameLabel: "Customer Name",
+    customerNamePlaceholder: "Customer or company name",
     profileNameLabel: "Your Name / Business Name",
     profileNamePlaceholder: "E.g. Design Studio",
-    accountIntro: "This profile powers your client invoices, payments, and expense records.",
+    accountIntro: "This profile powers your customer invoices, payments, and expense records.",
+    // Internal field key (`clientName`) is kept for data-layer compatibility with
+    // existing records — only the user-facing label / placeholder change.
     incomeFields: [
-      { key: "clientName", label: "Client", type: "text", placeholder: "Select client" }
+      { key: "clientName", label: "Customer", type: "text", placeholder: "Select customer" }
     ],
     expenseFields: [
-      { key: "clientName", label: "Client", type: "text", placeholder: "Select client" },
+      { key: "clientName", label: "Customer", type: "text", placeholder: "Select customer" },
       { key: "billable", label: "Billable", type: "select", options: ["Yes", "No"] }
     ],
     invoiceFields: [],

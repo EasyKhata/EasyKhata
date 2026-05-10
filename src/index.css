@@ -232,17 +232,171 @@ input, select, textarea, button {
   overflow: hidden;
 }
 
+/* Brighter, smoother shimmer sweep. Uses a wider, softer gradient than the old
+   1.6s sweep with a hard transparent edge — feels like polished light moving
+   across the surface rather than a streak. cubic-bezier eases the sweep so it
+   accelerates through the middle and slows at the edges. */
 .shimmer::after {
   content: "";
   position: absolute;
   inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
-  animation: shimmer 1.6s infinite;
+  transform: translateX(-120%);
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--accent) 14%, rgba(255,255,255,0.22)) 50%,
+    transparent 80%
+  );
+  animation: shimmer 1.4s cubic-bezier(0.5, 0.05, 0.5, 0.95) infinite;
+  will-change: transform;
 }
 
 @keyframes shimmer {
-  100% { transform: translateX(100%); }
+  to { transform: translateX(120%); }
+}
+
+/* Stagger reveal for record-card lists. Each card animates in with a small
+   fade + slide; nth-child delays produce a cascade. Caps at 10 items so very
+   long lists don't drag — the rest appear instantly at the cap delay. */
+@keyframes workflowFadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.workflow-record-card {
+  animation: workflowFadeUp 0.28s cubic-bezier(0.32, 0.72, 0.32, 1) both;
+}
+.workflow-record-card:nth-child(1)  { animation-delay:   0ms; }
+.workflow-record-card:nth-child(2)  { animation-delay:  30ms; }
+.workflow-record-card:nth-child(3)  { animation-delay:  60ms; }
+.workflow-record-card:nth-child(4)  { animation-delay:  90ms; }
+.workflow-record-card:nth-child(5)  { animation-delay: 120ms; }
+.workflow-record-card:nth-child(6)  { animation-delay: 150ms; }
+.workflow-record-card:nth-child(7)  { animation-delay: 180ms; }
+.workflow-record-card:nth-child(8)  { animation-delay: 210ms; }
+.workflow-record-card:nth-child(9)  { animation-delay: 240ms; }
+.workflow-record-card:nth-child(10) { animation-delay: 270ms; }
+.workflow-record-card:nth-child(n+11) { animation-delay: 300ms; }
+
+/* Press-depress fallback for the rare clickable card that doesn't go through
+   WorkflowRecordCard's framer-motion path (e.g. inline custom rows). */
+.workflow-record-card.clickable {
+  transition: box-shadow 0.18s ease;
+}
+.workflow-record-card.clickable:active {
+  box-shadow: 0 1px 4px rgba(12, 9, 8, 0.14) inset;
+}
+
+/* Swipe-to-delete: the row sits on top of a destructive backdrop. The row
+   itself drags horizontally via framer-motion; the backdrop is a static layer
+   behind it that becomes visible as the row slides left. The container clips
+   so the backdrop never shows beyond the row's bounds. */
+.workflow-record-card-swipe-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: inherit;
+  isolation: isolate;
+}
+.workflow-record-card-swipe-wrap > .workflow-record-card {
+  /* Drag transform takes over from the stagger animation. We still want the
+     stagger entrance though, so don't override animation. */
+  position: relative;
+  z-index: 1;
+  background: var(--card);
+  touch-action: pan-y;          /* let vertical scrolling pass through */
+}
+.workflow-record-card-swipe-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 22px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--danger) 70%, transparent) 0%,
+    var(--danger) 100%
+  );
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  pointer-events: none;
+}
+
+/* Hero card "presence" — a subtle moving radial gradient that drifts slowly
+   across the hero card behind the headline number, plus a soft directional
+   glow keyed to the card's status colour. The gradient takes 14s for a full
+   loop so the eye barely registers the motion as motion — it just feels like
+   the card is "alive". Glow colour comes from --hero-glow on the element's
+   inline style so a single class handles positive / negative / neutral states. */
+.hero-presence {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hero-presence::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 80% at 20% 30%,
+      color-mix(in srgb, var(--hero-glow, var(--accent)) 22%, transparent) 0%,
+      transparent 55%),
+    radial-gradient(ellipse 70% 60% at 80% 70%,
+      color-mix(in srgb, var(--hero-glow, var(--accent)) 14%, transparent) 0%,
+      transparent 60%);
+  filter: blur(18px);
+  animation: heroDrift 14s ease-in-out infinite;
+  will-change: transform;
+}
+.hero-presence::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow: inset 0 0 24px color-mix(in srgb, var(--hero-glow, var(--accent)) 12%, transparent);
+}
+.hero-presence > * {
+  position: relative;
+  z-index: 1;
+}
+@keyframes heroDrift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33%      { transform: translate3d(4%, -2%, 0) scale(1.05); }
+  66%      { transform: translate3d(-3%, 3%, 0) scale(1.03); }
+}
+
+/* Brand mark pulse — used on AuthScreen / onboarding to keep the brand alive
+   during the first authenticated request. The mark itself eases up to scale
+   1.04 while a soft halo behind it expands to scale 1.6 with fading opacity.
+   Loop is 2.4s — slow enough to feel like a heartbeat, not a strobe. */
+@keyframes brandMarkBreath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.04); }
+}
+@keyframes brandMarkPulse {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  70%  { transform: scale(1.6); opacity: 0;    }
+  100% { transform: scale(1.6); opacity: 0;    }
+}
+
+/* Respect users who prefer reduced motion — disable the shimmer sweep, the
+   stagger animations, the hero drift, and brand pulse. Static styles still
+   apply. */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer::after { animation: none; }
+  .workflow-record-card { animation: none; }
+  .hero-presence::before { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* split block so a non-supporting browser still applies the rest above */
+  [style*="brandMarkBreath"], [style*="brandMarkPulse"] { animation: none !important; }
 }
 
 .tab-bar {

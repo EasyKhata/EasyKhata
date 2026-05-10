@@ -463,7 +463,7 @@ export default function AuthScreen() {
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "linear-gradient(180deg, color-mix(in srgb, var(--accent) 8%, var(--bg)) 0%, var(--bg) 100%)", padding: "24px 20px" }}>
       <div style={{ width: "100%", maxWidth: 420 }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: 28 }}>
-          <BrandLogo size={64} style={{ marginBottom: 18 }} />
+          <BrandLogo size={64} pulse style={{ marginBottom: 18 }} />
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Continue to EazyKhata</div>
           <div style={{ fontSize: 14, color: "var(--text-sec)", textAlign: "center", lineHeight: 1.7, maxWidth: 320 }}>
             Track income, expenses, invoices, and EMIs for your household, freelance work, or apartment society from one account.

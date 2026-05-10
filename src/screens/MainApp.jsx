@@ -12,6 +12,10 @@ import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 import { useConfirm } from "../context/DialogContext";
 import useIdleTimeout from "../hooks/useIdleTimeout";
+import usePullToRefresh from "../hooks/usePullToRefresh";
+import PullToRefreshIndicator from "../components/PullToRefreshIndicator";
+import { ORG_COLLECTION_KEYS } from "../utils/orgCollections";
+import { hapticLight, hapticMedium } from "../utils/haptics";
 import { Modal, MONTHS, SectionSkeleton } from "../components/UI";
 import { BrandMark } from "../components/BrandLogo";
 import CoachMark, { useCoachMark } from "../components/CoachMark";
@@ -78,12 +82,12 @@ function getGuideDismissKey(userId, orgId) {
 }
 
 function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav, onAdd, onDismiss }) {
-  const setupLabel = isPersonalOrg ? "Add people" : isApartmentOrg ? "Add flats" : "Add clients";
+  const setupLabel = isPersonalOrg ? "Add family" : isApartmentOrg ? "Add flats" : "Add customers";
   const setupBody = isPersonalOrg
     ? "Add family members first so income, expenses, and EMIs can be tagged clearly."
     : isApartmentOrg
       ? "Add flats first so maintenance and dues can be tracked by flat."
-      : "Add clients first so payments, invoices, and work records stay connected.";
+      : "Add customers first so payments, invoices, and work records stay connected.";
   const incomeLabel = isApartmentOrg ? "Record dues" : isFreelancerOrg ? "Record payments" : "Record income";
   const expenseLabel = isApartmentOrg ? "Add society expenses" : "Add expenses";
 
@@ -91,16 +95,25 @@ function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav,
     { title: setupLabel, body: setupBody, action: () => onNav({ tab: "org", screen: "customers" }) },
     { title: incomeLabel, body: isApartmentOrg ? "Use this for maintenance collections and other society income." : "Use this whenever money comes in.", action: () => onNav({ tab: "income" }) },
     { title: expenseLabel, body: "Use this whenever money goes out.", action: () => onNav({ tab: "expenses" }) },
-    { title: "Quick add", body: "Tap + when you just want to enter a transaction quickly.", action: onAdd }
+    { title: "Quick add", body: "Tap here for a fast entry — no need to navigate to a section first.", action: onAdd }
   ];
+
+  // Title/subtitle reflect the post-onboarding reality: the user already named
+  // their Khata and picked its type during the signup wizard. The card now
+  // points them at the next concrete tasks rather than re-explaining setup.
+  const headline = isPersonalOrg
+    ? "Start tracking your household money"
+    : isApartmentOrg
+      ? "Start tracking society finances"
+      : "Start tracking your business money";
 
   return (
     <div className="card" style={{ padding: 14, marginBottom: 14, border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))", background: "color-mix(in srgb, var(--accent) 5%, var(--card))" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 4 }}>Start here</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>Set up your Khata in a few taps</div>
-          <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 4 }}>Khata is your workspace. Profile is your personal sign-in account.</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>{headline}</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 4 }}>A few taps to get your first entries in and unlock the dashboard.</div>
         </div>
         <button type="button" onClick={onDismiss} aria-label="Dismiss guide" style={{ border: "none", background: "transparent", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, padding: 2, cursor: "pointer" }}>×</button>
       </div>
@@ -461,8 +474,8 @@ function QuickEntrySheet({
   function validate() {
     if (isViewerMode || isReadOnlyFreeMode) return "Your current access does not allow creating new records here.";
     if (entryType === "client") {
-      if (!String(form.newClientName || "").trim()) return "Enter client name.";
-      if (!String(form.newClientPhone || "").replace(/\D/g, "")) return "Enter client phone number.";
+      if (!String(form.newClientName || "").trim()) return "Enter customer name.";
+      if (!String(form.newClientPhone || "").replace(/\D/g, "")) return "Enter customer phone number.";
       return "";
     }
     if (entryType === "resident") {
@@ -473,20 +486,20 @@ function QuickEntrySheet({
     if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
     if (!String(form.description || "").trim()) return "Enter a description.";
     if (entryType === "income") {
-      if (isPersonalOrg && !hasHouseholdPeople) return "Add a household member in Khata first.";
+      if (isPersonalOrg && !hasHouseholdPeople) return "Add a family member in Khata first.";
       if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
-      if (isFreelancerOrg && !hasFreelancerClients) return "Add a client in Khata first.";
-      if (isFreelancerOrg && !String(form.clientName || "").trim()) return "Select a client.";
+      if (isFreelancerOrg && !hasFreelancerClients) return "Add a customer in Khata first.";
+      if (isFreelancerOrg && !String(form.clientName || "").trim()) return "Select a customer.";
       if (isApartmentOrg && !hasApartmentFlats) return "Add a flat in Khata first.";
       if (isApartmentOrg && !String(form.flatNumber || "").trim()) return "Enter a flat number.";
     }
     if (entryType === "expense") {
       if (!String(form.category || "").trim()) return "Choose a category.";
-      if (isPersonalOrg && !hasHouseholdPeople) return "Add a household member in Khata first.";
+      if (isPersonalOrg && !hasHouseholdPeople) return "Add a family member in Khata first.";
       if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
     }
     if (entryType === "emi") {
-      if (!hasHouseholdPeople) return "Add a household member in Khata first.";
+      if (!hasHouseholdPeople) return "Add a family member in Khata first.";
       if (!String(form.lender || "").trim()) return "Enter the lender name.";
       if (!String(form.endDate || "").trim()) return "Choose an end date.";
     }
@@ -685,14 +698,14 @@ function QuickEntrySheet({
         </div>
         {showPeopleSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
-            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a household member in Khata before creating this entry.</div>
-            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)", flexShrink: 0 }}>Open People</button>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a family member in Khata before creating this entry.</div>
+            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)", flexShrink: 0 }}>Open Family</button>
           </div>
         )}
         {showClientSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--blue) 26%, var(--border))", background: "color-mix(in srgb, var(--blue) 10%, var(--surface-high))" }}>
-            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a client before recording business payments or expenses.</div>
-            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--blue)", flexShrink: 0 }}>Open Clients</button>
+            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a customer before recording business payments or expenses.</div>
+            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--blue)", flexShrink: 0 }}>Open Customers</button>
           </div>
         )}
         {showFlatSetupHint && (
@@ -738,9 +751,9 @@ function QuickEntrySheet({
         )}
         {entryType === "income" && isFreelancerOrg && (
           <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Customer</div>
             <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle} disabled={!hasFreelancerClients}>
-              <option value="">{hasFreelancerClients ? "Select client" : "Add client first"}</option>
+              <option value="">{hasFreelancerClients ? "Select customer" : "Add customer first"}</option>
               {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
             </select>
           </div>
@@ -778,9 +791,9 @@ function QuickEntrySheet({
         {entryType === "expense" && isFreelancerOrg && (
           <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Client</div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Customer</div>
               <select value={form.clientName} onChange={event => updateField("clientName", event.target.value)} style={sheetSelectStyle}>
-                <option value="">{hasFreelancerClients ? "Select client" : "No clients yet"}</option>
+                <option value="">{hasFreelancerClients ? "Select customer" : "No customers yet"}</option>
                 {freelancerClients.map(option => <option key={option} value={option}>{option}</option>)}
               </select>
             </div>
@@ -792,9 +805,9 @@ function QuickEntrySheet({
         )}
         {entryType === "expense" && isFreelancerOrg && String(form.category || "").toLowerCase() === "payroll" && (
           <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Staff Member</div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Employee</div>
             <select value={form.staffMemberName || ""} onChange={event => updateField("staffMemberName", event.target.value)} style={sheetSelectStyle}>
-              <option value="">{staffMembers.length ? "Select staff member" : "No staff added yet — add in Settings"}</option>
+              <option value="">{staffMembers.length ? "Select employee" : "No employees added yet — add in Settings"}</option>
               {staffMembers.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
@@ -1800,6 +1813,39 @@ export default function MainApp() {
       return { ...found, label };
     }).filter(Boolean);
   }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isViewerMode]);
+
+  // ── Pull-to-refresh ────────────────────────────────────────────────────────
+  // Disabled on the discussions tab (no scroll container) and for shared-org
+  // viewers (their data refresh path is different and best left to the org
+  // owner). Refresh re-fetches all four collections + org meta + summary.
+  const pullEnabled = tab !== "discussions" && !activeSharedOrgKey;
+  const handlePullRefresh = useCallback(async () => {
+    if (!data?.refreshActiveOrgData) return;
+    await data.refreshActiveOrgData({ collections: ORG_COLLECTION_KEYS, includeOrgRecords: true });
+  }, [data]);
+  const {
+    containerRef: pullContainerRef,
+    indicatorStyle: pullIndicatorStyle,
+    status: pullStatus,
+    progress: pullProgress
+  } = usePullToRefresh({ onRefresh: handlePullRefresh, enabled: pullEnabled });
+
+  // ── Tab content slide direction ────────────────────────────────────────────
+  // Track which way the user is moving through the bottom tabs so AnimatePresence
+  // can slide the outgoing content one way and the incoming content the other.
+  // Computed synchronously each render so the new motion.div mounts with the
+  // correct initial offset on the very first frame.
+  const prevTabRef = useRef(tab);
+  let tabSlideDirection = 0;
+  if (prevTabRef.current !== tab) {
+    const from = footerTabs.findIndex(item => item.id === prevTabRef.current);
+    const to   = footerTabs.findIndex(item => item.id === tab);
+    if (from !== -1 && to !== -1) tabSlideDirection = to > from ? 1 : -1;
+    // For tabs not in the bottom bar (modals, profile, etc.) keep direction 0
+    // → falls back to a soft fade rather than guessing.
+  }
+  useEffect(() => { prevTabRef.current = tab; }, [tab]);
+
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
   const syncNotice = offlineMode || user?.offlineProfile
     ? {
@@ -2138,14 +2184,34 @@ export default function MainApp() {
           ) : null;
         })()}
 
-        <div style={{ flex: 1, minHeight: 0, overflowY: tab === "discussions" ? "hidden" : "auto", overflowX: "hidden", padding: tab === "discussions" ? "0 0 calc(env(safe-area-inset-bottom, 0px) + 62px)" : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"), ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {}) }}>
-          <AnimatePresence mode="popLayout" initial={false}>
+        <div
+          ref={pullContainerRef}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: tab === "discussions" ? "hidden" : "auto",
+            overflowX: "hidden",
+            padding: tab === "discussions" ? "0 0 calc(env(safe-area-inset-bottom, 0px) + 62px)" : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"),
+            position: "relative",
+            ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {})
+          }}
+        >
+          {pullEnabled && (
+            <PullToRefreshIndicator status={pullStatus} progress={pullProgress} style={pullIndicatorStyle} />
+          )}
+          <AnimatePresence mode="popLayout" initial={false} custom={tabSlideDirection}>
             <motion.div
               key={tab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.16, ease: "easeOut" }}
+              custom={tabSlideDirection}
+              variants={{
+                enter: dir => ({ opacity: 0, x: dir === 0 ? 0 : dir * 36 }),
+                center: { opacity: 1, x: 0 },
+                exit: dir => ({ opacity: 0, x: dir === 0 ? 0 : dir * -36, transition: { duration: 0.18, ease: "easeOut" } })
+              }}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ type: "spring", stiffness: 360, damping: 32, mass: 0.7 }}
               style={tab === "discussions" ? { height: "100%", display: "flex", flexDirection: "column" } : {}}
             >
               {showStartGuide && (
@@ -2179,23 +2245,58 @@ export default function MainApp() {
               key={tabItem.id}
               type="button"
               className={`app-bottom-nav-btn${active ? " active" : ""}`}
-              onClick={() =>
-                tabItem.id === "org" || tabItem.id === "settings"
-                  ? handleNavigate({ tab: tabItem.id, screen: "main" })
-                  : handleNavigate({ tab: tabItem.id })
-              }
-              style={active ? { color: activeColor } : undefined}
+              onClick={() => {
+                // Light haptic on tab switch — same intensity Android uses for
+                // its own bottom-bar tab tap. Skipped for re-tapping the active
+                // tab (no-op navigation).
+                if (!active) hapticLight();
+                if (tabItem.id === "org" || tabItem.id === "settings") {
+                  handleNavigate({ tab: tabItem.id, screen: "main" });
+                } else {
+                  handleNavigate({ tab: tabItem.id });
+                }
+              }}
+              style={active ? { color: activeColor, position: "relative" } : { position: "relative" }}
             >
               <span style={{ width: 3, height: 3, borderRadius: "50%", background: activeColor, display: "block", opacity: active ? 1 : 0, transition: "opacity 0.2s ease", marginBottom: 1 }} />
+              {/* Sliding pill indicator. The shared layoutId makes framer-motion
+                  animate the pill between tab positions automatically when the
+                  active tab changes — feels like a single element gliding rather
+                  than a per-tab fade. */}
+              {active && (
+                <motion.span
+                  layoutId="active-tab-pill"
+                  className="app-bottom-nav-pill"
+                  style={{
+                    position: "absolute",
+                    inset: "auto 8px 18px 8px",
+                    height: 30,
+                    borderRadius: 10,
+                    background: `color-mix(in srgb, ${activeColor} 13%, var(--surface-high))`,
+                    border: `1px solid color-mix(in srgb, ${activeColor} 35%, var(--border))`,
+                    boxShadow: `0 0 12px color-mix(in srgb, ${activeColor} 26%, transparent)`,
+                    pointerEvents: "none",
+                    zIndex: 0
+                  }}
+                  transition={{ type: "spring", stiffness: 380, damping: 30, mass: 0.7 }}
+                />
+              )}
               <motion.span
                 className="app-bottom-nav-icon"
                 animate={active ? { scale: 1.1 } : { scale: 1 }}
                 transition={{ type: "spring", stiffness: 400, damping: 22 }}
-                style={active ? { color: activeColor, borderColor: `color-mix(in srgb, ${activeColor} 35%, var(--border))`, background: `color-mix(in srgb, ${activeColor} 13%, var(--surface-high))`, boxShadow: `0 0 10px color-mix(in srgb, ${activeColor} 26%, transparent)`, borderRadius: 8 } : { color: "var(--text-dim)", background: "transparent", border: "1px solid transparent", borderRadius: 8 }}
+                style={{
+                  color: active ? activeColor : "var(--text-dim)",
+                  background: "transparent",
+                  border: "1px solid transparent",
+                  borderRadius: 8,
+                  position: "relative",
+                  zIndex: 1
+                }}
               >
                 {IconComponent ? <IconComponent size={active ? 15 : 14} strokeWidth={active ? 2.4 : 1.8} /> : "•"}
               </motion.span>
-              <span className="app-bottom-nav-label" style={{ fontSize: active ? 9 : 8, fontWeight: active ? 800 : 600, color: active ? activeColor : "var(--text-dim)", transition: "color 0.2s, font-size 0.15s" }}>
+              <span className="app-bottom-nav-label" style={{ fontSize: active ? 9 : 8, fontWeight: active ? 800 : 600, color: active ? activeColor : "var(--text-dim)", transition: "color 0.2s, font-size 0.15s", position: "relative", zIndex: 1 }}>
                 {tabItem.label}
               </span>
             </button>

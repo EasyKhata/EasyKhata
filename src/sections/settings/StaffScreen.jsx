@@ -25,11 +25,11 @@ export default function StaffScreen({
 
   if (screen === "staff") {
     return (
-      <Modal title="Staff" onClose={onClose} onSave={canCreateRecords ? onOpenNewStaff : undefined} saveLabel="Add Staff">
+      <Modal title="Employees" onClose={onClose} onSave={canCreateRecords ? onOpenNewStaff : undefined} saveLabel="Add Employee">
         {items.length === 0 ? (
           <WorkflowSetupCard
-            title="Add your first staff member"
-            message="Create staff records to manage payroll and team information."
+            title="Add your first employee"
+            message="Create employee records to manage payroll and team information."
             tone="info"
           />
         ) : (
@@ -67,14 +67,14 @@ export default function StaffScreen({
   if (screen === "staff-form") {
     return (
       <Modal
-        title={editStaff ? "Edit Staff Member" : "New Staff Member"}
+        title={editStaff ? "Edit Employee" : "New Employee"}
         onClose={onBackToList}
         onSave={(editStaff ? (canManageRecord?.(editStaff) ?? canCreateRecords) : canCreateRecords) ? onSaveStaff : undefined}
         canSave={canSave}
       >
         <Field label="Full Name" required>
           <Input
-            placeholder="Staff member name"
+            placeholder="Employee name"
             value={staffForm?.name || ""}
             onChange={e => onStaffFormChange(f => ({ ...f, name: e.target.value }))}
           />
