@@ -15,6 +15,7 @@ import { PLANS, SUBSCRIPTION_STATUS } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { logError, logEvent, setCrashUser } from "../utils/logger";
 import { isNative } from "../utils/native";
+import { deleteCurrentPushToken, getCurrentPushToken, initPush, requestPushPermission } from "../utils/push";
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { signInWithCredential } from "firebase/auth";
 
@@ -287,7 +288,10 @@ export function AuthProvider({ children }) {
       societyFlatNumber: profile?.societyFlatNumber || "",
       societyInviteCode: profile?.societyInviteCode || "",
       apartmentPortalRoles: profile?.apartmentPortalRoles || {},
-      sharedOrgs: profile?.sharedOrgs || {}
+      sharedOrgs: profile?.sharedOrgs || {},
+      // Push-notification opt-out for promotional broadcasts. Default true
+      // so a missing field doesn't accidentally silence a user.
+      marketingPushEnabled: profile?.marketingPushEnabled !== false
     };
   }
 
@@ -471,6 +475,68 @@ export function AuthProvider({ children }) {
 
     return () => unsubscribe();
   }, []);
+
+  // ── Push-notification lifecycle ───────────────────────────────────────────
+  //
+  // Fires whenever the signed-in user's id changes. Walks through:
+  //   1. Install foreground listeners + create Android channel (idempotent).
+  //   2. Ask the OS for POST_NOTIFICATIONS if we haven't already. On Android
+  //      13+ this shows the system prompt; on older Android it auto-grants.
+  //   3. Fetch the current FCM token and register it with the backend so
+  //      server-side senders can target this device.
+  //
+  // Errors at any step are logged but never thrown — push is a "nice to have"
+  // and must never block sign-in. Token rotation events from FCM are caught
+  // by the `app:push-token` window listener below.
+  useEffect(() => {
+    if (!user?.id || !isNative) return undefined;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await initPush();
+        const status = await requestPushPermission();
+        if (cancelled) return;
+        if (status !== "granted") {
+          logEvent("push_permission_denied", { status });
+          return;
+        }
+        const token = await getCurrentPushToken();
+        if (cancelled || !token) return;
+        try {
+          await usersApi.registerDevice(user.id, {
+            token,
+            platform: "android",
+            appVersion: import.meta.env.VITE_APP_VERSION || ""
+          });
+          logEvent("push_token_registered");
+        } catch (err) {
+          logError("push_token_register_failed", err);
+        }
+      } catch (err) {
+        logError("push_init_failed", err);
+      }
+    })();
+
+    // Token rotation: FCM may rotate the token at any time. push.js dispatches
+    // an event with the new value; re-register so server-side sends keep
+    // landing on this device.
+    const onRotate = (event) => {
+      const newToken = event?.detail?.token;
+      if (!newToken || !user?.id) return;
+      usersApi.registerDevice(user.id, {
+        token: newToken,
+        platform: "android",
+        appVersion: import.meta.env.VITE_APP_VERSION || ""
+      }).catch(err => logError("push_token_rotate_register_failed", err));
+    };
+    window.addEventListener("app:push-token", onRotate);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("app:push-token", onRotate);
+    };
+  }, [user?.id]);
 
 /*  async function signInWithGoogle() {
     try {
@@ -673,6 +739,18 @@ async function signInWithGoogle() {
   async function logout() {
     const userId = auth.currentUser?.uid;
     logEvent("logout");
+    // Drop the FCM token both on the server and at FCM itself before signing
+    // out, so the next account on this device doesn't inherit notifications
+    // meant for the previous user. Best-effort — never blocks logout.
+    if (userId && isNative) {
+      try {
+        const token = await getCurrentPushToken();
+        if (token) {
+          await usersApi.unregisterDevice(userId, token).catch(() => {});
+        }
+        await deleteCurrentPushToken();
+      } catch { /* ignore */ }
+    }
     await signOut(auth);
     clearCurrentUser();
     if (userId) {

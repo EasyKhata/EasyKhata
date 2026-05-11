@@ -159,7 +159,18 @@ export const usersApi = {
 
   // Permanently delete account and all data
   delete: (userId) =>
-    api.delete(`/users/${userId}`)
+    api.delete(`/users/${userId}`),
+
+  // Push-notification device tokens.
+  registerDevice: (userId, payload) =>
+    api.post(`/users/${userId}/devices`, payload),
+
+  unregisterDevice: (userId, token) =>
+    api.delete(`/users/${userId}/devices/${encodeURIComponent(token)}`),
+
+  // Promotional push opt-in/out (transactional notifications are never gated).
+  setMarketingPref: (userId, enabled) =>
+    api.patch(`/users/${userId}/marketing-pref`, { enabled: !!enabled })
 };
 
 // ── Organisations ─────────────────────────────────────────────────────────────
@@ -349,6 +360,20 @@ export const adminApi = {
 
   getAdAudienceInsights: () =>
     api.get("/admin/ad-audience-insights"),
+
+  // Broadcasts — combined in-app announcement + optional push notification.
+  // previewBroadcastAudience returns just the count so the admin can size
+  // the audience before firing. createBroadcast does the actual send.
+  previewBroadcastAudience: ({ plans = [], orgTypes = [], userIds = [] } = {}) => {
+    const qs = new URLSearchParams();
+    if (plans.length)    qs.set("plans",    plans.join(","));
+    if (orgTypes.length) qs.set("orgTypes", orgTypes.join(","));
+    if (userIds.length)  qs.set("userIds",  userIds.join(","));
+    return api.get(`/admin/broadcasts/audience${qs.toString() ? `?${qs}` : ""}`);
+  },
+
+  createBroadcast: (payload) =>
+    api.post("/admin/broadcasts", payload),
 
   // Ad campaigns — server-mediated CRUD so writes are audited and validated.
   // Reads are still done directly from Firestore for AdCarousel performance.

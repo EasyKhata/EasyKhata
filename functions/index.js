@@ -556,7 +556,10 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
   const userRef = db.collection("users").doc(userId);
   const requestRef = db.collection("payment_requests").doc(paymentRequestId);
 
-  await db.runTransaction(async tx => {
+  // Returned to caller so they can fire a "payment received" push only when
+  // this call actually upgraded the user (and not when it was a duplicate
+  // because both the client-verify and Razorpay-webhook paths converged).
+  return await db.runTransaction(async tx => {
     const userSnap = await tx.get(userRef);
 
     const requestSnap = await tx.get(requestRef);
@@ -567,7 +570,7 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
     const requestData = requestSnap.data() || {};
     const currentStatus = String(requestData.status || "pending").toLowerCase();
     if (currentStatus === "approved" || currentStatus === "auto_approved") {
-      return;
+      return { applied: false };
     }
     const expectedAmountPaise = getAmountInPaise(requestedPlan, billingCycle);
     const requestAmountPaise = Number(requestData.amountPaise || 0);
@@ -628,7 +631,32 @@ async function applySubscriptionUpgrade({ userId, requestedPlan, billingCycle, p
       },
       { merge: true }
     );
+    return { applied: true, requestedPlan, billingCycle, orgName: requestData.orgName || "", amount: Number(requestData.amount || 0) };
   });
+}
+
+// Helper for verifyUpiSubscriptionPayment + razorpayWebhook — fires a
+// "payment received" push to the user via Railway's /internal/push. Skips
+// silently if RAILWAY_API_URL / INTERNAL_SECRET aren't set (e.g. local dev).
+async function notifyPaymentReceived(userId, upgrade) {
+  const apiUrl = RAILWAY_API_URL.value();
+  const secret = INTERNAL_SECRET.value();
+  if (!apiUrl || !secret) return;
+  const planLabel = upgrade.requestedPlan === "business" ? "Business" : "Pro";
+  const cycleLabel = upgrade.billingCycle === "yearly" ? "yearly" : "monthly";
+  try {
+    await callRailway(apiUrl, secret, "POST", "/internal/push", {
+      userIds: [userId],
+      title: `${planLabel} ${cycleLabel} activated`,
+      body: upgrade.orgName
+        ? `"${upgrade.orgName}" is now on the ${planLabel} plan.`
+        : `Your account is now on the ${planLabel} plan.`,
+      data: { route: "settings", kind: "payment_received" },
+      marketing: false
+    });
+  } catch (err) {
+    logger.error("[notifyPaymentReceived] failed", { userId, err: err?.message });
+  }
 }
 
 async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-scheduled") {
@@ -913,7 +941,7 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
   res.status(200).json({ data: { keyId, orderId: order.id, amount, currency: order.currency || "INR" } });
 });
 
-exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY] }, async (req, res) => {
+exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, RAILWAY_API_URL, INTERNAL_SECRET] }, async (req, res) => {
   setCors(req, res);
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
   if (req.method !== "POST") { res.status(405).send("Method not allowed"); return; }
@@ -965,7 +993,7 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
     sendError(res, "invalid-argument", e.message); return;
   }
 
-  await applySubscriptionUpgrade({
+  const upgrade = await applySubscriptionUpgrade({
     userId: authUser.uid,
     requestedPlan,
     billingCycle,
@@ -985,6 +1013,12 @@ exports.verifyUpiSubscriptionPayment = onRequest({ region: "asia-south1", invoke
   );
 
   sendSubscriptionInvoiceEmail({ paymentRequestId: orderId, requestData, paymentId }).catch(err => logger.error("Invoice email failed", err));
+
+  // Push notify the user if this call actually flipped the request to approved
+  // (vs being a duplicate after the webhook beat us to it).
+  if (upgrade?.applied) {
+    notifyPaymentReceived(authUser.uid, upgrade).catch(err => logger.error("payment push failed", err));
+  }
 
   res.status(200).json({ data: { success: true } });
 });
@@ -1009,7 +1043,7 @@ exports.refreshAdminMetricsNow = onRequest({ region: "asia-south1", invoker: "pu
   }
 });
 
-exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY] }, async (req, res) => {
+exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", secrets: [RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, RESEND_API_KEY, RAILWAY_API_URL, INTERNAL_SECRET] }, async (req, res) => {
   if (req.method !== "POST") {
     res.status(405).send("Method not allowed");
     return;
@@ -1052,7 +1086,7 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
     const billingCycle = getValidatedBillingCycle(requestData.billingCycle);
 
     if (eventType === "payment.captured" || eventType === "order.paid") {
-      await applySubscriptionUpgrade({
+      const upgrade = await applySubscriptionUpgrade({
         userId: requestData.userId,
         requestedPlan,
         billingCycle,
@@ -1073,6 +1107,10 @@ exports.razorpayWebhook = onRequest({ region: "asia-south1", invoker: "public", 
       );
 
       sendSubscriptionInvoiceEmail({ paymentRequestId: orderId, requestData, paymentId }).catch(err => logger.error("Invoice email failed", err));
+
+      if (upgrade?.applied && requestData.userId) {
+        notifyPaymentReceived(requestData.userId, upgrade).catch(err => logger.error("payment push failed", err));
+      }
     }
 
     res.status(200).send("OK");
@@ -1286,6 +1324,38 @@ exports.downgradeExpiredTrials = onSchedule(
       logger.info("[downgradeExpiredTrials] done", { downgraded: result.downgraded });
     } catch (err) {
       logger.error("[downgradeExpiredTrials] failed", { err: err.message });
+      throw err;
+    }
+  }
+);
+
+// ── Daily reminder cron ───────────────────────────────────────────────────────
+// Fires once a day at 8 AM IST. Calls Railway's /internal/run-daily-reminders
+// which scans for EMI / invoice / subscription notifications due today,
+// dedups against past sends, and fires push via FCM.
+//
+// Why Cloud Scheduler instead of node-cron on Railway: Railway can sleep when
+// idle, and we don't want the daily run to silently skip. Cloud Scheduler is
+// guaranteed to fire even if Railway is cold (the HTTP request wakes it).
+exports.runDailyReminders = onSchedule(
+  {
+    region: "asia-south1",
+    schedule: "0 8 * * *",          // 8:00 IST
+    timeZone: "Asia/Kolkata",
+    secrets: [RAILWAY_API_URL, INTERNAL_SECRET]
+  },
+  async () => {
+    const apiUrl = RAILWAY_API_URL.value();
+    const secret = INTERNAL_SECRET.value();
+    if (!apiUrl || !secret) {
+      logger.error("[runDailyReminders] RAILWAY_API_URL or INTERNAL_SECRET not set");
+      return;
+    }
+    try {
+      const result = await callRailway(apiUrl, secret, "POST", "/internal/run-daily-reminders");
+      logger.info("[runDailyReminders] done", result);
+    } catch (err) {
+      logger.error("[runDailyReminders] failed", { err: err.message });
       throw err;
     }
   }

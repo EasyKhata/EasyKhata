@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfirm } from "../context/DialogContext";
 import { isNative } from "../utils/native";
 import { openExternal } from "../utils/openExternal";
-import { supportApi, adminApi, orgsApi } from "../lib/api";
+import { supportApi, adminApi, orgsApi, usersApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import PlanRequestModal from "./settings/PlanRequestModal";
 import SubscriptionHistoryScreen from "./settings/SubscriptionHistoryScreen";
@@ -341,7 +341,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     state: user?.state || initialLocationParts.state || "",
     district: user?.district || initialLocationParts.district || "",
     pincode: user?.pincode || initialLocationParts.pincode || "",
-    country: user?.country || initialLocationParts.country || "India"
+    country: user?.country || initialLocationParts.country || "India",
+    marketingPushEnabled: user?.marketingPushEnabled !== false
   });
   const [accForm, setAccForm] = useState(buildAccountFormState(account, user));
   const [goalForm, setGoalForm] = useState({
@@ -678,9 +679,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       addressLine: user?.addressLine || nextLocationParts.addressLine || "",
       city: user?.city || nextLocationParts.city || "",
       state: user?.state || nextLocationParts.state || "",
-      country: user?.country || nextLocationParts.country || "India"
+      country: user?.country || nextLocationParts.country || "India",
+      marketingPushEnabled: user?.marketingPushEnabled !== false
     });
-  }, [user?.addressLine, user?.city, user?.country, user?.dateOfBirth, user?.email, user?.gender, user?.location, user?.name, user?.phone, user?.phoneCountryCode, user?.state]);
+  }, [user?.addressLine, user?.city, user?.country, user?.dateOfBirth, user?.email, user?.gender, user?.location, user?.marketingPushEnabled, user?.name, user?.phone, user?.phoneCountryCode, user?.state]);
 
   useEffect(() => {
     if (userForm.state && !stateProvinceOptions.includes(userForm.state)) {
@@ -828,6 +830,22 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     if (res?.error) {
       showNotice(res.error);
       return;
+    }
+
+    // Marketing-push opt-in/out lives on a dedicated endpoint because it isn't
+    // a profile field (no email/phone/location concerns). We fire it after the
+    // main profile save so a failure here doesn't roll back the rest.
+    const desiredMarketing = userForm.marketingPushEnabled !== false;
+    if (desiredMarketing !== (user?.marketingPushEnabled !== false)) {
+      try {
+        await usersApi.setMarketingPref(user.id, desiredMarketing);
+      } catch (err) {
+        logError("Marketing pref update failed", err);
+        // Non-fatal — show a soft notice and keep the rest of the save.
+        showNotice("Profile saved, but couldn't update notification preference. Try again later.", "warning");
+        setScreen("main");
+        return;
+      }
     }
 
     showNotice("Your personal profile has been updated.", "success");

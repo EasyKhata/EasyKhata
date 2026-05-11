@@ -1294,6 +1294,75 @@ export default function MainApp() {
     setSettingsNavigation(null);
   }, []);
 
+  // ── Push notification deep linking ─────────────────────────────────────────
+  //
+  // push.js dispatches `app:push-route` on the window when the user taps a
+  // notification (both warm-app and cold-launch — the plugin's listener fires
+  // shortly after launch in either case). We translate the notification's
+  // `data.route` into a tab + screen and call handleNavigate.
+  //
+  // Notification taps can also arrive *before* the user is fully loaded
+  // (cold start before auth resolves). In that case we stash the route and
+  // replay it once the user lands on the dashboard.
+  const pendingRouteRef = useRef(null);
+  useEffect(() => {
+    function applyPushRoute(detail) {
+      const data = detail?.data || {};
+      const route = String(data.route || "").trim();
+      if (!route) return;
+      // Map FCM route strings → handleNavigate targets. New mappings get
+      // added here; the server-side notification just needs to set the route.
+      const ROUTE_MAP = {
+        dashboard:  { tab: "dashboard" },
+        income:     { tab: "income" },
+        expenses:   { tab: "expenses" },
+        emi:        { tab: "emi" },
+        invoices:   { tab: "invoices" },
+        settings:   { tab: "settings", screen: "main" },
+        discussions:{ tab: "discussions" }
+      };
+      const target = ROUTE_MAP[route] || { tab: "dashboard" };
+      handleNavigate(target);
+    }
+
+    function onPushRoute(event) {
+      // If the app hasn't finished loading user/data yet, hold the route and
+      // replay once loaded. Otherwise apply immediately.
+      if (!data?.loaded || !user?.id) {
+        pendingRouteRef.current = event.detail;
+        return;
+      }
+      applyPushRoute(event.detail);
+    }
+
+    function onPushForeground(event) {
+      // Foreground notifications don't system-banner on Android by default —
+      // show a toast so the user knows something arrived. They can tap a
+      // similar entry from the in-app Notifications modal if it needs action.
+      const notif = event.detail?.notification || event.detail || {};
+      showGlobalToast({
+        tone: notif.data?.kind === "broadcast" ? "info" : "info",
+        title: notif.title || "Notification",
+        message: notif.body || ""
+      });
+    }
+
+    window.addEventListener("app:push-route", onPushRoute);
+    window.addEventListener("app:push-foreground", onPushForeground);
+
+    // Replay any route that arrived during cold-start before user/data loaded.
+    if (data?.loaded && user?.id && pendingRouteRef.current) {
+      const detail = pendingRouteRef.current;
+      pendingRouteRef.current = null;
+      applyPushRoute(detail);
+    }
+
+    return () => {
+      window.removeEventListener("app:push-route", onPushRoute);
+      window.removeEventListener("app:push-foreground", onPushForeground);
+    };
+  }, [data?.loaded, user?.id, handleNavigate]);
+
   // Handle #upgrade deep link — open the plan-request screen automatically
   useEffect(() => {
     if (typeof window === "undefined") return;
