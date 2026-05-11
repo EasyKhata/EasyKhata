@@ -2172,16 +2172,43 @@ export default function MainApp() {
         {/* Shared-org context strip — shown when viewing someone else's org */}
         {activeSharedOrgKey && (() => {
           const org = sharedOrgs.find(o => o.key === activeSharedOrgKey);
-          return org ? (
+          if (!org) return null;
+          const liveRole = activeSharedOrgRole ?? org.role ?? "viewer";
+          const handleLeave = async () => {
+            const ok = await confirm(
+              `Leave "${org.orgName}"? You'll lose ${liveRole === "admin" ? "admin" : "view"} access to this khata until the owner re-invites you.`,
+              { title: "Leave Khata", confirmLabel: "Leave", danger: true }
+            );
+            if (!ok) return;
+            const res = await data.leaveSharedOrg?.(org.ownerId, org.orgId);
+            if (res?.error) {
+              showGlobalToast({ tone: "danger", title: "Couldn't leave", message: res.error });
+            } else {
+              showGlobalToast({ tone: "success", title: "Left khata", message: `You're no longer a member of "${org.orgName}".` });
+            }
+          };
+          return (
             <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: isCompactMobile ? "6px 10px" : "7px 18px", display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, fontSize: isCompactMobile ? 11 : 12 }}>
               <span style={{ color: "var(--text-dim)" }}>Viewing</span>
               <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
-              {(() => { const liveRole = activeSharedOrgRole ?? org.role ?? "viewer"; return (
               <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole}</span>
-              ); })()}
-              <button onClick={() => { switchToOwnOrg(); }} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>← Back to my org</button>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 10 }}>
+                <button
+                  onClick={handleLeave}
+                  title="Leave this khata"
+                  style={{ background: "none", border: "1px solid color-mix(in srgb, var(--danger) 35%, var(--border))", color: "var(--danger)", fontSize: 11, fontWeight: 700, cursor: "pointer", borderRadius: 6, padding: "4px 9px" }}
+                >
+                  Leave
+                </button>
+                <button
+                  onClick={() => { switchToOwnOrg(); }}
+                  style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}
+                >
+                  ← Back to my org
+                </button>
+              </div>
             </div>
-          ) : null;
+          );
         })()}
 
         <div
