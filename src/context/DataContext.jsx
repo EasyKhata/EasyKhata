@@ -2182,6 +2182,45 @@ export function DataProvider({ children }) {
     setOwnDataReloadKey(k => k + 1);
   }
 
+  // Member leaves a shared khata they were invited to. Server-side this calls
+  // POST /users/:ownerId/orgs/:orgId/members/leave which removes the OrgMember
+  // row and cleans up the matching Invitation. Locally we mirror the same
+  // cleanup the polling path does when access is revoked from the other side:
+  // drop the shared-org entry, clear the active key, and fall back to the
+  // user's own org.
+  const leaveSharedOrg = useCallback(async (ownerId, orgId) => {
+    if (!user?.id) return { error: "Not signed in." };
+    if (!ownerId || !orgId) return { error: "Missing organization details." };
+    if (ownerId === user.id) {
+      return { error: "You own this khata. Transfer ownership or delete the khata instead." };
+    }
+    try {
+      await membersApi.leave(ownerId, orgId);
+    } catch (err) {
+      logError("leaveSharedOrg failed", err, { ownerId, orgId });
+      return { error: err?.message || "Could not leave the khata. Please try again." };
+    }
+
+    const key = `${ownerId}_${orgId}`;
+    activeSharedOrgRef.current = null;
+    setActiveSharedOrgKey(null);
+    setActiveSharedOrgRole(null);
+    setSharedOrgsByKey(prev => {
+      const next = { ...(prev || {}) };
+      delete next[key];
+      return next;
+    });
+    setUser(prev => {
+      if (!prev) return prev;
+      const next = { ...(prev.sharedOrgs || {}) };
+      delete next[key];
+      return { ...prev, sharedOrgs: next };
+    });
+    // Force the own-data load so the dashboard reflects the user's own org.
+    switchToOwnOrg();
+    return { success: true };
+  }, [setUser, user?.id]);
+
   const refreshActiveOrgData = useCallback(async ({ collections = [], includeOrgRecords = true } = {}) => {
     if (!user?.id) return { error: "No active user found." };
     const current = dataRef.current || data || EMPTY_DATA;
@@ -2360,6 +2399,7 @@ export function DataProvider({ children }) {
     refreshSharedMemberships,
     switchToSharedOrg,
     switchToOwnOrg,
+    leaveSharedOrg,
     organizations,
     ownedOrganizations,
     activeOrgId: data.activeOrgId,

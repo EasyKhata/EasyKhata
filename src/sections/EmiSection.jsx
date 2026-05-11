@@ -97,7 +97,12 @@ function EmiCard({ item, sym, onEdit, onDelete, onTogglePaid, currentMk, canMana
   const isCurrentRealMonth = currentMk === realMk;
 
   const daysUntilDue = isCurrentRealMonth ? dueDay - today.getDate() : null;
-  const dueBadge = daysUntilDue === null ? null
+  // When the EMI is marked paid for this month, the due-day comparison is
+  // irrelevant — showing "Overdue by Nd" alongside the "✓ Paid" pill is
+  // contradictory and was confusing users. Suppress the due badge entirely
+  // for paid EMIs; the "Paid" pill near the title is enough signal.
+  const dueBadge = isPaid ? null
+    : daysUntilDue === null ? null
     : daysUntilDue < 0 ? { text: `Overdue by ${Math.abs(daysUntilDue)}d`, color: "var(--danger)" }
     : daysUntilDue === 0 ? { text: "Due today", color: "var(--danger)" }
     : daysUntilDue <= 3 ? { text: `Due in ${daysUntilDue}d`, color: "var(--gold)" }

@@ -88,11 +88,25 @@ async function request(method, path, body) {
   }, method, path);
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    const error = new Error(err.error || `Request failed: ${res.status}`);
+    // Try JSON first (our routes return { error: "…" }), then fall back to the
+    // raw text body (Express's default 404 HTML, proxy/edge HTML errors), then
+    // finally to the status line. Without the text fallback the user saw
+    // "Request failed: 404" with no hint that the route was missing on the
+    // deployed server. We clone() so a failed JSON read doesn't consume the
+    // body and prevent the text read.
+    const clone = res.clone();
+    let serverMsg = "";
+    try {
+      const parsed = await res.json();
+      serverMsg = parsed?.error || "";
+    } catch {
+      try { serverMsg = (await clone.text()).slice(0, 200).trim(); } catch { /* ignore */ }
+    }
+    const error = new Error(serverMsg || `Request failed: ${res.status} ${res.statusText || ""}`.trim());
     error.status = res.status;
     error.method = method;
     error.path = path;
+    error.serverMessage = serverMsg || null;
     throw error;
   }
 
@@ -238,6 +252,11 @@ export const membersApi = {
 
   transferOwnership: (userId, orgId, memberUid) =>
     api.post(`/users/${userId}/orgs/${orgId}/members/transfer-owner`, { memberUid }),
+
+  // Called by the member themselves to leave a shared khata. The path's :userId
+  // is the OWNER of the org; the caller's identity comes from the Bearer token.
+  leave: (ownerId, orgId) =>
+    api.post(`/users/${ownerId}/orgs/${orgId}/members/leave`),
 
   // Called by the invited member to accept
   acceptInvite: (inviteId) =>
