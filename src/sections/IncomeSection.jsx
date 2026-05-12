@@ -311,20 +311,68 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
 
   const selectedMonthDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   const defaultCollectionDate = selectedMonthDate > TODAY ? TODAY : selectedMonthDate;
-  const apartmentCollectionStatus = useMemo(() => apartmentFlats.map(flat => {
-    const monthlyAmount = Number(flat.monthlyMaintenance || bulkMaintenanceAmount || 0);
-    const paidEntry = manualIncome.find(item => (
-      String(item.flatNumber || "").trim() === String(flat.value || "").trim() &&
-      (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk &&
-      String(item.collectionType || "Monthly Maintenance").trim() === "Monthly Maintenance"
-    ));
+  // Arrears window = earliest month any maintenance was collected across the
+  // entire org → current month - 1. Matches the chronic-defaulter logic on
+  // the dashboard so the two surfaces stay consistent. Months before the
+  // org's first collection are "out of scope" (we weren't tracking yet);
+  // months from that point on count as unpaid if this flat is missing from
+  // the month's collected set.
+  const apartmentCollectionStatus = useMemo(() => {
+    // Pass 1: build month → set-of-paid-flat-numbers across the whole org.
+    const incomeByMonth = {};
+    (manualIncome || []).forEach(item => {
+      if (String(item.collectionType || "Monthly Maintenance").trim().toLowerCase() !== "monthly maintenance") return;
+      const itemMk = item.collectionMonth || item.month || (item.date ? item.date.slice(0, 7) : "");
+      const flatNum = String(item.flatNumber || "").trim().toLowerCase();
+      if (!itemMk || !flatNum) return;
+      if (!incomeByMonth[itemMk]) incomeByMonth[itemMk] = new Set();
+      incomeByMonth[itemMk].add(flatNum);
+    });
+    const allMonthKeys = Object.keys(incomeByMonth).sort();
+    // Earliest collection month overall — anything before this is "we
+    // didn't start tracking yet" and doesn't count as overdue.
+    const startMonthKey = allMonthKeys[0] || mk;
 
-    return {
-      ...flat,
-      monthlyAmount,
-      paidEntry
-    };
-  }).sort((left, right) => String(left.value || "").localeCompare(String(right.value || ""), undefined, { numeric: true, sensitivity: "base" })), [apartmentFlats, bulkMaintenanceAmount, manualIncome, mk]);
+    return apartmentFlats.map(flat => {
+      const monthlyAmount = Number(flat.monthlyMaintenance || bulkMaintenanceAmount || 0);
+      const flatNumLower = String(flat.value || "").trim().toLowerCase();
+
+      // Current-month paid entry — drives the "Paid" pill + suppresses the
+      // "Due this month" label.
+      const paidEntry = manualIncome.find(item => (
+        String(item.flatNumber || "").trim().toLowerCase() === flatNumLower &&
+        (item.collectionMonth || item.month || item.date?.slice(0, 7)) === mk &&
+        String(item.collectionType || "Monthly Maintenance").trim() === "Monthly Maintenance"
+      ));
+
+      // Walk every month from the org's first collection up to (not including)
+      // the currently viewed month. Each month where this flat is missing
+      // from the collected set is an arrear.
+      const arrearsMonths = [];
+      if (monthlyAmount > 0 && startMonthKey <= mk) {
+        const [startY, startM] = startMonthKey.split("-").map(Number);
+        const [curY, curM] = mk.split("-").map(Number);
+        const cursor = new Date(startY, startM - 1, 1);
+        const end = new Date(curY, curM - 1, 1); // current month — excluded
+        while (cursor < end) {
+          const pastKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+          if (!incomeByMonth[pastKey]?.has(flatNumLower)) {
+            arrearsMonths.push(pastKey);
+          }
+          cursor.setMonth(cursor.getMonth() + 1);
+        }
+      }
+      const arrearsAmount = arrearsMonths.length * monthlyAmount;
+
+      return {
+        ...flat,
+        monthlyAmount,
+        paidEntry,
+        arrearsMonths,
+        arrearsAmount
+      };
+    }).sort((left, right) => String(left.value || "").localeCompare(String(right.value || ""), undefined, { numeric: true, sensitivity: "base" }));
+  }, [apartmentFlats, bulkMaintenanceAmount, manualIncome, mk]);
   const apartmentCollectionMetrics = useMemo(() => {
     const totalFlats = apartmentCollectionStatus.length;
     const paidFlats = apartmentCollectionStatus.filter(flat => Boolean(flat.paidEntry)).length;
@@ -764,22 +812,44 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                   />
                 </div>
                 <div className="card" style={{ marginBottom: 0 }}>
-                  {paginatedApartmentCollectionStatus.map(flat => (
+                  {paginatedApartmentCollectionStatus.map(flat => {
+                    // Meta-line states (in priority order):
+                    //   • No rate set      → "Set maintenance amount"
+                    //   • Paid this month  → "{owner} · Rs X collected" (Paid pill)
+                    //   • Arrears > 0      → "{owner} · Rs Y across N months overdue" (Arrears pill)
+                    //   • Otherwise        → "{owner} · Rs X/month" (Pending pill)
+                    // Previously the meta always read "Due Rs X" which contradicted the
+                    // Paid pill when the flat had been marked paid for the month.
+                    const owner = flat.ownerName || "No owner";
+                    let metaRight = "";
+                    if (flat.monthlyAmount <= 0) {
+                      metaRight = "Set maintenance amount";
+                    } else if (flat.paidEntry) {
+                      metaRight = `${fmtMoney(Number(flat.paidEntry.amount || flat.monthlyAmount), sym)} collected`;
+                    } else if (flat.arrearsAmount > 0) {
+                      metaRight = `${fmtMoney(flat.arrearsAmount + flat.monthlyAmount, sym)} outstanding · ${flat.arrearsMonths.length} month${flat.arrearsMonths.length === 1 ? "" : "s"} overdue`;
+                    } else {
+                      metaRight = `${fmtMoney(flat.monthlyAmount, sym)}/month`;
+                    }
+                    const statusPill = flat.paidEntry
+                      ? { label: "Paid", bg: "var(--accent-deep)", color: "var(--accent)" }
+                      : flat.arrearsAmount > 0
+                        ? { label: "Overdue", bg: "var(--danger-deep)", color: "var(--danger)" }
+                        : flat.monthlyAmount > 0
+                          ? { label: "Pending", bg: "var(--gold-deep)", color: "var(--gold)" }
+                          : null;
+
+                    return (
                     <div key={flat.id} className="ledger-feed-row" style={{ alignItems: "center" }}>
                       <div>
                         <div className="ledger-feed-title">{flat.value}</div>
                         <div className="ledger-feed-meta">
-                          {[
-                            flat.ownerName || "No owner",
-                            flat.monthlyAmount > 0 ? `Due ${fmtMoney(flat.monthlyAmount, sym)}` : "Set maintenance amount"
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
+                          {[owner, metaRight].filter(Boolean).join(" · ")}
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        {flat.paidEntry && (
-                          <span className="pill" style={{ background: "var(--accent-deep)", color: "var(--accent)" }}>Paid</span>
+                        {statusPill && (
+                          <span className="pill" style={{ background: statusPill.bg, color: statusPill.color }}>{statusPill.label}</span>
                         )}
                         {!isViewerMode && (
                           <button className="ledger-action-btn" onClick={() => openBulkCollectionDraft(flat)}>
@@ -799,7 +869,8 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </>
             )}

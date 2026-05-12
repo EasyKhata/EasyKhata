@@ -35,9 +35,31 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- Default FCM notification icon. We use a monochrome white silhouette
+             at @drawable/ic_stat_notification; Android tints it with the
+             accent colour at runtime. Without this the system falls back to
+             showing the app icon (full colour), which renders as a grey
+             square on the notification shade in modern Android. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_stat_notification" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/ic_launcher_background" />
+
+        <!-- Default notification channel id used when an FCM payload doesn't
+             specify one. Channels are created from the client at first launch
+             (see src/utils/push.js). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="easykhata-default" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required on Android 13+ (API 33) to display notifications. Below 33
+         the permission is granted by default at install time. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

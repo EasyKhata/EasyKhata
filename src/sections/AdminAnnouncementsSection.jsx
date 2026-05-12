@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { announcementsApi } from "../lib/api";
+import { announcementsApi, adminApi } from "../lib/api";
 import { logError } from "../utils/logger";
 import { SectionSkeleton, WorkflowSetupCard } from "../components/UI";
 import { useConfirm } from "../context/DialogContext";
@@ -18,11 +18,32 @@ const PLAN_OPTIONS = [
   { value: "business", label: "Business only" }
 ];
 
+const ORG_TYPE_OPTIONS = [
+  { value: "personal",   label: "Household" },
+  { value: "freelancer", label: "Small Business" },
+  { value: "apartment",  label: "Apartment" }
+];
+
 function typeConfig(type) {
   return TYPE_OPTIONS.find(t => t.value === type) || TYPE_OPTIONS[0];
 }
 
-const EMPTY_FORM = { title: "", body: "", type: "info", targetPlan: "all", endsAt: "" };
+// `sendInApp` writes a Firestore announcement (the existing in-app banner).
+// `sendPush` fires a native push notification to matching users — rate-limited
+// server-side to 1 marketing push per user per 24 h.
+// `orgTypes` filters by user.organizationType (multi-select).
+// `route` optionally tells the client where to deep-link on tap (e.g. "income").
+const EMPTY_FORM = {
+  title: "",
+  body: "",
+  type: "info",
+  targetPlan: "all",
+  orgTypes: [],
+  endsAt: "",
+  sendInApp: true,
+  sendPush: true,
+  route: ""
+};
 
 export default function AdminAnnouncementsSection() {
   const confirm = useConfirm();
@@ -31,6 +52,9 @@ export default function AdminAnnouncementsSection() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [lastResult, setLastResult] = useState(null);
+  // Live audience count — refreshed when audience filters change.
+  const [audience, setAudience] = useState({ count: null, loading: false });
 
   async function load() {
     setLoading(true);
@@ -47,24 +71,73 @@ export default function AdminAnnouncementsSection() {
 
   useEffect(() => { load(); }, []);
 
+  // Translate the form's targetPlan + orgTypes into the audience filter shape
+  // the server expects. targetPlan "all" → no plan filter; otherwise [plan].
+  function audienceParams() {
+    const plans = form.targetPlan && form.targetPlan !== "all" ? [form.targetPlan] : [];
+    const orgTypes = Array.isArray(form.orgTypes) ? form.orgTypes : [];
+    return { plans, orgTypes };
+  }
+
+  // Debounced preview — re-runs when audience inputs change. Cheap server count.
+  useEffect(() => {
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setAudience(a => ({ ...a, loading: true }));
+      try {
+        const res = await adminApi.previewBroadcastAudience(audienceParams());
+        if (!cancelled) setAudience({ count: Number(res?.matched ?? 0), loading: false });
+      } catch {
+        if (!cancelled) setAudience({ count: null, loading: false });
+      }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.targetPlan, JSON.stringify(form.orgTypes)]);
+
   async function submit(e) {
     e.preventDefault();
     if (!form.title.trim() || !form.body.trim()) {
       setError("Title and message are required.");
       return;
     }
+    if (!form.sendInApp && !form.sendPush) {
+      setError("Pick at least one delivery channel — in-app banner or push notification.");
+      return;
+    }
     setSubmitting(true);
     setError("");
+    setLastResult(null);
     try {
-      await announcementsApi.create(form);
+      const { plans, orgTypes } = audienceParams();
+      const result = await adminApi.createBroadcast({
+        title: form.title.trim(),
+        body:  form.body.trim(),
+        route: form.route.trim() || undefined,
+        type:  form.type || "info",
+        targetPlan: form.targetPlan || "all",
+        plans,
+        orgTypes,
+        sendInApp: form.sendInApp,
+        sendPush:  form.sendPush
+      });
+      setLastResult(result);
       setForm(EMPTY_FORM);
       await load();
     } catch (err) {
-      logError("Create announcement error", err);
-      setError("Failed to send. Please try again.");
+      logError("Create broadcast error", err);
+      setError(err?.message || "Failed to send. Please try again.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function toggleOrgType(value) {
+    setForm(f => {
+      const set = new Set(f.orgTypes);
+      set.has(value) ? set.delete(value) : set.add(value);
+      return { ...f, orgTypes: Array.from(set) };
+    });
   }
 
   async function remove(item) {
@@ -94,12 +167,13 @@ export default function AdminAnnouncementsSection() {
 
   function duplicate(item) {
     setForm({
+      ...EMPTY_FORM,
       title: item.title || "",
       body: item.body || "",
       type: item.type || "info",
-      targetPlan: item.targetPlan || "all",
-      endsAt: ""
+      targetPlan: item.targetPlan || "all"
     });
+    setLastResult(null);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -169,7 +243,8 @@ export default function AdminAnnouncementsSection() {
             style={{ marginBottom: 8, resize: "vertical", fontFamily: "inherit", fontSize: 13 }}
           />
 
-          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Audience row 1 — plan + expiry */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
             <select
               className="input-field"
               value={form.targetPlan}
@@ -198,6 +273,73 @@ export default function AdminAnnouncementsSection() {
             </div>
           </div>
 
+          {/* Audience row 2 — org type multi-select */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--text-dim)", marginRight: 4 }}>Khata type:</span>
+            {ORG_TYPE_OPTIONS.map(o => {
+              const on = form.orgTypes.includes(o.value);
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => toggleOrgType(o.value)}
+                  style={{
+                    padding: "5px 10px",
+                    fontSize: 11,
+                    background: on ? "var(--surface-pop)" : "var(--surface-high)",
+                    color: on ? "var(--text)" : "var(--text-sec)",
+                    borderColor: on ? "var(--accent)" : undefined
+                  }}
+                >
+                  {on ? "✓ " : ""}{o.label}
+                </button>
+              );
+            })}
+            {form.orgTypes.length === 0 && (
+              <span style={{ fontSize: 11, color: "var(--text-dim)" }}>(any)</span>
+            )}
+          </div>
+
+          {/* Delivery channels */}
+          <div style={{ display: "flex", gap: 12, marginBottom: 8, flexWrap: "wrap", alignItems: "center", padding: "8px 10px", borderRadius: 8, background: "var(--surface-high)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-sec)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.sendInApp}
+                onChange={e => setForm(f => ({ ...f, sendInApp: e.target.checked }))}
+              />
+              In-app banner
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-sec)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.sendPush}
+                onChange={e => setForm(f => ({ ...f, sendPush: e.target.checked }))}
+              />
+              Push notification
+            </label>
+            {form.sendPush && (
+              <input
+                className="input-field"
+                placeholder="Deep-link route (optional, e.g. income)"
+                value={form.route}
+                onChange={e => setForm(f => ({ ...f, route: e.target.value }))}
+                style={{ padding: "6px 10px", fontSize: 12, flex: "1 1 200px", minWidth: 160 }}
+                maxLength={64}
+              />
+            )}
+          </div>
+
+          {/* Audience count */}
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12, lineHeight: 1.5 }}>
+            {audience.loading
+              ? "Counting matching users…"
+              : audience.count === null
+                ? "Audience size unavailable."
+                : `Will reach ${audience.count.toLocaleString("en-IN")} user${audience.count === 1 ? "" : "s"}${form.sendPush ? " (push respects 24-hour rate limit + opt-out)" : ""}.`}
+          </div>
+
           {(form.title || form.body) && (
             <div style={{ padding: "12px 14px", borderRadius: 10, background: cfg.bg, border: `1px solid ${cfg.color}44`, marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: cfg.color, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>Preview</div>
@@ -206,8 +348,33 @@ export default function AdminAnnouncementsSection() {
             </div>
           )}
 
+          {lastResult && (
+            <div style={{ padding: "10px 12px", borderRadius: 10, background: "color-mix(in srgb, var(--accent) 6%, var(--surface-high))", border: "1px solid color-mix(in srgb, var(--accent) 24%, var(--border))", marginBottom: 10, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55 }}>
+              <div style={{ fontWeight: 700, color: "var(--accent)", marginBottom: 4 }}>
+                ✓ Broadcast sent
+              </div>
+              Reached <b>{lastResult.audienceSize}</b> user{lastResult.audienceSize === 1 ? "" : "s"}.
+              {lastResult.pushSummary && (
+                <>
+                  {" "}Push: <b>{lastResult.pushSummary.sent}</b> delivered
+                  {lastResult.pushSummary.rateLimited ? <>, <b>{lastResult.pushSummary.rateLimited}</b> skipped (24-h limit)</> : null}
+                  {lastResult.pushSummary.failed ? <>, <b>{lastResult.pushSummary.failed}</b> failed</> : null}
+                  {lastResult.pushSummary.deadTokensReaped ? <>, <b>{lastResult.pushSummary.deadTokensReaped}</b> dead tokens cleaned</> : null}.
+                </>
+              )}
+            </div>
+          )}
+
           <button className="btn-primary" type="submit" disabled={submitting} style={{ width: "100%", padding: "10px 0", fontSize: 13 }}>
-            {submitting ? "Sending…" : "Send to Users"}
+            {submitting
+              ? "Sending…"
+              : !form.sendInApp && !form.sendPush
+                ? "Pick a delivery channel"
+                : form.sendPush && form.sendInApp
+                  ? "Send banner + push"
+                  : form.sendPush
+                    ? "Send push notification"
+                    : "Send in-app banner"}
           </button>
         </form>
       </div>
