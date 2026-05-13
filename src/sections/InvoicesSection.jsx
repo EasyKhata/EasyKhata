@@ -487,6 +487,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
     try {
       await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg, templateId: invoiceTemplateId });
     } catch (err) {
+      logError("pdf_generate_error", err, { type: "download", invoiceId: invoice?.id });
       setFormError("Could not generate PDF. Please try again.");
     }
   }
@@ -500,6 +501,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
       const url = await downloadInvoice(invoice, d.account, invoice.currencySymbol || sym, { isApartment: isApartmentOrg, templateId: invoiceTemplateId, preview: true });
       if (url) setPdfPreviewUrl(url);
     } catch (err) {
+      logError("pdf_generate_error", err, { type: "preview", invoiceId: invoice?.id });
       setFormError("Could not generate preview. Please try again.");
     }
   }

@@ -145,6 +145,7 @@ function drawWrappedBlock(doc, x, y, width, title, lines) {
 
 export async function downloadInvoice(invoice, account, sym, options = {}) {
   await ensureJsPDF();
+  if (!invoice) throw new Error("downloadInvoice: invoice is required");
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const acc = account || {};
   const theme = getInvoiceTheme(options?.templateId || acc.invoiceTemplate);
