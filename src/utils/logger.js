@@ -1,6 +1,19 @@
 import { auth } from "../firebase";
 import { isNative } from "./native";
 
+function captureWithSentry(error, label) {
+  try {
+    // Lazy import so Sentry is only pulled in when an error actually occurs
+    import("@sentry/react").then(({ captureException, withScope }) => {
+      withScope(scope => {
+        scope.setTag("label", label);
+        scope.setUser({ id: auth.currentUser?.uid ?? undefined });
+        captureException(error instanceof Error ? error : new Error(String(error ?? label)));
+      });
+    }).catch(() => {});
+  } catch { /* never let Sentry break the app */ }
+}
+
 const isDev = import.meta.env.DEV;
 
 // Lazy-loaded Crashlytics handle. We import dynamically so the web build doesn't
@@ -147,6 +160,7 @@ export function logError(label, error, ctx) {
   }
   writeLog("error", label, error, ctx);
   reportToCrashlytics("error", label, error, ctx);
+  if (import.meta.env.VITE_SENTRY_DSN) captureWithSentry(error, label);
 }
 
 export function logWarn(label, ctx) {

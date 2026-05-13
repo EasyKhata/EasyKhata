@@ -364,7 +364,11 @@ service cloud.firestore {
     }
 
     match /society_invites/{inviteCode} {
-      allow read: if isSignedIn();
+      // Only the invite owner (apartment admin) or the specific invited resident can read.
+      // Prevents enumeration of flat numbers and resident emails by other signed-in users.
+      allow read: if isAdmin() ||
+        (isSignedIn() && resource.data.ownerId == request.auth.uid) ||
+        (isSignedIn() && resource.data.allowedEmail == request.auth.token.email);
       allow create: if isAdmin() ||
         (isSignedIn() && request.resource.data.ownerId == request.auth.uid);
       allow update, delete: if isAdmin() ||

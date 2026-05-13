@@ -2259,6 +2259,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
                   </button>
                 )}
+                {!reviewAccessEnabled && (
+                  <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "var(--surface-high)", border: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-sec)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 }}>If your subscription expires</div>
+                    <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55 }}>
+                      Your data is never deleted when a plan expires. Paid Khatas switch to read-only — you can view and export everything, but adding new entries requires renewing. Your household Khata stays free and fully active regardless. Contact <a href={`mailto:${APP_SUPPORT_EMAIL}`} style={{ color: "var(--accent)" }}>{APP_SUPPORT_EMAIL}</a> if you need help exporting your data.
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

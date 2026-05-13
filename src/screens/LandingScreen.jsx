@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import BrandLogo from "../components/BrandLogo";
-import { APP_NAME } from "../utils/brand";
+import { APP_NAME, APP_SUPPORT_EMAIL } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
 import { useAuth } from "../context/AuthContext";
 
@@ -213,6 +213,32 @@ export default function LandingScreen({ onGetStarted }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{f.title}</div>
                   <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.45 }}>{f.desc}</div>
                 </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* ── TRUST ────────────────────────────────────────────────────── */}
+        <section style={{ marginBottom: 36 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { icon: "🔒", title: "Encrypted", desc: "All data is encrypted in transit (TLS) and at rest via Firebase & Railway." },
+              { icon: "🇮🇳", title: "Built in India", desc: "Data stored on Indian servers. Designed for Indian accounting formats." },
+              { icon: "💳", title: "Secure payments", desc: "Subscriptions processed by Razorpay. We never store card details." },
+              { icon: "✉️", title: "Real support", desc: <><a href={`mailto:${APP_SUPPORT_EMAIL}`} style={{ color: "var(--accent)" }}>{APP_SUPPORT_EMAIL}</a> — reply within 24 hours.</> }
+            ].map(t => (
+              <div
+                key={t.title}
+                style={{
+                  padding: "12px 13px",
+                  borderRadius: 12,
+                  background: "var(--surface-high)",
+                  border: "1px solid var(--border)"
+                }}
+              >
+                <div style={{ fontSize: 16, marginBottom: 4 }} aria-hidden="true">{t.icon}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 3 }}>{t.title}</div>
+                <div style={{ fontSize: 11, color: "var(--text-sec)", lineHeight: 1.45 }}>{t.desc}</div>
               </div>
             ))}
           </div>
