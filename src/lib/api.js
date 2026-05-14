@@ -129,15 +129,16 @@ let warmupInFlight = null;
 export function warmupBackend() {
   if (warmupInFlight) return warmupInFlight;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  // 12 s covers Railway cold-start (5–10 s container wake + Firebase init).
+  // The auth flow awaits this promise, so this is the max extra wait a
+  // returning user sees on a cold server before their profile loads.
+  const timeout = setTimeout(() => controller.abort(), 12_000);
   warmupInFlight = fetch(`${BASE_URL}/health`, { signal: controller.signal })
     .catch(() => {})
     .finally(() => {
       clearTimeout(timeout);
-      // Allow another warmup attempt 60 s later — if the user signs in slowly
-      // and we end up reusing this promise long after it resolved, fine; but
-      // a stale rejection shouldn't block future attempts.
-      setTimeout(() => { warmupInFlight = null; }, 60_000);
+      // Allow another warmup attempt 90 s later.
+      setTimeout(() => { warmupInFlight = null; }, 90_000);
     });
   return warmupInFlight;
 }

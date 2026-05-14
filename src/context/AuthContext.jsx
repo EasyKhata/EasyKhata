@@ -98,6 +98,12 @@ function buildOfflineProfile(firebaseUser) {
   const cachedData = getUserData(firebaseUser.uid, "appData") || {};
   const cachedAccount = cachedData.account || {};
   const cachedProfile = getUserData(firebaseUser.uid, "profile") || {};
+  // Distinguish "no internet" from "server unreachable" so the UI can show the
+  // right message. navigator.onLine is not perfect but is the best signal we
+  // have at the moment the failure occurs.
+  const offlineReason = (typeof navigator !== "undefined" && !navigator.onLine)
+    ? "no_internet"
+    : "server_unreachable";
   return {
     id: firebaseUser.uid,
     name: firebaseUser.displayName || cachedProfile.name || cachedAccount.name || "",
@@ -109,7 +115,8 @@ function buildOfflineProfile(firebaseUser) {
     onboardingSeenAt: cachedProfile.onboardingSeenAt || "__offline_profile__",
     legalAccepted: true,
     orgs: cachedData.orgs || {},
-    offlineProfile: true
+    offlineProfile: true,
+    offlineReason
   };
 }
 
@@ -274,6 +281,7 @@ export function AuthProvider({ children }) {
       role: profile?.role || "user",
       onboardingSeenAt: profile?.onboardingSeenAt || "",
       offlineProfile: Boolean(profile?.offlineProfile),
+      offlineReason: profile?.offlineReason || null,
       lastActivityAt: profile?.lastActivityAt || profile?.updatedAt || profile?.createdAt || "",
       activeOrgId,
       organizationType: getOrgType(activeOrg?.account?.organizationType || profile?.organizationType || profile?.account?.organizationType),
@@ -350,6 +358,14 @@ export function AuthProvider({ children }) {
 
       // If setup is in progress (completing org type selection), don't re-process
       if (setupInProgressRef.current) return;
+
+      // Wait for the warmup ping to finish before making authenticated API calls.
+      // warmupBackend() returns a singleton promise that resolves on both success
+      // and failure — on a warm server this is ~100 ms; on a cold Railway container
+      // it gives the server time to boot so the profile fetch below succeeds on the
+      // first try instead of exhausting all retries while the container is still
+      // starting up.
+      await warmupBackend();
 
       try {
         let existing = null;
@@ -489,34 +505,57 @@ export function AuthProvider({ children }) {
   // and must never block sign-in. Token rotation events from FCM are caught
   // by the `app:push-token` window listener below.
   useEffect(() => {
+    // Always log so we can diagnose push issues remotely. isNative must be
+    // true for any push code to run — if it's false the APK is likely a web
+    // build or the Capacitor native layer hasn't initialised.
+    logEvent("push_effect_fired", { isNative, hasUser: !!user?.id });
     if (!user?.id || !isNative) return undefined;
 
     let cancelled = false;
-    (async () => {
+    let registered = false;
+
+    async function attemptPushRegistration() {
+      if (cancelled || registered) return;
       try {
         await initPush();
         const status = await requestPushPermission();
         if (cancelled) return;
         if (status !== "granted") {
-          logEvent("push_permission_denied", { status });
+          // logError so this appears in Firestore app_logs even without an event endpoint
+          logError("push_permission_not_granted", null, { status, userId: user.id });
           return;
         }
         const token = await getCurrentPushToken();
-        if (cancelled || !token) return;
+        if (cancelled) return;
+        if (!token) {
+          logError("push_token_empty", null, { userId: user.id });
+          return;
+        }
         try {
           await usersApi.registerDevice(user.id, {
             token,
             platform: "android",
             appVersion: import.meta.env.VITE_APP_VERSION || ""
           });
+          registered = true;
           logEvent("push_token_registered");
         } catch (err) {
-          logError("push_token_register_failed", err);
+          logError("push_token_register_failed", err, { userId: user.id });
         }
       } catch (err) {
-        logError("push_init_failed", err);
+        logError("push_init_failed", err, { userId: user.id });
       }
-    })();
+    }
+
+    attemptPushRegistration();
+
+    // Re-attempt on foreground — covers the case where the user went to Android
+    // Settings to grant POST_NOTIFICATIONS manually and then returned to the app.
+    // The registered flag prevents redundant server calls once a token is saved.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") attemptPushRegistration();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     // Token rotation: FCM may rotate the token at any time. push.js dispatches
     // an event with the new value; re-register so server-side sends keep
@@ -534,6 +573,7 @@ export function AuthProvider({ children }) {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("app:push-token", onRotate);
     };
   }, [user?.id]);

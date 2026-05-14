@@ -4,7 +4,7 @@ import { canCreatePaidOrg, getMaxOrganizations, isFreeReadOnlyMode, isPaidActive
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
-import { orgsApi, usersApi, membersApi } from "../lib/api";
+import { orgsApi, usersApi, membersApi, warmupBackend } from "../lib/api";
 import { showGlobalToast } from "./ToastContext";
 import { clearPendingSync, hasPendingSync, listPendingSyncs, markPendingSync } from "../utils/pendingSyncs";
 
@@ -1528,13 +1528,17 @@ export function DataProvider({ children }) {
 
     const RESUME_REFRESH_THRESHOLD_MS = 5 * 60 * 1000; // 5 min
 
-    function maybeRefresh() {
+    async function maybeRefresh() {
       // Always try to drain unsynced local changes — they're cheap to retry and
       // the user expects their offline edits to land as soon as connectivity is back.
       drainPendingSyncs();
       const last = lastLoadedAtRef.current;
       if (!last) return;
       if (Date.now() - last < RESUME_REFRESH_THRESHOLD_MS) return;
+      // Warm up the backend before reloading data — Railway containers can go cold
+      // while the app is backgrounded. Without this the reload fires immediately
+      // and all 3 retries exhaust before the container is ready.
+      await warmupBackend();
       setOwnDataReloadKey(k => k + 1);
     }
 
@@ -2358,10 +2362,19 @@ export function DataProvider({ children }) {
       }
     } catch (err) {
       logError(`ensureCollectionLoaded(${key}) failed`, err);
-      showGlobalToast({ tone: "danger", title: "Sync error", message: "Some records couldn't be loaded. Check your connection and try again." });
-      // Reset fetched flag so the next section mount or org-switch can retry
+      // Reset fetched flag so the next mount or org-switch can retry
       collectionFetchedRef.current = { ...collectionFetchedRef.current, [key]: false };
       setCollectionFetched(prev => ({ ...prev, [key]: false }));
+      if (isNetworkLikeError(err)) {
+        // Network error — server might be cold-starting after a deploy or idle period.
+        // Warm up and trigger a full data reload after 10 s instead of asking the user
+        // to manually refresh. Silent: no error toast since this resolves on its own.
+        warmupBackend().then(() => {
+          setTimeout(() => setOwnDataReloadKey(k => k + 1), 10_000);
+        });
+      } else {
+        showGlobalToast({ tone: "danger", title: "Sync error", message: "Some records couldn't be loaded. Please try again." });
+      }
     } finally {
       collectionFetchingRef.current[fetchKey] = false;
     }
