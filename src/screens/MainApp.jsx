@@ -1916,7 +1916,7 @@ export default function MainApp() {
   useEffect(() => { prevTabRef.current = tab; }, [tab]);
 
   const bottomNoticeBase = "calc(env(safe-area-inset-bottom, 0px) + 92px)";
-  const syncNotice = offlineMode || user?.offlineProfile
+  const syncNotice = offlineMode
     ? {
         title: "Showing saved data",
         message: "Connection is unstable. You can keep using EasyKhata; changes will sync when the network improves.",
