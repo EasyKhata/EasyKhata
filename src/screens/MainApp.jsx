@@ -1276,7 +1276,7 @@ export default function MainApp() {
   const handleNavigate = useCallback((target) => {
     const nextTarget = typeof target === "string" ? { tab: target } : target;
     const routedTab = nextTarget?.tab || "dashboard";
-    const nextTab = routedTab === "settings" && ["account", "customers", "create-org", "org-records"].includes(nextTarget?.screen)
+    const nextTab = routedTab === "settings" && ["account", "customers", "customer-detail", "create-org", "org-records"].includes(nextTarget?.screen)
       ? "org"
       : routedTab;
 
@@ -1286,6 +1286,9 @@ export default function MainApp() {
       setSettingsNavigation({
         screen: nextTarget?.screen || "main",
         orgSectionKey: nextTarget?.orgSectionKey || "",
+        customerId: nextTarget?.customerId || "",
+        customerName: nextTarget?.customerName || "",
+        returnToTab: nextTarget?.returnToTab || "",
         token: Date.now()
       });
       return;
@@ -1425,7 +1428,7 @@ export default function MainApp() {
 
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
-      const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro or Business in Settings to continue.";
+      const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro or Pro+ in Settings to continue.";
       setReadOnlyNotice({ message: msg, key: Date.now() });
     };
     window.addEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);
@@ -2089,9 +2092,9 @@ export default function MainApp() {
               </span>
             </button>
 
-            {/* Right: Org switcher (always when multiple orgs) + Bell + Sign out */}
+            {/* Right: Khata switcher + Bell + Sign out */}
             <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8, flexShrink: 0 }}>
-              {/* Org switcher — always shown for non-admin users */}
+              {/* Khata switcher — always shown for non-admin users */}
               {!isAdmin && (
                 <div style={{ position: "relative" }} ref={orgSwitcherRef}>
                   <button
@@ -2101,7 +2104,7 @@ export default function MainApp() {
                     style={{ height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid color-mix(in srgb, var(--saffron) 40%, var(--border))`, background: activeSharedOrgKey ? "color-mix(in srgb, var(--saffron) 12%, var(--raised))" : "color-mix(in srgb, var(--saffron) 7%, var(--raised))", color: "var(--saffron)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 12px", flexShrink: 0 }}
                   >
                     <span style={{ fontSize: 12 }}>⇄</span>
-                    <span>{isCompactMobile ? "Orgs" : "Switch Org"}</span>
+                    <span>{isCompactMobile ? "Khatas" : "Switch Khata"}</span>
                   </button>
                   {showOrgSwitcher && (
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>

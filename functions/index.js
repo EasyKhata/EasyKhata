@@ -117,7 +117,7 @@ const INTERNAL_SECRET = defineSecret("INTERNAL_SECRET");
 
 const PLAN_PRICES = {
   pro: { monthly: 99, yearly: 999 },
-  business: { monthly: 199, yearly: 1999 }
+  pro_plus: { monthly: 199, yearly: 1999 }
 };
 
 const PLAN_DURATION_DAYS = {
@@ -211,7 +211,7 @@ function buildAdminUserProfileStatsDoc(userId, userData = {}) {
 
   return {
     userId,
-    planLabel: userData.plan === "business" ? "Business" : userData.plan === "pro" ? "Pro" : "Free",
+    planLabel: userData.plan === "pro_plus" || userData.plan === "business" ? "Pro+" : userData.plan === "pro" ? "Pro" : "Free",
     subscriptionLabel: userData.subscriptionStatus === "trial" ? "Trial" : userData.subscriptionStatus === "active" ? "Active" : "Inactive",
     gender: String(userData.gender || "").trim(),
     ageGroup: String(userData.ageGroup || "").trim(),
@@ -343,7 +343,8 @@ function getRazorpayConfig() {
 }
 
 function getValidatedPlan(inputPlan) {
-  const plan = String(inputPlan || "pro").trim().toLowerCase();
+  const rawPlan = String(inputPlan || "pro").trim().toLowerCase();
+  const plan = rawPlan === "business" ? "pro_plus" : rawPlan;
   if (!Object.prototype.hasOwnProperty.call(PLAN_PRICES, plan)) {
     throw new HttpsError("invalid-argument", "Invalid plan selected.");
   }
@@ -642,7 +643,7 @@ async function notifyPaymentReceived(userId, upgrade) {
   const apiUrl = RAILWAY_API_URL.value();
   const secret = INTERNAL_SECRET.value();
   if (!apiUrl || !secret) return;
-  const planLabel = upgrade.requestedPlan === "business" ? "Business" : "Pro";
+  const planLabel = upgrade.requestedPlan === "pro_plus" || upgrade.requestedPlan === "business" ? "Pro+" : "Pro";
   const cycleLabel = upgrade.billingCycle === "yearly" ? "yearly" : "monthly";
   try {
     await callRailway(apiUrl, secret, "POST", "/internal/push", {
@@ -673,7 +674,8 @@ async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-schedul
     blockedUsersAgg,
     trialUsersAgg,
     proUsersAgg,
-    businessUsersAgg,
+    proPlusUsersAgg,
+    legacyBusinessUsersAgg,
     pendingRequestsAgg,
     approvedRequestsAgg,
     rejectedRequestsAgg,
@@ -689,6 +691,7 @@ async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-schedul
     usersRef.where("blocked", "==", true).count().get(),
     usersRef.where("subscriptionStatus", "==", "trial").count().get(),
     usersRef.where("plan", "==", "pro").count().get(),
+    usersRef.where("plan", "==", "pro_plus").count().get(),
     usersRef.where("plan", "==", "business").count().get(),
     paymentsRef.where("status", "==", "pending").count().get(),
     paymentsRef.where("status", "==", "approved").count().get(),
@@ -704,7 +707,7 @@ async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-schedul
 
   const totalUsers = Number(totalUsersAgg.data().count || 0);
   const blockedUsers = Number(blockedUsersAgg.data().count || 0);
-  const premiumUsers = Number(proUsersAgg.data().count || 0) + Number(businessUsersAgg.data().count || 0);
+  const premiumUsers = Number(proUsersAgg.data().count || 0) + Number(proPlusUsersAgg.data().count || 0) + Number(legacyBusinessUsersAgg.data().count || 0);
   let derivedReady = Number(userOrgStatsAgg.data().count || 0) === totalUsers && Number(userProfileStatsAgg.data().count || 0) === totalUsers;
 
   if (!derivedReady && totalUsers > 0) {
@@ -838,7 +841,7 @@ async function refreshAdminMetricsSnapshotInternal(triggeredBy = "system-schedul
       currentMonth: {
         key: currentMonth.key,
         newUsers: currentMonthUsers.length,
-        newPremiumUsers: currentMonthUsers.filter(item => ["pro", "business"].includes(String(item.plan || "").toLowerCase())).length,
+        newPremiumUsers: currentMonthUsers.filter(item => ["pro", "pro_plus", "business"].includes(String(item.plan || "").toLowerCase())).length,
         approvedAmount: currentMonthApprovedPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0),
         approvedRequests: currentMonthApprovedPayments.length
       }

@@ -322,6 +322,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [custForm, setCustForm] = useState(null);
   const [editCust, setEditCust] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [customerReturnTab, setCustomerReturnTab] = useState("");
   const [staffForm, setStaffForm] = useState(null);
   const [editStaff, setEditStaff] = useState(null);
   const initialPhoneParts = splitPhoneNumber(user?.phone || "", user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE);
@@ -742,7 +743,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   useEffect(() => {
     if (!navigationTarget?.token) return;
 
-    if (navigationTarget.screen === "customers") {
+    if (navigationTarget.screen === "customers" || navigationTarget.screen === "customer-detail") {
+      setCustomerReturnTab(navigationTarget.returnToTab || "");
+      const requestedCustomer = customerDirectory.find(customer => (
+        (navigationTarget.customerId && String(customer.id || "") === String(navigationTarget.customerId)) ||
+        (navigationTarget.customerName && String(customer.name || "").trim().toLowerCase() === String(navigationTarget.customerName).trim().toLowerCase())
+      ));
+      if (requestedCustomer && navigationTarget.screen === "customer-detail") {
+        setSelectedCustomer(requestedCustomer);
+        setScreen("customer-detail");
+        return;
+      }
       setScreen("customers");
       return;
     }
@@ -782,7 +793,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     }
 
     setScreen("main");
-  }, [navigationTarget, user?.role]);
+  }, [customerDirectory, navigationTarget, user?.role]);
 
   async function saveUserProfile() {
     const cleanName = String(userForm.name || "").trim();
@@ -984,11 +995,24 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   }
 
   function openCustomerDetail(customer) {
+    setCustomerReturnTab("");
     const detail = orgConfig.showCustomerFinancials === false
       ? customer
       : customerDirectory.find(item => item.id === customer.id) || customer;
     setSelectedCustomer(detail);
     setScreen("customer-detail");
+  }
+
+  function closeCustomerDetail() {
+    if (customerReturnTab) {
+      const targetTab = customerReturnTab;
+      setCustomerReturnTab("");
+      setSelectedCustomer(null);
+      setScreen("main");
+      window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: targetTab } }));
+      return;
+    }
+    setScreen("customers");
   }
 
   function saveCust() {
@@ -1384,8 +1408,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Only the Khata owner can pay for this subscription.");
       return;
     }
-    if (pendingNewOrgDraft && !canCreatePaidOrg(user, ownedOrganizations, targetPlan)) {
-      showNotice(`${PLAN_LABELS[targetPlan]} does not have enough Khata slots for this new Khata. Choose Business or remove another paid Khata.`);
+    if (pendingNewOrgDraft && !canCreatePaidOrg(user, ownedOrganizations, targetPlan, targetOrgType)) {
+      showNotice(`${PLAN_LABELS[targetPlan]} cannot create this Khata. Choose Pro+ or remove another paid Khata.`);
       return;
     }
 
@@ -1911,14 +1935,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               Active Khata
             </div>
             <div style={{ fontSize: "clamp(11px, 7vw, 15px)", fontWeight: 700, color: "var(--text)", lineHeight: 1.03, letterSpacing: "-0.03em", marginBottom: 6, maxWidth: "15ch", overflowWrap: "anywhere" }}>{account?.name || "My Khata"}</div>
-            <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.5 }}>
-              {orgConfig.profileNameLabel} profile, directory, and records live here.
-            </div>
-            {(account?.location || account?.phone || account?.email) && (
-              <div className="ledger-inline-note" style={{ marginTop: 10 }}>
-                {[account?.location, account?.phone, account?.email].filter(Boolean).join(" · ")}
-              </div>
-            )}
           </div>
 
           <div className="ledger-block">
@@ -2207,7 +2223,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   ? `${PLAN_LABELS[currentPlan] || "Plan"} is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. You are using ${paidOrgCount}/${paidOrgLimit} paid Khata slots.`
                   : currentPlan !== PLANS.FREE && user?.subscriptionStatus === "trial"
                     ? `${PLAN_LABELS[currentPlan] || "Pro"} trial is active. Household is free, and paid Khatas use your plan slots.`
-                    : "Household is free. Pro gives 2 paid Khatas; Business gives 5 paid Khatas."}
+                    : "Household is free. Pro gives one Khata for each paid type; Pro+ gives 5 paid Khatas."}
             </div>
             {!isPersonalOrg && (
               <>
@@ -2223,10 +2239,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     </div>
                     <div>
                       <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", marginBottom: 6 }}>
-                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro / Business"}
+                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro / Pro+"}
                       </div>
                         <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>
-                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "Pro: 2 paid Khatas for Rs 99/month or Rs 999/year. Business: 5 paid Khatas for Rs 199/month or Rs 1999/year."}
+                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "Pro: one paid Khata per paid type for Rs 99/month or Rs 999/year. Pro+: 5 paid Khatas for Rs 199/month or Rs 1999/year."}
                       </div>
                     </div>
                   </div>
@@ -2547,12 +2563,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         location: cleanLocation,
         address: cleanAddress
       };
-      if (newOrgType !== ORG_TYPES.PERSONAL && !canCreatePaidOrg(user, ownedOrganizations)) {
+      if (newOrgType !== ORG_TYPES.PERSONAL && !canCreatePaidOrg(user, ownedOrganizations, null, newOrgType)) {
         setPendingNewOrgDraft(draft);
         setPaymentOrgId(draft.orgId);
         setPlanRequestForm(current => ({
           ...current,
-          targetPlan: canCreatePaidOrg(user, ownedOrganizations, PLANS.PRO) ? PLANS.PRO : PLANS.BUSINESS
+          targetPlan: canCreatePaidOrg(user, ownedOrganizations, PLANS.PRO, newOrgType) ? PLANS.PRO : PLANS.PRO_PLUS
         }));
         setScreen("plan-request");
         showNotice("Choose a plan to create and activate this Khata.");
@@ -2679,7 +2695,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         onOpenDetail={openCustomerDetail}
         onSaveCust={saveCust}
         onRemoveCustomer={removeCustomer}
-        onBackToList={() => setScreen("customers")}
+        onBackToList={closeCustomerDetail}
         onClose={() => setScreen("main")}
         allExpenses={expenses}
         allIncome={income}

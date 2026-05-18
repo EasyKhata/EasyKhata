@@ -38,21 +38,21 @@ export default function PlanRequestModal({
     {
       id: PLANS.PRO,
       title: "Pro",
-      subtitle: "1 free Household + 2 paid Khatas",
+      subtitle: "1 free Household + one Khata for each paid type",
       monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO),
       yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.PRO)
     },
     {
-      id: PLANS.BUSINESS,
-      title: "Business",
+      id: PLANS.PRO_PLUS,
+      title: "Pro+",
       subtitle: "1 free Household + 5 paid Khatas",
-      monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.BUSINESS),
-      yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.BUSINESS)
+      monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO_PLUS),
+      yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.PRO_PLUS)
     }
   ];
   const amount = getBillingAmount(billingCycle, targetPlan);
   const selectedLimit = getPaidOrgLimit(targetPlan);
-  const canUseSelectedPlan = !creatingNewKhata || canCreatePaidOrg(user, organizations, targetPlan);
+  const canUseSelectedPlan = !creatingNewKhata || canCreatePaidOrg(user, organizations, targetPlan, normalizedOrgType);
 
   return (
     <Modal
@@ -85,7 +85,7 @@ export default function PlanRequestModal({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
             {planOptions.map(option => {
               const selected = targetPlan === option.id;
-              const disabled = creatingNewKhata && !canCreatePaidOrg(user, organizations, option.id);
+              const disabled = creatingNewKhata && !canCreatePaidOrg(user, organizations, option.id, normalizedOrgType);
               const price = billingCycle === BILLING_CYCLES.YEARLY ? option.yearly : option.monthly;
               return (
                 <button
@@ -106,7 +106,7 @@ export default function PlanRequestModal({
                   <div style={{ fontSize: 14, fontWeight: 800, color: "var(--text)" }}>{option.title}</div>
                   <div style={{ fontSize: 12, marginTop: 4, lineHeight: 1.45 }}>{option.subtitle}</div>
                   <div style={{ fontSize: 13, fontWeight: 800, color: "var(--accent)", marginTop: 8 }}>Rs {price}</div>
-                  {disabled && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>Not enough Khata slots</div>}
+                  {disabled && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>This plan cannot create this Khata</div>}
                 </button>
               );
             })}

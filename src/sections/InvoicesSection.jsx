@@ -873,7 +873,7 @@ export default function InvoicesSection({ year, month, documentType = "invoice",
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
                         <span style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{request.userName || "Unnamed User"}</span>
                         <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)" }}>
-                          {request.requestedPlan === PLANS.BUSINESS ? "Business (Coming Soon)" : `${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
+                          {`${PLAN_LABELS[request.requestedPlan || PLANS.PRO] || "Pro"} ${request.billingCycle === BILLING_CYCLES.YEARLY ? "Yearly" : "Monthly"}`}
                         </span>
                         <span
                           className="pill"

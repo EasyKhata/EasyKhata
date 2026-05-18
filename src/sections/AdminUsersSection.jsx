@@ -13,6 +13,10 @@ import {
   getTrialEndDate
 } from "../utils/subscription";
 
+function isPaidPlan(plan) {
+  return plan === PLANS.PRO || plan === PLANS.PRO_PLUS || plan === "business";
+}
+
 export default function AdminUsersSection() {
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -81,7 +85,7 @@ export default function AdminUsersSection() {
         userFilter === "all" ||
         (userFilter === "blocked" && member.blocked) ||
         (userFilter === "active" && !member.blocked) ||
-        (userFilter === "premium" && (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS)) ||
+        (userFilter === "premium" && isPaidPlan(member.plan)) ||
         (userFilter === "trial" && member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) ||
         (userFilter === "dormant" && inactiveDays !== null && inactiveDays > 30) ||
         (userFilter === "multi_org" && orgCount > 1) ||
@@ -108,7 +112,7 @@ export default function AdminUsersSection() {
       acc.total += 1;
       if (!member.blocked) acc.active += 1;
       if (member.blocked) acc.blocked += 1;
-      if (member.plan === PLANS.PRO || member.plan === PLANS.BUSINESS) acc.premium += 1;
+      if (isPaidPlan(member.plan)) acc.premium += 1;
       if (member.subscriptionStatus === SUBSCRIPTION_STATUS.TRIAL) acc.trial += 1;
       if (orgCount > 1) acc.multiOrg += 1;
       if (records > 0) acc.activated += 1;
@@ -172,9 +176,9 @@ export default function AdminUsersSection() {
 
   async function updateUserPlan(member, plan) {
     if (plan === member.plan) return;
-    const planLabel = plan === PLANS.PRO ? "Pro" : plan === PLANS.BUSINESS ? "Business" : "Free";
+    const planLabel = plan === PLANS.PRO ? "Pro" : plan === PLANS.PRO_PLUS ? "Pro+" : "Free";
     const isDowngrade = (member.plan === PLANS.PRO && plan === PLANS.FREE)
-      || (member.plan === PLANS.BUSINESS && plan !== PLANS.BUSINESS);
+      || (isPaidPlan(member.plan) && plan === PLANS.FREE);
     const confirmed = await confirm(
       `Change ${member.name || member.email}'s plan to ${planLabel}?${isDowngrade ? " This will immediately downgrade their access." : ""}`,
       { title: "Change plan", confirmLabel: `Set ${planLabel}`, danger: isDowngrade }
@@ -331,13 +335,13 @@ export default function AdminUsersSection() {
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <select
                       className="input-field"
-                      value={member.plan || PLANS.FREE}
+                      value={member.plan === "business" ? PLANS.PRO_PLUS : (member.plan || PLANS.FREE)}
                       onChange={event => updateUserPlan(member, event.target.value)}
                       style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, width: "auto" }}
                     >
                       <option value={PLANS.FREE}>Free</option>
                       <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.BUSINESS}>Business</option>
+                      <option value={PLANS.PRO_PLUS}>Pro+</option>
                     </select>
                     <select
                       className="input-field"

@@ -70,7 +70,7 @@ function describeActivity(daysSinceActivity) {
 }
 
 function formatPlanLabel(plan) {
-  if (plan === PLANS.BUSINESS) return "Business";
+  if (plan === PLANS.PRO_PLUS || plan === "business") return "Pro+";
   if (plan === PLANS.PRO) return "Pro";
   return "Free";
 }
@@ -340,7 +340,7 @@ export default function AdminPanel({ year, month }) {
         planLabel: formatPlanLabel(item.plan),
         subscriptionLabel: formatSubscriptionLabel(item.subscriptionStatus),
         primaryOrgTypeLabel: primaryOrg?.orgTypeLabel || ORG_TYPE_LABELS[getOrgType(item.organizationType)] || "Organization",
-        isPaid: item.plan === PLANS.PRO || item.plan === PLANS.BUSINESS
+        isPaid: item.plan === PLANS.PRO || item.plan === PLANS.PRO_PLUS || item.plan === "business"
       };
     });
 
@@ -472,7 +472,7 @@ export default function AdminPanel({ year, month }) {
       insights.push({
         eyebrow: "Retention",
         title: `${paidAtRisk} paid account${paidAtRisk === 1 ? " is" : "s are"} going quiet`,
-        body: `These users still hold Pro or Business access but have no recent activity signal in the last 30 days. They are the best audience for win-back nudges or onboarding help.`,
+        body: `These users still hold Pro or Pro+ access but have no recent activity signal in the last 30 days. They are the best audience for win-back nudges or onboarding help.`,
         tone: "var(--danger)"
       });
     }
