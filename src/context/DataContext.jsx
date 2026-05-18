@@ -1586,7 +1586,7 @@ export function DataProvider({ children }) {
               new CustomEvent("ledger:readonly-blocked", {
                 detail: {
                   tone: "warning",
-                  message: "Your subscription is inactive. Go to Settings > Manage Subscription to choose Pro or Business."
+                  message: "Your subscription is inactive. Go to Settings > Manage Subscription to choose Pro or Pro+."
                 }
               })
             );
@@ -1957,7 +1957,7 @@ export function DataProvider({ children }) {
     if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
       return { error: "Household is already your default Khata." };
     }
-    if (!isHouseholdRequest && !canCreatePaidOrg(user, currentOwnedOrganizations, planOverride || null)) {
+    if (!isHouseholdRequest && !canCreatePaidOrg(user, currentOwnedOrganizations, planOverride || null, requestedType)) {
       return { error: "UPGRADE_REQUIRED" };
     }
 

@@ -3,7 +3,7 @@ import { ORG_TYPES } from "./orgTypes.js";
 export const PLANS = {
   FREE: "free",
   PRO: "pro",
-  BUSINESS: "business"
+  PRO_PLUS: "pro_plus"
 };
 
 export const SUBSCRIPTION_STATUS = {
@@ -29,13 +29,13 @@ export const PAYMENT_REQUEST_STATUS = {
 
 export const PLAN_PRICES = {
   [PLANS.PRO]: { monthly: 99, yearly: 999 },
-  [PLANS.BUSINESS]: { monthly: 199, yearly: 1999 }
+  [PLANS.PRO_PLUS]: { monthly: 199, yearly: 1999 }
 };
 
 export const PLAN_ORG_LIMITS = {
   [PLANS.FREE]: 0,
   [PLANS.PRO]: 2,
-  [PLANS.BUSINESS]: 5
+  [PLANS.PRO_PLUS]: 5
 };
 
 const PLAN_LIMITS = {
@@ -55,7 +55,8 @@ export const UPI_CONFIG = {
 export const PLAN_LABELS = {
   free: "Free",
   pro: "Pro",
-  business: "Business"
+  pro_plus: "Pro+",
+  business: "Pro+"
 };
 
 export const REVIEW_ACCESS_ENABLED = false;
@@ -73,7 +74,7 @@ export function isFreeOrgType(orgType) {
 }
 
 export function hasBusinessPlan(user) {
-  return getUserPlan(user) === PLANS.BUSINESS && isSubscriptionActive(user);
+  return getUserPlan(user) === PLANS.PRO_PLUS && isSubscriptionActive(user);
 }
 
 export function getOrgPlan(org) {
@@ -89,12 +90,14 @@ export function getOrgSubscriptionEndsAt(org) {
 }
 
 export function getUserPlan(user) {
-  if (isAdminUser(user)) return PLANS.BUSINESS;
-  return user?.plan || PLANS.FREE;
+  if (isAdminUser(user)) return PLANS.PRO_PLUS;
+  return user?.plan === "business" ? PLANS.PRO_PLUS : (user?.plan || PLANS.FREE);
 }
 
 export function getPaidOrgLimit(planOrUser = PLANS.FREE) {
-  const plan = typeof planOrUser === "string" ? planOrUser : getUserPlan(planOrUser);
+  const plan = typeof planOrUser === "string"
+    ? (planOrUser === "business" ? PLANS.PRO_PLUS : planOrUser)
+    : getUserPlan(planOrUser);
   return PLAN_ORG_LIMITS[plan] ?? PLAN_ORG_LIMITS[PLANS.FREE];
 }
 
@@ -102,12 +105,21 @@ export function getOwnedPaidOrgCount(organizations = []) {
   return (organizations || []).filter(org => !isFreeOrgType(org?.organizationType || org?.account?.organizationType)).length;
 }
 
-export function canCreatePaidOrg(user, organizations = [], planOverride = null) {
+export function canCreatePaidOrg(user, organizations = [], planOverride = null, requestedOrgType = "") {
   if (isAdminUser(user)) return true;
   if (isReviewAccessEnabled()) return true;
-  const plan = planOverride || getUserPlan(user);
+  const plan = planOverride === "business" ? PLANS.PRO_PLUS : (planOverride || getUserPlan(user));
   const paidLimit = getPaidOrgLimit(plan);
-  return isSubscriptionActive({ ...user, plan }) && getOwnedPaidOrgCount(organizations) < paidLimit;
+  if (!isSubscriptionActive({ ...user, plan })) return false;
+  if (getOwnedPaidOrgCount(organizations) >= paidLimit) return false;
+  if (plan === PLANS.PRO && requestedOrgType) {
+    const normalizedType = String(requestedOrgType || "").trim();
+    return !(organizations || []).some(org => (
+      !isFreeOrgType(org?.organizationType || org?.account?.organizationType) &&
+      String(org?.organizationType || org?.account?.organizationType || "").trim() === normalizedType
+    ));
+  }
+  return true;
 }
 
 export function getMaxOrganizations(user) {
@@ -179,7 +191,7 @@ export function isSubscriptionActive(user, org = null) {
 
   // If the user-level plan is paid + active, accept it even if the org row is
   // still on the pre-payment values. Same for trial.
-  if ((userPlan === PLANS.PRO || userPlan === PLANS.BUSINESS) && userStatus === SUBSCRIPTION_STATUS.ACTIVE) {
+  if ((userPlan === PLANS.PRO || userPlan === PLANS.PRO_PLUS) && userStatus === SUBSCRIPTION_STATUS.ACTIVE) {
     return true;
   }
   if (userStatus === SUBSCRIPTION_STATUS.TRIAL && isTrialActive(user, null)) {
@@ -191,14 +203,14 @@ export function isSubscriptionActive(user, org = null) {
   const status = orgStatus || userStatus;
   if (plan === PLANS.FREE && status !== SUBSCRIPTION_STATUS.TRIAL) return false;
   if (status === SUBSCRIPTION_STATUS.TRIAL) return isTrialActive(user, org);
-  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return plan === PLANS.PRO || plan === PLANS.BUSINESS;
+  if (!status || status === SUBSCRIPTION_STATUS.ACTIVE) return plan === PLANS.PRO || plan === PLANS.PRO_PLUS || plan === "business";
   return false;
 }
 
 export function isPaidActive(user, org = null) {
   if (isAdminUser(user)) return true;
   const plan = getOrgPlan(org) || getUserPlan(user);
-  return (plan === PLANS.PRO || plan === PLANS.BUSINESS) && isSubscriptionActive(user, org);
+  return (plan === PLANS.PRO || plan === PLANS.PRO_PLUS || plan === "business") && isSubscriptionActive(user, org);
 }
 
 export function isFreeReadOnlyMode(user, orgType, org = null) {
@@ -251,7 +263,7 @@ export function canUseFeature(user, feature, usage = {}, orgType = ORG_TYPES.FRE
     case "advancedAnalytics":
     case "budgets":
     case "advancedInvoice":
-      return plan === PLANS.PRO || plan === PLANS.BUSINESS;
+      return plan === PLANS.PRO || plan === PLANS.PRO_PLUS || plan === "business";
 
     case "posSystem":
       return false;
@@ -275,7 +287,7 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
       }
       return {
         title: "Subscription required",
-        message: "Upgrade to Pro (Rs 99/month) or Business (Rs 199/month) to create invoices."
+        message: "Upgrade to Pro (Rs 99/month) or Pro+ (Rs 199/month) to create invoices."
       };
 
     case "customerCreate":
@@ -293,7 +305,7 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
       }
       return {
         title: "Subscription required",
-        message: "Upgrade to Pro or Business to add customers."
+        message: "Upgrade to Pro or Pro+ to add customers."
       };
 
     case "apartmentFlatCreate":
@@ -305,31 +317,31 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
     case "invoicePdf":
       return {
         title: "PDF export",
-        message: "Upgrade to Pro or Business to download branded invoice PDFs."
+        message: "Upgrade to Pro or Pro+ to download branded invoice PDFs."
       };
 
     case "reports":
       return {
         title: "Reports",
-        message: "Upgrade to Pro or Business for advanced reports, alerts, and insights."
+        message: "Upgrade to Pro or Pro+ for advanced reports, alerts, and insights."
       };
 
     case "notifications":
       return {
         title: "Smart alerts are a paid feature",
-        message: "Upgrade to Pro or Business to enable payment reminders and notification alerts."
+        message: "Upgrade to Pro or Pro+ to enable payment reminders and notification alerts."
       };
 
     case "advancedAnalytics":
       return {
         title: "Advanced analytics are a paid feature",
-        message: "Upgrade to Pro or Business to unlock burn rate, savings goals, and customer intelligence."
+        message: "Upgrade to Pro or Pro+ to unlock burn rate, savings goals, and customer intelligence."
       };
 
     case "budgets":
       return {
         title: "Budgets are a paid feature",
-        message: "Upgrade to Pro or Business to set category budgets and track overspending automatically."
+        message: "Upgrade to Pro or Pro+ to set category budgets and track overspending automatically."
       };
 
     case "sharedLedger":
@@ -341,7 +353,7 @@ export function getUpgradeCopy(feature, orgType = ORG_TYPES.FREELANCER) {
     default:
       return {
         title: "Subscription required",
-        message: "This feature requires Pro (Rs 99/month) or Business (Rs 199/month)."
+        message: "This feature requires Pro (Rs 99/month) or Pro+ (Rs 199/month)."
       };
   }
 }
@@ -384,7 +396,7 @@ export function getPlanSummary(user, orgType, org = null, organizations = []) {
   if (!isSubscriptionActive(user, org)) {
     return {
       title: "Free plan",
-      message: "Household is free. Upgrade to Pro for 2 paid Khatas or Business for 5 paid Khatas."
+      message: "Household is free. Upgrade to Pro for one Khata per paid type or Pro+ for 5 paid Khatas."
     };
   }
 

@@ -15,7 +15,7 @@ const PLAN_OPTIONS = [
   { value: "all",      label: "All Users" },
   { value: "free",     label: "Free only" },
   { value: "pro",      label: "Pro only" },
-  { value: "business", label: "Business only" }
+  { value: "pro_plus", label: "Pro+ only" }
 ];
 
 const ORG_TYPE_OPTIONS = [

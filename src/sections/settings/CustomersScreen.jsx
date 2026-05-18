@@ -349,6 +349,39 @@ export default function CustomersScreen({
         : [customer.phone, customer.email].filter(Boolean).join(" · ") || "Household member"
       : `Balance ${fmtMoney(customer.outstanding, sym)} · Revenue ${fmtMoney(customer.totalRevenue, sym)}`;
 
+    if (isApartmentOrg) {
+      const maintenance = Number(customer.monthlyMaintenance || 0);
+      return (
+        <div className="card" style={{ padding: 12, display: "grid", gap: 8, cursor: "pointer" }} onClick={() => onOpenDetail(customer)} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenDetail(customer); } }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--blue)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customer.name}</div>
+              <div style={{ marginTop: 2, fontSize: 11, color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customer.ownerName || customer.phone || "Flat record"}</div>
+            </div>
+            {isProtectedProfile && <span className="pill" style={{ background: "var(--blue-deep)", color: "var(--blue)", flexShrink: 0 }}>Primary</span>}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)" }}>Monthly</div>
+              <div style={{ marginTop: 2, fontSize: 13, fontWeight: 800, color: maintenance > 0 ? "var(--accent)" : "var(--text-dim)" }}>{maintenance > 0 ? fmtMoney(maintenance, sym) : "Not set"}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)" }}>Contact</div>
+              <div style={{ marginTop: 2, fontSize: 12, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{customer.phone || "--"}</div>
+            </div>
+          </div>
+          {canManage && (
+            <div style={{ display: "grid", gridTemplateColumns: isProtectedProfile ? "1fr" : "1fr 1fr", gap: 6 }}>
+              <button type="button" className="ledger-action-btn" style={{ minHeight: 30, fontSize: 11 }} onClick={event => { event.stopPropagation(); onOpenEditCust(customer); }}>Edit</button>
+              {!isProtectedProfile && (
+                <button type="button" className="ledger-action-btn" style={{ minHeight: 30, fontSize: 11, color: "var(--danger)" }} onClick={async event => { event.stopPropagation(); if (await confirm(`Remove ${customer.name}?`, { title: "Delete", confirmLabel: "Delete" })) onRemoveCustomer(customer.id); }}>Delete</button>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <>
         <WorkflowRecordCard
@@ -468,7 +501,7 @@ export default function CustomersScreen({
                 itemLabel={orgConfig.customerLabel.toLowerCase()}
               />
             </div>
-            <div className="card">
+            <div className={isApartmentOrg ? undefined : "card"} style={isApartmentOrg ? { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 } : undefined}>
               {paginatedCustomerDirectory.map((customer, idx) => (
                 <CustomerListCard
                   key={customer.id}
@@ -568,11 +601,11 @@ export default function CustomersScreen({
             {typeEntries.length > 0 && (
               <>
                 <div className="section-label">Collections by Type</div>
-                <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, marginBottom: 16 }}>
                   {typeEntries.map(([type, amt]) => (
-                    <div key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                      <span style={{ fontSize: 13, color: "var(--text-sec)" }}>{type}</span>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(amt, sym)}</span>
+                    <div key={type} className="card" style={{ padding: "10px 12px" }}>
+                      <div style={{ fontSize: 12, color: "var(--text-sec)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{type}</div>
+                      <div style={{ marginTop: 3, fontSize: 14, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(amt, sym)}</div>
                     </div>
                   ))}
                 </div>
@@ -580,12 +613,13 @@ export default function CustomersScreen({
             )}
 
             <div className="section-label">Collection History</div>
-            <div className="card">
+            <div>
               {recentCollections.length === 0 ? (
-                <div style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-dim)" }}>No collections recorded yet.</div>
+                <div className="card" style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-dim)" }}>No collections recorded yet.</div>
               ) : (
-                recentCollections.map((e, i) => (
-                  <div key={e.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: i < recentCollections.length - 1 ? "1px solid var(--border)" : "none" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+                {recentCollections.map((e, i) => (
+                  <div key={e.id || i} className="card" style={{ padding: "10px 12px" }}>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{e.collectionType || "Collection"}</div>
                       <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
@@ -594,7 +628,7 @@ export default function CustomersScreen({
                     </div>
                     <span style={{ fontSize: 15, fontWeight: 700, color: "var(--jade, var(--accent))" }}>{fmtMoney(Number(e.amount || 0), sym)}</span>
                   </div>
-                ))
+                ))}</div>
               )}
             </div>
           </Modal>

@@ -703,6 +703,19 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     openExternal(url);
   }
 
+  function openFlatProfileDetail(flat) {
+    if (!flat?.id && !flat?.value) return;
+    window.dispatchEvent(new CustomEvent("ledger:navigate", {
+      detail: {
+        tab: "org",
+        screen: "customer-detail",
+        customerId: flat.id || "",
+        customerName: flat.value || "",
+        returnToTab: "income"
+      }
+    }));
+  }
+
   if (!d.loaded) {
     return <SectionSkeleton rows={4} />;
   }
@@ -779,17 +792,24 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                     {paidFlatsCount} flat{paidFlatsCount !== 1 ? "s" : ""} already marked as paid this month — the monthly amount is locked. Mark them as pending first if you need to change it. Note: changing the amount will affect records for all pending flats.
                   </div>
                 )}
-                <div className="card" style={{ marginBottom: 10, padding: 10 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(6, minmax(0, 1fr))", gap: 8 }}>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Flats</div><div style={{ fontSize: 13, fontWeight: 700 }}>{apartmentCollectionMetrics.totalFlats}</div></div>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Paid</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{apartmentCollectionMetrics.paidFlats}</div></div>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pending</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold)" }}>{apartmentCollectionMetrics.pendingFlats}</div></div>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Expected</div><div style={{ fontSize: 12, fontWeight: 700 }}>{fmtMoney(apartmentCollectionMetrics.expectedAmount, sym)}</div></div>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Collected</div><div style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(apartmentCollectionMetrics.collectedAmount, sym)}</div></div>
-                    <div><div style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em" }}>Pending Amt</div><div style={{ fontSize: 12, fontWeight: 700, color: "var(--gold)" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div></div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
+                  <div className="card" style={{ padding: isMobile ? 9 : 12, borderLeft: "3px solid var(--accent)" }}>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 700 }}>Paid</div>
+                    <div style={{ marginTop: 3, fontSize: isMobile ? 16 : 20, fontWeight: 800, color: "var(--text)" }}>{apartmentCollectionMetrics.paidFlats}/{apartmentCollectionMetrics.totalFlats}</div>
+                    <div style={{ marginTop: 2, fontSize: 10, color: "var(--accent)", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtMoney(apartmentCollectionMetrics.collectedAmount, sym)}</div>
+                  </div>
+                  <div className="card" style={{ padding: isMobile ? 9 : 12, borderLeft: "3px solid var(--gold)" }}>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 700 }}>Pending</div>
+                    <div style={{ marginTop: 3, fontSize: isMobile ? 16 : 20, fontWeight: 800, color: "var(--text)" }}>{apartmentCollectionMetrics.pendingFlats}</div>
+                    <div style={{ marginTop: 2, fontSize: 10, color: "var(--gold)", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtMoney(apartmentCollectionMetrics.pendingAmount, sym)}</div>
+                  </div>
+                  <div className="card" style={{ padding: isMobile ? 9 : 12, borderLeft: "3px solid var(--blue)" }}>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", fontWeight: 700 }}>Expected</div>
+                    <div style={{ marginTop: 3, fontSize: isMobile ? 16 : 20, fontWeight: 800, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fmtMoney(apartmentCollectionMetrics.expectedAmount, sym)}</div>
+                    <div style={{ marginTop: 2, fontSize: 10, color: "var(--text-dim)", fontWeight: 700 }}>{MONTHS[month].slice(0, 3)} {year}</div>
                   </div>
                 </div>
-                <div style={{ position: "sticky", top: 6, zIndex: 2, background: "var(--card)", borderRadius: 10, paddingBottom: 6, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto auto auto", gap: 8, marginBottom: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(150px, 190px)", gap: 8, marginBottom: 10 }}>
                   <Input placeholder="Search flat / owner" value={flatSearchTerm} onChange={event => setFlatSearchTerm(event.target.value)} />
                   <Select value={flatStatusFilter} onChange={event => setFlatStatusFilter(event.target.value)}>
                     <option value="all">All</option>
@@ -811,67 +831,88 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                     itemLabel="flats"
                   />
                 </div>
-                <div className="card" style={{ marginBottom: 0 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(220px, 1fr))", gap: isMobile ? 8 : 10 }}>
                   {paginatedApartmentCollectionStatus.map(flat => {
-                    // Meta-line states (in priority order):
-                    //   • No rate set      → "Set maintenance amount"
-                    //   • Paid this month  → "{owner} · Rs X collected" (Paid pill)
-                    //   • Arrears > 0      → "{owner} · Rs Y across N months overdue" (Arrears pill)
-                    //   • Otherwise        → "{owner} · Rs X/month" (Pending pill)
-                    // Previously the meta always read "Due Rs X" which contradicted the
-                    // Paid pill when the flat had been marked paid for the month.
-                    const owner = flat.ownerName || "No owner";
-                    let metaRight = "";
-                    if (flat.monthlyAmount <= 0) {
-                      metaRight = "Set maintenance amount";
-                    } else if (flat.paidEntry) {
-                      metaRight = `${fmtMoney(Number(flat.paidEntry.amount || flat.monthlyAmount), sym)} collected`;
-                    } else if (flat.arrearsAmount > 0) {
-                      metaRight = `${fmtMoney(flat.arrearsAmount + flat.monthlyAmount, sym)} outstanding · ${flat.arrearsMonths.length} month${flat.arrearsMonths.length === 1 ? "" : "s"} overdue`;
-                    } else {
-                      metaRight = `${fmtMoney(flat.monthlyAmount, sym)}/month`;
-                    }
                     const statusPill = flat.paidEntry
                       ? { label: "Paid", bg: "var(--accent-deep)", color: "var(--accent)" }
                       : flat.arrearsAmount > 0
                         ? { label: "Overdue", bg: "var(--danger-deep)", color: "var(--danger)" }
                         : flat.monthlyAmount > 0
                           ? { label: "Pending", bg: "var(--gold-deep)", color: "var(--gold)" }
-                          : null;
+                          : { label: "No amount", bg: "var(--surface-high)", color: "var(--text-dim)" };
+                    const primaryAmount = flat.paidEntry
+                      ? Number(flat.paidEntry.amount || flat.monthlyAmount)
+                      : flat.monthlyAmount;
+                    const amountCaption = flat.paidEntry
+                      ? `Collected on ${fmtDate(flat.paidEntry.date || TODAY)}`
+                      : flat.monthlyAmount > 0
+                        ? "Monthly maintenance"
+                        : "Set maintenance amount";
+                    const arrearsLabel = flat.arrearsAmount > 0 && !flat.paidEntry
+                      ? `${fmtMoney(flat.arrearsAmount, sym)} arrears from ${flat.arrearsMonths.length} month${flat.arrearsMonths.length === 1 ? "" : "s"}`
+                      : "";
 
                     return (
-                    <div key={flat.id} className="ledger-feed-row" style={{ alignItems: "center" }}>
-                      <div>
-                        <div className="ledger-feed-title">{flat.value}</div>
-                        <div className="ledger-feed-meta">
-                          {[owner, metaRight].filter(Boolean).join(" · ")}
+                    <div
+                      key={flat.id}
+                      className="card"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openFlatProfileDetail(flat)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openFlatProfileDetail(flat);
+                        }
+                      }}
+                      style={{ padding: isMobile ? 9 : 12, display: "grid", gap: isMobile ? 7 : 10, borderColor: flat.paidEntry ? "var(--accent-deep)" : flat.arrearsAmount > 0 ? "var(--danger-deep)" : "var(--border)", cursor: "pointer" }}
+                    >
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: isMobile ? 14 : 15, fontWeight: 800, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{flat.value}</div>
                         </div>
+                        <span className="pill" style={{ background: statusPill.bg, color: statusPill.color, flexShrink: 0, fontSize: isMobile ? 9 : undefined, padding: isMobile ? "3px 6px" : undefined }}>{statusPill.label}</span>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        {statusPill && (
-                          <span className="pill" style={{ background: statusPill.bg, color: statusPill.color }}>{statusPill.label}</span>
-                        )}
-                        {!isViewerMode && (
-                          <button className="ledger-action-btn" onClick={() => openBulkCollectionDraft(flat)}>
-                            Review
-                          </button>
-                        )}
-                        {!isViewerMode && isCurrentViewedMonth && !flat.paidEntry && (
-                          <button
-                            className="ledger-action-btn"
-                            style={{ color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
-                            disabled={pendingFlatPayments.includes(flat.id) || !(Number(bulkMaintenanceAmount) > 0)}
-                            title={!(Number(bulkMaintenanceAmount) > 0) ? "Set the monthly maintenance amount above before marking as paid" : undefined}
-                            onClick={() => markFlatAsPaid(flat)}
-                          >
-                            {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark as Paid"}
-                          </button>
+
+                      <div>
+                        <div style={{ fontSize: isMobile ? 16 : 19, fontWeight: 800, color: flat.paidEntry ? "var(--accent)" : flat.arrearsAmount > 0 ? "var(--danger)" : "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {primaryAmount > 0 ? fmtMoney(primaryAmount, sym) : "Amount not set"}
+                        </div>
+                        <div style={{ marginTop: 2, fontSize: 10, color: "var(--text-dim)", lineHeight: 1.35, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{amountCaption}</div>
+                        {arrearsLabel && (
+                          <div style={{ marginTop: 3, fontSize: 10, color: "var(--danger)", fontWeight: 700, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {arrearsLabel}
+                          </div>
                         )}
                       </div>
+
+                      {!isViewerMode && (
+                        <div style={{ display: "grid", gridTemplateColumns: flat.paidEntry ? "1fr" : isCurrentViewedMonth ? "1fr 1fr" : "1fr", gap: 8 }}>
+                          <button className="ledger-action-btn" style={{ minHeight: isMobile ? 30 : 34, fontSize: isMobile ? 11 : undefined, padding: isMobile ? "4px 6px" : undefined }} onClick={event => { event.stopPropagation(); openBulkCollectionDraft(flat); }}>
+                            {flat.paidEntry ? "Review" : "Edit"}
+                          </button>
+                          {isCurrentViewedMonth && !flat.paidEntry && (
+                            <button
+                              className="ledger-action-btn"
+                              style={{ minHeight: isMobile ? 30 : 34, fontSize: isMobile ? 11 : undefined, padding: isMobile ? "4px 6px" : undefined, color: !(Number(bulkMaintenanceAmount) > 0) ? undefined : "var(--accent)" }}
+                              disabled={pendingFlatPayments.includes(flat.id) || !(Number(bulkMaintenanceAmount) > 0)}
+                              title={!(Number(bulkMaintenanceAmount) > 0) ? "Set the monthly maintenance amount above before marking as paid" : undefined}
+                              onClick={event => { event.stopPropagation(); markFlatAsPaid(flat); }}
+                            >
+                              {pendingFlatPayments.includes(flat.id) ? "Saving..." : "Mark paid"}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     );
                   })}
                 </div>
+                {visibleApartmentCollectionStatus.length === 0 && (
+                  <div className="card" style={{ marginTop: 10, padding: "22px 16px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+                    No flats match this search.
+                  </div>
+                )}
               </>
             )}
           </div>

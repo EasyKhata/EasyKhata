@@ -1374,25 +1374,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             )}
           </div>
 
-          {/* Top Expenses collapsible */}
-          {top5Expenses.length > 0 && (
-            <div className="anim-fade-up-5" style={{ marginTop: 14 }}>
-              <Collapsible title={`Top Expenses · ${viewMode === "month" ? MONTHS[month] : year}`} icon="◎" color="var(--ember)" count={top5Expenses.length} defaultOpen={false}>
-                <div className="card">
-                  {top5Expenses.map((expense, index) => (
-                    <div key={expense.id || index} className="ledger-feed-row">
-                      <div className="ledger-feed-main" style={{ minWidth: 0 }}>
-                        <div className="ledger-feed-title" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{expense.note || expense.category || "Expense"}</div>
-                        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>{[expense.category, expense.date].filter(Boolean).join(" · ")}</div>
-                      </div>
-                      <span className="ledger-feed-amount" style={{ color: "var(--ember)", flexShrink: 0 }}>{fmtMoney(Number(expense.amount || 0), sym)}</span>
-                    </div>
-                  ))}
-                </div>
-              </Collapsible>
-            </div>
-          )}
-
         </div>
         {onboardingGuide}
       </div>
@@ -1925,10 +1906,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <div style={{ marginBottom: 14, padding: "12px 14px", background: reviewAccessEnabled ? "color-mix(in srgb, var(--sky) 8%, var(--canvas))" : currentPlan === PLANS.FREE ? "color-mix(in srgb, var(--saffron) 8%, var(--canvas))" : "color-mix(in srgb, var(--jade) 8%, var(--canvas))", borderRadius: 14, border: `1px solid color-mix(in srgb, ${reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)"} 22%, var(--line-2))`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
-                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Choose a Plan" : `${currentPlan === PLANS.BUSINESS ? "Business" : "Pro"} Active`}
+                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Choose a Plan" : `${currentPlan === PLANS.PRO_PLUS ? "Pro+" : "Pro"} Active`}
               </div>
               <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
-                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Pro gives 2 paid Khatas; Business gives 5 paid Khatas" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "Paid features active"}
+                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Pro gives one Khata per paid type; Pro+ gives 5 paid Khatas" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "Paid features active"}
               </div>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", whiteSpace: "nowrap" }}>
