@@ -229,7 +229,7 @@ export function StatChip({ label, value, color = "var(--jade)", sub, onClick }) 
 const CAT_COLORS = {
   Income: "var(--jade)", Salary: "var(--jade)", Invoice: "var(--sky)", Payment: "var(--sky)",
   Groceries: "var(--saffron)", Food: "var(--saffron)", Rent: "var(--orchid)", Housing: "var(--orchid)",
-  EMI: "var(--saffron)", Utilities: "var(--sky)", Entertainment: "var(--ember)",
+  Utilities: "var(--sky)", Entertainment: "var(--ember)",
   Transport: "var(--sky)", Education: "var(--orchid)", Healthcare: "var(--ember)",
   Shopping: "var(--saffron)", Staff: "var(--orchid)", Maintenance: "var(--jade)",
   Sales: "var(--jade)", Payroll: "var(--ember)", Operations: "var(--sky)",

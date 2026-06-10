@@ -376,9 +376,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
   const [createOrgForm, setCreateOrgForm] = useState({
     name: "",
-    organizationType: getOrgType(account?.organizationType || user?.organizationType) === ORG_TYPES.PERSONAL
-      ? ORG_TYPES.FREELANCER
-      : getOrgType(account?.organizationType || user?.organizationType),
+    organizationType: getOrgType(account?.organizationType || user?.organizationType),
     addressLine: "",
     city: "",
     district: "",
@@ -418,14 +416,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const isOrgMode = sectionMode === "org";
   const orgType = getOrgType(accForm.organizationType || account?.organizationType || user?.organizationType);
   const planSummary = getPlanSummary(user, orgType, account, ownedOrganizations);
-  const isPrimaryHouseholdOrg = orgType === ORG_TYPES.PERSONAL;
-  const canChangeOrgType = (user?.role === "admin" || canChangeOrgTypeFn(user)) && !isPrimaryHouseholdOrg;
-  const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
+  const canChangeOrgType = user?.role === "admin" || canChangeOrgTypeFn(user);
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
   const showApartmentWhatsappField = isApartmentOrg;
-  const showOrgBusinessFields = !isPersonalOrg;
-  const showPersonContactFields = orgType !== "apartment" && orgType !== ORG_TYPES.PERSONAL;
+  const showOrgBusinessFields = true;
+  const showPersonContactFields = orgType !== "apartment";
   const orgConfig = getOrgConfig(orgType);
   const showFullCustomerForm = showPersonContactFields && !orgConfig.simpleCustomerForm;
   const paidOrgCount = getOwnedPaidOrgCount(ownedOrganizations);
@@ -442,15 +438,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         subscriptionEndsAt: ""
       }];
     }
-    return (ownedOrganizations || []).filter(org => getOrgType(org.organizationType) !== ORG_TYPES.PERSONAL);
+    return ownedOrganizations || [];
   }, [ownedOrganizations, pendingNewOrgDraft]);
   const selectedPaymentOrg = paymentOrganizations.find(org => org.id === paymentOrgId) || paymentOrganizations[0] || null;
-  const selectableOrgTypeOptions = useMemo(() => {
-    if (isPrimaryHouseholdOrg) {
-      return ORG_TYPE_OPTIONS.filter(option => getOrgType(option.value) === ORG_TYPES.PERSONAL);
-    }
-    return getSecondaryOrgTypeOptions(accForm.organizationType || orgType);
-  }, [accForm.organizationType, orgType, isPrimaryHouseholdOrg]);
+  const selectableOrgTypeOptions = useMemo(() => (
+    getSecondaryOrgTypeOptions(accForm.organizationType || orgType)
+  ), [accForm.organizationType, orgType]);
   const selectableCreateOrgTypeOptions = useMemo(() => getSecondaryOrgTypeOptions(createOrgForm.organizationType), [createOrgForm.organizationType]);
 
   const [customerInsights, setCustomerInsights] = useState(customers);
@@ -460,16 +453,13 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   // so inline briefs and analytics show real data without needing to visit section tabs first.
   useEffect(() => {
     if (!CUSTOMER_SCREENS.has(screen)) return;
-    if (isPersonalOrg) {
-      ensureCollectionLoaded?.("expenses");
+    if (isApartmentOrg) {
       ensureCollectionLoaded?.("income");
-    }
-    if (isApartmentOrg)  ensureCollectionLoaded?.("income");
-    if (!isPersonalOrg && !isApartmentOrg) {
+    } else {
       ensureCollectionLoaded?.("income");
       ensureCollectionLoaded?.("invoices");
     }
-  }, [isPersonalOrg, isApartmentOrg, screen, ensureCollectionLoaded]);
+  }, [isApartmentOrg, screen, ensureCollectionLoaded]);
 
   useEffect(() => {
     // Only fetch when the user actually opens a customer screen — not on settings mount.
@@ -527,8 +517,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     [orgConfig, orgSectionKey]
   );
   const visibleOrgSections = useMemo(
-    () => (orgConfig.extraSections || []).filter(section => !(orgType === ORG_TYPES.PERSONAL && section.key === "loans")),
-    [orgConfig.extraSections, orgType]
+    () => orgConfig.extraSections || [],
+    [orgConfig.extraSections]
   );
   const selectedCustomerPayments = useMemo(
     () => selectedCustomer?.payments || [],
@@ -604,11 +594,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
 
   async function confirmOrgTypeChange() {
     if (!pendingOrgTypeChange?.nextAccount) return;
-    if (isPrimaryHouseholdOrg) {
-      setPendingOrgTypeChange(null);
-      showNotice("Household stays as your default Khata and cannot change type.");
-      return;
-    }
     resetForOrgTypeChange(pendingOrgTypeChange.nextAccount);
     setPendingOrgTypeChange(null);
     showNotice("Khata type changed. Existing records were cleared.", "success");
@@ -719,7 +704,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     const rawType = getOrgType(account?.organizationType || user?.organizationType);
     setCreateOrgForm(current => ({
       ...current,
-      organizationType: rawType === ORG_TYPES.PERSONAL ? ORG_TYPES.FREELANCER : rawType
+      organizationType: rawType
     }));
   }, [account?.organizationType, user?.organizationType]);
 
@@ -933,11 +918,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       showNotice("Please enter a valid 6-digit Indian pincode.");
       return;
     }
-    if (duplicateOrgType && cleanOrganizationType === ORG_TYPES.PERSONAL) {
-      showNotice("Household is already your default Khata.");
-      return;
-    }
-
     const nextAccount = {
       ...account,
       name: cleanName,
@@ -1409,7 +1389,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
       return;
     }
     if (pendingNewOrgDraft && !canCreatePaidOrg(user, ownedOrganizations, targetPlan, targetOrgType)) {
-      showNotice(`${PLAN_LABELS[targetPlan]} cannot create this Khata. Choose Pro+ or remove another paid Khata.`);
+      showNotice("Your account can own only one Khata. Shared admin or viewer access does not count against this limit.");
       return;
     }
 
@@ -1903,7 +1883,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   const MenuRow = ({ icon, label, sub, onClick, color, danger, disabled, badge }) => {
     const resolvedLabel = label === "Switch Khata" ? "Manage Khatas" : label;
     const resolvedSub = label === "Switch Khata"
-      ? (organizations.length > 1 ? `${organizations.length} unique Khatas — open, review, or delete` : "Create or review your available Khata workspaces")
+      ? (organizations.length > 1 ? `${organizations.length} available Khatas — owned and shared access` : "Review your available Khata access")
       : sub;
     return (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
@@ -1944,9 +1924,9 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             <div className="card">
               <MenuRow icon="B" label="Khata Profile" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              <MenuRow icon="K" label="Manage Khatas" sub={`${organizations.length} Khatas — switch, review, or manage workspaces`} onClick={() => setShowOrgSwitcher(true)} />
+              <MenuRow icon="K" label="Manage Khatas" sub={`${organizations.length} Khatas — owned and shared access`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
-                <MenuRow icon="+" label="New Khata" sub="Create another khata for a different use type" onClick={() => {
+                <MenuRow icon="+" label="New Khata" sub="Create your one owned Small Business or Apartment khata" onClick={() => {
                   setPendingNewOrgDraft(null);
                   setCreateOrgForm({ name: "", organizationType: ORG_TYPES.FREELANCER, addressLine: "", city: "", district: "", state: "", pincode: "", country: "India" });
                   setScreen("create-org");
@@ -2006,7 +1986,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               {isFreelancerOrg && !isViewerMode && (
                 <MenuRow icon="↑" label="Import Data" sub="Import payments, spends, or invoices from a CSV file" onClick={() => setScreen("business-import")} />
               )}
-              {!isPersonalOrg && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />}
+              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
                   icon="B"
@@ -2034,27 +2014,6 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               ))}
             </div>
           </div>
-
-          {isPersonalOrg && (
-            <div className="ledger-block">
-              <div className="ledger-block-header">
-                <div className="ledger-block-title">Savings Goal</div>
-                <div className="ledger-block-caption">Track one clear savings target alongside your monthly cashflow.</div>
-              </div>
-              <div className="card">
-                <MenuRow
-                  icon="G"
-                  label="Savings Goal"
-                  sub={
-                    Number(goals?.targetAmount || 0) > 0
-                      ? `Target: ${fmtMoney(Number(goals.targetAmount), currency?.symbol || "Rs")} · Saved: ${fmtMoney(Number(goals.savedAmount || 0), currency?.symbol || "Rs")}`
-                      : "Set a target, track progress, and add a note"
-                  }
-                  onClick={() => setScreen("savings-goal")}
-                />
-              </div>
-            </div>
-          )}
 
           {isApartmentOrg && (
             <div className="ledger-block">
@@ -2215,34 +2174,32 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             <div className="card" style={{ padding: 14 }}>
               <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55, marginBottom: 12 }}>
-              {isPersonalOrg
-                ? "Household Khata is permanently free. All features are included at no cost — no trial, no subscription required."
-                : reviewAccessEnabled
+              {reviewAccessEnabled
                 ? "Review mode is active. Reports, alerts, PDF exports, and advanced insights are fully unlocked for users right now, and upgrade requests are disabled."
                 : isPaidActive(user) && user?.subscriptionStatus === "active"
-                  ? `${PLAN_LABELS[currentPlan] || "Plan"} is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. You are using ${paidOrgCount}/${paidOrgLimit} paid Khata slots.`
+                  ? `${PLAN_LABELS[currentPlan] || "Plan"} is active${user?.subscriptionEndsAt ? ` until ${formatSubscriptionDate(user.subscriptionEndsAt)}` : ""}. You are using ${paidOrgCount}/${paidOrgLimit} owned Khata.`
                   : currentPlan !== PLANS.FREE && user?.subscriptionStatus === "trial"
-                    ? `${PLAN_LABELS[currentPlan] || "Pro"} trial is active. Household is free, and paid Khatas use your plan slots.`
-                    : "Household is free. Pro gives one Khata for each paid type; Pro+ gives 5 paid Khatas."}
+                    ? `${PLAN_LABELS[currentPlan] || "Pro"} trial is active for your one owned Khata.`
+                    : "Pro lets you manage one Small Business or Apartment Khata for Rs 99/month or Rs 999/year."}
             </div>
-            {!isPersonalOrg && (
+            {(
               <>
                   <div className="card" style={{ padding: 12, background: "var(--surface-high)", marginBottom: 12 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     <div>
                       <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--accent)" : "var(--text-dim)", marginBottom: 6 }}>
-                        {reviewAccessEnabled ? "Review Access" : "Free"}
+                        {reviewAccessEnabled ? "Review Access" : "No active subscription"}
                       </div>
                         <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>
-                        {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Basic bookkeeping, limited invoices/customers, and no reports."}
+                        {reviewAccessEnabled ? "All premium features are open for feedback and testing. Users do not need to upgrade or submit payment proof right now." : "Existing data stays available, but creating or editing records requires an active Pro subscription or trial."}
                       </div>
                     </div>
                     <div>
                       <div className="ledger-overline" style={{ color: reviewAccessEnabled ? "var(--blue)" : "var(--accent)", marginBottom: 6 }}>
-                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro / Pro+"}
+                        {reviewAccessEnabled ? "Upgrade Flow" : "Pro"}
                       </div>
                         <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>
-                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "Pro: one paid Khata per paid type for Rs 99/month or Rs 999/year. Pro+: 5 paid Khatas for Rs 199/month or Rs 1999/year."}
+                        {reviewAccessEnabled ? "Temporarily disabled while you collect product feedback from early users." : "One plan: one owned Small Business or Apartment Khata for Rs 99/month or Rs 999/year."}
                       </div>
                     </div>
                   </div>
@@ -2252,7 +2209,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{PLAN_LABELS[currentPlan] || "Plan"} Active</div>
-                      <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>{paidOrgCount}/{paidOrgLimit} paid Khatas used</div>
+                      <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>{paidOrgCount}/{paidOrgLimit} owned Khata used</div>
                       {user?.subscriptionEndsAt && (
                         <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 1 }}>Renews on {formatSubscriptionDate(user.subscriptionEndsAt)}</div>
                       )}
@@ -2279,7 +2236,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                   <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "var(--surface-high)", border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-sec)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 }}>If your subscription expires</div>
                     <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55 }}>
-                      Your data is never deleted when a plan expires. Paid Khatas switch to read-only — you can view and export everything, but adding new entries requires renewing. Your household Khata stays free and fully active regardless. Contact <a href={`mailto:${APP_SUPPORT_EMAIL}`} style={{ color: "var(--accent)" }}>{APP_SUPPORT_EMAIL}</a> if you need help exporting your data.
+                      Your data is never deleted when a plan expires. Your owned khata switches to read-only — you can view and export everything, but adding new entries requires renewing. Contact <a href={`mailto:${APP_SUPPORT_EMAIL}`} style={{ color: "var(--accent)" }}>{APP_SUPPORT_EMAIL}</a> if you need help exporting your data.
                     </div>
                   </div>
                 )}
@@ -2527,7 +2484,17 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
   if (screen === "create-org") {
     if (user?.role === "admin") return null;
 
-    // Paid (or trial with 0 orgs): show create form filtered to unowned types
+    if (ownedOrganizations.length >= 1) {
+      return withNotice(
+        <Modal title="One Khata Limit" onClose={() => setScreen("main")}>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
+            Your account can own one Small Business or Apartment Khata. You can still access shared khatas where another owner has invited you as an admin, viewer, or resident.
+          </div>
+        </Modal>
+      );
+    }
+
+    // Paid or trial users without an owned org can create their one khata.
     const availableTypes = getSecondaryOrgTypeOptions(createOrgForm.organizationType);
 
     async function handleCreateOrg() {
@@ -2563,12 +2530,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
         location: cleanLocation,
         address: cleanAddress
       };
-      if (newOrgType !== ORG_TYPES.PERSONAL && !canCreatePaidOrg(user, ownedOrganizations, null, newOrgType)) {
+      if (!canCreatePaidOrg(user, ownedOrganizations, null, newOrgType)) {
         setPendingNewOrgDraft(draft);
         setPaymentOrgId(draft.orgId);
         setPlanRequestForm(current => ({
           ...current,
-          targetPlan: canCreatePaidOrg(user, ownedOrganizations, PLANS.PRO, newOrgType) ? PLANS.PRO : PLANS.PRO_PLUS
+          targetPlan: PLANS.PRO
         }));
         setScreen("plan-request");
         showNotice("Choose a plan to create and activate this Khata.");
@@ -2647,7 +2614,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
           </Field>
         </div>
         <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginTop: 4 }}>
-          You currently have {organizations.length} of {maxOrganizations} Khatas.
+          You currently own {ownedOrganizations.length} of {maxOrganizations} allowed Khata.
         </div>
       </Modal>
     );
@@ -2975,7 +2942,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     );
   }
 
-  if (screen === "savings-goal" && isPersonalOrg) {
+  if (screen === "savings-goal") {
     const sym = currency?.symbol || "Rs";
     return withNotice(
       <Modal

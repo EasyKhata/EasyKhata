@@ -104,10 +104,10 @@ export default function ProfileModal({ form, onFormChange, onSave, onClose, user
         </Select>
       </Field>
 
-      {/* Promotional-push opt-out. Transactional notifications (EMI due,
+      {/* Promotional-push opt-out. Transactional notifications (payment due,
           payment received, invite, etc.) are not affected by this toggle —
           they always fire as long as the device permission is granted. */}
-      <Field label="Promotional notifications" hint="Offers, festive announcements, and product updates. Reminders for EMIs, invoices, and payments are unaffected.">
+      <Field label="Promotional notifications" hint="Offers, festive announcements, and product updates. Reminders for invoices, collections, and payments are unaffected.">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "var(--surface-high)", borderRadius: 12 }}>
           <span style={{ fontSize: 15, color: "var(--text)" }}>
             {form.marketingPushEnabled !== false ? "Receive offers and updates" : "No promotional messages"}

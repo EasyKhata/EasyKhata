@@ -34,7 +34,6 @@ const CTA_TYPES = [
 
 const ORG_TARGETS = [
   { value: "all", label: "All orgs" },
-  { value: ORG_TYPES.PERSONAL, label: "Household" },
   { value: ORG_TYPES.FREELANCER, label: "Small Business" },
   { value: ORG_TYPES.APARTMENT, label: "Apartment" }
 ];

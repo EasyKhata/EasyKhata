@@ -1,13 +1,11 @@
 # EasyKhata
 
-EasyKhata is a mobile-first ledger app that helps users manage money operations across different workflows in one place:
+EasyKhata is a mobile-first ledger app that helps users manage money operations across two workflows in one place:
 
-- Small business bookkeeping
-- Freelancer billing and collections
-- Personal/household tracking
+- Small business bookkeeping, billing, and collections
 - Apartment/society accounting
 
-The core value proposition is adaptive workflows by organization type while keeping a single app shell and a consistent experience.
+The app has two portals: the Admin Portal for owners/admins who manage a khata, and the Member Portal for invited non-admin users (residents, partners, viewers) who get scoped, mostly read-only access to a khata shared with them.
 
 ## Tech Stack
 
@@ -59,4 +57,4 @@ Preview production build:
 
 ## Product Positioning
 
-EasyKhata is designed for users who do not fit a single accounting template. Instead of separate apps for home, freelancing, and business, EasyKhata adapts sections and terminology based on workspace type while preserving one familiar UI.
+EasyKhata is designed for users who do not fit a single accounting template. Instead of separate apps for business and society management, EasyKhata adapts sections and terminology based on workspace type while preserving one familiar UI.

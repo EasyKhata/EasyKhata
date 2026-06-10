@@ -4,15 +4,6 @@ import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 
 const ORG_CARDS = [
   {
-    type: ORG_TYPES.PERSONAL,
-    icon: "🏠",
-    title: "Household",
-    desc: "Track family income, expenses, savings, and loans.",
-    namePlaceholder: "e.g. Family",
-    nameLabel: "Household Name",
-    color: "var(--accent)"
-  },
-  {
     type: ORG_TYPES.FREELANCER,
     icon: "💼",
     title: "Small Business",
@@ -103,7 +94,7 @@ export default function OnboardingGuide({ isOpen, onComplete, onNavigate, accoun
               ))}
             </div>
             <div style={{ marginTop: 18, padding: "10px 14px", borderRadius: 12, background: "var(--surface-high)", fontSize: 12, color: "var(--text-sec)", lineHeight: 1.65 }}>
-              You can add a second khata for a different type anytime from <strong>Settings → New Khata</strong>.
+              Your owner account can manage one khata. Invite admins, viewers, residents, or partners from Settings when you need to share access.
             </div>
           </div>
         ) : (

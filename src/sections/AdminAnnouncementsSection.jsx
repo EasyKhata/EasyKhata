@@ -14,12 +14,10 @@ const TYPE_OPTIONS = [
 const PLAN_OPTIONS = [
   { value: "all",      label: "All Users" },
   { value: "free",     label: "Free only" },
-  { value: "pro",      label: "Pro only" },
-  { value: "pro_plus", label: "Pro+ only" }
+  { value: "pro", label: "Pro only" }
 ];
 
 const ORG_TYPE_OPTIONS = [
-  { value: "personal",   label: "Household" },
   { value: "freelancer", label: "Small Business" },
   { value: "apartment",  label: "Apartment" }
 ];

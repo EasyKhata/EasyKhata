@@ -1,12 +1,10 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
 import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEntry } from "../components/ui/reimagined";
 import Tilt3D from "../components/Tilt3D";
 import { logError } from "../utils/logger";
 import {
-  getPersonalEmiDueDay,
-  getPersonalEmiAmount,
   getInvoiceStatusColor,
   getInvoiceStatusLabel,
   invoiceGrandTotal
@@ -18,284 +16,6 @@ import OnboardingGuide from "../components/OnboardingGuide";
 import Collapsible from "../components/Collapsible";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import AdCarousel from "../components/AdCarousel";
-
-function polarToCartesian(cx, cy, radius, angleInDegrees) {
-  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-  return {
-    x: cx + radius * Math.cos(angleInRadians),
-    y: cy + radius * Math.sin(angleInRadians)
-  };
-}
-
-function describeArc(cx, cy, radius, startAngle, endAngle) {
-  const start = polarToCartesian(cx, cy, radius, endAngle);
-  const end = polarToCartesian(cx, cy, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
-  return `M ${cx} ${cy} L ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y} Z`;
-}
-
-function PersonalUsagePie({ stats, sym, viewMode, isMobile = false }) {
-  const totalIncome = Math.max(0, Number(stats.totalIncome || 0));
-  const totalExpense = Math.max(0, Number(stats.totalExpense || 0));
-  const totalEmi = Math.max(0, Number(stats.totalEmi || 0));
-  const shortfall = Math.max(0, totalExpense + totalEmi - totalIncome);
-  const segments = [
-    { label: "Spending", value: totalExpense, color: "var(--danger)" },
-    { label: "EMI", value: totalEmi, color: "var(--gold)" },
-    ...(shortfall > 0 ? [] : [{
-      label: "Remaining",
-      value: Math.max(0, totalIncome - totalExpense - totalEmi),
-      color: "var(--accent)"
-    }])
-  ].filter(item => item.value > 0);
-
-  const total = segments.reduce((sum, item) => sum + item.value, 0);
-
-  if (total <= 0) {
-    return (
-      <div className="card" style={{ padding: 18, marginBottom: 22 }}>
-        <WorkflowSetupCard
-          title="No earnings usage yet"
-          description={`Add earnings, spendings, or EMI entries to see how money is being used for this ${viewMode === "month" ? "month" : "year"}.`}
-          tone="info"
-        />
-      </div>
-    );
-  }
-
-  let startAngle = 0;
-
-  return (
-    <div className="card" style={{ padding: 18, marginBottom: 22 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>Earnings Usage</div>
-          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 4 }}>
-            {viewMode === "month" ? "How this month’s earnings are being used." : "How this year’s earnings are being used."}
-          </div>
-        </div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          Total tracked {fmtMoney(total, sym)}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 190px) minmax(0, 1fr)", gap: 20, alignItems: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <svg width={isMobile ? "156" : "190"} height={isMobile ? "156" : "190"} viewBox="0 0 190 190" role="img" aria-label="Earnings usage pie chart">
-            <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
-            {segments.map(segment => {
-              const angle = (segment.value / total) * 360;
-              const endAngle = startAngle + angle;
-              const path = describeArc(95, 95, 78, startAngle, endAngle);
-              startAngle = endAngle;
-              return <path key={segment.label} d={path} fill={segment.color} stroke="var(--bg)" strokeWidth="2" />;
-            })}
-            <circle cx="95" cy="95" r="42" fill="var(--bg)" />
-            <text x="95" y="90" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text-dim)", fontWeight: 700 }}>Net</text>
-            <text x="95" y="108" textAnchor="middle" style={{ fontSize: 13, fill: "var(--text)", fontWeight: 700 }}>
-              {fmtMoney(stats.netAfterEmi || 0, sym)}
-            </text>
-          </svg>
-        </div>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          {segments.map(segment => {
-            const pct = Math.round((segment.value / total) * 100);
-            return (
-              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
-                  <div className="ledger-feed-main">
-                    <div className="ledger-feed-title">{segment.label}</div>
-                    <div className="ledger-feed-meta">{pct}% of tracked usage</div>
-                  </div>
-                </div>
-                <div className="ledger-feed-side">
-                  <span className="ledger-feed-amount">{fmtMoney(segment.value, sym)}</span>
-                </div>
-              </div>
-            );
-          })}
-          {shortfall > 0 && (
-            <div className="ledger-feed-row" style={{ paddingInline: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ width: 12, height: 12, borderRadius: 999, background: "var(--purple)", flexShrink: 0 }} />
-                <div className="ledger-feed-main">
-                  <div className="ledger-feed-title">Shortfall</div>
-                  <div className="ledger-feed-meta">Extra outflow beyond earnings this period</div>
-                </div>
-              </div>
-              <div className="ledger-feed-side">
-                <span className="ledger-feed-amount" style={{ color: "var(--purple)" }}>{fmtMoney(shortfall, sym)}</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ApartmentUsagePie({ stats, sym, viewMode, isMobile = false }) {
-  const totalCollected = Math.max(0, Number(stats.totalIncome || 0));
-  const totalSpent = Math.max(0, Number(stats.totalExpense || 0));
-  const netAmount = Number(stats.profit || 0);
-  const pendingDueAmount = Math.max(0, Number(stats.pendingDuesAmount || 0));
-  const expenseShare = totalCollected > 0 ? Math.min(100, Math.round((totalSpent / totalCollected) * 100)) : 0;
-  const netShare = totalCollected > 0 ? Math.min(100, Math.round((Math.abs(netAmount) / totalCollected) * 100)) : 0;
-  const collectionEfficiency = Math.max(0, Math.round(stats.collectionRate || 0));
-  const segments = [
-    { label: "Money Spent", value: totalSpent, color: "var(--danger)" },
-    {
-      label: (stats.profit || 0) >= 0 ? "Balance Left" : "Shortfall",
-      value: Math.abs(netAmount),
-      color: (stats.profit || 0) >= 0 ? "var(--accent)" : "var(--gold)"
-    }
-  ].filter(item => item.value > 0);
-
-  const total = segments.reduce((sum, item) => sum + item.value, 0);
-
-  if (total <= 0) {
-    return (
-      <div className="card" style={{ padding: 18, marginBottom: 22 }}>
-        <WorkflowSetupCard
-          title="No society usage yet"
-          description={`Add collections and society expenses to see how funds are being used for this ${viewMode === "month" ? "month" : "year"}.`}
-          tone="info"
-        />
-      </div>
-    );
-  }
-
-  let startAngle = 0;
-
-  return (
-    <div className="card" style={{ padding: 14, marginBottom: 18 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Collections Usage</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3 }}>
-            {viewMode === "month" ? "How this month’s collections are being used." : "How this year’s collections are being used."}
-          </div>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-          Total collected {fmtMoney(totalCollected, sym)}
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 12, padding: 10, background: "color-mix(in srgb, var(--surface-high) 92%, transparent)" }}>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
-          <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Collection</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>{collectionEfficiency}%</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Spent</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--danger)" }}>{expenseShare}%</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{netAmount >= 0 ? "Balance" : "Shortfall"}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: netAmount >= 0 ? "var(--accent)" : "var(--gold)" }}>{netShare}%</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: "var(--text-dim)" }}>Pending Dues</div>
-            <div style={{ fontSize: 12, fontWeight: 700, color: pendingDueAmount > 0 ? "var(--gold)" : "var(--text)" }}>{fmtMoney(pendingDueAmount, sym)}</div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 176px) minmax(0, 1fr)", gap: 14, alignItems: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <svg width={isMobile ? "148" : "176"} height={isMobile ? "148" : "176"} viewBox="0 0 190 190" role="img" aria-label="Collections usage pie chart">
-            <circle cx="95" cy="95" r="78" fill="var(--surface-high)" />
-            {segments.map(segment => {
-              const angle = (segment.value / total) * 360;
-              const endAngle = startAngle + angle;
-              const path = describeArc(95, 95, 78, startAngle, endAngle);
-              startAngle = endAngle;
-              return <path key={segment.label} d={path} fill={segment.color} stroke="var(--bg)" strokeWidth="2" />;
-            })}
-            <circle cx="95" cy="95" r="42" fill="var(--bg)" />
-            <text x="95" y="90" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text-dim)", fontWeight: 700 }}>Net</text>
-            <text x="95" y="108" textAnchor="middle" style={{ fontSize: 12, fill: "var(--text)", fontWeight: 700 }}>
-              {fmtMoney(stats.profit || 0, sym)}
-            </text>
-          </svg>
-        </div>
-
-        <div style={{ display: "grid", gap: 9 }}>
-          {segments.map(segment => {
-            const pct = Math.round((segment.value / total) * 100);
-            return (
-              <div key={segment.label} className="ledger-feed-row" style={{ paddingInline: 0, paddingBlock: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ width: 12, height: 12, borderRadius: 999, background: segment.color, flexShrink: 0 }} />
-                  <div className="ledger-feed-main">
-                    <div className="ledger-feed-title">{segment.label}</div>
-                    <div className="ledger-feed-meta">{pct}% of tracked usage</div>
-                  </div>
-                </div>
-                <div className="ledger-feed-side">
-                  <span className="ledger-feed-amount">{fmtMoney(segment.value, sym)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-function SavingsGoalCard({ goals, sym, onNav }) {
-  const target = Number(goals?.targetAmount || 0);
-  const saved = Number(goals?.savedAmount || 0);
-  const targetDate = String(goals?.targetDate || "");
-  const note = String(goals?.note || "");
-  const hasGoal = target > 0;
-  const progress = hasGoal ? Math.min(100, Math.round((saved / target) * 100)) : 0;
-  const remaining = Math.max(0, target - saved);
-
-  return (
-    <div className="card" style={{ padding: 18, marginBottom: 22, borderLeft: "4px solid var(--gold)" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Savings Goal</div>
-          {note && <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 3 }}>{note}</div>}
-        </div>
-        <button className="btn-secondary" type="button" style={{ padding: "6px 10px", fontSize: 11 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
-          Edit Goal
-        </button>
-      </div>
-      {hasGoal ? (
-        <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-            <span style={{ fontSize: 13, color: "var(--text-sec)" }}>Saved: <strong style={{ color: "var(--accent)" }}>{fmtMoney(saved, sym)}</strong></span>
-            <span style={{ fontSize: 13, color: "var(--text-sec)" }}>Target: <strong style={{ color: "var(--gold)" }}>{fmtMoney(target, sym)}</strong></span>
-          </div>
-          <div className="progress-bar-track" style={{ marginBottom: 8 }}>
-            <div style={{ width: `${progress}%`, height: "100%", background: progress >= 100 ? "var(--accent)" : "var(--gold)", borderRadius: 999, transition: "width 0.5s ease" }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>{progress}% complete</span>
-            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-              {remaining > 0 ? `${fmtMoney(remaining, sym)} to go` : "Goal reached!"}
-              {targetDate ? ` · By ${targetDate}` : ""}
-            </span>
-          </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 13, color: "var(--text-dim)", textAlign: "center", padding: "8px 0" }}>
-          No savings goal set.{" "}
-          <button type="button" style={{ background: "none", border: "none", color: "var(--gold)", fontWeight: 700, cursor: "pointer", padding: 0, fontSize: 13 }} onClick={() => onNav({ tab: "org", screen: "savings-goal" })}>
-            Set a goal
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
   const [expandedFlat, setExpandedFlat] = useState(null);
@@ -486,270 +206,6 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
   );
 }
 
-const MEMBER_COLORS = ["var(--accent)", "var(--blue)", "var(--gold)", "var(--jade)", "var(--saffron)"];
-
-function MemberSpendingCard({ expenses, sym, month, year, viewMode, onNav }) {
-  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const filtered = (expenses || []).filter(e => {
-    if (viewMode === "month") {
-      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
-      return em === mk;
-    }
-    const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
-    return ey === String(year);
-  });
-
-  if (filtered.length === 0) return null;
-
-  const byMember = {};
-  let unassigned = 0;
-  filtered.forEach(e => {
-    const name = String(e.personName || "").trim();
-    const amt = Number(e.amount || 0);
-    if (name) byMember[name] = (byMember[name] || 0) + amt;
-    else unassigned += amt;
-  });
-
-  const entries = Object.entries(byMember).sort((a, b) => b[1] - a[1]);
-  if (!entries.length && unassigned === 0) return null;
-  if (unassigned > 0) entries.push(["—", unassigned]);
-
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-
-  return (
-    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Spending by Member</div>
-        <button type="button" onClick={() => onNav("expenses")}
-          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
-          See all →
-        </button>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-        {entries.map(([name, amt], i) => {
-          const isUnassigned = name === "—";
-          const pct = Math.round((amt / total) * 100);
-          const color = isUnassigned ? "var(--border)" : MEMBER_COLORS[i % MEMBER_COLORS.length];
-          return (
-            <div key={name}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-                    background: isUnassigned ? "var(--surface-high)" : `color-mix(in srgb, ${color} 18%, var(--surface-high))`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 11, fontWeight: 800, color: isUnassigned ? "var(--text-dim)" : color
-                  }}>
-                    {isUnassigned ? "?" : name.slice(0, 1).toUpperCase()}
-                  </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: isUnassigned ? "var(--text-dim)" : "var(--text)" }}>
-                    {isUnassigned ? "Untagged" : name}
-                  </span>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: isUnassigned ? "var(--text-dim)" : "var(--text)" }}>{fmtMoney(amt, sym)}</div>
-                  <div style={{ fontSize: 10, color: "var(--text-dim)" }}>{pct}%</div>
-                </div>
-              </div>
-              <div style={{ height: 4, borderRadius: 999, background: "var(--surface-high)", overflow: "hidden" }}>
-                <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 999, transition: "width 0.4s ease" }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {unassigned > 0 && entries.length > 1 && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
-          Tag expenses to family members for a complete breakdown.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BudgetStatusCard({ budgets, expenses, sym, month, year, viewMode, onNav }) {
-  if (viewMode !== "month") return null;
-
-  const budgetEntries = Object.entries(budgets && typeof budgets === "object" ? budgets : {})
-    .filter(([, v]) => Number(v) > 0);
-
-  if (budgetEntries.length === 0) {
-    return (
-      <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Monthly Budgets</div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6, marginBottom: 10 }}>
-          Set category limits to track where you're on track and where you're overspending.
-        </div>
-        <button type="button" onClick={() => onNav("expenses")}
-          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
-          Set Budgets in Expenses →
-        </button>
-      </div>
-    );
-  }
-
-  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const spent = {};
-  (expenses || []).forEach(e => {
-    const em = e.month || (e.date ? e.date.slice(0, 7) : "");
-    if (em === mk && e.category) spent[e.category] = (spent[e.category] || 0) + Number(e.amount || 0);
-  });
-
-  const items = budgetEntries.map(([category, budget]) => {
-    const s = spent[category] || 0;
-    const limit = Number(budget) || 0;
-    const progress = limit > 0 ? (s / limit) * 100 : 0;
-    const tone = progress >= 100 ? "var(--danger)" : progress >= 80 ? "var(--gold)" : "var(--accent)";
-    return { category, budget: limit, spent: s, remaining: Math.max(0, limit - s), progress, tone };
-  }).sort((a, b) => b.progress - a.progress);
-
-  const overCount = items.filter(i => i.progress >= 100).length;
-  const warnCount = items.filter(i => i.progress >= 80 && i.progress < 100).length;
-  const statusColor = overCount > 0 ? "var(--danger)" : warnCount > 0 ? "var(--gold)" : "var(--accent)";
-  const statusText = overCount > 0
-    ? `${overCount} budget${overCount !== 1 ? "s" : ""} over limit`
-    : warnCount > 0
-    ? `${warnCount} running low`
-    : "All on track";
-
-  return (
-    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Monthly Budgets</div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: statusColor, marginTop: 2 }}>{statusText}</div>
-        </div>
-        <button type="button" onClick={() => onNav("expenses")}
-          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, cursor: "pointer", fontWeight: 700, padding: 0 }}>
-          Manage →
-        </button>
-      </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-        {items.map(item => (
-          <div key={item.category}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: item.tone, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{item.category}</span>
-              </div>
-              <span style={{ fontSize: 11, color: item.progress >= 100 ? "var(--danger)" : "var(--text-dim)" }}>
-                {fmtMoney(item.spent, sym)} / {fmtMoney(item.budget, sym)}
-              </span>
-            </div>
-            <div style={{ height: 5, borderRadius: 999, background: "var(--surface-high)", overflow: "hidden" }}>
-              <div style={{ width: `${Math.min(100, item.progress)}%`, height: "100%", background: item.tone, borderRadius: 999, transition: "width 0.4s ease" }} />
-            </div>
-            {item.progress >= 100 && (
-              <div style={{ fontSize: 10, color: "var(--danger)", marginTop: 3, fontWeight: 600 }}>
-                {fmtMoney(item.spent - item.budget, sym)} over
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function NeedsWantsCard({ expenses, sym, month, year, viewMode, onNav }) {
-  const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
-  const filtered = (expenses || []).filter(e => {
-    if (viewMode === "month") {
-      const em = e.month || (e.date ? e.date.slice(0, 7) : "");
-      return em === mk;
-    }
-    const ey = e.month ? e.month.slice(0, 4) : (e.date ? e.date.slice(0, 4) : "");
-    return ey === String(year);
-  });
-
-  const tagged = filtered.filter(e => e.necessityType === "Needs" || e.necessityType === "Wants");
-
-  if (tagged.length === 0) {
-    if (filtered.length === 0) return null;
-    return (
-      <div className="card" style={{ padding: "14px 16px", marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Needs vs Wants</div>
-        <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
-          Tag your expenses as <strong>Needs</strong> or <strong>Wants</strong> when adding them to see where your spending goes.
-        </div>
-      </div>
-    );
-  }
-
-  const needsTotal = tagged.filter(e => e.necessityType === "Needs").reduce((s, e) => s + Number(e.amount || 0), 0);
-  const wantsTotal = tagged.filter(e => e.necessityType === "Wants").reduce((s, e) => s + Number(e.amount || 0), 0);
-  const total = needsTotal + wantsTotal;
-  const needsPct = total > 0 ? Math.round((needsTotal / total) * 100) : 0;
-  const wantsPct = 100 - needsPct;
-  const untaggedCount = filtered.length - tagged.length;
-
-  const topCategories = (type) => Object.entries(
-    tagged.filter(e => e.necessityType === type).reduce((acc, e) => {
-      const cat = e.category || "Other";
-      acc[cat] = (acc[cat] || 0) + Number(e.amount || 0);
-      return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1]).slice(0, 2);
-
-  const insight = wantsPct > 50
-    ? "More than half your spending this month is discretionary."
-    : wantsPct > 30
-    ? `${wantsPct}% is on wants — room to optimize.`
-    : "Mostly essentials this month — looking healthy.";
-
-  return (
-    <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Needs vs Wants</div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{fmtMoney(total, sym)} tagged</div>
-      </div>
-      <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 12 }}>{insight}</div>
-
-      {/* Split bar */}
-      <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", marginBottom: 16 }}>
-        <div style={{ width: `${needsPct}%`, background: "var(--jade)", transition: "width 0.5s ease" }} />
-        <div style={{ width: `${wantsPct}%`, background: "var(--saffron)", transition: "width 0.5s ease" }} />
-      </div>
-
-      {/* Two columns */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--jade)", flexShrink: 0 }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--jade)" }}>Needs · {needsPct}%</span>
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>{fmtMoney(needsTotal, sym)}</div>
-          {topCategories("Needs").map(([cat, amt]) => (
-            <div key={cat} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 2 }}>{cat} · {fmtMoney(amt, sym)}</div>
-          ))}
-        </div>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--saffron)", flexShrink: 0 }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--saffron)" }}>Wants · {wantsPct}%</span>
-          </div>
-          <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>{fmtMoney(wantsTotal, sym)}</div>
-          {topCategories("Wants").map(([cat, amt]) => (
-            <div key={cat} style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 2 }}>{cat} · {fmtMoney(amt, sym)}</div>
-          ))}
-        </div>
-      </div>
-
-      {untaggedCount > 0 && (
-        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
-          {untaggedCount} expense{untaggedCount !== 1 ? "s" : ""} not tagged yet ·{" "}
-          <button type="button" onClick={() => onNav("expenses")} style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 11, cursor: "pointer", padding: 0 }}>
-            Tag in Expenses
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function toLocalDateKey(date = new Date()) {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -787,63 +243,9 @@ function sumDatedRecords(records, window, getAmount = record => Number(record?.a
   }, 0);
 }
 
-function getMonthKeysBetween(startDateKey, endDateKey) {
-  const [startYear, startMonth] = String(startDateKey).slice(0, 7).split("-").map(Number);
-  const [endYear, endMonth] = String(endDateKey).slice(0, 7).split("-").map(Number);
-  if (!startYear || !startMonth || !endYear || !endMonth) return [];
-  const keys = [];
-  const cursor = new Date(startYear, startMonth - 1, 1);
-  const end = new Date(endYear, endMonth - 1, 1);
-  while (cursor <= end) {
-    keys.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return keys;
-}
-
-function getMonthEndDateKey(monthKeyValue) {
-  const [yyyy, mm] = String(monthKeyValue).split("-").map(Number);
-  if (!yyyy || !mm) return `${monthKeyValue}-31`;
-  return toLocalDateKey(new Date(yyyy, mm, 0));
-}
-
-function getEmiStartDateKey(emi) {
-  if (emi?.startDate) return String(emi.startDate).slice(0, 10);
-  const legacyDate = String(emi?.dueDate || emi?.nextDueDate || "");
-  if (/^\d{4}-\d{2}-\d{2}$/.test(legacyDate)) return legacyDate;
-  return "";
-}
-
-function getEmiEndDateKey(emi) {
-  return String(emi?.endDate || "").slice(0, 10);
-}
-
-function isEmiActiveForMonthKey(emi, monthKeyValue) {
-  const periodStart = `${monthKeyValue}-01`;
-  const periodEnd = getMonthEndDateKey(monthKeyValue);
-  const startDate = getEmiStartDateKey(emi);
-  const endDate = getEmiEndDateKey(emi);
-  return (!startDate || startDate <= periodEnd) && (!endDate || endDate >= periodStart);
-}
-
-function calculateFinancialYearPaidEmi(data, window) {
-  const loans = data?.orgRecords?.loans || [];
-  const monthKeys = getMonthKeysBetween(window.start, window.end);
-  return monthKeys.reduce((sum, monthKeyValue) => (
-    sum + loans.reduce((monthSum, emi) => {
-      const paidMonths = Array.isArray(emi?.paidMonths) ? emi.paidMonths : [];
-      if (!isEmiActiveForMonthKey(emi, monthKeyValue) || !paidMonths.includes(monthKeyValue)) {
-        return monthSum;
-      }
-      return monthSum + Number(getPersonalEmiAmount(emi) || 0);
-    }, 0)
-  ), 0);
-}
-
-function buildFinancialYearSummary(data, window, { includePaidInvoices = false, includePaidEmi = false } = {}) {
+function buildFinancialYearSummary(data, window, { includePaidInvoices = false } = {}) {
   const incomeTotal = sumDatedRecords(data.income, window);
   const expenseTotal = sumDatedRecords(data.expenses, window);
-  const emiTotal = includePaidEmi ? calculateFinancialYearPaidEmi(data, window) : 0;
   const paidInvoiceTotal = includePaidInvoices
     ? sumDatedRecords(
         (data.invoices || []).filter(invoice => (
@@ -860,17 +262,15 @@ function buildFinancialYearSummary(data, window, { includePaidInvoices = false, 
     ...window,
     income: totalIncome,
     expenses: expenseTotal,
-    emi: includePaidEmi ? emiTotal : undefined,
-    balance: totalIncome - expenseTotal - emiTotal
+    balance: totalIncome - expenseTotal
   };
 }
 
-function FinancialYearSummaryCard({ summary, sym, incomeLabel = "Income", expenseLabel = "Expenses", emiLabel = "EMI" }) {
+function FinancialYearSummaryCard({ summary, sym, incomeLabel = "Income", expenseLabel = "Expenses" }) {
   const balanceColor = Number(summary.balance || 0) >= 0 ? "var(--jade)" : "var(--ember)";
   const items = [
     { label: incomeLabel, value: summary.income, color: "var(--jade)" },
     { label: expenseLabel, value: summary.expenses, color: "var(--ember)" },
-    ...(summary.emi !== undefined ? [{ label: emiLabel, value: summary.emi, color: "var(--saffron)" }] : []),
     { label: "Balance", value: summary.balance, color: balanceColor }
   ];
 
@@ -952,15 +352,13 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const orgType = getOrgType(data.account?.organizationType || user?.organizationType);
   const isApartmentOrg = orgType === ORG_TYPES.APARTMENT;
   const isFreelancerOrg = orgType === ORG_TYPES.FREELANCER;
-  const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
   const orgConfig = getOrgConfig(orgType);
   const financialYearWindow = useMemo(() => getCurrentFinancialYearWindow(), []);
   const financialYearSummary = useMemo(() => (
     buildFinancialYearSummary(data, financialYearWindow, {
-      includePaidInvoices: isFreelancerOrg,
-      includePaidEmi: isPersonalOrg
+      includePaidInvoices: isFreelancerOrg
     })
-  ), [data.income, data.expenses, data.invoices, data.orgRecords?.loans, financialYearWindow, isFreelancerOrg, isPersonalOrg]);
+  ), [data.income, data.expenses, data.invoices, financialYearWindow, isFreelancerOrg]);
   const EMPTY_STATS = {
     profit: 0, netAfterEmi: 0, totalIncome: 0, totalExpense: 0,
     cashFlow: [], monthlyBreakdown: [],
@@ -1028,19 +426,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const hasInvoiceRecord = (data.invoices || []).some(item => String(item?.documentType || "invoice") === "invoice");
   const hasIncomeRecord = (data.income || []).length > 0;
 
-  const allEmisPaidThisMonth = useMemo(() => {
-    const mk = `${year}-${String(month + 1).padStart(2, "0")}`;
-    const viewStart = `${mk}-01`;
-    const viewEnd = new Date(year, month + 1, 0).toISOString().slice(0, 10);
-    const loans = data.orgRecords?.loans || [];
-    const active = loans.filter(item => {
-      const sd = item.startDate || viewStart;
-      const ed = item.endDate || "";
-      return (!sd || sd <= viewEnd) && (!ed || ed >= viewStart);
-    });
-    return active.length > 0 && active.every(item => (item.paidMonths || []).includes(mk));
-  }, [data.orgRecords?.loans, month, year]);
-
   const heroTone = stats.profit >= 0 ? "var(--accent)" : "var(--danger)";
   const heroSub = viewMode === "month"
     ? (stats.profit >= 0 ? "You are staying profitable this month." : "Expenses are ahead of receipts this month.")
@@ -1077,39 +462,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       .slice(0, 5);
   }, [collectionFetched?.expenses, data.expenses, month, stats.topExpenseCategories, year, viewMode]);
 
-  const personalActions = hasCustomerRecord
-    ? [
-        { label: "Add income", onClick: () => onNav("income"), tone: "accent", dot: true },
-        { label: "Add spending", onClick: () => onNav("expenses"), tone: "danger" },
-        { label: "EMI tracker", onClick: () => onNav("emi"), tone: "gold" }
-      ]
-    : [
-        { label: "Add first person", onClick: () => onNav({ tab: "org", screen: "customers" }), tone: "accent", dot: true },
-        { label: "Open Khata", onClick: () => onNav("settings") }
-      ];
-  const personalSummary = !hasCustomerRecord
-    ? {
-        // Workspace is already created during onboarding; the next concrete
-        // step is adding the first family member so entries can be tagged.
-        title: "Add your first family member",
-        subtitle: "Tag every income, expense, and EMI to the right person so the dashboard can split things by member."
-      }
-    : !hasIncomeRecord
-      ? {
-          title: "Record this month’s first earning",
-          subtitle: "Start with income so the dashboard can explain what is left after spending and EMI commitments."
-        }
-      : stats.netAfterEmi < 0
-        ? {
-            title: "Cash flow needs attention",
-            subtitle: `${fmtMoney(Math.abs(stats.netAfterEmi || 0), sym)} more is going out than coming in ${viewMode === "month" ? "this month" : "this year"}.`
-          }
-        : {
-            title: "Household is on track",
-            subtitle: stats.totalEmi > 0
-              ? `${stats.activeLoansCount || 0} EMI record(s) are being tracked alongside spending and earnings.`
-              : "Income, spending, and goals are ready for planning."
-          };
   const apartmentActions = isViewerMode ? [] : [
     { label: "Add collection", onClick: () => onNav("income"), tone: "accent", dot: true },
     { label: "Add expense", onClick: () => onNav("expenses"), tone: "danger" },
@@ -1230,7 +582,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
       onUpdateAccount={async (accountInfo) => {
         try {
           const nextAccount = { ...data.account, ...accountInfo };
-          const currentType = getOrgType(data.account?.organizationType || user?.organizationType || ORG_TYPES.PERSONAL);
+          const currentType = getOrgType(data.account?.organizationType || user?.organizationType);
           const nextType = getOrgType(accountInfo.organizationType || currentType);
           if (nextType !== currentType) {
             data.resetForOrgTypeChange(nextAccount);
@@ -1373,157 +725,6 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <WorkflowSetupCard title="No entries yet" message="Use the button below to record your first maintenance collection or society expense." actionLabel={!isViewerMode ? "Add Collection" : undefined} onAction={!isViewerMode ? () => onNav("income") : undefined} tone="info" />
             )}
           </div>
-
-        </div>
-        {onboardingGuide}
-      </div>
-    );
-  }
-
-  if (isPersonalOrg) {
-    const netAfterEmi = Number(stats.netAfterEmi || 0);
-    const spendPct = Math.min(100, Math.round(stats.spendingRatio || 0));
-    const savingsGoal = Object.values(data.goals || {}).find(g => g.goalType === "savings" || g.type === "savings");
-    const savingsPct = savingsGoal ? Math.min(100, Math.round((Number(savingsGoal.currentAmount || 0) / Math.max(Number(savingsGoal.targetAmount || 1), 1)) * 100)) : 0;
-    const healthColor = savingsPct >= 80 ? "var(--jade)" : savingsPct >= 40 ? "var(--saffron)" : spendPct >= 90 ? "var(--ember)" : "var(--saffron)";
-
-    const recentIncomes = (data.income || []).slice(0, 3).map(item => ({ label: item.description || item.source || "Income", amount: Number(item.amount || 0), type: "in", category: item.category || "Income", date: item.date || "" }));
-    const recentExpenses = (data.expenses || []).slice(0, 3).map(item => ({ label: item.note || item.category || "Expense", amount: Number(item.amount || 0), type: "out", category: item.category || "Spending", date: item.date || "" }));
-    const recentTxns = [...recentIncomes, ...recentExpenses].sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
-    const trendData = (stats.monthlyBreakdown || stats.cashFlow || []).map(item => item.income || 0).filter(v => v > 0);
-    const isEmptyOrg = (data.income || []).length === 0 && (data.expenses || []).length === 0;
-
-    return (
-      <div className="ledger-screen">
-        <div className="ledger-block">
-
-          {/* Hero card */}
-          <Tilt3D
-            className="card-leather hero-presence anim-fade-up"
-            style={{
-              margin: "0 0 14px",
-              padding: "22px 22px 18px",
-              "--hero-glow": netAfterEmi >= 0 ? "var(--jade)" : "var(--ember)",
-              borderRadius: "var(--radius-lg, 18px)"
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="section-eyebrow" style={{ marginBottom: 6 }}>
-                  {MONTHS[month]} {year} · Household Hisaab
-                </div>
-                <div style={{ marginBottom: 4 }}>
-                  <RupeeDisplay amount={netAfterEmi} color={netAfterEmi >= 0 ? "var(--jade)" : "var(--ember)"} size={48} animate />
-                </div>
-                <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
-                  {netAfterEmi >= 0 ? "Net after EMI obligations" : "Household cash flow under pressure"}
-                </div>
-              </div>
-              {savingsGoal ? (
-                <HealthArc pct={savingsPct} size={84} color={healthColor} />
-              ) : (
-                headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>
-              )}
-            </div>
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 10, color: "var(--cream-3)", fontWeight: 600 }}>
-                  Spending {spendPct}% of earnings
-                </span>
-                <span style={{ fontSize: 10, color: "var(--cream-3)" }}>
-                  {sym}{(Number(stats.totalExpense || 0) / 1000).toFixed(1)}k / {sym}{(Number(stats.totalIncome || 0) / 1000).toFixed(1)}k
-                </span>
-              </div>
-              <ProgressLine value={Number(stats.totalExpense || 0)} max={Math.max(Number(stats.totalIncome || 0), 1)} color={spendPct < 65 ? "var(--jade)" : spendPct < 85 ? "var(--saffron)" : "var(--ember)"} />
-            </div>
-          </Tilt3D>
-
-          {dashboardAds}
-
-          {/* Stat chips */}
-          <div className="anim-fade-up-2" style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-            <StatChip label={viewMode === "month" ? "Earnings" : "Total Earned"} value={fmtMoney(stats.totalIncome, sym)} color="var(--jade)" sub={viewMode === "month" ? "All household income" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`} onClick={() => onNav("income")} />
-            <StatChip label={viewMode === "month" ? "EMI Due" : "Total EMI"} value={fmtMoney(stats.totalEmi, sym)} color="var(--saffron)" sub={`${stats.activeLoansCount || 0} active loan(s)`} onClick={() => onNav("emi")} />
-          </div>
-
-          <FinancialYearSummaryCard
-            summary={financialYearSummary}
-            sym={sym}
-            incomeLabel="Income"
-            expenseLabel="Expenses"
-          />
-
-          {/* First-use onboarding CTA */}
-          {isEmptyOrg && (
-            <div className="anim-fade-up-2">
-              <WorkflowSetupCard
-                eyebrow="Get started"
-                title="Record your first entry"
-                message="Tap below to jump straight into Income or Expenses — that's where you'll add new entries from."
-                actionLabel="Add Income →"
-                onAction={() => onNav("income")}
-                secondaryActionLabel="Add Expense"
-                onSecondaryAction={() => onNav("expenses")}
-                tone="accent"
-              />
-            </div>
-          )}
-
-          {/* Trend sparkline */}
-          {trendData.length >= 3 && (
-            <div className="card-leather anim-fade-up-3" style={{ padding: "14px 16px", marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <div className="section-eyebrow">Income Trend</div>
-                {savingsGoal && headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
-              </div>
-              <Sparkline data={trendData} color="var(--jade)" height={40} />
-            </div>
-          )}
-
-          {/* EMI alert */}
-          {stats.upcomingEmis?.length > 0 && !allEmisPaidThisMonth && (
-            <div
-              className="anim-fade-up-3"
-              onClick={() => onNav("emi")}
-              style={{ background: "color-mix(in srgb, var(--saffron) 7%, var(--canvas))", border: "1px solid color-mix(in srgb, var(--saffron) 22%, var(--line-2))", borderRadius: 14, padding: "12px 16px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-            >
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--saffron)", marginBottom: 2 }}>
-                  {stats.upcomingEmis.length} EMI{stats.upcomingEmis.length !== 1 ? "s" : ""} due
-                </div>
-                <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
-                  {stats.upcomingEmis[0]?.loanName || "EMI"} · Due {getPersonalEmiDueDay(stats.upcomingEmis[0]) || "this month"}
-                </div>
-              </div>
-              <RupeeDisplay amount={Number(stats.totalEmi || 0)} color="var(--saffron)" size={20} />
-            </div>
-          )}
-
-          {/* Spending by member */}
-          <div className="anim-fade-up-4">
-            <MemberSpendingCard expenses={data.expenses} sym={sym} month={month} year={year} viewMode={viewMode} onNav={onNav} />
-          </div>
-
-          {/* Recent transactions */}
-          <div className="anim-fade-up-4">
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div className="section-eyebrow">Aaj Ka Hisaab</div>
-              <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--saffron)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>See all →</button>
-            </div>
-            {recentTxns.length > 0 ? (
-              <div className="card-leather" style={{ padding: "0 16px" }}>
-                {recentTxns.map((tx, i) => (
-                  <TimelineEntry key={i} {...tx} isLast={i === recentTxns.length - 1} delay={i * 50} />
-                ))}
-              </div>
-            ) : (
-              <WorkflowSetupCard title="No entries yet" message="Open Income, Expenses, or EMIs below to record your first entry." actionLabel="Add Income" onAction={() => onNav("income")} tone="warning" />
-            )}
-          </div>
-
-          {/* Savings goal */}
-          <SavingsGoalCard goals={data.goals} sym={sym} onNav={onNav} />
-
 
         </div>
         {onboardingGuide}
@@ -1906,10 +1107,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
           <div style={{ marginBottom: 14, padding: "12px 14px", background: reviewAccessEnabled ? "color-mix(in srgb, var(--sky) 8%, var(--canvas))" : currentPlan === PLANS.FREE ? "color-mix(in srgb, var(--saffron) 8%, var(--canvas))" : "color-mix(in srgb, var(--jade) 8%, var(--canvas))", borderRadius: 14, border: `1px solid color-mix(in srgb, ${reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)"} 22%, var(--line-2))`, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 2 }}>
-                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Choose a Plan" : `${currentPlan === PLANS.PRO_PLUS ? "Pro+" : "Pro"} Active`}
+                {reviewAccessEnabled ? "Review Access Enabled" : currentPlan === PLANS.FREE ? "Choose a Plan" : "Pro Active"}
               </div>
               <div style={{ fontSize: 11, color: "var(--cream-3)" }}>
-                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Pro gives one Khata per paid type; Pro+ gives 5 paid Khatas" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "Paid features active"}
+                {reviewAccessEnabled ? "All premium features are unlocked right now." : currentPlan === PLANS.FREE ? "Pro gives one owned Khata for Rs 99/month or Rs 999/year" : isTrial && user?.subscriptionEndsAt ? `Ends ${formatSubscriptionDate(user.subscriptionEndsAt)}` : "Paid features active"}
               </div>
             </div>
             <div style={{ fontSize: 12, fontWeight: 700, color: reviewAccessEnabled ? "var(--sky)" : currentPlan === PLANS.FREE ? "var(--saffron)" : "var(--jade)", whiteSpace: "nowrap" }}>

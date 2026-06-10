@@ -116,8 +116,7 @@ const RAILWAY_API_URL = defineSecret("RAILWAY_API_URL");
 const INTERNAL_SECRET = defineSecret("INTERNAL_SECRET");
 
 const PLAN_PRICES = {
-  pro: { monthly: 99, yearly: 999 },
-  pro_plus: { monthly: 199, yearly: 1999 }
+  pro: { monthly: 99, yearly: 999 }
 };
 
 const PLAN_DURATION_DAYS = {
@@ -211,7 +210,7 @@ function buildAdminUserProfileStatsDoc(userId, userData = {}) {
 
   return {
     userId,
-    planLabel: userData.plan === "pro_plus" || userData.plan === "business" ? "Pro+" : userData.plan === "pro" ? "Pro" : "Free",
+    planLabel: userData.plan === "pro_plus" || userData.plan === "business" || userData.plan === "pro" ? "Pro" : "Free",
     subscriptionLabel: userData.subscriptionStatus === "trial" ? "Trial" : userData.subscriptionStatus === "active" ? "Active" : "Inactive",
     gender: String(userData.gender || "").trim(),
     ageGroup: String(userData.ageGroup || "").trim(),
@@ -344,7 +343,7 @@ function getRazorpayConfig() {
 
 function getValidatedPlan(inputPlan) {
   const rawPlan = String(inputPlan || "pro").trim().toLowerCase();
-  const plan = rawPlan === "business" ? "pro_plus" : rawPlan;
+  const plan = rawPlan === "business" || rawPlan === "pro_plus" ? "pro" : rawPlan;
   if (!Object.prototype.hasOwnProperty.call(PLAN_PRICES, plan)) {
     throw new HttpsError("invalid-argument", "Invalid plan selected.");
   }
@@ -643,7 +642,7 @@ async function notifyPaymentReceived(userId, upgrade) {
   const apiUrl = RAILWAY_API_URL.value();
   const secret = INTERNAL_SECRET.value();
   if (!apiUrl || !secret) return;
-  const planLabel = upgrade.requestedPlan === "pro_plus" || upgrade.requestedPlan === "business" ? "Pro+" : "Pro";
+  const planLabel = "Pro";
   const cycleLabel = upgrade.billingCycle === "yearly" ? "yearly" : "monthly";
   try {
     await callRailway(apiUrl, secret, "POST", "/internal/push", {
@@ -898,6 +897,11 @@ exports.createUpiSubscriptionOrder = onRequest({ region: "asia-south1", invoker:
 
   const userSnap = await db.collection("users").doc(userId).get();
   const userData = userSnap.exists ? userSnap.data() || {} : {};
+  const actualUserOrgs = userData?.orgs && typeof userData.orgs === "object" ? Object.keys(userData.orgs) : [];
+  if (orgId !== "account_plan" && actualUserOrgs.length >= 1 && !actualUserOrgs.includes(orgId)) {
+    sendError(res, "failed-precondition", "Your account can own only one Khata.");
+    return;
+  }
   try {
     assertBusinessPlanEligibility(userData, targetPlan);
   } catch (err) {
@@ -1334,7 +1338,7 @@ exports.downgradeExpiredTrials = onSchedule(
 
 // ── Daily reminder cron ───────────────────────────────────────────────────────
 // Fires once a day at 8 AM IST. Calls Railway's /internal/run-daily-reminders
-// which scans for EMI / invoice / subscription notifications due today,
+// which scans for invoice, collection, payment, and subscription notifications due today,
 // dedups against past sends, and fires push via FCM.
 //
 // Why Cloud Scheduler instead of node-cron on Railway: Railway can sleep when

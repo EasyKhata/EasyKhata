@@ -53,7 +53,7 @@ export default function BrandLogo({ compact = false, center = false, showTagline
     <div style={{ display: "flex", alignItems: "center", gap: compact ? 10 : 14, justifyContent: center ? "center" : "flex-start" }}>
       <BrandMark size={compact ? 38 : 50} pulse={pulse} />
       <div style={{ textAlign: center ? "center" : "left" }}>
-        <div style={{ fontFamily: "var(--serif)", fontSize: nameSize || (compact ? 22 : 30), color: "var(--text)", lineHeight: 1 }}>
+        <div style={{ fontFamily: "var(--font)", fontSize: nameSize || (compact ? 20 : 28), fontWeight: 800, letterSpacing: 0, color: "var(--text)", lineHeight: 1 }}>
           {APP_NAME}
         </div>
         {showTagline && (

@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Bell, BookOpen, Building2, CreditCard, FileText,
+  Bell, Building2, FileText,
   HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Plus, Power, Settings,
   TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
@@ -37,7 +37,6 @@ import { getOrgConfig, getOrgType, ORG_TYPES } from "../utils/orgTypes";
 const Dashboard = lazy(() => import("../sections/Dashboard"));
 const IncomeSection = lazy(() => import("../sections/IncomeSection"));
 const ExpensesSection = lazy(() => import("../sections/ExpensesSection"));
-const EmiSection = lazy(() => import("../sections/EmiSection"));
 const InvoicesSection = lazy(() => import("../sections/InvoicesSection"));
 const SettingsSection = lazy(() => import("../sections/SettingsSection"));
 const OrgSection = lazy(() => import("../sections/SettingsSection"));
@@ -54,8 +53,6 @@ const TAB_COLOR = {
   org: "var(--blue)",
   income: "var(--accent)",
   expenses: "var(--danger)",
-  emi: "var(--gold)",
-  khata: "var(--gold)",
   invoices: "var(--blue)",
   discussions: "var(--blue)",
   settings: "var(--purple)",
@@ -67,8 +64,6 @@ const TAB_ICONS = {
   users: Users,
   income: TrendingUp,
   expenses: TrendingDown,
-  emi: CreditCard,
-  khata: BookOpen,
   invoices: FileText,
   discussions: MessageSquare,
   org: Building2,
@@ -81,13 +76,11 @@ function getGuideDismissKey(userId, orgId) {
   return `ek_start_guide_dismissed:${userId || "guest"}:${orgId || "default"}`;
 }
 
-function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav, onAdd, onDismiss }) {
-  const setupLabel = isPersonalOrg ? "Add family" : isApartmentOrg ? "Add flats" : "Add customers";
-  const setupBody = isPersonalOrg
-    ? "Add family members first so income, expenses, and EMIs can be tagged clearly."
-    : isApartmentOrg
-      ? "Add flats first so maintenance and dues can be tracked by flat."
-      : "Add customers first so payments, invoices, and work records stay connected.";
+function StartGuideCard({ isApartmentOrg, isFreelancerOrg, onNav, onAdd, onDismiss }) {
+  const setupLabel = isApartmentOrg ? "Add flats" : "Add customers";
+  const setupBody = isApartmentOrg
+    ? "Add flats first so maintenance and dues can be tracked by flat."
+    : "Add customers first so payments, invoices, and work records stay connected.";
   const incomeLabel = isApartmentOrg ? "Record dues" : isFreelancerOrg ? "Record payments" : "Record income";
   const expenseLabel = isApartmentOrg ? "Add society expenses" : "Add expenses";
 
@@ -101,11 +94,9 @@ function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav,
   // Title/subtitle reflect the post-onboarding reality: the user already named
   // their Khata and picked its type during the signup wizard. The card now
   // points them at the next concrete tasks rather than re-explaining setup.
-  const headline = isPersonalOrg
-    ? "Start tracking your household money"
-    : isApartmentOrg
-      ? "Start tracking society finances"
-      : "Start tracking your business money";
+  const headline = isApartmentOrg
+    ? "Start tracking society finances"
+    : "Start tracking your business money";
 
   return (
     <div className="card" style={{ padding: 14, marginBottom: 14, border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))", background: "color-mix(in srgb, var(--accent) 5%, var(--card))" }}>
@@ -132,237 +123,6 @@ function StartGuideCard({ isPersonalOrg, isApartmentOrg, isFreelancerOrg, onNav,
   );
 }
 
-function QuickAddSheet({ onClose, isPersonalOrg, isApartmentOrg, isFreelancerOrg, isReadOnlyFreeMode, isViewerMode, addIncome, addExpense, currentMonth, currentYear }) {
-  const [entryType, setEntryType] = React.useState("expense");
-  const [amount, setAmount] = React.useState("");
-  const [description, setDescription] = React.useState("");
-  const [category, setCategory] = React.useState("");
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState(null);
-  const amountRef = React.useRef(null);
-
-  React.useEffect(() => {
-    const t = setTimeout(() => amountRef.current?.focus(), 80);
-    return () => clearTimeout(t);
-  }, []);
-
-  const today = new Date().toISOString().split("T")[0];
-  const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-
-  const expenseCategories = isPersonalOrg
-    ? ["Food", "Transport", "Bills", "Health", "Shopping", "Other"]
-    : isApartmentOrg
-      ? ["Maintenance", "Repair", "Utilities", "Salary", "Admin", "Other"]
-      : isFreelancerOrg
-        ? ["Tools", "Travel", "Marketing", "Office", "Other"]
-        : ["Rent", "Salaries", "Supplies", "Marketing", "Ops", "Other"];
-
-  const incomeCategories = isPersonalOrg
-    ? ["Salary", "Freelance", "Gift", "Investment", "Other"]
-    : isApartmentOrg
-      ? ["Maint. Fee", "Penalty", "Event", "Other"]
-      : isFreelancerOrg
-        ? ["Project", "Consulting", "Retainer", "Other"]
-        : ["Sales", "Service", "Consulting", "Other"];
-
-  const categories = entryType === "expense" ? expenseCategories : incomeCategories;
-  const accentColor = entryType === "income" ? "var(--jade)" : "var(--ember)";
-
-  function handleSave() {
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      setError("Enter a valid amount");
-      return;
-    }
-    if (isViewerMode || isReadOnlyFreeMode) {
-      setError("Your plan doesn't allow adding entries");
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      if (entryType === "income") {
-        addIncome({
-          description: description || "Income",
-          source: description || "Income",
-          amount: Number(amount),
-          category: category || "Other",
-          date: today,
-          month: monthStr,
-        });
-      } else {
-        addExpense({
-          label: description || "Expense",
-          amount: Number(amount),
-          category: category || "Other",
-          note: "",
-          date: today,
-          month: monthStr,
-          recurring: false,
-          teamMemberName: "",
-          partnerName: "",
-          startMonth: "",
-          endDate: "",
-          endMonth: "",
-        });
-      }
-      onClose();
-    } catch {
-      setError("Failed to save. Try again.");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Drag handle */}
-      <div style={{ width: 48, height: 5, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
-
-      {/* Title row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "10px 12px", margin: "-10px -12px" }}>×</button>
-      </div>
-
-      {/* Expense / Income toggle */}
-      <div style={{ display: "flex", gap: 8, background: "var(--surface-high)", borderRadius: 12, padding: 4 }}>
-        {["expense", "income"].map(type => (
-          <button
-            key={type}
-            onClick={() => { setEntryType(type); setCategory(""); setError(null); }}
-            style={{
-              flex: 1,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "none",
-              background: entryType === type
-                ? (type === "income" ? "color-mix(in srgb, var(--jade) 20%, var(--raised))" : "color-mix(in srgb, var(--ember) 20%, var(--raised))")
-                : "transparent",
-              color: entryType === type ? (type === "income" ? "var(--jade)" : "var(--ember)") : "var(--text-dim)",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-              textTransform: "capitalize",
-            }}
-          >
-            {type === "income" ? "Income" : "Expense"}
-          </button>
-        ))}
-      </div>
-
-      {/* Amount input */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, background: "var(--surface-high)", borderRadius: 14, padding: "12px 16px", border: `1.5px solid color-mix(in srgb, ${accentColor} 30%, var(--border))` }}>
-        <span style={{ fontSize: 26, fontWeight: 800, color: accentColor, lineHeight: 1, flexShrink: 0 }}>₹</span>
-        <input
-          ref={amountRef}
-          type="number"
-          inputMode="decimal"
-          placeholder="0"
-          value={amount}
-          onChange={e => { setAmount(e.target.value); setError(null); }}
-          style={{ flex: 1, border: "none", background: "transparent", color: "var(--text)", fontSize: 28, fontWeight: 800, outline: "none", width: "100%", fontFamily: "var(--font)" }}
-        />
-      </div>
-
-      {/* Description */}
-      <input
-        type="text"
-        placeholder={entryType === "expense" ? "What did you spend on?" : "What did you earn from?"}
-        value={description}
-        onChange={e => setDescription(e.target.value)}
-        style={{ border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", borderRadius: 12, padding: "12px 14px", fontSize: 14, outline: "none", fontFamily: "var(--font)", width: "100%", boxSizing: "border-box" }}
-      />
-
-      {/* Category chips */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {categories.map(cat => (
-          <button
-            key={cat}
-            type="button"
-            onClick={() => setCategory(cat === category ? "" : cat)}
-            style={{
-              padding: "6px 13px",
-              borderRadius: 20,
-              border: `1.5px solid ${cat === category ? accentColor : "var(--border)"}`,
-              background: cat === category ? `color-mix(in srgb, ${accentColor} 15%, var(--raised))` : "var(--surface-high)",
-              color: cat === category ? accentColor : "var(--text-sec)",
-              fontSize: 12,
-              fontWeight: cat === category ? 700 : 500,
-              cursor: "pointer",
-            }}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, textAlign: "center" }}>{error}</div>
-      )}
-
-      {/* Save button */}
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        style={{ width: "100%", padding: "15px", borderRadius: 14, border: "none", background: accentColor, color: "#fff", fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, fontFamily: "var(--font)" }}
-      >
-        {saving ? "Saving…" : `Save ${entryType === "income" ? "Income" : "Expense"}`}
-      </button>
-    </div>
-  );
-}
-
-function QuickActionSheet({ onClose, actions = [], isReadOnlyFreeMode, isViewerMode }) {
-  const blocked = isViewerMode || isReadOnlyFreeMode;
-
-  return (
-    <div style={{ background: "var(--card)", borderRadius: "20px 20px 0 0", padding: "12px 16px calc(env(safe-area-inset-bottom, 0px) + 20px)", display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ width: 48, height: 5, borderRadius: 4, background: "var(--border)", margin: "0 auto 4px" }} />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }}>New Entry</span>
-        <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", color: "var(--text-dim)", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "10px 12px", margin: "-10px -12px" }}>×</button>
-      </div>
-      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-        Choose the type below. The full original form opens immediately with all its fields.
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(actions.length || 1, 3)}, minmax(0, 1fr))`, gap: 10 }}>
-        {actions.map(action => (
-          <button
-            key={action.key}
-            type="button"
-            onClick={() => {
-              if (blocked) return;
-              action.onClick?.();
-            }}
-            disabled={blocked}
-            style={{
-              width: "100%",
-              textAlign: "center",
-              border: `1px solid color-mix(in srgb, ${action.color} 34%, var(--border))`,
-              background: `color-mix(in srgb, ${action.color} 10%, var(--surface-high))`,
-              color: blocked ? "var(--text-dim)" : "var(--text)",
-              borderRadius: 14,
-              padding: "14px 12px",
-              cursor: blocked ? "not-allowed" : "pointer",
-              opacity: blocked ? 0.65 : 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6
-            }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 800, color: action.color }}>{action.label}</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", lineHeight: 1.35 }}>{action.description}</div>
-          </button>
-        ))}
-      </div>
-      {blocked && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, textAlign: "center" }}>Your current access does not allow creating new records here.</div>}
-    </div>
-  );
-}
-
 function QuickEntrySheet({
   onClose,
   orgType,
@@ -375,18 +135,15 @@ function QuickEntrySheet({
   isViewerMode,
   addIncome,
   addExpense,
-  addOrgRecord,
   addCustomer
 }) {
   const resolvedOrgType = getOrgType(orgType);
   const config = getOrgConfig(resolvedOrgType);
-  const isPersonalOrg = resolvedOrgType === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = resolvedOrgType === ORG_TYPES.FREELANCER;
   const isApartmentOrg = resolvedOrgType === ORG_TYPES.APARTMENT;
   const tabs = [
     { key: "income", label: isApartmentOrg ? "Collection" : config.incomeEntryLabel, color: "var(--accent)" },
     { key: "expense", label: config.expensesEntryLabel, color: "var(--danger)" },
-    ...(isPersonalOrg ? [{ key: "emi", label: "EMI", color: "var(--gold)" }] : []),
     ...(isFreelancerOrg ? [{ key: "client", label: config.customerEntryLabel || "Client", color: "var(--blue)" }] : []),
     ...(isApartmentOrg ? [{ key: "resident", label: "Resident", color: "var(--blue)" }] : [])
   ];
@@ -398,13 +155,10 @@ function QuickEntrySheet({
   const twoColLayout = isCompactSheet ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)";
   const today = new Date().toISOString().split("T")[0];
   const monthStr = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}`;
-  const currentMonthStart = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`;
   const sym = currencySymbol === "Rs" ? "₹" : currencySymbol;
   const expenseCategories = config.expenseCategories || ["Other"];
-  const householdPeople = useMemo(() => customers.map(item => String(item?.name || item?.ownerName || item?.personName || "").trim()).filter(Boolean), [customers]);
   const freelancerClients = useMemo(() => customers.map(item => String(item?.name || item?.company || item?.clientName || "").trim()).filter(Boolean), [customers]);
   const apartmentFlats = useMemo(() => customers.map(item => ({ flat: String(item?.name || item?.flatNumber || "").trim(), resident: String(item?.ownerName || item?.residentName || "").trim() })).filter(item => item.flat), [customers]);
-  const hasHouseholdPeople = householdPeople.length > 0;
   const hasFreelancerClients = freelancerClients.length > 0;
   const hasApartmentFlats = apartmentFlats.length > 0;
   const { orgRecords } = useData();
@@ -417,7 +171,6 @@ function QuickEntrySheet({
     amount: "",
     date: today,
     category: expenseCategories[0] || "Other",
-    personName: "",
     incomeType: "Salary",
     clientName: "",
     billable: "No",
@@ -428,9 +181,6 @@ function QuickEntrySheet({
     collectionMonth: monthStr,
     serviceProvider: "",
     billReference: "",
-    lender: "",
-    dueDay: "1",
-    endDate: "",
     newClientName: "",
     newClientPhone: "",
     newFlatNumber: "",
@@ -486,8 +236,6 @@ function QuickEntrySheet({
     if (!form.amount || Number(form.amount) <= 0) return "Enter a valid amount.";
     if (!String(form.description || "").trim()) return "Enter a description.";
     if (entryType === "income") {
-      if (isPersonalOrg && !hasHouseholdPeople) return "Add a family member in Khata first.";
-      if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
       if (isFreelancerOrg && !hasFreelancerClients) return "Add a customer in Khata first.";
       if (isFreelancerOrg && !String(form.clientName || "").trim()) return "Select a customer.";
       if (isApartmentOrg && !hasApartmentFlats) return "Add a flat in Khata first.";
@@ -495,13 +243,6 @@ function QuickEntrySheet({
     }
     if (entryType === "expense") {
       if (!String(form.category || "").trim()) return "Choose a category.";
-      if (isPersonalOrg && !hasHouseholdPeople) return "Add a family member in Khata first.";
-      if (isPersonalOrg && !String(form.personName || "").trim()) return "Select a family member.";
-    }
-    if (entryType === "emi") {
-      if (!hasHouseholdPeople) return "Add a family member in Khata first.";
-      if (!String(form.lender || "").trim()) return "Enter the lender name.";
-      if (!String(form.endDate || "").trim()) return "Choose an end date.";
     }
     return "";
   }
@@ -549,10 +290,7 @@ function QuickEntrySheet({
           date: form.date || today,
           month: monthStr
         };
-        if (isPersonalOrg) {
-          payload.personName = String(form.personName || "").trim();
-          payload.incomeType = String(form.incomeType || "Salary").trim();
-        } else if (isFreelancerOrg) {
+        if (isFreelancerOrg) {
           payload.clientName = String(form.clientName || "").trim();
         } else if (isApartmentOrg) {
           payload.flatNumber = String(form.flatNumber || "").trim();
@@ -576,7 +314,6 @@ function QuickEntrySheet({
           endDate: "",
           endMonth: ""
         };
-        if (isPersonalOrg) payload.personName = String(form.personName || "").trim();
         if (isFreelancerOrg) {
           payload.clientName = String(form.clientName || "").trim();
           payload.billable = String(form.billable || "No").trim();
@@ -589,16 +326,6 @@ function QuickEntrySheet({
           payload.billReference = String(form.billReference || "").trim();
         }
         addExpense?.(payload);
-      } else if (entryType === "emi") {
-        addOrgRecord?.("loans", {
-          loanName: String(form.description || "").trim(),
-          personName: String(form.personName || "").trim(),
-          lender: String(form.lender || "").trim(),
-          monthlyEmi: String(form.amount || "").trim(),
-          dueDay: String(form.dueDay || "1").trim(),
-          endDate: String(form.endDate || "").trim(),
-          startDate: currentMonthStart
-        });
       }
       onClose();
     } catch (saveError) {
@@ -609,7 +336,6 @@ function QuickEntrySheet({
 
   const activeTab = tabs.find(item => item.key === entryType) || tabs[0];
   const accentColor = activeTab?.color || "var(--accent)";
-  const showPeopleSetupHint = (entryType === "income" || entryType === "expense" || entryType === "emi") && isPersonalOrg && !hasHouseholdPeople;
   const showClientSetupHint = (entryType === "income" || entryType === "expense") && isFreelancerOrg && !hasFreelancerClients;
   const showFlatSetupHint = entryType === "income" && isApartmentOrg && !hasApartmentFlats;
   const sheetSelectStyle = {
@@ -696,12 +422,6 @@ function QuickEntrySheet({
           <span style={{ fontSize: 22, fontWeight: 800, color: accentColor, lineHeight: 1 }}>{sym}</span>
           <input ref={amountRef} type="number" inputMode="decimal" value={form.amount} placeholder="0" onChange={event => updateField("amount", event.target.value)} style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 26, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)" }} />
         </div>
-        {showPeopleSetupHint && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--accent) 26%, var(--border))", background: "color-mix(in srgb, var(--accent) 10%, var(--surface-high))" }}>
-            <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a family member in Khata before creating this entry.</div>
-            <button type="button" onClick={() => { onClose(); window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } })); }} className="btn-secondary" style={{ padding: "8px 10px", fontSize: 12, color: "var(--accent)", flexShrink: 0 }}>Open Family</button>
-          </div>
-        )}
         {showClientSetupHint && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 12, border: "1px solid color-mix(in srgb, var(--blue) 26%, var(--border))", background: "color-mix(in srgb, var(--blue) 10%, var(--surface-high))" }}>
             <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5 }}>Add a customer before recording business payments or expenses.</div>
@@ -716,9 +436,9 @@ function QuickEntrySheet({
         )}
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Description</div>
-          <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Grocery run" : entryType === "emi" ? "e.g. Home loan" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Salary"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
+          <input type="text" value={form.description} placeholder={entryType === "expense" ? "e.g. Office supplies" : isApartmentOrg ? "e.g. Maintenance payment" : "e.g. Project payment"} onChange={event => updateField("description", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
         </div>
-        {entryType !== "emi" && (
+        {(
           <div style={{ display: "grid", gridTemplateColumns: (entryType === "income" && isFreelancerOrg) ? "1fr" : twoColLayout, gap: 10 }}>
             <div style={{ display: "grid", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Date</div>
@@ -738,15 +458,6 @@ function QuickEntrySheet({
                 )}
               </div>
             )}
-          </div>
-        )}
-        {entryType === "income" && isPersonalOrg && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
-              <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
-              {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
           </div>
         )}
         {entryType === "income" && isFreelancerOrg && (
@@ -778,15 +489,6 @@ function QuickEntrySheet({
               <input type="month" value={form.collectionMonth} onChange={event => updateField("collectionMonth", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
           </>
-        )}
-        {entryType === "expense" && isPersonalOrg && (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-            <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
-              <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
-              {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
-            </select>
-          </div>
         )}
         {entryType === "expense" && isFreelancerOrg && (
           <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
@@ -823,33 +525,6 @@ function QuickEntrySheet({
               <input value={form.billReference} onChange={event => updateField("billReference", event.target.value)} placeholder="Invoice or receipt number" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
             </div>
           </div>
-        )}
-        {entryType === "emi" && (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Lender</div>
-                <input value={form.lender} onChange={event => updateField("lender", event.target.value)} placeholder="Bank or person name" style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Family Member</div>
-                <select value={form.personName} onChange={event => updateField("personName", event.target.value)} style={sheetSelectStyle} disabled={!hasHouseholdPeople}>
-                  <option value="">{hasHouseholdPeople ? "Select family member" : "Add family member first"}</option>
-                  {householdPeople.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: twoColLayout, gap: 10 }}>
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>Due Day</div>
-                <select value={form.dueDay} onChange={event => updateField("dueDay", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }}>{Array.from({ length: 31 }, (_, index) => String(index + 1)).map(option => <option key={option} value={option}>{option}</option>)}</select>
-              </div>
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.7 }}>End Date</div>
-                <input type="date" value={form.endDate} onChange={event => updateField("endDate", event.target.value)} style={{ width: "100%", boxSizing: "border-box", borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text)", padding: "10px 12px", fontSize: 14, outline: "none" }} />
-              </div>
-            </div>
-          </>
         )}
         </>
         )}
@@ -1163,6 +838,7 @@ export default function MainApp() {
   const data = useData();
   const {
     account,
+    loaded,
     offlineMode,
     syncStatus,
     isReadOnlyFreeMode,
@@ -1177,7 +853,6 @@ export default function MainApp() {
     activeOrgId,
     addIncome,
     addExpense,
-    addOrgRecord,
     addCustomer,
     customers = [],
     currency
@@ -1319,7 +994,6 @@ export default function MainApp() {
         dashboard:  { tab: "dashboard" },
         income:     { tab: "income" },
         expenses:   { tab: "expenses" },
-        emi:        { tab: "emi" },
         invoices:   { tab: "invoices" },
         settings:   { tab: "settings", screen: "main" },
         discussions:{ tab: "discussions" }
@@ -1428,7 +1102,7 @@ export default function MainApp() {
 
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
-      const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro or Pro+ in Settings to continue.";
+      const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro in Settings to continue.";
       setReadOnlyNotice({ message: msg, key: Date.now() });
     };
     window.addEventListener("ledger:readonly-blocked", handleReadOnlyBlocked);
@@ -1602,13 +1276,12 @@ export default function MainApp() {
   const trialEndLabel = formatSubscriptionDate(user?.subscriptionEndsAt);
   const currentOrgType = getOrgType(account?.organizationType || user?.organizationType);
   const orgConfig = getOrgConfig(currentOrgType);
-  const isPersonalOrg = currentOrgType === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = currentOrgType === ORG_TYPES.FREELANCER;
   const isApartmentOrg = currentOrgType === ORG_TYPES.APARTMENT;
   const hideInvoices = !isAdmin && orgConfig.hideInvoices;
   const hasStartedUsingKhata = customers.length > 0 || (data.income || []).length > 0 || (data.expenses || []).length > 0 || (data.invoices || []).length > 0;
   const showStartGuide = !isAdmin && !activeSharedOrgKey && tab === "dashboard" && !startGuideDismissed && !hasStartedUsingKhata;
-  const contextualQuickEntryType = tab === "income" ? "income" : tab === "expenses" ? "expense" : tab === "emi" ? "emi" : null;
+  const contextualQuickEntryType = tab === "income" ? "income" : tab === "expenses" ? "expense" : null;
   const headerOrgOptions = useMemo(() => {
     const owned = [];
     const seenOwnedIds = new Set();
@@ -1680,65 +1353,19 @@ export default function MainApp() {
     setShowFab(true);
   }, [isViewerMode]);
 
-  const handleQuickAddAction = useCallback((target) => {
-    setShowFab(false);
-    handleNavigate({ tab: target.tab });
-    window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("ledger:open-add", { detail: { section: target.tab, kind: target.kind } }));
-    }, 70);
-  }, [handleNavigate]);
-
-  const quickAddActions = useMemo(() => {
-    if (isAdmin) return [];
-    const actions = [
-      {
-        key: "income",
-        label: orgConfig.incomeActionLabel,
-        description: `Open the full ${orgConfig.incomeLabel.toLowerCase()} form.`,
-        color: "var(--jade)",
-        tab: "income",
-        kind: "income"
-      },
-      {
-        key: "expense",
-        label: orgConfig.expensesActionLabel,
-        description: `Open the full ${orgConfig.expensesLabel.toLowerCase()} form.`,
-        color: "var(--ember)",
-        tab: "expenses",
-        kind: "expense"
-      }
-    ];
-
-    if (isPersonalOrg) {
-      actions.push({
-        key: "emi",
-        label: "Add EMI",
-        description: "Open the EMI form with all loan fields.",
-        color: "var(--gold)",
-        tab: "emi",
-        kind: "emi"
-      });
-    }
-
-    return actions.map(action => ({
-      ...action,
-      onClick: () => handleQuickAddAction(action)
-    }));
-  }, [handleQuickAddAction, isAdmin, isPersonalOrg, orgConfig.expensesActionLabel, orgConfig.expensesLabel, orgConfig.incomeActionLabel, orgConfig.incomeLabel]);
   const currentOrgLabel = account?.name?.trim() || "Khata";
   const TABS = useMemo(() => ([
     { id: "dashboard", icon: isAdmin ? "AD" : "DB", label: isAdmin ? "Admin" : "Home" },
     ...(isAdmin ? [{ id: "users", icon: "US", label: "Users" }, { id: "adminSupport", icon: "SP", label: "Support Ops" }, { id: "adminAnnounce", icon: "AN", label: "Announce" }] : []),
     ...(user?.role !== "admin" ? [
       { id: "income", icon: "IN", label: orgConfig.incomeLabel },
-      { id: "expenses", icon: "EX", label: orgConfig.expensesLabel },
-      ...(isPersonalOrg ? [{ id: "emi", icon: "EM", label: "EMIs" }] : [])
+      { id: "expenses", icon: "EX", label: orgConfig.expensesLabel }
     ] : []),
     ...(!hideInvoices && !activeSharedOrgKey ? [{ id: "invoices", icon: "IV", label: isAdmin ? "Subscriptions" : orgConfig.invoicesLabel }] : []),
     ...(!isAdmin && isApartmentOrg ? [{ id: "discussions", icon: "DS", label: "Chat" }] : []),
     ...(!isAdmin && !activeSharedOrgKey ? [{ id: "org", icon: "OR", label: "Khata Setup" }] : []),
     ...(isAdmin ? [] : [])
-  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
+  ]), [activeSharedOrgKey, currentOrgLabel, hideInvoices, isAdmin, isApartmentOrg, orgConfig.expensesLabel, orgConfig.incomeLabel, orgConfig.invoicesLabel, user?.role]);
 
   const activeDashboardColor = isAdmin ? TAB_COLOR.adminDashboard : TAB_COLOR.dashboard;
   const handleDateChange = useCallback((nextYear, nextMonth) => {
@@ -1836,7 +1463,6 @@ export default function MainApp() {
           />
         )}
         {tab === "expenses" && <ExpensesSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
-        {tab === "emi" && isPersonalOrg && <EmiSection year={year} month={month} orgType={currentOrgType} headerDatePicker={datePickerNode} />}
         {tab === "discussions" && isApartmentOrg && <DiscussionsSection />}
         {tab === "invoices" && !hideInvoices && (
           <InvoicesSection
@@ -1849,7 +1475,7 @@ export default function MainApp() {
         {tab === "settings" && <SettingsSection navigationTarget={settingsNavigation} />}
       </Suspense>
     );
-  }, [currentOrgType, datePickerNode, handleNavigate, hideInvoices, isAdmin, isApartmentOrg, isPersonalOrg, month, settingsNavigation, tab, viewMode, year]);
+  }, [currentOrgType, datePickerNode, handleNavigate, hideInvoices, isAdmin, isApartmentOrg, month, settingsNavigation, tab, viewMode, year]);
 
 
   const footerTabs = useMemo(() => {
@@ -1859,14 +1485,10 @@ export default function MainApp() {
       : isViewerMode
         ? isApartmentOrg
           ? ["dashboard", "income", "expenses", "discussions", "org"]
-          : isPersonalOrg
-            ? ["dashboard", "income", "expenses", "emi", "org"]
-            : ["dashboard", "income", "expenses", ...(hideInvoices ? [] : ["invoices"]), "org"]
+          : ["dashboard", "income", "expenses", ...(hideInvoices ? [] : ["invoices"]), "org"]
         : isApartmentOrg
           ? ["dashboard", "income", "expenses", "discussions", "org"]
-          : isPersonalOrg
-            ? ["dashboard", "income", "expenses", "emi", "org"]
-            : ["dashboard", "income", "expenses", "invoices", "org"];
+          : ["dashboard", "income", "expenses", "invoices", "org"];
     return baseTabOrder.map(tabId => {
       const found = TABS.find(item => item.id === tabId);
       if (!found) return null;
@@ -1884,7 +1506,7 @@ export default function MainApp() {
         found.label;
       return { ...found, label };
     }).filter(Boolean);
-  }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isPersonalOrg, isViewerMode]);
+  }, [TABS, hideInvoices, isAdmin, isApartmentOrg, isFreelancerOrg, isViewerMode]);
 
   // ── Pull-to-refresh ────────────────────────────────────────────────────────
   // Disabled on the discussions tab (no scroll container) and for shared-org
@@ -1932,6 +1554,25 @@ export default function MainApp() {
           tone: "info"
         }
       : null;
+
+  if (!isAdmin && !loaded && organizations.length === 0 && Object.keys(sharedOrgs || {}).length === 0) {
+    return <SectionSkeleton rows={4} showHero={false} />;
+  }
+
+  if (!isAdmin && loaded && organizations.length === 0 && Object.keys(sharedOrgs || {}).length === 0) {
+    return (
+      <div className="app-shell" style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 20 }}>
+        <div className="card" style={{ maxWidth: 420, padding: 20, textAlign: "center" }}>
+          <BrandMark size={42} />
+          <div style={{ fontSize: 18, fontWeight: 800, color: "var(--text)", marginTop: 14 }}>No Khata Access</div>
+          <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6, marginTop: 8 }}>
+            You do not currently have access to any khata. Please contact the owner or admin for access.
+          </div>
+          <button className="btn-secondary" style={{ marginTop: 16 }} onClick={logout}>Sign out</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell" style={{ minHeight: "100vh", position: "relative", display: "flex" }}>
@@ -2044,7 +1685,7 @@ export default function MainApp() {
             }}>
               <span style={{ fontWeight: 800 }}>
                 Pro Trial Active{trialEndLabel ? ` until ${trialEndLabel}` : ""}.
-              </span> You currently have full editing access. Upgrade before trial end to avoid moving to Free read-only mode.
+              </span> You currently have full editing access. Upgrade before trial end to keep managing this khata.
               {!reviewAccessEnabled && (
                 <button
                   className="btn-secondary"
@@ -2108,106 +1749,46 @@ export default function MainApp() {
                   </button>
                   {showOrgSwitcher && (
                     <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>
-                      {headerOrgOptions.length > 0 ? headerOrgOptions.map((org, index) => {
-                        const role = org.role || "viewer";
-                        const roleColor = org.isOwned ? "var(--jade)" : role === "admin" ? "var(--jade)" : "var(--sky)";
-                        const initials = (org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
-                        return (
-                          <React.Fragment key={org.key}>
-                            {index > 0 && <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />}
-                            <button
-                              onClick={() => handleHeaderOrgSwitch(org)}
-                              style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: org.isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: org.isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                            >
-                              <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
-                              <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name}</span>
-                                <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
-                              </span>
-                              <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: org.isOwned ? "none" : "capitalize" }}>{role}</span>
-                              {org.isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>âœ“</span>}
-                            </button>
-                          </React.Fragment>
-                        );
-                      }) : (
+                      {headerOrgOptions.length > 0 ? (
+                        <>
+                          {[
+                            { label: "Admin Portal", caption: "Khatas you manage", options: headerOrgOptions.filter(org => org.isOwned) },
+                            { label: "Member Portal", caption: "Shared with you", options: headerOrgOptions.filter(org => !org.isOwned) }
+                          ].filter(group => group.options.length > 0).map(group => (
+                            <React.Fragment key={group.label}>
+                              <div style={{ padding: "9px 14px 5px", fontSize: 9, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, borderTop: group.label === "Member Portal" ? "1px solid var(--line)" : "none" }}>
+                                {group.label} <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>· {group.caption}</span>
+                              </div>
+                              {group.options.map((org, index) => {
+                                const role = org.role || "viewer";
+                                const roleColor = org.isOwned ? "var(--jade)" : role === "admin" ? "var(--jade)" : "var(--sky)";
+                                const initials = (org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
+                                return (
+                                  <React.Fragment key={org.key}>
+                                    {index > 0 && <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />}
+                                    <button
+                                      onClick={() => handleHeaderOrgSwitch(org)}
+                                      style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: org.isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: org.isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                                    >
+                                      <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
+                                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+                                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name}</span>
+                                        <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
+                                      </span>
+                                      <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: org.isOwned ? "none" : "capitalize" }}>{role}</span>
+                                      {org.isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>✓</span>}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </>
+                      ) : (
                         <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.5 }}>
                           No Khatas available.
                         </div>
                       )}
-                      {false && (<>
-                      {/* Own org row */}
-                      {!activeSharedOrgKey && <button
-                        onClick={() => { switchToOwnOrg(); handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
-                        style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: !activeSharedOrgKey ? "color-mix(in srgb, var(--jade) 8%, var(--raised))" : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: !activeSharedOrgKey ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                      >
-                        <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
-                          {(ownOrgName || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                          <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ownOrgName}</span>
-                          <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{orgConfig.typeLabel}</span>
-                        </span>
-                        <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
-                        {!activeSharedOrgKey && <span style={{ fontSize: 12, color: "var(--jade)", flexShrink: 0 }}>✓</span>}
-                      </button>}
-                      {organizations.filter(org => org.isOwned !== false && org.id !== activeOrgId).map(org => (
-                        <React.Fragment key={org.id}>
-                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
-                          <button
-                            onClick={async () => {
-                              if (activeSharedOrgKey) switchToOwnOrg(org.id);
-                              else await switchOrganization(org.id);
-                              handleNavigate({ tab: "dashboard" });
-                              setShowOrgSwitcher(false);
-                            }}
-                            style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                          >
-                            <span style={{ width: 28, height: 28, borderRadius: 8, background: "color-mix(in srgb, var(--jade) 18%, var(--raised))", border: "1px solid color-mix(in srgb, var(--jade) 30%, transparent)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "var(--jade)", flexShrink: 0 }}>
-                              {(org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K"}
-                            </span>
-                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                              <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name || "My Organization"}</span>
-                              <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
-                            </span>
-                            <span style={{ fontSize: 9, color: "var(--jade)", fontWeight: 700, background: "color-mix(in srgb, var(--jade) 12%, transparent)", borderRadius: 5, padding: "2px 5px", flexShrink: 0 }}>Owner</span>
-                          </button>
-                        </React.Fragment>
-                      ))}
-                      {sharedOrgs.length > 0 ? (
-                        <>
-                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
-                          {sharedOrgs.map(org => {
-                            const isActive = activeSharedOrgKey === org.key;
-                            const role = org.role || "viewer";
-                            const roleColor = role === "admin" ? "var(--jade)" : role === "owner" ? "var(--saffron)" : "var(--sky)";
-                            const initials = (org.orgName || "O").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "O";
-                            return (
-                              <button
-                                key={org.key}
-                                onClick={() => { switchToSharedOrg(org.key); setShowOrgSwitcher(false); }}
-                                style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                              >
-                                <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
-                                <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                                  <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.orgName || "Organization"}</span>
-                                  <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
-                                </span>
-                                <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: "capitalize" }}>{role}</span>
-                                {isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>✓</span>}
-                              </button>
-                            );
-                          })}
-                        </>
-                      ) : (
-                        <>
-                          <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />
-                          <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.5 }}>
-                            No shared orgs yet.<br />
-                            <span style={{ color: "var(--text-sec)" }}>Ask the org owner to invite you via Settings → Members.</span>
-                          </div>
-                        </>
-                      )}
-                      </>)}
                     </div>
                   )}
                 </div>
@@ -2261,9 +1842,9 @@ export default function MainApp() {
           };
           return (
             <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: isCompactMobile ? "6px 10px" : "7px 18px", display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, fontSize: isCompactMobile ? 11 : 12 }}>
-              <span style={{ color: "var(--text-dim)" }}>Viewing</span>
+              <span style={{ color: "var(--text-dim)" }}>Member Portal</span>
               <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
-              <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole}</span>
+              <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole === "viewer" ? (getOrgType(org.organizationType) === ORG_TYPES.APARTMENT ? "Resident · View only" : "Viewer · View only") : liveRole}</span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 10 }}>
                 <button
                   onClick={handleLeave}
@@ -2315,7 +1896,6 @@ export default function MainApp() {
             >
               {showStartGuide && (
                 <StartGuideCard
-                  isPersonalOrg={isPersonalOrg}
                   isApartmentOrg={isApartmentOrg}
                   isFreelancerOrg={isFreelancerOrg}
                   onNav={handleNavigate}
@@ -2410,8 +1990,8 @@ export default function MainApp() {
           type="button"
           className="app-quick-add-floating"
           onClick={() => { openQuickEntry(contextualQuickEntryType); dismissFabCoach(); }}
-          title={contextualQuickEntryType === "income" ? "Add income" : contextualQuickEntryType === "emi" ? "Add EMI" : "Add expense"}
-          aria-label={contextualQuickEntryType === "income" ? "Add income" : contextualQuickEntryType === "emi" ? "Add EMI" : "Add expense"}
+          title={contextualQuickEntryType === "income" ? "Add income" : "Add expense"}
+          aria-label={contextualQuickEntryType === "income" ? "Add income" : "Add expense"}
         >
           <Plus size={22} strokeWidth={2.4} />
         </button>
@@ -2456,7 +2036,6 @@ export default function MainApp() {
                 isViewerMode={isViewerMode}
                 addIncome={addIncome}
                 addExpense={addExpense}
-                addOrgRecord={addOrgRecord}
                 addCustomer={addCustomer}
               />
             </motion.div>
@@ -2470,7 +2049,7 @@ export default function MainApp() {
           anchorRef={fabRef}
           arrow="down"
           label="Start here"
-          sub={contextualQuickEntryType === "income" ? "Tap + to record income" : contextualQuickEntryType === "emi" ? "Tap + to add EMI" : "Tap + to record expense"}
+          sub={contextualQuickEntryType === "income" ? "Tap + to record income" : "Tap + to record expense"}
           onDismiss={dismissFabCoach}
         />
       )}

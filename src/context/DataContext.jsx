@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { getUserData, setUserData } from "../utils/storage";
-import { canCreatePaidOrg, getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isFreeOrgType, isSubscriptionActive } from "../utils/subscription";
+import { canCreatePaidOrg, getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isSubscriptionActive } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
 import { ORG_COLLECTION_KEYS, buildOrgSummary, sortOrgCollectionRecords } from "../utils/orgCollections";
@@ -27,7 +27,6 @@ import { logError, logWarn } from "../utils/logger";
 
 const DataContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
-const HOUSEHOLD_PRIMARY_PERSON_ID = "customer_primary_profile";
 const PENDING_ORG_TYPE_CLEAR_KEY = "pendingOrgTypeClears";
 
 function isDeviceOffline() {
@@ -91,7 +90,7 @@ function fromApiOrg(apiOrg, collections = {}) {
       address: apiOrg.address || "",
       gstin: apiOrg.gstin || "",
       showHSN: apiOrg.showHsn || false,
-      organizationType: apiOrg.organizationType || ORG_TYPES.PERSONAL,
+      organizationType: apiOrg.organizationType || ORG_TYPES.SMALL_BUSINESS,
       plan: apiOrg.plan || "",
       subscriptionStatus: apiOrg.subscriptionStatus || "",
       subscriptionEndsAt: apiOrg.subscriptionEndsAt || "",
@@ -140,7 +139,7 @@ function toApiOrgUpdate(orgData) {
     address: acc.address || "",
     gstin: acc.gstin || "",
     showHsn: Boolean(acc.showHSN),
-    organizationType: acc.organizationType || ORG_TYPES.PERSONAL,
+    organizationType: acc.organizationType || ORG_TYPES.SMALL_BUSINESS,
     plan: acc.plan || "",
     subscriptionStatus: acc.subscriptionStatus || "",
     subscriptionEndsAt: acc.subscriptionEndsAt || "",
@@ -253,7 +252,7 @@ function buildSharedOrgEntries(memberships = []) {
       orgId: m.orgId,
       orgName: m.orgName || "",
       ownerName: m.owner?.name || "",
-      organizationType: m.organizationType || ORG_TYPES.PERSONAL,
+      organizationType: m.organizationType || ORG_TYPES.SMALL_BUSINESS,
       role: m.role || "viewer",
       acceptedAt: m.acceptedAt || ""
     };
@@ -263,59 +262,6 @@ function buildSharedOrgEntries(memberships = []) {
 
 function withId(record = {}) {
   return { ...record, id: record.id || uid() };
-}
-
-function ensureHouseholdPrimaryPerson(orgData = {}, profileDefaults = {}) {
-  const orgType = getOrgType(orgData?.account?.organizationType);
-  if (orgType !== "personal") return orgData;
-
-  const account = orgData?.account || {};
-  const customers = Array.isArray(orgData.customers) ? orgData.customers : [];
-  const existingPrimary = customers.find(customer => customer?.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer?.isPrimaryProfile);
-  const promotedCustomer = !existingPrimary
-    ? customers.find(customer => customer?.id && String(customer?.name || "").trim())
-    : null;
-  const primarySource = existingPrimary || promotedCustomer || {};
-  const primaryName = String(
-    primarySource?.name ||
-    account.primaryProfileName ||
-    profileDefaults.name ||
-    ""
-  ).trim();
-  const primaryEmail = String(primarySource?.email || profileDefaults.email || "").trim();
-  const primaryPhone = String(primarySource?.phone || profileDefaults.phone || "").trim();
-  const primaryPhoneCountryCode = String(primarySource?.phoneCountryCode || profileDefaults.phoneCountryCode || "").trim();
-  const primaryPhoneNumber = String(primarySource?.phoneNumber || profileDefaults.phoneNumber || "").trim();
-  if (!primaryName && !primaryEmail && !primaryPhone && !primaryPhoneNumber) return orgData;
-
-  const primaryRecord = {
-    ...primarySource,
-    id: HOUSEHOLD_PRIMARY_PERSON_ID,
-    isPrimaryProfile: true,
-    isLockedProfile: true,
-    name: primaryName,
-    email: primaryEmail,
-    phone: primaryPhone,
-    phoneCountryCode: primaryPhoneCountryCode,
-    phoneNumber: primaryPhoneNumber,
-    addressLine: String(primarySource?.addressLine || "").trim(),
-    city: String(primarySource?.city || "").trim(),
-    state: String(primarySource?.state || "").trim(),
-    country: String(primarySource?.country || "").trim(),
-    location: String(primarySource?.location || "").trim(),
-    address: String(primarySource?.address || "").trim()
-  };
-
-  const promotedId = primarySource?.id;
-  const otherCustomers = customers.filter(customer =>
-    customer?.id !== HOUSEHOLD_PRIMARY_PERSON_ID &&
-    !customer?.isPrimaryProfile &&
-    customer?.id !== promotedId
-  );
-  return {
-    ...orgData,
-    customers: [primaryRecord, ...otherCustomers]
-  };
 }
 
 const EMPTY_ORG_DATA = {
@@ -347,7 +293,7 @@ const EMPTY_ORG_DATA = {
     address: "",
     gstin: "",
     showHSN: false,
-    organizationType: ORG_TYPES.PERSONAL,
+    organizationType: ORG_TYPES.SMALL_BUSINESS,
     plan: "free",
     subscriptionStatus: "active",
     subscriptionEndsAt: "",
@@ -360,7 +306,6 @@ const EMPTY_ORG_DATA = {
     browserEnabled: false,
     invoiceDue: true,
     overdueInvoices: true,
-    emiDue: true,
     budgetAlerts: true,
     lowBalance: true,
     spendingSpike: true
@@ -456,7 +401,7 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
         address: normalizedAddress,
         gstin: source.gstin || fallbackAccount.gstin || "",
         showHSN: source.showHSN || fallbackAccount.showHSN || false,
-        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || ORG_TYPES.PERSONAL,
+        organizationType: source.organizationType || source.account?.organizationType || fallbackAccount.organizationType || ORG_TYPES.SMALL_BUSINESS,
         plan: sourceAccount.plan || source.plan || fallbackAccount.plan || "",
         subscriptionStatus: sourceAccount.subscriptionStatus || source.subscriptionStatus || fallbackAccount.subscriptionStatus || "",
         subscriptionEndsAt: sourceAccount.subscriptionEndsAt || source.subscriptionEndsAt || fallbackAccount.subscriptionEndsAt || "",
@@ -465,11 +410,7 @@ function normalizeOrgData(source = {}, fallback = {}, profileDefaults = {}) {
       }
     )
   };
-  return ensureHouseholdPrimaryPerson(normalizedOrg, profileDefaults);
-}
-
-function isHouseholdOrgType(type) {
-  return getOrgType(type) === ORG_TYPES.PERSONAL;
+  return normalizedOrg;
 }
 
 function normalizeOrgCollection(source = {}, fallback = {}) {
@@ -995,7 +936,7 @@ export function DataProvider({ children }) {
       const writes = Promise.allSettled([
         orgsApi.update(user.id, orgId, toApiOrgUpdate(nextState)),
         queueActiveOrgSync(nextState),
-        usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || ORG_TYPES.PERSONAL })
+        usersApi.update(user.id, { activeOrgId: orgId, organizationType: nextState.account?.organizationType || ORG_TYPES.SMALL_BUSINESS })
       ]).then(results => {
         results.forEach((result, index) => {
           if (result.status === "rejected") {
@@ -1100,30 +1041,23 @@ export function DataProvider({ children }) {
         let allOrgs = await orgsApi.list(user.id);
         let effectiveActiveOrgId = requestedActiveOrgId;
 
-        // Recovery-only auto-create: if a user somehow ends up with zero orgs
-        // (e.g. their last org was deleted manually), spin up a default household
-        // so the dashboard isn't broken. We do NOT auto-add a household alongside
-        // an existing work-org — the onboarding wizard already lets the user pick
-        // their khata type explicitly. The previous behaviour silently added a
-        // second org whenever the user picked Small Business / Apartment, which
-        // pushed organizations.length to 2 and made MainApp's "switch between
-        // your khatas" coach-mark fire on first launch — perceived as the app
-        // asking the user to pick an org again.
         if ((allOrgs || []).length === 0) {
-          const householdOrgId = requestedActiveOrgId || DEFAULT_ORG_ID;
-          try {
-            await orgsApi.create(user.id, householdOrgId, {
-              organizationType: ORG_TYPES.PERSONAL,
-              email: user.email || "",
-              phone: user.phone || ""
-            });
-            allOrgs = await orgsApi.list(user.id);
-            if ((allOrgs || []).length === 1) {
-              effectiveActiveOrgId = householdOrgId;
-            }
-          } catch (migrationErr) {
-            logError("default household creation failed", migrationErr);
+          const memberships = await orgsApi.getMemberships(user.id).catch(() => null);
+          if (memberships !== null) {
+            const nextSharedOrgs = buildSharedOrgEntries(Array.isArray(memberships) ? memberships : []);
+            setSharedOrgsByKey(nextSharedOrgs);
+            setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
           }
+          const emptyState = buildStateFromOrganizations({ orgs: {}, activeOrgId: "", sharedLedger: null });
+          dataRef.current = emptyState;
+          setData(emptyState);
+          setOwnedOrganizations([]);
+          setOrgSummary(EMPTY_SUMMARY);
+          setUserData(user.id, "appData", emptyState);
+          setOfflineMode(false);
+          setSyncStatus("synced");
+          setLoaded(true);
+          return;
         }
 
         const resolvedActiveOrgId = (allOrgs || []).some(org => org.id === effectiveActiveOrgId)
@@ -1586,7 +1520,7 @@ export function DataProvider({ children }) {
               new CustomEvent("ledger:readonly-blocked", {
                 detail: {
                   tone: "warning",
-                  message: "Your subscription is inactive. Go to Settings > Manage Subscription to choose Pro or Pro+."
+                  message: "Your subscription is inactive. Go to Settings > Manage Subscription to choose Pro."
                 }
               })
             );
@@ -1756,15 +1690,10 @@ export function DataProvider({ children }) {
         showProtectedRecordNotice();
         return existing;
       }
-      if (existing.id === HOUSEHOLD_PRIMARY_PERSON_ID || existing.isPrimaryProfile) {
-        return withAudit({ ...c, id: HOUSEHOLD_PRIMARY_PERSON_ID, isPrimaryProfile: true, isLockedProfile: true, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
-      }
       return withAudit({ ...c, createdBy: existing.createdBy, createdByName: existing.createdByName, createdAt: existing.createdAt });
     })
   }));
   const removeCustomer = id => update(d => {
-    const protectedCustomer = d.customers.find(customer => customer?.id === id && (customer.id === HOUSEHOLD_PRIMARY_PERSON_ID || customer.isPrimaryProfile));
-    if (protectedCustomer) return d;
     const existing = d.customers.find(customer => customer?.id === id);
     if (existing && !canManageRecord(existing)) {
       showProtectedRecordNotice();
@@ -1945,19 +1874,10 @@ export function DataProvider({ children }) {
     if (!user?.id) return { error: "No active user found." };
     const { planOverride, ...cleanAccountInput } = accountInput || {};
     const requestedType = getOrgType(cleanAccountInput.organizationType || user?.organizationType);
-    // Work Khatas can repeat and are billed per Khata. Household cannot repeat.
-    const isHouseholdRequest = isFreeOrgType(requestedType);
-    const hasHouseholdOrg = currentOwnedOrganizations.some(org => isHouseholdOrgType(org.organizationType));
-    if (isHouseholdRequest && hasHouseholdOrg) return { error: "Household is already your default Khata." };
-
-    // One org per type — no duplicates
-    if (requestedType !== ORG_TYPES.PERSONAL && ![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
-      return { error: "Khata type must be Household, Small Business, or Apartment." };
+    if (![ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT].includes(requestedType)) {
+      return { error: "Khata type must be Small Business or Apartment." };
     }
-    if (requestedType === ORG_TYPES.PERSONAL && hasHouseholdOrg) {
-      return { error: "Household is already your default Khata." };
-    }
-    if (!isHouseholdRequest && !canCreatePaidOrg(user, currentOwnedOrganizations, planOverride || null, requestedType)) {
+    if (!canCreatePaidOrg(user, currentOwnedOrganizations, planOverride || null, requestedType)) {
       return { error: "UPGRADE_REQUIRED" };
     }
 
@@ -1971,9 +1891,6 @@ export function DataProvider({ children }) {
               organizationType: cleanAccountInput.organizationType || user.organizationType
             }),
             ...cleanAccountInput,
-            primaryProfileName: isHouseholdOrgType(cleanAccountInput.organizationType || user.organizationType)
-              ? String(user?.name || "").trim()
-              : "",
             organizationType: getOrgType(cleanAccountInput.organizationType || user.organizationType)
           }
         },
@@ -2024,9 +1941,6 @@ export function DataProvider({ children }) {
     const orgIds = Object.keys(data.orgs || {});
     if (orgIds.length <= 1) {
       return { error: "At least one organization workspace must remain." };
-    }
-    if (isHouseholdOrgType(data.orgs?.[orgId]?.account?.organizationType)) {
-      return { error: "Your default Household Khata cannot be deleted." };
     }
 
     try {
@@ -2417,7 +2331,7 @@ export function DataProvider({ children }) {
     ownedOrganizations,
     activeOrgId: data.activeOrgId,
     maxOrganizations,
-    canCreateOrganization: true,
+    canCreateOrganization: canCreatePaidOrg(user, currentOwnedOrganizations, null, dataRef.current?.account?.organizationType),
     switchOrganization,
     createOrganization,
     deleteOrganization,

@@ -23,7 +23,7 @@ export default function OrganizationSwitcherModal({
           const isActiveOrg = org.isShared
             ? org.switchKey === activeSharedOrgKey
             : (!activeSharedOrgKey && org.id === activeOrgId);
-          const canDeleteOrg = canDelete && org.isOwned !== false && !activeSharedOrgKey && org.organizationType !== "personal";
+          const canDeleteOrg = canDelete && org.isOwned !== false && !activeSharedOrgKey;
           const meta = isActiveOrg
             ? "Currently open"
             : org.isShared

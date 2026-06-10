@@ -70,7 +70,7 @@ function describeActivity(daysSinceActivity) {
 }
 
 function formatPlanLabel(plan) {
-  if (plan === PLANS.PRO_PLUS || plan === "business") return "Pro+";
+  if (plan === PLANS.PRO_PLUS || plan === "business") return "Pro";
   if (plan === PLANS.PRO) return "Pro";
   return "Free";
 }
@@ -472,7 +472,7 @@ export default function AdminPanel({ year, month }) {
       insights.push({
         eyebrow: "Retention",
         title: `${paidAtRisk} paid account${paidAtRisk === 1 ? " is" : "s are"} going quiet`,
-        body: `These users still hold Pro or Pro+ access but have no recent activity signal in the last 30 days. They are the best audience for win-back nudges or onboarding help.`,
+        body: `These users still hold Pro access but have no recent activity signal in the last 30 days. They are the best audience for win-back nudges or onboarding help.`,
         tone: "var(--danger)"
       });
     }
@@ -495,8 +495,8 @@ export default function AdminPanel({ year, month }) {
     if (multiOrgUsers > 0) {
       insights.push({
         eyebrow: "Expansion",
-        title: `${multiOrgUsers} users already manage multiple workspaces`,
-        body: `Multi-org adoption is at ${multiOrgShare}% of the user base. This segment is ideal for premium upsell messaging, cross-sell campaigns, and heavier automation features.`,
+        title: `${multiOrgUsers} legacy users still have more than one owned khata`,
+        body: `Multi-org accounts are now a migration/watchlist segment because new owners are limited to one khata.`,
         tone: "var(--accent)"
       });
     }

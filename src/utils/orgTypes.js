@@ -1,5 +1,7 @@
 export const ORG_TYPES = {
-  PERSONAL: "personal",
+  // "freelancer" is the legacy stored value for Small Business khatas —
+  // kept for data compatibility with existing org rows.
+  SMALL_BUSINESS: "freelancer",
   FREELANCER: "freelancer",
   APARTMENT: "apartment"
 };
@@ -36,7 +38,6 @@ const BASE_CONFIG = {
 };
 
 export const ORG_TYPE_OPTIONS = [
-  { value: ORG_TYPES.PERSONAL, label: "Household / Personal Finance", description: "Track family money, spending, savings, and loans." },
   { value: ORG_TYPES.FREELANCER, label: "Small Business", description: "Manage clients, invoices, payments received, and business expenses." },
   { value: ORG_TYPES.APARTMENT, label: "Apartment Maintenance / Society", description: "Handle maintenance collections, flats, residents, service providers, and complaints." }
 ];
@@ -46,63 +47,10 @@ export function getSelectableOrgTypeOptions(currentType = "") {
 }
 
 export function getSecondaryOrgTypeOptions(currentType = "") {
-  const normalizedCurrent = getOrgType(currentType);
-  const secondaryTypes = new Set([ORG_TYPES.FREELANCER, ORG_TYPES.APARTMENT]);
-  return ORG_TYPE_OPTIONS.filter(option => {
-    const optionType = getOrgType(option.value);
-    if (secondaryTypes.has(optionType)) return true;
-    return normalizedCurrent && optionType === normalizedCurrent && optionType !== ORG_TYPES.PERSONAL;
-  });
+  return ORG_TYPE_OPTIONS;
 }
 
 export const ORG_TYPE_CONFIGS = {
-  [ORG_TYPES.PERSONAL]: {
-    ...BASE_CONFIG,
-    typeLabel: "Household",
-    showCustomerFinancials: false,
-    incomeLabel: "Income",
-    incomeEntryLabel: "Income",
-    incomeActionLabel: "Add Income",
-    expensesLabel: "Expenses",
-    expensesEntryLabel: "Expense",
-    expensesActionLabel: "Add Expense",
-    invoicesLabel: "Udhaar / Credit",
-    invoiceEntryLabel: "Udhaar / Credit Record",
-    invoiceActionLabel: "Add Udhaar / Credit",
-    customerLabel: "Family",
-    customerEntryLabel: "Family Member",
-    customerNameLabel: "Member Name",
-    customerNamePlaceholder: "Family member name",
-    profileNameLabel: "Household Name",
-    profileNamePlaceholder: "E.g. Family Budget",
-    accountIntro: "Use this profile for your household or personal finance records.",
-    hideInvoices: true,
-    incomeFields: [
-      { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
-      { key: "incomeType", label: "Income Type", type: "select", options: ["Salary", "Bonus", "Rental", "Interest", "Gift", "Other"] }
-    ],
-    expenseFields: [
-      { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
-      { key: "necessityType", label: "Type", type: "select", options: ["Needs", "Wants"] }
-    ],
-    expenseCategories: ["Groceries", "Rent", "Utilities", "Education", "Healthcare", "Transport", "Shopping", "Entertainment", "Insurance", "EMI", "Other"],
-    extraSections: [
-      {
-        key: "loans",
-        label: "Loans & EMI",
-        entryLabel: "EMI",
-        empty: () => ({ loanName: "", personName: "", lender: "", monthlyEmi: "", dueDay: "1", endDate: "" }),
-        fields: [
-          { key: "loanName", label: "Loan / EMI Name", type: "text", required: true, placeholder: "Home loan" },
-          { key: "personName", label: "Family Member", type: "text", placeholder: "Select family member" },
-          { key: "lender", label: "Lender", type: "text", required: true, placeholder: "Bank or person name" },
-          { key: "monthlyEmi", label: "Monthly EMI", type: "number", required: true, placeholder: "0.00" },
-          { key: "dueDay", label: "Due Date", type: "select", required: true, options: Array.from({ length: 31 }, (_, index) => String(index + 1)) },
-          { key: "endDate", label: "End Date", type: "date", required: true }
-        ]
-      }
-    ]
-  },
   [ORG_TYPES.FREELANCER]: {
     ...BASE_CONFIG,
     typeLabel: "Small Business",

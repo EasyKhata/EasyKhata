@@ -98,7 +98,7 @@ export default function AuthScreen() {
   const [birthYear, setBirthYear] = useState("");
   const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
   const birthDayOptions = useMemo(() => getBirthDayOptions(birthMonth, birthYear), [birthMonth, birthYear]);
-  const [orgType, setOrgType] = useState(pendingSetup?.existingOrgType || ORG_TYPES.PERSONAL);
+  const [orgType, setOrgType] = useState(pendingSetup?.existingOrgType || ORG_TYPES.SMALL_BUSINESS);
   const [orgProfile, setOrgProfile] = useState({
     name: "",
     addressLine: "",
@@ -116,8 +116,6 @@ export default function AuthScreen() {
 
   const orgConfig = useMemo(() => getOrgConfig(orgType), [orgType]);
   const stateOptions = useMemo(() => getStateProvinceOptions(orgProfile.country), [orgProfile.country]);
-  // Apartment/freelancer orgs collect contact + GSTIN; household stays minimal.
-  const isPersonalOrg = orgType === ORG_TYPES.PERSONAL;
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   async function handleGoogleSignIn() {
@@ -304,7 +302,7 @@ export default function AuthScreen() {
           {step === 1 && (
             <div>
               <div style={{ fontSize: 13, color: "var(--text-sec)", marginBottom: 12, lineHeight: 1.6 }}>
-                Pick the option that best fits how you'll use this Khata. You can create more later.
+                Pick the option that best fits your one owned Khata.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {ORG_TYPE_OPTIONS.map(option => {
@@ -331,11 +329,9 @@ export default function AuthScreen() {
                   );
                 })}
               </div>
-              {orgType !== ORG_TYPES.PERSONAL && (
-                <div style={{ marginTop: 12, padding: 12, background: "var(--surface-high)", borderRadius: 10, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
-                  Includes a 30-day Pro trial. No payment needed up front.
-                </div>
-              )}
+              <div style={{ marginTop: 12, padding: 12, background: "var(--surface-high)", borderRadius: 10, fontSize: 12, color: "var(--text-sec)", lineHeight: 1.6 }}>
+                Includes a 30-day Pro trial. No payment needed up front.
+              </div>
             </div>
           )}
 
@@ -406,15 +402,13 @@ export default function AuthScreen() {
                 </Field>
               </div>
 
-              {!isPersonalOrg && (
-                <Field label="GSTIN (optional)" hint="Add now or later from Settings.">
-                  <Input
-                    placeholder="22AAAAA0000A1Z5"
-                    value={orgProfile.gstin}
-                    onChange={e => setOrgProfile(p => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                  />
-                </Field>
-              )}
+              <Field label="GSTIN (optional)" hint="Add now or later from Settings.">
+                <Input
+                  placeholder="22AAAAA0000A1Z5"
+                  value={orgProfile.gstin}
+                  onChange={e => setOrgProfile(p => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                />
+              </Field>
             </div>
           )}
 
@@ -466,7 +460,7 @@ export default function AuthScreen() {
           <BrandLogo size={64} pulse style={{ marginBottom: 18 }} />
           <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>Continue to EazyKhata</div>
           <div style={{ fontSize: 14, color: "var(--text-sec)", textAlign: "center", lineHeight: 1.7, maxWidth: 320 }}>
-            Track income, expenses, invoices, and EMIs for your household, freelance work, or apartment society from one account.
+            Track income, expenses, invoices, and dues for your small business or apartment society from one account.
           </div>
         </div>
         <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 24, padding: 20, boxShadow: "0 18px 40px rgba(12, 20, 38, 0.08)" }}>
@@ -495,7 +489,7 @@ export default function AuthScreen() {
             {loading ? "Signing in..." : "Continue with Google"}
           </button>
           <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.7 }}>
-            Household Khata is free forever. Add one extra Freelancer or Apartment workspace later if you need it.
+            Every new owner starts with a 30-day Pro trial for one Small Business or Apartment Khata.
           </div>
         </div>
 

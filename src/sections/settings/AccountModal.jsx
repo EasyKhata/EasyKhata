@@ -48,7 +48,7 @@ export default function AccountModal({
         <Field
           label="Usage Type"
           required
-          hint={!canChangeOrgType ? (orgType === "personal" ? "Household stays as your permanent default Khata." : "Upgrade to Pro to change your Khata type.") : undefined}
+          hint={!canChangeOrgType ? "Upgrade to Pro to change your Khata type." : undefined}
         >
           <Select
             value={form.organizationType || orgType}

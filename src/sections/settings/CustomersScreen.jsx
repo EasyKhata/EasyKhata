@@ -67,100 +67,6 @@ export default function CustomersScreen({
     setExpandedId(prev => (prev === id ? null : id));
   }
 
-  function HouseholdBrief({ customer }) {
-    const personName = (customer.name || "").trim().toLowerCase();
-
-    if (!expensesLoaded || !incomeLoaded) {
-      return (
-        <div style={{ padding: "10px 14px 12px", fontSize: 12, color: "var(--text-dim)" }}>
-          Loading…
-        </div>
-      );
-    }
-
-    const personExpenses = personName
-      ? (allExpenses || []).filter(e => (e.personName || "").trim().toLowerCase() === personName)
-      : [];
-    const personIncome = personName
-      ? (allIncome || []).filter(i => (i.personName || "").trim().toLowerCase() === personName)
-      : [];
-
-    const totalSpent = personExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-    const totalIncome = personIncome.reduce((s, i) => s + Number(i.amount || 0), 0);
-    const net = totalIncome - totalSpent;
-
-    if (personExpenses.length === 0 && personIncome.length === 0) {
-      return (
-        <div style={{ padding: "10px 14px 12px", fontSize: 12, color: "var(--text-dim)" }}>
-          No entries tagged to {customer.name} yet.
-        </div>
-      );
-    }
-
-    const byCategory = {};
-    personExpenses.forEach(e => {
-      const cat = e.category || "Other";
-      byCategory[cat] = (byCategory[cat] || 0) + Number(e.amount || 0);
-    });
-    const topCats = Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 3);
-
-    const recent = [
-      ...personExpenses.map(e => ({ ...e, _isIncome: false })),
-      ...personIncome.map(i => ({ ...i, _isIncome: true }))
-    ]
-      .sort((a, b) => (b.date || b.month || "").localeCompare(a.date || a.month || ""))
-      .slice(0, 3);
-
-    return (
-      <div style={{ padding: "10px 14px 14px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 2 }}>Income</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 2 }}>Spent</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(totalSpent, sym)}</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 2 }}>Net</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: net >= 0 ? "var(--accent)" : "var(--danger)" }}>{fmtMoney(Math.abs(net), sym)}</div>
-          </div>
-        </div>
-        {topCats.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-            {topCats.map(([cat, amt]) => (
-              <span key={cat} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: "var(--surface-high)", color: "var(--text-sec)", border: "1px solid var(--border)" }}>
-                {cat} · {fmtMoney(amt, sym)}
-              </span>
-            ))}
-          </div>
-        )}
-        {recent.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 8 }}>
-            {recent.map((e, i) => (
-              <div key={e.id || i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-sec)" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "65%" }}>
-                  {e._isIncome ? (e.incomeType || "Income") : (e.label || e.category || "Expense")}
-                </span>
-                <span style={{ flexShrink: 0, fontWeight: 600, color: e._isIncome ? "var(--accent)" : "var(--text)" }}>
-                  {e._isIncome ? "+" : ""}{fmtMoney(Number(e.amount || 0), sym)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={e => { e.stopPropagation(); onOpenDetail(customer); }}
-          style={{ background: "none", border: "none", color: "var(--accent)", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
-        >
-          View full history →
-        </button>
-      </div>
-    );
-  }
-
   function ApartmentBrief({ customer }) {
     if (!incomeLoaded) {
       return (
@@ -340,13 +246,10 @@ export default function CustomersScreen({
   }
 
   function CustomerListCard({ customer, isLast }) {
-    const isProtectedProfile = Boolean(customer?.isPrimaryProfile || customer?.isLockedProfile);
     const canManage = canManageRecord?.(customer) ?? true;
     const isExpanded = expandedId === customer.id;
     const meta = orgConfig.showCustomerFinancials === false
-      ? isApartmentOrg
-        ? [customer.ownerName, customer.phone].filter(Boolean).join(" · ") || "Flat record"
-        : [customer.phone, customer.email].filter(Boolean).join(" · ") || "Household member"
+      ? [customer.ownerName, customer.phone].filter(Boolean).join(" · ") || "Flat record"
       : `Balance ${fmtMoney(customer.outstanding, sym)} · Revenue ${fmtMoney(customer.totalRevenue, sym)}`;
 
     if (isApartmentOrg) {
@@ -392,7 +295,6 @@ export default function CustomersScreen({
           amountTone={orgConfig.showCustomerFinancials === false ? "var(--text)" : ((customer.outstanding || 0) > 0 ? "gold" : "accent")}
           onClick={() => toggleExpand(customer.id)}
           badges={[
-            ...(isProtectedProfile ? [{ label: "Primary", tone: "blue" }] : []),
             { label: isExpanded ? "▾" : "▸" }
           ]}
           actions={canManage ? [
@@ -427,9 +329,7 @@ export default function CustomersScreen({
               >
                 {isApartmentOrg
                   ? <ApartmentBrief customer={customer} />
-                  : orgConfig.showCustomerFinancials === false
-                    ? <HouseholdBrief customer={customer} />
-                    : <FreelanceBrief customer={customer} />
+                  : <FreelanceBrief customer={customer} />
                 }
               </motion.div>
             </motion.div>
@@ -635,111 +535,6 @@ export default function CustomersScreen({
         );
       }
 
-      // Household / Personal detail view
-      const personName = (selectedCustomer.name || "").trim().toLowerCase();
-      const personExpenses = personName ? (allExpenses || []).filter(e => (e.personName || "").trim().toLowerCase() === personName) : [];
-      const personIncome = personName ? (allIncome || []).filter(i => (i.personName || "").trim().toLowerCase() === personName) : [];
-      const totalExpense = personExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-      const totalIncome = personIncome.reduce((s, i) => s + Number(i.amount || 0), 0);
-      const net = totalIncome - totalExpense;
-
-      const byIncomeType = {};
-      personIncome.forEach(i => {
-        const type = i.incomeType || "Other";
-        byIncomeType[type] = (byIncomeType[type] || 0) + Number(i.amount || 0);
-      });
-      const incomeTypeEntries = Object.entries(byIncomeType).sort((a, b) => b[1] - a[1]);
-
-      const byExpenseCat = {};
-      personExpenses.forEach(e => {
-        const cat = e.category || "Other";
-        byExpenseCat[cat] = (byExpenseCat[cat] || 0) + Number(e.amount || 0);
-      });
-      const expenseCatEntries = Object.entries(byExpenseCat).sort((a, b) => b[1] - a[1]).slice(0, 6);
-
-      const recentAll = [
-        ...personExpenses.map(e => ({ ...e, _type: "expense" })),
-        ...personIncome.map(i => ({ ...i, _type: "income" }))
-      ]
-        .sort((a, b) => (b.date || b.month || "").localeCompare(a.date || a.month || ""))
-        .slice(0, 10);
-
-      return (
-        <Modal
-          title={selectedCustomer.name}
-          onClose={onBackToList}
-          onSave={(canManageRecord?.(selectedCustomer) ?? true) ? () => onOpenEditCust(selectedCustomer) : undefined}
-          saveLabel="Edit"
-        >
-          <div className="card" style={{ padding: "18px", marginBottom: 16 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Income</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--accent)" }}>{fmtMoney(totalIncome, sym)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Spent</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "var(--danger)" }}>{fmtMoney(totalExpense, sym)}</div>
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>Net</div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: net >= 0 ? "var(--accent)" : "var(--danger)" }}>{fmtMoney(Math.abs(net), sym)}</div>
-              </div>
-            </div>
-          </div>
-
-          {incomeTypeEntries.length > 0 && (
-            <>
-              <div className="section-label">Income by Type</div>
-              <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }}>
-                {incomeTypeEntries.map(([type, amt]) => (
-                  <div key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ fontSize: 13, color: "var(--text-sec)" }}>{type}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>{fmtMoney(amt, sym)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {expenseCatEntries.length > 0 && (
-            <>
-              <div className="section-label">Expenses by Category</div>
-              <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }}>
-                {expenseCatEntries.map(([cat, amt]) => (
-                  <div key={cat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
-                    <span style={{ fontSize: 13, color: "var(--text-sec)" }}>{cat}</span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "var(--danger)" }}>{fmtMoney(amt, sym)}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          <div className="section-label">Recent Activity</div>
-          <div className="card">
-            {recentAll.length === 0 ? (
-              <div style={{ padding: "14px 18px", fontSize: 13, color: "var(--text-dim)" }}>No entries tagged to {selectedCustomer.name} yet.</div>
-            ) : (
-              recentAll.map((e, i) => (
-                <div key={e.id || i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: i < recentAll.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>
-                      {e._type === "income" ? (e.incomeType || "Income") : (e.label || e.category || "Expense")}
-                    </div>
-                    <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>
-                      {e._type === "income" ? "Income" : "Expense"}{e.date ? ` · ${fmtShortDate(e.date)}` : e.month ? ` · ${e.month}` : ""}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: e._type === "income" ? "var(--accent)" : "var(--danger)" }}>
-                    {e._type === "income" ? "+" : "-"}{fmtMoney(Number(e.amount || 0), sym)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </Modal>
-      );
     }
 
     return (

@@ -1,11 +1,8 @@
 import {
   getFinancialInvoices,
   getInvoiceStatus,
-  getPersonalEmiAmount,
-  getScheduledEmiDate,
   invoiceGrandTotal,
-  isApartmentOrgData,
-  isPersonalOrgData
+  isApartmentOrgData
 } from "./analytics";
 
 const PREFIX = "ledger_app_notifications";
@@ -101,77 +98,6 @@ export function buildReminders(data, year, month) {
     return reminders;
   }
 
-  if (isPersonalOrgData(data)) {
-    if ((summary.monthNet ?? 0) < 0) {
-      reminders.push({
-        id: `household-low-balance-${mk}`,
-        type: "lowBalance",
-        tab: "dashboard",
-        tone: "danger",
-        title: "Household cash flow is negative",
-        message: "This month is running below your combined spending and EMI commitments."
-      });
-    }
-
-    const activeUnpaidEmis = (data.orgRecords?.loans || [])
-      .map(emi => ({
-        ...emi,
-        scheduledDate: getScheduledEmiDate(emi, year, month),
-        amount: getPersonalEmiAmount(emi)
-      }))
-      .filter(emi => {
-        const paidMonths = Array.isArray(emi.paidMonths) ? emi.paidMonths : [];
-        if (!emi.scheduledDate || paidMonths.includes(mk)) return false;
-        const startDate = String(emi.startDate || "").slice(0, 10);
-        const endDate = String(emi.endDate || "").slice(0, 10);
-        const monthStart = `${mk}-01`;
-        const monthEnd = toLocalDateKey(new Date(year, month + 1, 0));
-        return (!startDate || startDate <= monthEnd) && (!endDate || endDate >= monthStart);
-      })
-      .sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
-
-    const dueEmis = activeUnpaidEmis.filter(emi => emi.scheduledDate <= todayStr);
-    const upcomingEmis = activeUnpaidEmis.filter(emi => (
-      emi.scheduledDate >= todayStr && daysBetween(todayStr, emi.scheduledDate) <= 7
-    ));
-
-    if (dueEmis.length > 0) {
-      reminders.push({
-        id: `household-emi-due-${mk}-${dueEmis.map(item => item.id || item.loanName || item.scheduledDate).join("-")}`,
-        type: "emiDue",
-        tab: "emi",
-        tone: "danger",
-        title: `${dueEmis.length} EMI${dueEmis.length !== 1 ? "s" : ""} due`,
-        message: `${formatPlainMoney(dueEmis.reduce((sum, emi) => sum + Number(emi.amount || 0), 0))} is due for ${mk}. ${dueEmis.slice(0, 2).map(item => item.loanName || "EMI").join(", ")}${dueEmis.length > 2 ? ` +${dueEmis.length - 2} more` : ""}.`
-      });
-    } else if (upcomingEmis.length > 0) {
-      reminders.push({
-        id: `household-emi-upcoming-${mk}-${upcomingEmis.map(item => item.id || item.loanName || item.scheduledDate).join("-")}`,
-        type: "emiDue",
-        tab: "emi",
-        tone: "gold",
-        title: `${upcomingEmis.length} EMI${upcomingEmis.length !== 1 ? "s" : ""} coming up`,
-        message: `Next due: ${upcomingEmis[0]?.loanName || "EMI"} on ${formatDateLabel(upcomingEmis[0]?.scheduledDate)}. Review or mark paid from EMI.`
-      });
-    }
-
-    const incomeTotal = summary.monthIncomeTotal || 0;
-    const expenseTotal = summary.monthExpenseTotal || 0;
-    const spendingRatio = incomeTotal > 0 ? (expenseTotal / incomeTotal) * 100 : expenseTotal > 0 ? 100 : 0;
-    if (spendingRatio >= 90) {
-      reminders.push({
-        id: `household-spending-${mk}`,
-        type: "spendingSpike",
-        tab: "expenses",
-        tone: "gold",
-        title: "Household spending needs attention",
-        message: `Spending is at ${Math.round(spendingRatio)}% of earnings.`
-      });
-    }
-
-    return reminders;
-  }
-
   const financialInvoices = getFinancialInvoices(data.invoices || []);
   const openInvoices = financialInvoices
     .map(invoice => ({
@@ -256,7 +182,6 @@ export function buildReminders(data, year, month) {
 export function filterRemindersByPrefs(reminders, prefs) {
   return reminders.filter(reminder => {
     if (reminder.type === "pendingCollections") return prefs?.pendingCollections !== false;
-    if (reminder.type === "emiDue") return prefs?.emiDue !== false;
     return prefs?.[reminder.type] !== false;
   });
 }
@@ -298,17 +223,3 @@ function toLocalDateKey(date = new Date()) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function daysBetween(startDateKey, endDateKey) {
-  const start = new Date(`${startDateKey}T00:00:00`);
-  const end = new Date(`${endDateKey}T00:00:00`);
-  return Math.round((end - start) / 86400000);
-}
-
-function formatDateLabel(dateKey) {
-  if (!dateKey) return "soon";
-  try {
-    return new Date(`${dateKey}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-  } catch {
-    return dateKey;
-  }
-}

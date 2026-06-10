@@ -25,7 +25,6 @@ import {
 } from "../components/UI";
 import { RupeeDisplay } from "../components/ui/reimagined";
 import Collapsible from "../components/Collapsible";
-import { getPersonalMemberOptions } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { useAuth } from "../context/AuthContext";
 import { openExternal } from "../utils/openExternal";
@@ -105,16 +104,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   }, [d.ensureCollectionLoaded, d.loaded, d.activeOrgId]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
-  const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
   const canAttachReceipt = isApartmentOrg || isFreelancerOrg;
   const visibleExpenseFields = useMemo(
     () => (config.expenseFields || []).filter(field => {
-      if (isPersonalOrg && field.key === "necessityType") return false;
       if (isApartmentOrg && field.key === "expenseType") return false;
       return true;
     }),
-    [config.expenseFields, isApartmentOrg, isPersonalOrg]
+    [config.expenseFields, isApartmentOrg]
   );
   const sym = d.currency?.symbol || "Rs";
   const mk = monthKey(year, month);
@@ -145,21 +142,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const [budgetDraft, setBudgetDraft] = useState(() =>
     categoryOptions.reduce((map, category) => ({ ...map, [category]: String(d.budgets?.[category] || "") }), {})
   );
-  const peopleOptions = useMemo(() => {
-    const customerMeta = new Map(
-      (d.customers || [])
-        .filter(person => String(person?.name || "").trim())
-        .map(person => [
-          String(person.name).trim().toLowerCase(),
-          [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ")
-        ])
-    );
-
-    return getPersonalMemberOptions(d).map(option => ({
-      value: option.value,
-      label: customerMeta.get(String(option.value || "").trim().toLowerCase()) || option.label
-    }));
-  }, [d]);
   const supplierOptions = useMemo(() => (
     (d.orgRecords?.suppliers || []).map(supplier => ({ value: supplier.supplierName || "", label: [supplier.supplierName || "", supplier.contact || "", supplier.creditBalance ? `${sym} ${supplier.creditBalance}` : ""].filter(Boolean).join(" - ") })).filter(option => option.value)
   ), [d.orgRecords, sym]);
@@ -169,7 +151,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const staffOptions = useMemo(() => (
     (d.orgRecords?.staff || []).map(m => ({ value: m.name || "", label: [m.name || "", m.role || m.phone || ""].filter(Boolean).join(" - ") })).filter(o => o.value)
   ), [d.orgRecords?.staff]);
-  const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
   const hasApartmentFlats = !isApartmentOrg || (d.customers || []).some(flat => String(flat?.name || "").trim());
   const hasFreelancerClients = !isFreelancerOrg || clientOptions.length > 0;
 
@@ -246,10 +227,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       openFlatManager();
       return;
     }
-    if (!hasHouseholdPeople) {
-      openPeopleManager();
-      return;
-    }
     setEditId(null);
     setForm(buildBlankForm(year, month, config, categoryOptions));
     setReceiptError("");
@@ -289,9 +266,9 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     next.label = expense.label || "";
     next.amount = String(expense.amount ?? "");
     next.category = expense.category || categoryOptions[0] || DEFAULT_EXPENSE_CATEGORIES[0];
-    next.recurring = isPersonalOrg ? false : Boolean(expense.recurring);
+    next.recurring = Boolean(expense.recurring);
     next.date = expense.date || next.date;
-    next.endDate = isPersonalOrg ? "" : expense.endDate || "";
+    next.endDate = expense.endDate || "";
     next.note = expense.note || "";
     next.teamMemberName = expense.teamMemberName || "";
     next.partnerName = expense.partnerName || "";
@@ -423,15 +400,14 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     }
     if (!hasMinLength(form.label, 2)) nextErrors.label = `Add a short ${config.expensesEntryLabel.toLowerCase()} title so it is easy to identify later.`;
     if (!isPositiveAmount(form.amount)) nextErrors.amount = "Enter an amount greater than 0.";
-    if (isPersonalOrg && !String(form.personName || "").trim()) nextErrors.personName = "Select a family member before saving.";
     if (!isValidDateValue(form.date)) {
       nextErrors.date = `Choose the ${config.expensesEntryLabel.toLowerCase()} date.`;
     } else if (isFutureDateValue(form.date)) {
       nextErrors.date = "Future dates are not allowed for records.";
     }
-    if (!isPersonalOrg && form.recurring && form.endDate && !isValidDateValue(form.endDate)) {
+    if (form.recurring && form.endDate && !isValidDateValue(form.endDate)) {
       nextErrors.endDate = "Choose a valid recurring end date or leave it empty.";
-    } else if (!isPersonalOrg && form.recurring && form.endDate && form.endDate < form.date) {
+    } else if (form.recurring && form.endDate && form.endDate < form.date) {
       nextErrors.endDate = "Recurring end date must be on or after the start date.";
     }
     return nextErrors;
@@ -459,7 +435,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       amount: Number(form.amount),
       category: form.category,
       date: form.date,
-      recurring: isPersonalOrg ? false : form.recurring,
+      recurring: form.recurring,
       staffMemberName: String(form.staffMemberName || "").trim() || undefined,
     };
 
@@ -474,7 +450,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       payload.receiptUploadedAt = form.receiptUploadedAt || "";
     }
 
-    if (!isPersonalOrg && form.recurring) {
+    if (form.recurring) {
       payload.startMonth = form.date.slice(0, 7);
       payload.endDate = form.endDate || "";
       payload.endMonth = form.endDate ? form.endDate.slice(0, 7) : "";
@@ -528,7 +504,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
   const ExpenseRow = ({ expense }) => {
     const receiptUrl = expense.receiptImageUrl || "";
     const badges = [
-      ...(!isPersonalOrg && expense.recurring ? [{ label: "Recurring", tone: "blue" }] : []),
+      ...(expense.recurring ? [{ label: "Recurring", tone: "blue" }] : []),
       ...(receiptUrl ? [{ label: "Receipt", tone: "green" }] : [])
     ];
     const canManage = d.canManageRecord?.(expense) ?? !isViewerMode;
@@ -558,13 +534,11 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     );
   };
 
-  const expensesSub = isPersonalOrg
-    ? "Review monthly spending without oversized cards."
-    : isApartmentOrg
-      ? "Track society bills, utilities, and repairs in one compact ledger."
-      : config.enableBudgets === false
-        ? "Track business costs in one place."
-        : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`;
+  const expensesSub = isApartmentOrg
+    ? "Track society bills, utilities, and repairs in one compact ledger."
+    : config.enableBudgets === false
+      ? "Track business costs in one place."
+      : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`;
 
   return (
     <div className="ledger-screen">
@@ -592,48 +566,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
           </div>
         </div>
-        {isPersonalOrg ? (
-          <>
-            {hasHouseholdPeople && (
-                <div className="card ledger-search-card" style={{ marginBottom: 18 }}>
-                <Field label={`Search ${config.expensesLabel}`} hint="Find entries by description, category, person, note, or linked name.">
-                  <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
-                </Field>
-                <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                  {filteredExpenses.length} of {active.length} entry{active.length === 1 ? "" : "ies"} shown for {MONTHS[month]} {year}
-                </div>
-              </div>
-            )}
-
-            <div className="card">
-              {!hasHouseholdPeople ? (
-                <WorkflowSetupCard
-                  eyebrow="Household setup"
-                  title="Add a person before tracking spendings"
-                  message="Household spending must be tagged to at least one person. Add your first person in Khata to continue."
-                  actionLabel={!isViewerMode ? "Open People" : undefined}
-                  onAction={!isViewerMode ? openPeopleManager : undefined}
-                  tone="danger"
-                />
-              ) : active.length === 0 ? (
-                <WorkflowSetupCard
-                  eyebrow="Track spend"
-                  title={`No ${config.expensesLabel.toLowerCase()} yet`}
-                  message={`Tap "${config.expensesActionLabel}" below or use the + button to record your first ${config.expensesEntryLabel.toLowerCase()}.`}
-                  actionLabel={!isViewerMode ? config.expensesActionLabel : undefined}
-                  onAction={!isViewerMode ? openNew : undefined}
-                  tone="danger"
-                />
-              ) : filteredExpenses.length === 0 ? (
-                <div style={{ padding: "18px 16px", fontSize: 13, color: "var(--text-dim)", textAlign: "center" }}>
-                  No matching spendings. Try a different search term.
-                </div>
-              ) : (
-                filteredExpenses.map(expense => <ExpenseRow key={expense.id} expense={expense} />)
-              )}
-            </div>
-          </>
-        ) : (
+        {(
           <>
             {config.enableBudgets !== false && (
               <>
@@ -929,25 +862,18 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
             <div className="ledger-form-group compact">
               <div className="ledger-form-group-title">Entry details</div>
               {visibleExpenseFields.map(field => (
-              <Field key={field.key} label={field.label} error={field.key === "personName" ? errors.personName : undefined}>
-                {isPersonalOrg && field.key === "personName"
+              <Field key={field.key} label={field.label}>
+                {isFreelancerOrg && field.key === "clientName"
                   ? (
-                    <Select error={errors.personName} value={form.personName || ""} onChange={e => { setForm(current => ({ ...current, personName: e.target.value, label: current.label || `${e.target.value} ${config.expensesEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
-                      <option value="">{peopleOptions.length ? "Select family member" : "Add family members in Settings first"}</option>
-                      {peopleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    <Select value={form.clientName || ""} onChange={e => setForm(current => ({ ...current, clientName: e.target.value }))}>
+                      <option value="">{clientOptions.length ? "Select customer (optional)" : "Add customers in Settings first"}</option>
+                      {clientOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </Select>
                   )
-                  : isFreelancerOrg && field.key === "clientName"
-                    ? (
-                      <Select value={form.clientName || ""} onChange={e => setForm(current => ({ ...current, clientName: e.target.value }))}>
-                        <option value="">{clientOptions.length ? "Select customer (optional)" : "Add customers in Settings first"}</option>
-                        {clientOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Select>
-                    )
                   : renderDynamicField(field, form[field.key], value => setForm(current => ({ ...current, [field.key]: value })))}
               </Field>
             ))}
-            {!isPersonalOrg && (
+            {(
               <>
                 <Field label="Type">
                   <Toggle
@@ -976,7 +902,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
         </Modal>
       )}
 
-      {!isPersonalOrg && config.enableBudgets !== false && showBudgetForm && (
+      {config.enableBudgets !== false && showBudgetForm && (
         <Modal title={`${config.expensesLabel} Budgets`} onClose={() => { setShowBudgetForm(false); setBudgetError(""); }} onSave={saveBudgets} saveLabel="Save" canSave accentColor="var(--danger)">
           {budgetError && <div style={{ fontSize: 12, color: "var(--danger)", fontWeight: 600, marginBottom: 8 }}>{budgetError}</div>}
           {categoryOptions.map(category => (
@@ -987,7 +913,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
         </Modal>
       )}
 
-      {!isPersonalOrg && <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />}
+      <UpgradeModal open={!!upgradeInfo} title={upgradeInfo?.title} message={upgradeInfo?.message} onClose={() => setUpgradeInfo(null)} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, calculatePersonalDashboard, getFinancialInvoices, getPersonalEmiDueDay, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData, isPersonalOrgData } from "./analytics";
+import { calculateApartmentDashboard, calculateDashboard, calculateFreelancerDashboard, getFinancialInvoices, invoiceGrandTotal, isApartmentOrgData, isFreelancerOrgData } from "./analytics";
 import { MONTHS } from "../components/UI";
 import { APP_WEBSITE_HOST } from "./brand";
 import { isNative } from "./native";
@@ -281,7 +281,6 @@ function formatUserSubscription(user) {
 
 function getReportStatsForMonth(data, year, month) {
   if (isApartmentOrgData(data)) return calculateApartmentDashboard(data, year, month);
-  if (isPersonalOrgData(data)) return calculatePersonalDashboard(data, year, month);
   if (isFreelancerOrgData(data)) return calculateFreelancerDashboard(data, year, month);
   return calculateDashboard(data, year, month);
 }
@@ -305,7 +304,6 @@ function getFinancialYearLabel(startYear) {
 function getFinancialYearTitle(data, startYear) {
   const fyLabel = getFinancialYearLabel(startYear);
   if (isApartmentOrgData(data)) return `Society Report - ${fyLabel}`;
-  if (isPersonalOrgData(data)) return `Household Report - ${fyLabel}`;
   if (isFreelancerOrgData(data)) return `Small Business Report - ${fyLabel}`;
   return `Ledger Report - ${fyLabel}`;
 }
@@ -313,7 +311,6 @@ function getFinancialYearTitle(data, startYear) {
 function getFinancialYearFilename(data, startYear) {
   const suffix = `${startYear}-${startYear + 1}`;
   if (isApartmentOrgData(data)) return `society-report-${suffix}.pdf`;
-  if (isPersonalOrgData(data)) return `household-report-${suffix}.pdf`;
   if (isFreelancerOrgData(data)) return `small-business-report-${suffix}.pdf`;
   return `ledger-report-${suffix}.pdf`;
 }
@@ -329,11 +326,10 @@ function buildFinancialYearOverview(data, startYear) {
       const stats = period.stats || {};
       acc.totalIncome += Number(stats.totalIncome || 0);
       acc.totalExpense += Number(stats.totalExpense || 0);
-      acc.totalEmi += Number(stats.totalEmi || 0);
-      acc.totalNet += isPersonalOrgData(data) ? Number(stats.netAfterEmi || 0) : Number(stats.profit || 0);
+      acc.totalNet += Number(stats.profit || 0);
       return acc;
     },
-    { totalIncome: 0, totalExpense: 0, totalEmi: 0, totalNet: 0 }
+    { totalIncome: 0, totalExpense: 0, totalNet: 0 }
   );
 
   const expenseMap = {};
@@ -384,17 +380,6 @@ function getFinancialYearMetricItems(data, overview, sym) {
     ];
   }
 
-  if (isPersonalOrgData(data)) {
-    return [
-      { label: "Earnings", value: money(overview.totalIncome, sym) },
-      { label: "Spending", value: money(overview.totalExpense, sym) },
-      { label: "EMI", value: money(overview.totalEmi, sym) },
-      { label: "Net After EMI", value: money(overview.totalNet, sym) },
-      { label: "People", value: String(stats.peopleCount || 0) },
-      { label: "Active EMIs", value: String(stats.activeLoansCount || 0) }
-    ];
-  }
-
   if (isFreelancerOrgData(data)) {
     return [
       { label: "Collected", value: money(overview.totalIncome, sym) },
@@ -426,17 +411,6 @@ function getFinancialYearSnapshotRows(data, overview, sym) {
         { label: "Collection rate", value: `${Math.round(stats.collectionRate || 0)}%` },
         { label: "Latest monthly reserve", value: money(stats.monthlyReserve || 0, sym) },
         { label: "Pending flats in latest month", value: String(stats.unpaidFlats?.length || 0) }
-      ]
-    };
-  }
-
-  if (isPersonalOrgData(data)) {
-    return {
-      title: "Household Snapshot",
-      rows: [
-        { label: "Active EMIs", value: String(stats.activeLoansCount || 0) },
-        { label: "Monthly EMI", value: money(stats.totalEmi || 0, sym) },
-        { label: "Net after EMI", value: money(stats.netAfterEmi || 0, sym) }
       ]
     };
   }
@@ -1067,10 +1041,8 @@ export async function downloadFinancialYearReport(data, startYear, sym, template
     y,
     overview.monthlyStats.map(period => {
       const stats = period.stats || {};
-      const expenseValue = isPersonalOrgData(data)
-        ? Number(stats.totalExpense || 0) + Number(stats.totalEmi || 0)
-        : Number(stats.totalExpense || 0);
-      const netValue = isPersonalOrgData(data) ? Number(stats.netAfterEmi || 0) : Number(stats.profit || 0);
+      const expenseValue = Number(stats.totalExpense || 0);
+      const netValue = Number(stats.profit || 0);
       return {
         label: period.label,
         value: `${money(stats.totalIncome || 0, sym)} | ${money(expenseValue, sym)} | Net ${money(netValue, sym)}`
@@ -1139,83 +1111,6 @@ export async function downloadMonthlyReport(data, year, month, sym, templateId, 
     return _previewBlobUrl;
   }
 
-  if (isPersonalOrgData(data)) {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const stats = calculatePersonalDashboard(data, year, month);
-    const title = `Household Report - ${MONTHS[month]} ${year}`;
-
-    let y = PAGE.top;
-    y = drawReportHeader(doc, y, safeText(data?.account?.name || "Organization"), title, data?.account?.logoBase64 || "", data?.account?.logoRatio || null);
-
-    y = sectionTitle(doc, y, "Household Summary");
-    y = drawMetricGrid(doc, y, [
-      { label: "Earnings", value: money(stats.totalIncome, sym) },
-      { label: "Spending", value: money(stats.totalExpense, sym) },
-      { label: "Monthly EMI", value: money(stats.totalEmi, sym) },
-      { label: "Net After EMI", value: money(stats.netAfterEmi || 0, sym) },
-      { label: "Active EMIs", value: String(stats.activeLoansCount || 0) },
-      { label: "Household Members", value: String(stats.peopleCount || 0) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Household Members");
-    y = drawRows(
-      doc,
-      y,
-      stats.memberTotals.length
-        ? stats.memberTotals.map(person => ({
-            label: person.name,
-            value: `${money(person.income, sym)} earned | ${money(person.spending, sym)} spent`
-          }))
-        : [{ label: "No member activity tagged yet", value: "Add People in Settings or tag entries with a person" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "EMI Commitments");
-    y = drawRows(
-      doc,
-      y,
-      stats.upcomingEmis.length
-        ? stats.upcomingEmis.map(item => ({
-            label: `${safeText(item.loanName || "EMI")} · ${safeText(item.lender || "Lender")}`,
-            value: `${money(item.monthlyEmi, sym)} | Due on ${safeText(getPersonalEmiDueDay(item) || "--")}${item.endDate ? ` | Ends ${safeText(item.endDate)}` : ""}`
-          }))
-        : [{ label: "No EMI records found", value: "--" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Spending Insights");
-    y = drawRows(doc, y, [
-      { label: "Spending ratio", value: `${Math.round(stats.spendingRatio || 0)}% of earnings` },
-      { label: "EMI ratio", value: `${Math.round(stats.emiRatio || 0)}% of earnings` },
-      { label: "Essential spending", value: money(stats.essentialSpending || 0, sym) },
-      { label: "Non-essential spending", value: money(stats.nonEssentialSpending || 0, sym) },
-      { label: "Overspend pressure", value: money(stats.spendingPressure || 0, sym) }
-    ]);
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Top Spending Categories");
-    y = drawRows(
-      doc,
-      y,
-      stats.topExpenseCategories.length
-        ? stats.topExpenseCategories.map(item => ({ label: item.category, value: money(item.amount, sym) }))
-        : [{ label: "No spending categories recorded", value: "--" }]
-    );
-
-    y = ensureSpace(doc, y + 2, 40);
-    y = sectionTitle(doc, y + 2, "Smart Suggestions");
-    y = drawRows(
-      doc,
-      y,
-      (stats.actionTips || []).map(item => ({ label: item.title, value: safeText(item.message) }))
-    );
-
-    addPageNumbers(doc);
-    await savePdf(doc, `household-report-${stats.monthKey}.pdf`);
-    _previewMode = false;
-    return _previewBlobUrl;
-  }
 
   if (isFreelancerOrgData(data)) {
     const doc = new jsPDF({ unit: "mm", format: "a4" });

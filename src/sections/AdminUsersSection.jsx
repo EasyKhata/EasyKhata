@@ -176,7 +176,7 @@ export default function AdminUsersSection() {
 
   async function updateUserPlan(member, plan) {
     if (plan === member.plan) return;
-    const planLabel = plan === PLANS.PRO ? "Pro" : plan === PLANS.PRO_PLUS ? "Pro+" : "Free";
+    const planLabel = plan === PLANS.PRO || plan === PLANS.PRO_PLUS || plan === "business" ? "Pro" : "Free";
     const isDowngrade = (member.plan === PLANS.PRO && plan === PLANS.FREE)
       || (isPaidPlan(member.plan) && plan === PLANS.FREE);
     const confirmed = await confirm(
@@ -335,13 +335,12 @@ export default function AdminUsersSection() {
                   <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <select
                       className="input-field"
-                      value={member.plan === "business" ? PLANS.PRO_PLUS : (member.plan || PLANS.FREE)}
+                      value={(member.plan === "business" || member.plan === PLANS.PRO_PLUS) ? PLANS.PRO : (member.plan || PLANS.FREE)}
                       onChange={event => updateUserPlan(member, event.target.value)}
                       style={{ padding: "6px 10px", fontSize: 12, borderRadius: 8, width: "auto" }}
                     >
                       <option value={PLANS.FREE}>Free</option>
                       <option value={PLANS.PRO}>Pro</option>
-                      <option value={PLANS.PRO_PLUS}>Pro+</option>
                     </select>
                     <select
                       className="input-field"

@@ -22,7 +22,7 @@ import { signInWithCredential } from "firebase/auth";
 const AuthContext = createContext();
 const DEFAULT_ORG_ID = "org_primary";
 
-function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.PERSONAL } = {}) {
+function createDefaultOrgProfile({ email = "", phone = "", organizationType = ORG_TYPES.SMALL_BUSINESS } = {}) {
   const cleanOrganizationType = getOrgType(organizationType);
   return {
     id: DEFAULT_ORG_ID,
@@ -37,7 +37,6 @@ function createDefaultOrgProfile({ email = "", phone = "", organizationType = OR
       browserEnabled: false,
       invoiceDue: true,
       overdueInvoices: true,
-      emiDue: true,
       budgetAlerts: true,
       lowBalance: true,
       spendingSpike: true
@@ -111,7 +110,7 @@ function buildOfflineProfile(firebaseUser) {
     phone: firebaseUser.phoneNumber || cachedProfile.phone || cachedAccount.phone || "",
     phoneCountryCode: cachedProfile.phoneCountryCode || cachedAccount.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
     activeOrgId: cachedData.activeOrgId || DEFAULT_ORG_ID,
-    organizationType: getOrgType(cachedProfile.organizationType || cachedAccount.organizationType || ORG_TYPES.PERSONAL),
+    organizationType: getOrgType(cachedProfile.organizationType || cachedAccount.organizationType || ORG_TYPES.SMALL_BUSINESS),
     onboardingSeenAt: cachedProfile.onboardingSeenAt || "__offline_profile__",
     legalAccepted: true,
     orgs: cachedData.orgs || {},
@@ -144,7 +143,7 @@ export function AuthProvider({ children }) {
         email: profile.email || firebaseUser.email || "",
         existingPhone: profile.phone || "",
         existingPhoneCountryCode: profile.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
-        existingOrgType: profile.organizationType || ORG_TYPES.PERSONAL,
+        existingOrgType: profile.organizationType || ORG_TYPES.SMALL_BUSINESS,
         skipPhoneStep: Boolean(profile.phone)
       });
       setUser(null);
@@ -161,7 +160,7 @@ export function AuthProvider({ children }) {
         email: profile.email || firebaseUser.email || "",
         existingPhone: profile.phone || "",
         existingPhoneCountryCode: profile.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
-        existingOrgType: activeOrg?.organizationType || profile.organizationType || ORG_TYPES.PERSONAL,
+        existingOrgType: activeOrg?.organizationType || profile.organizationType || ORG_TYPES.SMALL_BUSINESS,
         existingOrgId: activeOrg?.id || "org_primary",
         // Skip the phone step if we already have a number — most returning users will.
         skipPhoneStep: Boolean(profile.phone)
@@ -198,7 +197,7 @@ export function AuthProvider({ children }) {
     const baseDateOfBirth = normalizedOverrides.dateOfBirth || existing?.dateOfBirth || "";
     const baseAgeGroup = getAgeGroupFromDateOfBirth(baseDateOfBirth) || normalizedOverrides.ageGroup || existing?.ageGroup || "";
     const baseGender = normalizedOverrides.gender || existing?.gender || "";
-    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.PERSONAL);
+    const baseOrganizationType = getOrgType(normalizedOverrides.organizationType || existing?.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS);
 
     if (!existing?.id) {
       const created = await usersApi.create({
@@ -289,13 +288,6 @@ export function AuthProvider({ children }) {
       subscriptionStatus: profile?.subscriptionStatus || SUBSCRIPTION_STATUS.ACTIVE,
       subscriptionEndsAt: profile?.subscriptionEndsAt || "",
       blocked: Boolean(profile?.blocked),
-      sharedLedgerId: profile?.sharedLedgerId || "",
-      sharedLedgerRole: profile?.sharedLedgerRole || "",
-      societyPortalId: profile?.societyPortalId || "",
-      societyPortalRole: profile?.societyPortalRole || "",
-      societyFlatNumber: profile?.societyFlatNumber || "",
-      societyInviteCode: profile?.societyInviteCode || "",
-      apartmentPortalRoles: profile?.apartmentPortalRoles || {},
       sharedOrgs: profile?.sharedOrgs || {},
       // Push-notification opt-out for promotional broadcasts. Default true
       // so a missing field doesn't accidentally silence a user.
@@ -410,7 +402,7 @@ export function AuthProvider({ children }) {
             const profile = await ensureUserProfile(firebaseUser, {
               name: existing.name || firebaseUser.displayName || "",
               email: existing.email || firebaseUser.email || "",
-              organizationType: existing.organizationType || existing?.account?.organizationType || ORG_TYPES.PERSONAL,
+              organizationType: existing.organizationType || existing?.account?.organizationType || ORG_TYPES.SMALL_BUSINESS,
               phone: existing.phone || firebaseUser.phoneNumber || "",
               phoneCountryCode: existing.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE
             });
@@ -649,7 +641,7 @@ async function signInWithGoogle() {
     if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
     setupInProgressRef.current = true;
     try {
-      const orgType = getOrgType(organizationType || ORG_TYPES.PERSONAL);
+      const orgType = getOrgType(organizationType || ORG_TYPES.SMALL_BUSINESS);
       const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
         name: pendingSetup.name,
         email: pendingSetup.email,
@@ -668,10 +660,10 @@ async function signInWithGoogle() {
         return { error: "Your account has been blocked. Contact admin." };
       }
 
-      // Resolve which org to populate. ensureUserProfile creates "org_primary" for
-      // new users; returning users may already have a different active org.
-      const orgs = Array.isArray(profile?.organizations) ? profile.organizations : [];
-      const activeOrgId = profile?.activeOrgId || orgs[0]?.id || "org_primary";
+      // Resolve which org to populate. New users should create exactly one
+      // owner khata during this setup flow; returning users may already have it.
+      let orgs = Array.isArray(profile?.organizations) ? profile.organizations : [];
+      let activeOrgId = profile?.activeOrgId || orgs[0]?.id || "org_primary";
 
       // Push the khata profile to the org. We only do this when the wizard supplied
       // a profile — phone-only flows (legacy or recovery) skip it.
@@ -691,7 +683,19 @@ async function signInWithGoogle() {
             phone: String(orgProfile.phone || "").trim(),
             gstin: String(orgProfile.gstin || "").trim()
           };
-          await orgsApi.update(pendingSetup.firebaseUser.uid, activeOrgId, orgUpdate);
+          if (orgs.length === 0) {
+            const createdOrg = await orgsApi.create(pendingSetup.firebaseUser.uid, activeOrgId, orgUpdate);
+            const createdProfileOrg = { id: activeOrgId, ...orgUpdate, ...(createdOrg || {}) };
+            profile.organizations = [createdProfileOrg];
+            profile.activeOrgId = activeOrgId;
+            profile.plan = createdOrg?.plan || profile.plan || PLANS.PRO;
+            profile.subscriptionStatus = createdOrg?.subscriptionStatus || profile.subscriptionStatus || SUBSCRIPTION_STATUS.TRIAL;
+            profile.subscriptionEndsAt = createdOrg?.subscriptionEndsAt || profile.subscriptionEndsAt || "";
+            profile.trialEligible = createdOrg?.trialEligible ?? profile.trialEligible;
+            orgs = profile.organizations;
+          } else {
+            await orgsApi.update(pendingSetup.firebaseUser.uid, activeOrgId, orgUpdate);
+          }
           // Reflect the updated org in the locally cached profile so the dashboard
           // doesn't render with stale empty fields before the next refetch.
           if (Array.isArray(profile.organizations)) {

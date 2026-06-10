@@ -25,7 +25,7 @@ import {
   WorkflowRecordCard
 } from "../components/UI";
 import { RupeeDisplay } from "../components/ui/reimagined";
-import { getFinancialInvoices, getInvoiceStatus, getPersonalMemberOptions, invoiceGrandTotal } from "../utils/analytics";
+import { getFinancialInvoices, getInvoiceStatus, invoiceGrandTotal } from "../utils/analytics";
 import { hasMinLength, isFutureDateValue, isFutureMonthValue, isPositiveAmount, isValidDateValue } from "../utils/validator";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import { useConfirm } from "../context/DialogContext";
@@ -125,7 +125,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
   }, [d.ensureCollectionLoaded, d.loaded, d.activeOrgId]);
   const config = useMemo(() => getOrgConfig(orgType), [orgType]);
   const isApartmentOrg = getOrgType(orgType) === ORG_TYPES.APARTMENT;
-  const isPersonalOrg = getOrgType(orgType) === ORG_TYPES.PERSONAL;
   const isFreelancerOrg = getOrgType(orgType) === ORG_TYPES.FREELANCER;
   const visibleIncomeFields = useMemo(() => config.incomeFields || [], [config.incomeFields]);
   const societyName = String(d.account?.name || "").trim();
@@ -226,22 +225,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     })).filter(option => option.value)
   ), [d.customers, societyName, sym]);
   const flatOptions = apartmentFlats;
-  const peopleOptions = useMemo(() => {
-    const customerMeta = new Map(
-      (d.customers || [])
-        .filter(person => String(person?.name || "").trim())
-        .map(person => [
-          String(person.name).trim().toLowerCase(),
-          [person.name || "", person.phone || person.email || ""].filter(Boolean).join(" - ")
-        ])
-    );
-
-    return getPersonalMemberOptions(d).map(option => ({
-      value: option.value,
-      label: customerMeta.get(String(option.value || "").trim().toLowerCase()) || option.label
-    }));
-  }, [d]);
-  const hasHouseholdPeople = !isPersonalOrg || peopleOptions.length > 0;
   const hasApartmentFlats = !isApartmentOrg || apartmentFlats.length > 0;
   const clientOptions = useMemo(() => (
     (d.customers || []).map(client => ({ value: client.name || "", label: [client.name || "", client.company || client.email || client.phone || ""].filter(Boolean).join(" - ") })).filter(option => option.value)
@@ -432,10 +415,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
       openFlatManager();
       return;
     }
-    if (!hasHouseholdPeople) {
-      openPeopleManager();
-      return;
-    }
     if (isFreelancerOrg && !hasFreelancerClients) {
       window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "org", screen: "customers" } }));
       return;
@@ -513,10 +492,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
     }
     if (isApartmentOrg && !String(nextForm.flatNumber || "").trim()) {
       setErrors(prev => ({ ...prev, flatNumber: "Select a flat before saving." }));
-      return;
-    }
-    if (isPersonalOrg && !String(nextForm.personName || "").trim()) {
-      setErrors(prev => ({ ...prev, personName: "Select a family member before saving." }));
       return;
     }
     if (isFreelancerOrg && !String(nextForm.clientName || "").trim()) {
@@ -730,7 +705,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
 
       <div className="ledger-block">
         <WorkflowActionStrip
-          title={isPersonalOrg ? "Track household earnings for the selected month." : `Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
+          title={`Review all ${config.incomeLabel.toLowerCase()} recorded for this period.`}
           actions={[]}
         />
         <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--accent)" }}>
@@ -980,15 +955,6 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
               onAction={!isViewerMode ? openFlatManager : undefined}
               tone="accent"
             />
-          ) : !hasHouseholdPeople ? (
-            <WorkflowSetupCard
-              eyebrow="Household setup"
-              title="Add a person before tracking earnings"
-              message="Household earnings must be tagged to at least one person. Add your first person in Khata to keep every entry connected to the right family member."
-              actionLabel={!isViewerMode ? "Open People" : undefined}
-              onAction={!isViewerMode ? openPeopleManager : undefined}
-              tone="accent"
-            />
           ) : isFreelancerOrg && !hasFreelancerClients ? (
             <WorkflowSetupCard
               eyebrow="Customer setup"
@@ -1112,14 +1078,7 @@ export default function IncomeSection({ year, month, orgType, headerDatePicker }
                 <div className="ledger-form-group-title">Entry details</div>
               {visibleIncomeFields.map(field => (
                 <Field key={field.key} label={field.label} required={isFreelancerOrg && field.key === "clientName"} error={errors[field.key]}>
-                  {isPersonalOrg && field.key === "personName" ? (
-                    <Select error={errors.personName} value={form.personName || ""} onChange={event => { setForm(current => ({ ...current, personName: event.target.value, label: current.label || `${event.target.value} ${config.incomeEntryLabel}` })); if (errors.personName) setErrors(prev => ({ ...prev, personName: "" })); }}>
-                      <option value="">{peopleOptions.length ? "Select family member" : "Add family members in Settings first"}</option>
-                      {peopleOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </Select>
-                  ) : isApartmentOrg && field.key === "flatNumber" ? (
+                  {isApartmentOrg && field.key === "flatNumber" ? (
                     <Select
                       value={form.flatNumber || ""}
                       autoFocus={guidedField === "flatNumber"}

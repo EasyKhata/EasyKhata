@@ -21,7 +21,7 @@ import { logError, logEvent } from "./logger";
 const DEFAULT_CHANNEL = {
   id: "easykhata-default",
   name: "EazyKhata reminders",
-  description: "EMI dues, payment reminders, budget alerts, and account updates.",
+  description: "Payment reminders, budget alerts, and account updates.",
   importance: 4,         // IMPORTANCE_HIGH — buzzes, shows in status bar
   visibility: 1,         // VISIBILITY_PUBLIC — show full content on lock screen
   lights: true,

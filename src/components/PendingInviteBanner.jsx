@@ -52,6 +52,10 @@ export default function PendingInviteBanner() {
       }
 
       setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
+
+      // Land the member straight in the Member Portal for the khata they just
+      // joined instead of leaving them on their own (often empty) admin khata.
+      data.switchToSharedOrg?.(`${ownerId}_${orgId}`)?.catch?.(() => {});
     } catch {
       setProcessing(prev => ({ ...prev, [invite.id]: false }));
       setInviteError(prev => ({ ...prev, [invite.id]: "Could not accept invite. Please try again." }));

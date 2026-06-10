@@ -38,16 +38,9 @@ export default function PlanRequestModal({
     {
       id: PLANS.PRO,
       title: "Pro",
-      subtitle: "1 free Household + one Khata for each paid type",
+      subtitle: "One Small Business or Apartment Khata",
       monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO),
       yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.PRO)
-    },
-    {
-      id: PLANS.PRO_PLUS,
-      title: "Pro+",
-      subtitle: "1 free Household + 5 paid Khatas",
-      monthly: getBillingAmount(BILLING_CYCLES.MONTHLY, PLANS.PRO_PLUS),
-      yearly: getBillingAmount(BILLING_CYCLES.YEARLY, PLANS.PRO_PLUS)
     }
   ];
   const amount = getBillingAmount(billingCycle, targetPlan);
@@ -64,7 +57,7 @@ export default function PlanRequestModal({
     >
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, marginBottom: 12 }}>
-          Subscription now applies to your account, not one specific Khata. Household remains free and does not use a paid slot.
+          One Pro subscription lets an owner manage one Small Business or Apartment Khata.
         </div>
 
         {creatingNewKhata && (
@@ -81,7 +74,7 @@ export default function PlanRequestModal({
           </div>
         )}
 
-        <Field label="Select Plan" required hint={`You are using ${paidOrgCount} paid Khata${paidOrgCount === 1 ? "" : "s"} right now.`}>
+        <Field label="Select Plan" required hint={`You are using ${paidOrgCount} owned Khata${paidOrgCount === 1 ? "" : "s"} right now.`}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
             {planOptions.map(option => {
               const selected = targetPlan === option.id;
@@ -147,8 +140,8 @@ export default function PlanRequestModal({
             </div>
             <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.6 }}>
               Amount to pay: Rs {amount}<br />
-              Plan: {PLAN_LABELS[targetPlan]} - {selectedLimit} paid Khatas<br />
-              Current usage: {paidOrgCount}/{selectedLimit} paid Khatas{currentActive ? "" : " after activation"}
+              Plan: {PLAN_LABELS[targetPlan]} - {selectedLimit} owned Khata<br />
+              Current usage: {paidOrgCount}/{selectedLimit} owned Khata{currentActive ? "" : " after activation"}
             </div>
           </div>
         </Field>
@@ -167,7 +160,7 @@ export default function PlanRequestModal({
           How activation works
         </div>
         <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7 }}>
-          After payment, your selected plan unlocks paid Khata slots for your account. Shared admin or viewer Khatas do not count against your limit.
+          After payment, Pro unlocks one owned Khata for your account. Shared admin or viewer Khatas do not count against your owner limit.
         </div>
       </div>
     </Modal>
