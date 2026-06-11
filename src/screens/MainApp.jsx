@@ -1,8 +1,8 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Bell, Building2, ChevronDown, FileText,
-  HeadphonesIcon, LayoutDashboard, Mail, MessageSquare, Plus, Settings,
+  Bell, Building2, FileText,
+  HeadphonesIcon, LayoutDashboard, MessageSquare, Plus, Settings,
   TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -90,23 +90,23 @@ function StartGuideCard({ isApartmentOrg, isFreelancerOrg, onNav, onAdd, onDismi
     { title: setupLabel, body: setupBody, action: () => onNav({ tab: "org", screen: "customers" }) },
     { title: incomeLabel, body: isApartmentOrg ? "Use this for maintenance collections and other society income." : "Use this whenever money comes in.", action: () => onNav({ tab: "income" }) },
     { title: expenseLabel, body: "Use this whenever money goes out.", action: () => onNav({ tab: "expenses" }) },
-    { title: "Quick add", body: "Tap here for a fast entry — no need to navigate to a section first.", action: onAdd }
+    { title: "Quick add", body: "Add the next entry instantly from anywhere.", action: onAdd }
   ];
 
   // Title/subtitle reflect the post-onboarding reality: the user already named
   // their Khata and picked its type during the signup wizard. The card now
   // points them at the next concrete tasks rather than re-explaining setup.
   const headline = isApartmentOrg
-    ? "Start tracking society finances"
-    : "Start tracking your business money";
+    ? "Your apartment khata is ready"
+    : "Your business khata is ready";
 
   return (
-    <div className="card" style={{ padding: 14, marginBottom: 14, border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))", background: "color-mix(in srgb, var(--accent) 5%, var(--card))" }}>
+    <div className="premium-card" style={{ padding: 16, marginBottom: 14, border: "1px solid color-mix(in srgb, var(--accent) 22%, var(--border))", background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 11%, var(--surface)), var(--surface))", borderRadius: 22, boxShadow: "var(--card-shadow)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 4 }}>Start here</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)", lineHeight: 1.2 }}>{headline}</div>
-          <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 4 }}>A few taps to get your first entries in and unlock the dashboard.</div>
+          <div style={{ fontSize: 11, fontWeight: 900, color: "var(--accent)", textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 4 }}>Next best actions</div>
+          <div style={{ fontSize: 17, fontWeight: 900, color: "var(--text)", lineHeight: 1.15 }}>{headline}</div>
+          <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.5, marginTop: 5 }}>Add your first records and EasyKhata will turn them into a live dashboard.</div>
         </div>
         <button type="button" onClick={onDismiss} aria-label="Dismiss guide" style={{ border: "none", background: "transparent", color: "var(--text-dim)", fontSize: 20, lineHeight: 1, padding: 2, cursor: "pointer" }}>×</button>
       </div>
@@ -834,7 +834,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
   );
 }
 
-export default function MainApp() {
+export default function MainApp({ onBackToPortals }) {
   const { user, logout } = useAuth();
   const confirm = useConfirm();
   const data = useData();
@@ -849,9 +849,7 @@ export default function MainApp() {
     sharedOrgs,
     activeSharedOrgKey,
     switchToSharedOrg,
-    switchToOwnOrg,
     organizations = [],
-    switchOrganization,
     activeOrgId,
     addIncome,
     addExpense,
@@ -862,16 +860,16 @@ export default function MainApp() {
   // On first mount, honour the portal entry written by PortalSelectionScreen.
   // If the user tapped a specific shared org, switch to it immediately.
   const portalEntryConsumedRef = useRef(false);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (portalEntryConsumedRef.current) return;
     portalEntryConsumedRef.current = true;
     try {
       const raw = sessionStorage.getItem("ek_portal_entry");
       if (!raw) return;
       sessionStorage.removeItem("ek_portal_entry");
-      const { portal, ownerId, orgId } = JSON.parse(raw);
+      const { portal, sharedOrgKey, ownerId, orgId, sharedOrg } = JSON.parse(raw);
       if (portal === "resident" && ownerId && orgId) {
-        switchToSharedOrg(ownerId, orgId);
+        switchToSharedOrg(sharedOrgKey || `${ownerId}_${orgId}`, sharedOrg || { ownerId, orgId });
       }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -880,12 +878,9 @@ export default function MainApp() {
   const ownOrgNameRef = useRef(null);
   if (!activeSharedOrgKey && account?.name) ownOrgNameRef.current = account.name;
   const ownOrgName = ownOrgNameRef.current || account?.name || "My Organization";
-  const [showOrgSwitcher, setShowOrgSwitcher] = useState(false);
-  const orgSwitcherRef = useRef(null);
   const orgSwitchBtnRef = useRef(null);
   const fabRef = useRef(null);
   const { seen: coachFabSeen, dismiss: dismissFabCoach } = useCoachMark(user?.id, "fab");
-  const { seen: coachOrgSeen, dismiss: dismissOrgCoach } = useCoachMark(user?.id, "org-switch");
   // Banner visibility state (must be before usage)
   const [showFreeBanner, setShowFreeBanner] = useState(true);
   const [trialBannerVisible, setTrialBannerVisible] = useState(true);
@@ -1108,18 +1103,6 @@ export default function MainApp() {
     return () => window.removeEventListener("ledger:navigate", handleAppNavigate);
   }, []);
 
-  // Close org switcher dropdown on outside click
-  useEffect(() => {
-    if (!showOrgSwitcher) return;
-    function handleClickOutside(e) {
-      if (orgSwitcherRef.current && !orgSwitcherRef.current.contains(e.target)) {
-        setShowOrgSwitcher(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showOrgSwitcher]);
-
   useEffect(() => {
     const handleReadOnlyBlocked = event => {
       const msg = event?.detail?.message || "Your subscription is inactive. Choose Pro in Settings to continue.";
@@ -1302,61 +1285,9 @@ export default function MainApp() {
   const hasStartedUsingKhata = customers.length > 0 || (data.income || []).length > 0 || (data.expenses || []).length > 0 || (data.invoices || []).length > 0;
   const showStartGuide = !isAdmin && !activeSharedOrgKey && tab === "dashboard" && !startGuideDismissed && !hasStartedUsingKhata;
   const contextualQuickEntryType = tab === "income" ? "income" : tab === "expenses" ? "expense" : null;
-  const headerOrgOptions = useMemo(() => {
-    const owned = [];
-    const seenOwnedIds = new Set();
-    const ownedSource = Array.isArray(data.ownedOrganizations) && data.ownedOrganizations.length
-      ? data.ownedOrganizations
-      : (organizations || []).filter(org => org && org.isOwned !== false && !org.isShared);
-    ownedSource.forEach(org => {
-      if (!org || seenOwnedIds.has(org.id)) return;
-      seenOwnedIds.add(org.id);
-      owned.push({
-        key: `own:${org.id}`,
-        id: org.id,
-        name: org.name || "My Organization",
-        organizationType: getOrgType(org.organizationType),
-        role: "Owner",
-        isOwned: true,
-        isActive: !activeSharedOrgKey && org.id === activeOrgId
-      });
-    });
-    if (!activeSharedOrgKey && activeOrgId && !seenOwnedIds.has(activeOrgId)) {
-      owned.unshift({
-        key: `own:${activeOrgId}`,
-        id: activeOrgId,
-        name: account?.name || ownOrgName || "My Organization",
-        organizationType: currentOrgType,
-        role: "Owner",
-        isOwned: true,
-        isActive: true
-      });
-    }
-
-    const shared = (sharedOrgs || []).map(org => ({
-      key: `shared:${org.key}`,
-      switchKey: org.key,
-      id: org.orgId,
-      name: org.orgName || "Shared Khata",
-      organizationType: getOrgType(org.organizationType),
-      role: org.role || "viewer",
-      isOwned: false,
-      isActive: activeSharedOrgKey === org.key
-    }));
-    return [...owned, ...shared];
-  }, [account?.name, activeOrgId, activeSharedOrgKey, currentOrgType, data.ownedOrganizations, organizations, ownOrgName, sharedOrgs]);
-
-  const handleHeaderOrgSwitch = useCallback(async option => {
-    if (!option) return;
-    if (option.isOwned) {
-      if (activeSharedOrgKey) switchToOwnOrg(option.id);
-      else if (option.id && option.id !== activeOrgId) await switchOrganization(option.id);
-    } else if (option.switchKey) {
-      await switchToSharedOrg(option.switchKey);
-    }
-    handleNavigate({ tab: "dashboard" });
-    setShowOrgSwitcher(false);
-  }, [activeOrgId, activeSharedOrgKey, handleNavigate, switchOrganization, switchToOwnOrg, switchToSharedOrg]);
+  const openPortalSelection = useCallback(() => {
+    onBackToPortals?.();
+  }, [onBackToPortals]);
 
   useEffect(() => {
     try { setStartGuideDismissed(localStorage.getItem(getGuideDismissKey(user?.id, activeOrgId)) === "1"); } catch { setStartGuideDismissed(false); }
@@ -1747,7 +1678,7 @@ export default function MainApp() {
                 and tap-to-dashboard since they have no khatas to switch. */}
             {isAdmin ? (
               <button
-                onClick={() => { handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
+                onClick={() => { handleNavigate({ tab: "dashboard" }); }}
                 title="Go to dashboard"
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0 }}
               >
@@ -1757,80 +1688,21 @@ export default function MainApp() {
                 </span>
               </button>
             ) : (
-              <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }} ref={orgSwitcherRef}>
+              <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
                 <button
                   ref={orgSwitchBtnRef}
-                  onClick={() => { setShowOrgSwitcher(v => !v); dismissOrgCoach(); }}
-                  title="Switch Khata"
+                  onClick={openPortalSelection}
+                  title="Back to portals"
                   style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, minWidth: 0, maxWidth: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 10 }}
                 >
                   <BrandMark size={isCompactMobile ? 20 : 24} />
                   <span style={{ fontSize: isCompactMobile ? 14 : 16, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                     {currentOrgLabel}
                   </span>
-                  <ChevronDown size={isCompactMobile ? 13 : 15} strokeWidth={2.4} style={{ color: "var(--text-sec)", flexShrink: 0, transform: showOrgSwitcher ? "rotate(180deg)" : "none", transition: "transform 0.18s ease" }} />
+                  <span style={{ fontSize: 10, color: "var(--accent)", fontWeight: 800, flexShrink: 0, padding: "3px 7px", borderRadius: 999, background: "color-mix(in srgb, var(--accent) 10%, transparent)" }}>
+                    Portals
+                  </span>
                 </button>
-                {showOrgSwitcher && (
-                  <div style={{ position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 220 : 250, maxWidth: "min(92vw, 320px)", boxShadow: "0 16px 40px rgba(0,0,0,0.45)", zIndex: 200, overflow: "hidden" }}>
-                      {headerOrgOptions.length > 0 || true ? (
-                        <>
-                          {[
-                            { label: "Admin Portal", caption: "Khatas you manage", options: headerOrgOptions.filter(org => org.isOwned) },
-                            { label: "Member Portal", caption: "Shared with you", options: headerOrgOptions.filter(org => !org.isOwned) }
-                          ].map(group => (
-                            <React.Fragment key={group.label}>
-                              <div style={{ padding: "9px 14px 5px", fontSize: 9, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, borderTop: group.label === "Member Portal" ? "1px solid var(--line)" : "none" }}>
-                                {group.label} <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>· {group.caption}</span>
-                              </div>
-                              {group.options.length > 0 ? group.options.map((org, index) => {
-                                const role = org.role || "viewer";
-                                const roleColor = org.isOwned ? "var(--jade)" : role === "admin" ? "var(--jade)" : "var(--sky)";
-                                const initials = (org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
-                                return (
-                                  <React.Fragment key={org.key}>
-                                    {index > 0 && <div style={{ height: 1, background: "var(--line)", margin: "0 14px" }} />}
-                                    <button
-                                      onClick={() => handleHeaderOrgSwitch(org)}
-                                      style={{ width: "100%", padding: "12px 14px", textAlign: "left", background: org.isActive ? `color-mix(in srgb, ${roleColor} 8%, var(--raised))` : "transparent", border: "none", color: "var(--cream)", fontSize: 12, fontWeight: org.isActive ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                                    >
-                                      <span style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${roleColor} 18%, var(--raised))`, border: `1px solid color-mix(in srgb, ${roleColor} 30%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: roleColor, flexShrink: 0 }}>{initials}</span>
-                                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
-                                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{org.name}</span>
-                                        <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>{getOrgConfig(org.organizationType).typeLabel}</span>
-                                      </span>
-                                      <span style={{ fontSize: 9, color: roleColor, fontWeight: 700, background: `color-mix(in srgb, ${roleColor} 12%, transparent)`, borderRadius: 5, padding: "2px 5px", flexShrink: 0, textTransform: org.isOwned ? "none" : "capitalize" }}>{role}</span>
-                                      {org.isActive && <span style={{ fontSize: 12, color: roleColor, flexShrink: 0 }}>✓</span>}
-                                    </button>
-                                  </React.Fragment>
-                                );
-                              }) : group.label === "Member Portal" ? (
-                                // No accepted memberships — show a discoverable way to find pending invitations.
-                                <button
-                                  onClick={() => {
-                                    window.dispatchEvent(new CustomEvent("ledger:check-invites"));
-                                    setShowOrgSwitcher(false);
-                                  }}
-                                  style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
-                                >
-                                  <span style={{ width: 28, height: 28, borderRadius: 8, background: "var(--surface-high)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                    <Mail size={13} color="var(--text-dim)" />
-                                  </span>
-                                  <span style={{ flex: 1 }}>
-                                    <span style={{ display: "block", color: "var(--text-sec)" }}>Find my invitation</span>
-                                    <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>Check for pending invites</span>
-                                  </span>
-                                </button>
-                              ) : null}
-                            </React.Fragment>
-                          ))}
-                        </>
-                      ) : (
-                        <div style={{ padding: "12px 14px", fontSize: 11, color: "var(--text-dim)", textAlign: "center", lineHeight: 1.5 }}>
-                          No Khatas available.
-                        </div>
-                      )}
-                    </div>
-                )}
               </div>
             )}
 
@@ -1877,7 +1749,7 @@ export default function MainApp() {
           };
           return (
             <div style={{ background: "var(--surface-high)", borderBottom: "1px solid var(--border)", padding: isCompactMobile ? "6px 10px" : "7px 18px", display: "flex", alignItems: "center", gap: isCompactMobile ? 8 : 10, fontSize: isCompactMobile ? 11 : 12 }}>
-              <span style={{ color: "var(--text-dim)" }}>Member Portal</span>
+              <span style={{ color: "var(--text-dim)" }}>Shared Access</span>
               <span style={{ fontWeight: 700, color: "var(--text)" }}>{org.orgName}</span>
               <span style={{ padding: "2px 8px", borderRadius: 6, background: liveRole === "admin" ? "var(--accent-deep)" : "var(--surface)", color: liveRole === "admin" ? "var(--accent)" : "var(--text-dim)", fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>{liveRole === "viewer" ? (getOrgType(org.organizationType) === ORG_TYPES.APARTMENT ? "Resident · View only" : "Viewer · View only") : liveRole}</span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 10 }}>
@@ -1889,10 +1761,10 @@ export default function MainApp() {
                   Leave
                 </button>
                 <button
-                  onClick={() => { switchToOwnOrg(); }}
+                  onClick={openPortalSelection}
                   style={{ background: "none", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}
                 >
-                  ← Back to my org
+                  ← Portals
                 </button>
               </div>
             </div>
@@ -1906,7 +1778,7 @@ export default function MainApp() {
             minHeight: 0,
             overflowY: tab === "discussions" ? "hidden" : "auto",
             overflowX: "hidden",
-            padding: tab === "discussions" ? "0 0 calc(env(safe-area-inset-bottom, 0px) + 62px)" : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 82px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 92px)") : "14px 18px 104px"),
+            padding: tab === "discussions" ? "0" : (isMobile ? (isCompactMobile ? "8px 6px calc(env(safe-area-inset-bottom, 0px) + 142px)" : "10px 8px calc(env(safe-area-inset-bottom, 0px) + 150px)") : "14px 18px 154px"),
             position: "relative",
             ...(tab === "discussions" ? { display: "flex", flexDirection: "column" } : {})
           }}
@@ -2088,16 +1960,6 @@ export default function MainApp() {
           onDismiss={dismissFabCoach}
         />
       )}
-      {organizations.length >= 2 && !coachOrgSeen && (
-        <CoachMark
-          anchorRef={orgSwitchBtnRef}
-          arrow="up"
-          label="Switch between your khatas"
-          sub="Tap here to switch the active khata"
-          onDismiss={dismissOrgCoach}
-        />
-      )}
-
       {readOnlyNotice && (
         <div style={{ position: "fixed", left: 16, right: 16, bottom: bottomNoticeBase, zIndex: 140, display: "flex", justifyContent: "center" }}>
           <div style={{ maxWidth: 520, width: "100%", padding: "12px 14px", borderRadius: 12, border: "1px solid var(--gold)", background: "var(--gold-deep)", color: "var(--gold)", fontSize: 13, fontWeight: 700, boxShadow: "0 10px 24px rgba(0,0,0,0.25)" }}>

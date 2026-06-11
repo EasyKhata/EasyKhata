@@ -4,14 +4,8 @@ import {
   BarChart3,
   Building2,
   CheckCircle2,
-  CreditCard,
   FileText,
-  HeadphonesIcon,
   IndianRupee,
-  LockKeyhole,
-  MapPin,
-  ReceiptText,
-  ShieldCheck,
   Sparkles,
   Users
 } from "lucide-react";
@@ -20,42 +14,25 @@ import { APP_NAME, APP_SUPPORT_EMAIL } from "../utils/brand";
 import { LEGAL_PATHS } from "../utils/legal";
 import { useAuth } from "../context/AuthContext";
 
-const SEGMENTS = [
-  { id: "business", label: "Small Business", desc: "Customers, invoices, payments, daily expenses.", Icon: ReceiptText },
-  { id: "apartment", label: "Apartment", desc: "Flats, maintenance dues, resident reports.", Icon: Building2 }
-];
-
 const PORTALS = [
   {
-    title: "Owner / Admin",
-    label: "Full khata control",
-    desc: "Manage collections, expenses, invoices, members, reports, settings, and access.",
-    Icon: ShieldCheck
+    title: "Owner Access",
+    label: "Manage the khata",
+    desc: "Collections, expenses, reports, members, and settings stay with the owner/admin.",
+    Icon: Building2
   },
   {
-    title: "Viewer / Resident",
-    label: "Shared access only",
-    desc: "Residents, partners, or staff see only the records you choose to share with them.",
+    title: "Shared Access",
+    label: "View-only where needed",
+    desc: "Residents, staff, or partners open only the khata shared with them.",
     Icon: Users
   }
 ];
 
-const FLOW_STEPS = [
-  "Sign in and create one Business or Apartment khata.",
-  "Invite admins, staff, partners, viewers, or residents.",
-  "Everyone opens the right view automatically based on access."
-];
-
 const FEATURES = [
-  { title: "Daily money clarity", desc: "Income, expenses, dues, invoices, and trends in one place.", Icon: BarChart3 },
-  { title: "Professional records", desc: "Invoices, receipts, resident statements, and reports that are easy to share.", Icon: FileText },
-  { title: "Simple Pro pricing", desc: "30-day trial, then Rs 99/month or Rs 999/year for one owned khata.", Icon: CreditCard }
-];
-
-const TRUST = [
-  { title: "Secure by design", desc: "Encrypted access and protected cloud storage.", Icon: LockKeyhole },
-  { title: "Made for India", desc: "Built around Indian businesses, apartments, and rupee workflows.", Icon: MapPin },
-  { title: "Human support", desc: APP_SUPPORT_EMAIL, Icon: HeadphonesIcon }
+  { title: "Maintenance dues", desc: "Track flat-wise paid, pending, and overdue amounts.", Icon: IndianRupee },
+  { title: "Society expenses", desc: "Record bills, salaries, repairs, and monthly reports.", Icon: BarChart3 },
+  { title: "Resident visibility", desc: "Share view access without handing over controls.", Icon: FileText }
 ];
 
 function ProductPreview() {
@@ -142,16 +119,16 @@ export default function LandingScreen({ onGetStarted }) {
           <div className="landing-hero-copy">
             <div className="landing-kicker">
               <Sparkles size={14} aria-hidden="true" />
-              Built for Indian khatas
+              Apartment-first khata app
             </div>
-            <h1>Run your business or apartment khata with confidence.</h1>
+            <h1>Run apartment maintenance without messy spreadsheets.</h1>
             <p>
-              EasyKhata helps owners track money, invoices, dues, and shared records from the phone. Invite residents,
-              staff, or partners without giving away admin control.
+              EasyKhata helps apartment owners and committees track maintenance collections, society expenses,
+              resident access, and reports from the phone.
             </p>
             <div className="landing-hero-actions">
               <button onClick={handleSignIn} disabled={signingIn} className="btn-primary landing-primary-cta">
-                {signingIn ? "Signing in" : "Continue with Google"}
+                {signingIn ? "Signing in" : "Build my apartment khata"}
                 {!signingIn && <ArrowRight size={17} aria-hidden="true" />}
               </button>
               <span>30-day trial · Rs 99/month</span>
@@ -164,87 +141,25 @@ export default function LandingScreen({ onGetStarted }) {
           </div>
         </section>
 
-        <section className="landing-section">
-          <div className="landing-section-head">
-            <span>Access that feels simple</span>
-            <h2>Owner controls stay separate from viewer access.</h2>
-          </div>
-          <div className="landing-grid landing-grid-two">
-            {PORTALS.map(({ title, label, desc, Icon }) => (
-              <article key={title} className="premium-card landing-card">
-                <Icon size={22} aria-hidden="true" />
-                <span>{label}</span>
-                <h3>{title}</h3>
-                <p>{desc}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="landing-grid landing-grid-two">
-          <div className="premium-card landing-flow">
-            <span className="landing-card-label">How it works</span>
-            {FLOW_STEPS.map((step, index) => (
-              <div key={step} className="landing-flow-row">
-                <b>{index + 1}</b>
-                <span>{step}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="premium-card landing-flow">
-            <span className="landing-card-label">Made for</span>
-            {SEGMENTS.map(({ id, label, desc, Icon }) => (
-              <div key={id} className="landing-segment-row">
-                <Icon size={20} aria-hidden="true" />
-                <div>
-                  <strong>{label}</strong>
-                  <span>{desc}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="landing-section">
-          <div className="landing-section-head">
-            <span>Premium, practical tools</span>
-            <h2>Everything needed for day-to-day khata work.</h2>
-          </div>
-          <div className="landing-grid landing-grid-three">
-            {FEATURES.map(({ title, desc, Icon }) => (
-              <article key={title} className="premium-card landing-feature">
-                <Icon size={21} aria-hidden="true" />
-                <h3>{title}</h3>
-                <p>{desc}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="landing-trust">
-          {TRUST.map(({ title, desc, Icon }) => (
-            <div key={title}>
-              <Icon size={18} aria-hidden="true" />
-              <strong>{title}</strong>
-              {title === "Human support" ? (
-                <a href={`mailto:${APP_SUPPORT_EMAIL}`}>{desc}</a>
-              ) : (
-                <span>{desc}</span>
-              )}
-            </div>
+        <section className="landing-compact-grid" aria-label="Apartment khata highlights">
+          {FEATURES.map(({ title, desc, Icon }) => (
+            <article key={title} className="premium-card landing-feature">
+              <Icon size={21} aria-hidden="true" />
+              <h3>{title}</h3>
+              <p>{desc}</p>
+            </article>
           ))}
         </section>
 
-        <section className="premium-card landing-final-cta">
-          <div>
-            <span className="landing-card-label">Start with one khata</span>
-            <h2>Create your owner khata, then invite the right people.</h2>
-          </div>
-          <button onClick={handleSignIn} disabled={signingIn} className="btn-primary landing-primary-cta">
-            {signingIn ? "Signing in" : "Start setup"}
-            {!signingIn && <CheckCircle2 size={17} aria-hidden="true" />}
-          </button>
+        <section className="landing-compact-grid landing-access-grid" aria-label="Access options">
+          {PORTALS.map(({ title, label, desc, Icon }) => (
+            <article key={title} className="premium-card landing-card">
+              <Icon size={22} aria-hidden="true" />
+              <span>{label}</span>
+              <h3>{title}</h3>
+              <p>{desc}</p>
+            </article>
+          ))}
         </section>
 
         <footer className="landing-footer">
@@ -252,6 +167,7 @@ export default function LandingScreen({ onGetStarted }) {
             <a href={LEGAL_PATHS.terms} target="_blank" rel="noreferrer">Terms</a>
             <a href={LEGAL_PATHS.privacy} target="_blank" rel="noreferrer">Privacy</a>
             {LEGAL_PATHS.refunds && <a href={LEGAL_PATHS.refunds} target="_blank" rel="noreferrer">Refunds</a>}
+            <a href={`mailto:${APP_SUPPORT_EMAIL}`}>Support</a>
           </div>
           <span>{new Date().getFullYear()} {APP_NAME}</span>
         </footer>

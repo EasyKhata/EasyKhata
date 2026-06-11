@@ -1,15 +1,15 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Building2, ChevronRight, Home, Loader, LogOut, Mail, Plus, RefreshCw } from "lucide-react";
 import BrandLogo from "../components/BrandLogo";
 import { useAuth } from "../context/AuthContext";
-import { membersApi } from "../lib/api";
+import { membersApi, orgsApi } from "../lib/api";
 import { getUserData } from "../utils/storage";
 import { APP_NAME } from "../utils/brand";
 import { getOrgConfig, getOrgType } from "../utils/orgTypes";
 import { showGlobalToast } from "../context/ToastContext";
 
 export default function PortalSelectionScreen({ onSelectPortal }) {
-  const { user, pendingSetup, completeSetup, logout, refreshUserProfile } = useAuth();
+  const { user, pendingSetup, startOwnerSetup, completeSetup, logout, refreshUserProfile, setUser } = useAuth();
 
   const isNewUser = Boolean(pendingSetup && !user);
   const userId = user?.id || pendingSetup?.firebaseUser?.uid;
@@ -24,7 +24,10 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
 
   // Shared orgs from auth user state
   const sharedOrgMap = user?.sharedOrgs || {};
-  const sharedOrgs = Object.entries(sharedOrgMap).map(([key, info]) => ({ key, ...info }));
+  const sharedOrgs = useMemo(
+    () => Object.entries(sharedOrgMap).map(([key, info]) => ({ key, ...info })),
+    [sharedOrgMap]
+  );
 
   // Invitation finder state
   const [showInviteFinder, setShowInviteFinder] = useState(false);
@@ -32,8 +35,53 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
   const [invites, setInvites] = useState(null); // null = not fetched
   const [acceptingId, setAcceptingId] = useState(null);
   const [profileCreating, setProfileCreating] = useState(false);
+  const [membershipLoading, setMembershipLoading] = useState(false);
+  const [ownerSetupLoading, setOwnerSetupLoading] = useState(false);
+
+  function buildSharedOrgsFromMemberships(memberships = []) {
+    return (memberships || []).reduce((acc, membership) => {
+      if (!membership?.ownerId || !membership?.orgId) return acc;
+      acc[`${membership.ownerId}_${membership.orgId}`] = {
+        ownerId: membership.ownerId,
+        orgId: membership.orgId,
+        orgName: membership.orgName || "",
+        ownerName: membership.owner?.name || "",
+        organizationType: membership.organizationType || "small_business",
+        role: membership.role || "viewer",
+        acceptedAt: membership.acceptedAt || ""
+      };
+      return acc;
+    }, {});
+  }
+
+  async function refreshAcceptedMemberships(targetUserId = user?.id) {
+    if (!targetUserId) return {};
+    setMembershipLoading(true);
+    try {
+      const memberships = await orgsApi.getMemberships(targetUserId);
+      const nextSharedOrgs = buildSharedOrgsFromMemberships(Array.isArray(memberships) ? memberships : []);
+      if (Object.keys(nextSharedOrgs).length > 0) {
+        try { localStorage.setItem("ek_portal_pref", "resident"); } catch {}
+        setUser?.(prev => prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev);
+      }
+      return nextSharedOrgs;
+    } catch {
+      return {};
+    } finally {
+      setMembershipLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!user?.id || sharedOrgs.length > 0) return;
+    refreshAcceptedMemberships(user.id);
+    // sharedOrgs.length intentionally gates this once per empty portal render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, sharedOrgs.length]);
 
   async function openInviteFinder() {
+    let activeUserId = user?.id;
+
     // New user needs a DB profile before calling authenticated APIs
     if (isNewUser) {
       setProfileCreating(true);
@@ -43,7 +91,20 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
         showGlobalToast(res.error || "Setup failed. Please try again.", "error");
         return;
       }
+      activeUserId = userId;
     }
+
+    const accepted = await refreshAcceptedMemberships(activeUserId);
+    const acceptedList = Object.entries(accepted).map(([key, info]) => ({ key, ...info }));
+    if (acceptedList.length === 1) {
+      handleResidentSelect(acceptedList[0]);
+      return;
+    }
+    if (acceptedList.length > 1) {
+      setShowInviteFinder(false);
+      return;
+    }
+
     setShowInviteFinder(true);
     fetchInvites();
   }
@@ -66,6 +127,7 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
     setAcceptingId(invite.id);
     try {
       await membersApi.acceptInvite(invite.id);
+      try { localStorage.setItem("ek_portal_pref", "resident"); } catch {}
       // Refresh auth user so sharedOrgs gets the new membership
       await refreshUserProfile?.();
       const ownerId = invite.ownerId || invite.ownerUid;
@@ -80,12 +142,44 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
     }
   }
 
-  function handleAdminSelect(orgId) {
-    onSelectPortal("admin", orgId ? { orgId } : null);
+  async function handleAdminSelect(orgId) {
+    if (orgId) {
+      onSelectPortal("admin", { orgId });
+      return;
+    }
+    if (!pendingSetup && startOwnerSetup) {
+      setOwnerSetupLoading(true);
+      try {
+        const res = await startOwnerSetup();
+        if (res?.error) {
+          showGlobalToast(res.error, "error");
+          return;
+        }
+      } catch {
+        showGlobalToast("Couldn't open owner setup. Please try again.", "error");
+        return;
+      } finally {
+        setOwnerSetupLoading(false);
+      }
+    }
+    onSelectPortal("admin", null);
   }
 
   function handleResidentSelect(org) {
-    onSelectPortal("resident", { sharedOrgKey: org.key, ownerId: org.ownerId, orgId: org.orgId });
+    onSelectPortal("resident", {
+      sharedOrgKey: org.key || `${org.ownerId}_${org.orgId}`,
+      ownerId: org.ownerId,
+      orgId: org.orgId,
+      sharedOrg: {
+        ownerId: org.ownerId,
+        orgId: org.orgId,
+        orgName: org.orgName || org.name || "",
+        ownerName: org.ownerName || "",
+        organizationType: org.organizationType || "small_business",
+        role: org.role || "viewer",
+        acceptedAt: org.acceptedAt || ""
+      }
+    });
   }
 
   // ── Shared style helpers ───────────────────────────────────────────────────
@@ -188,7 +282,7 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
               </div>
               <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text)", marginBottom: 8 }}>No invitations found</div>
               <div style={{ fontSize: 13, color: "var(--text-sec)", lineHeight: 1.7, maxWidth: 280, marginBottom: 16 }}>
-                Ask your society admin to invite you using this email address.
+                Ask the khata owner or admin to invite you using this email address.
               </div>
               {displayEmail && (
                 <div style={{ padding: "10px 16px", background: "var(--surface-high)", borderRadius: 10, fontSize: 13, color: "var(--text-dim)", fontWeight: 600, letterSpacing: 0.2 }}>
@@ -239,16 +333,16 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
           </div>
         </div>
 
-        {/* Admin Portal */}
+        {/* Owner Access */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 2 }}>
             <div style={iconBubble("var(--accent)")}>
               <Building2 size={20} color="var(--accent)" />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Admin Portal</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Owner Access</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 2, lineHeight: 1.5 }}>
-                Manage income, expenses, invoices &amp; your team
+                Manage records, reports, members, and settings
               </div>
             </div>
           </div>
@@ -273,23 +367,27 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
               );
             })
           ) : (
-            <button onClick={() => handleAdminSelect(null)} style={ctaRow("var(--accent)")}>
-              <Plus size={15} />
-              {isNewUser ? "Create your first Khata" : "Create a new Khata"}
+            <button
+              onClick={() => handleAdminSelect(null)}
+              disabled={ownerSetupLoading}
+              style={{ ...ctaRow("var(--accent)"), opacity: ownerSetupLoading ? 0.75 : 1 }}
+            >
+              {ownerSetupLoading ? <Loader size={15} className="spin" /> : <Plus size={15} />}
+              {ownerSetupLoading ? "Opening setup..." : (isNewUser ? "Create your first Khata" : "Create a new Khata")}
             </button>
           )}
         </div>
 
-        {/* Resident Portal */}
+        {/* Shared Access */}
         <div style={cardStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 2 }}>
             <div style={iconBubble("var(--blue)")}>
               <Home size={20} color="var(--blue)" />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Resident Portal</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "var(--text)" }}>Shared Access</div>
               <div style={{ fontSize: 12, color: "var(--text-sec)", marginTop: 2, lineHeight: 1.5 }}>
-                View your dues, track payments &amp; chat with your committee
+                Open khatas shared with you as viewer or co-admin
               </div>
             </div>
           </div>
@@ -302,20 +400,25 @@ export default function PortalSelectionScreen({ onSelectPortal }) {
                 style={{ ...orgRowBase, border: "1px solid var(--border)", background: "var(--surface-high)" }}
               >
                 <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                  {org.name || "Shared Khata"}
+                  {org.orgName || org.name || "Shared Khata"}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                   <span style={badge(org.role === "admin" ? "var(--accent)" : "var(--blue)")}>
-                    {org.role === "admin" ? "Co-admin" : "Resident"}
+                    {org.role === "admin" ? "Co-admin" : "Viewer"}
                   </span>
                   <ChevronRight size={15} color="var(--text-dim)" />
                 </div>
               </button>
             ))
+          ) : membershipLoading ? (
+            <div style={{ ...ctaRow("var(--text-dim)"), cursor: "default" }}>
+              <Loader size={15} style={{ animation: "spin 1s linear infinite" }} />
+              Checking your shared access...
+            </div>
           ) : (
             <button
               onClick={openInviteFinder}
-              disabled={profileCreating}
+              disabled={profileCreating || membershipLoading}
               style={ctaRow(profileCreating ? "var(--text-dim)" : "var(--blue)")}
             >
               {profileCreating

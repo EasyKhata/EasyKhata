@@ -130,6 +130,11 @@ function AppRouter() {
     setPortalSession(portal);
   }
 
+  function handleBackToPortals() {
+    try { sessionStorage.removeItem("ek_portal_entry"); } catch {}
+    setPortalSession(null);
+  }
+
   // Returning user: Firebase is still loading — show skeleton, not landing
   if (loading && wasSignedIn.current) {
     return (
@@ -177,7 +182,7 @@ function AppRouter() {
   if (pendingSetup && portalSession === "admin") {
     return (
       <Suspense fallback={<DashboardSkeleton />}>
-        <AuthScreen />
+        <AuthScreen onCancelSetup={handleBackToPortals} />
       </Suspense>
     );
   }
@@ -231,7 +236,7 @@ function AppRouter() {
   return (
     <DataProvider>
       <Suspense fallback={<DashboardSkeleton />}>
-        <MainApp />
+        <MainApp onBackToPortals={handleBackToPortals} />
       </Suspense>
     </DataProvider>
   );

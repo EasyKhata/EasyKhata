@@ -149,7 +149,7 @@ export function AuthProvider({ children }) {
         email: profile.email || firebaseUser.email || "",
         existingPhone: profile.phone || "",
         existingPhoneCountryCode: profile.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
-        existingOrgType: profile.organizationType || ORG_TYPES.SMALL_BUSINESS,
+        existingOrgType: profile.organizationType || ORG_TYPES.APARTMENT,
         skipPhoneStep: Boolean(profile.phone)
       });
       setUser(null);
@@ -316,6 +316,40 @@ export function AuthProvider({ children }) {
     }
   }
 
+  async function startOwnerSetup() {
+    const firebaseUser = firebaseUserRef.current || auth.currentUser;
+    if (!firebaseUser) return { error: "Session expired. Please sign in again." };
+
+    let profile = getUserData(firebaseUser.uid, "profile") || {};
+    try {
+      const fresh = await usersApi.get(firebaseUser.uid);
+      if (fresh?.id) {
+        profile = fresh;
+        setUserData(firebaseUser.uid, "profile", fresh);
+      }
+    } catch (err) {
+      if (err?.status !== 404 && !profile?.id) {
+        logError("Owner setup profile load failed", err);
+        return { error: "Couldn't prepare owner setup. Please try again." };
+      }
+    }
+
+    setPendingSetup({
+      firebaseUser,
+      name: profile?.name || firebaseUser.displayName || user?.name || "",
+      email: profile?.email || firebaseUser.email || user?.email || "",
+      existingPhone: profile?.phone || user?.phone || "",
+      existingPhoneCountryCode: profile?.phoneCountryCode || user?.phoneCountryCode || DEFAULT_PHONE_COUNTRY_CODE,
+      existingOrgType: ORG_TYPES.APARTMENT,
+      existingOrgId: profile?.activeOrgId || DEFAULT_ORG_ID,
+      skipPhoneStep: Boolean(profile?.phone || user?.phone),
+      ownerSetupRequestedAt: Date.now()
+    });
+    try { localStorage.removeItem("ek_portal_pref"); } catch {}
+    logEvent("setup_shown", { reason: "owner_access_selected" });
+    return { success: true };
+  }
+
   useEffect(() => {
     const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
     const interval = setInterval(refreshUserProfile, REFRESH_INTERVAL_MS);
@@ -396,7 +430,8 @@ export function AuthProvider({ children }) {
           setPendingSetup({
             firebaseUser,
             name: firebaseUser.displayName || "",
-            email: firebaseUser.email || ""
+            email: firebaseUser.email || "",
+            existingOrgType: ORG_TYPES.APARTMENT
           });
           setUser(null);
           setLoading(false);
@@ -430,7 +465,8 @@ export function AuthProvider({ children }) {
           setPendingSetup({
             firebaseUser,
             name: existing.name || firebaseUser.displayName || "",
-            email: existing.email || firebaseUser.email || ""
+            email: existing.email || firebaseUser.email || "",
+            existingOrgType: ORG_TYPES.APARTMENT
           });
           setUser(null);
           setLoading(false);
@@ -859,6 +895,7 @@ async function signInWithGoogle() {
         loading,
         pendingSetup,
         signInWithGoogle,
+        startOwnerSetup,
         completeSetup,
         logout,
         deleteAccount,

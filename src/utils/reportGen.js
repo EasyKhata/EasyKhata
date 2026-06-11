@@ -606,6 +606,24 @@ function countMonthsInclusive(startMk, endMk) {
   return Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
 }
 
+function listMonthKeysInclusive(startMk, endMk) {
+  const [sy, sm] = String(startMk).split("-").map(Number);
+  const [ey, em] = String(endMk).split("-").map(Number);
+  if (!sy || !sm || !ey || !em) return [endMk];
+  const cursor = new Date(sy, sm - 1, 1);
+  const end = new Date(ey, em - 1, 1);
+  const keys = [];
+  while (cursor <= end) {
+    keys.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys.length ? keys : [endMk];
+}
+
+function normalizeFlatKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 // Dues are CUMULATIVE: a flat that skipped March still owes it in June's
 // report. For each flat we bill monthlyMaintenance for every month from the
 // society's first recorded collection (or the flat's creation, whichever is
@@ -615,11 +633,19 @@ function countMonthsInclusive(startMk, endMk) {
 function getApartmentFlatStatusRows(data, year, month) {
   const reportMk = `${year}-${String(month + 1).padStart(2, "0")}`;
   const flats = (data?.customers || [])
-    .filter(flat => String(flat?.name || "").trim())
+    .filter(flat => String(flat?.name || flat?.value || flat?.flatNumber || "").trim())
     .map(flat => ({
-      flatNumber: String(flat.name || "").trim(),
+      flatNumber: String(flat.name || flat.value || flat.flatNumber || "").trim(),
+      keys: [...new Set([
+        flat.name,
+        flat.value,
+        flat.flatNumber,
+        flat.id
+      ].map(normalizeFlatKey).filter(Boolean))],
       ownerName: String(flat.ownerName || "").trim(),
       expected: Number(flat.monthlyMaintenance || 0),
+      explicitDueAmount: Number(flat.pendingDueAmount || 0),
+      explicitDueMonth: String(flat.pendingDueMonth || "").slice(0, 7),
       createdMk: String(flat.createdAt || "").slice(0, 7) || ""
     }));
 
@@ -629,11 +655,16 @@ function getApartmentFlatStatusRows(data, year, month) {
   (data?.income || []).forEach(item => {
     if (isOpeningBalanceCollection(item) || !isMonthlyMaintenanceCollection(item)) return;
     const itemMk = String(item.collectionMonth || item.month || (item.date ? item.date.slice(0, 7) : "")).slice(0, 7);
-    const flatKey = String(item.flatNumber || "").trim();
+    const flatKey = normalizeFlatKey(item.flatNumber || item.customerId || "");
     if (!/^\d{4}-\d{2}$/.test(itemMk) || !flatKey) return;
     monthKeysSeen.push(itemMk);
     if (!byFlat[flatKey]) byFlat[flatKey] = [];
     byFlat[flatKey].push({ mk: itemMk, amount: Number(item.amount || 0), date: item.date || `${itemMk}-01` });
+  });
+  flats.forEach(flat => {
+    if (flat.explicitDueAmount > 0 && /^\d{4}-\d{2}$/.test(flat.explicitDueMonth)) {
+      monthKeysSeen.push(flat.explicitDueMonth);
+    }
   });
 
   // Months before the society's first recorded collection don't count as missed.
@@ -644,24 +675,43 @@ function getApartmentFlatStatusRows(data, year, month) {
       // A flat added mid-year is only billed from the month it was added.
       const flatStartMk = flat.createdMk && flat.createdMk > societyStartMk ? flat.createdMk : societyStartMk;
       const startMk = flatStartMk > reportMk ? reportMk : flatStartMk;
-      const entries = (byFlat[flat.flatNumber] || []).filter(e => e.mk <= reportMk);
-      const paidTotal = entries.reduce((sum, e) => sum + e.amount, 0);
+      const entries = flat.keys
+        .flatMap(key => byFlat[key] || [])
+        .filter(e => e.mk <= reportMk);
       const paidThisMonth = entries.filter(e => e.mk === reportMk).reduce((sum, e) => sum + e.amount, 0);
       const lastCollectionDate = entries
         .map(e => e.date)
         .filter(Boolean)
         .sort((a, b) => String(b).localeCompare(String(a)))[0] || "";
-      const monthsBilled = countMonthsInclusive(startMk, reportMk);
-      const expectedTotal = flat.expected * monthsBilled;
-      const dueAmount = flat.expected > 0 ? Math.max(0, expectedTotal - paidTotal) : 0;
-      const monthsDue = flat.expected > 0 ? Math.min(monthsBilled, Math.ceil(dueAmount / flat.expected)) : 0;
+      const billedMonths = listMonthKeysInclusive(startMk, reportMk);
+      const duesByMonth = billedMonths.map(monthKey => {
+        const paidForMonth = entries
+          .filter(e => e.mk === monthKey)
+          .reduce((sum, e) => sum + e.amount, 0);
+        const expectedForMonth = (flat.explicitDueAmount > 0 && flat.explicitDueMonth === monthKey)
+          ? flat.explicitDueAmount
+          : flat.expected;
+        return {
+          monthKey,
+          due: expectedForMonth > 0 ? Math.max(0, expectedForMonth - paidForMonth) : 0
+        };
+      }).filter(item => item.due > 0);
+      const dueAmount = duesByMonth.reduce((sum, item) => sum + item.due, 0);
+      const monthsDue = duesByMonth.length;
+      const onlyCurrentMonthDue = monthsDue === 1 && duesByMonth[0]?.monthKey === reportMk;
       return {
         ...flat,
         paidAmount: paidThisMonth,
         transactionDate: formatDateValue(lastCollectionDate),
         dueAmount,
         monthsDue,
-        status: dueAmount <= 0 ? "Paid" : monthsDue > 1 ? `Due ${monthsDue} mo` : paidThisMonth > 0 ? "Partial" : "Pending"
+        status: dueAmount <= 0
+          ? "Paid"
+          : monthsDue > 1
+            ? `Due ${monthsDue} mo`
+            : onlyCurrentMonthDue && paidThisMonth > 0
+              ? "Partial"
+              : `Due ${monthsDue || 1} mo`
       };
     })
     .sort((a, b) => a.flatNumber.localeCompare(b.flatNumber));
