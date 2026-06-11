@@ -787,7 +787,7 @@ export default function DiscussionsSection() {
   const counterVisible = text.length > MAX_MSG_LEN - 60;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg)" }}>
+    <div className="ek-chat-root" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg)" }}>
       <style>{`
         @keyframes ekMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @keyframes ekFlash { 0% { background: color-mix(in srgb, var(--accent) 18%, transparent); } 100% { background: transparent; } }
@@ -964,7 +964,7 @@ export default function DiscussionsSection() {
       </div>
 
       {/* Composer */}
-      <div style={{ flexShrink: 0, padding: "6px 8px 8px", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
+      <div className="ek-chat-composer" style={{ flexShrink: 0, padding: "8px 8px calc(env(safe-area-inset-bottom, 0px) + 106px)", background: "var(--surface)", borderTop: "1px solid var(--border)" }}>
         {error && <div style={{ fontSize: 12, color: "var(--danger)", margin: "2px 4px 6px" }}>{error}</div>}
 
         {/* Reply preview strip */}

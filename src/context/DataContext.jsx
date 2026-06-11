@@ -1096,6 +1096,7 @@ export function DataProvider({ children }) {
             setSharedOrgsByKey(nextSharedOrgs);
             setUser(prev => (prev ? { ...prev, sharedOrgs: nextSharedOrgs } : prev));
           }
+          if (activeSharedOrgRef.current) return;
           const emptyState = buildStateFromOrganizations({ orgs: {}, activeOrgId: "", sharedLedger: null });
           dataRef.current = emptyState;
           setData(emptyState);
@@ -1132,6 +1133,7 @@ export function DataProvider({ children }) {
 
         const [activeOrgMeta, customersPage, summary, incomePage, expensesPage, invoicesPage] = await activeBatch.promise;
         const getFullError = activeBatch.errorHolder.error;
+        if (activeSharedOrgRef.current) return;
 
         // If /full failed and we have nothing cached for this org, propagate the error so
         // the outer catch can run its retry / offline-toast logic. Showing a half-empty
@@ -2030,14 +2032,31 @@ export function DataProvider({ children }) {
   const organizations = [...currentOwnedOrganizations, ...sharedOrganizationOptions];
   const maxOrganizations = getMaxOrganizations(user);
 
-  async function switchToSharedOrg(key) {
-    const sharedInfo = sharedOrgsByKey?.[key];
+  async function switchToSharedOrg(key, fallbackInfo = null) {
+    const normalizedKey = key || (fallbackInfo?.ownerId && fallbackInfo?.orgId ? `${fallbackInfo.ownerId}_${fallbackInfo.orgId}` : "");
+    let sharedInfo = sharedOrgsByKey?.[normalizedKey];
+    if (!sharedInfo && fallbackInfo?.ownerId && fallbackInfo?.orgId) {
+      sharedInfo = {
+        ownerId: fallbackInfo.ownerId,
+        orgId: fallbackInfo.orgId,
+        orgName: fallbackInfo.orgName || "",
+        ownerName: fallbackInfo.ownerName || "",
+        organizationType: fallbackInfo.organizationType || ORG_TYPES.SMALL_BUSINESS,
+        role: fallbackInfo.role || "viewer",
+        acceptedAt: fallbackInfo.acceptedAt || ""
+      };
+      setSharedOrgsByKey(prev => ({ ...(prev || {}), [normalizedKey]: sharedInfo }));
+      setUser(prev => prev ? {
+        ...prev,
+        sharedOrgs: { ...(prev.sharedOrgs || {}), [normalizedKey]: sharedInfo }
+      } : prev);
+    }
     if (!sharedInfo) return;
 
     const { ownerId, orgId } = sharedInfo;
     setActiveSharedOrgRole(null);
     activeSharedOrgRef.current = { ...sharedInfo, isViewer: sharedInfo.role === "viewer" };
-    setActiveSharedOrgKey(key);
+    setActiveSharedOrgKey(normalizedKey);
 
     // Builds and applies the shared-org state from a meta object + collection
     // arrays — used identically for the cached copy and the fresh server copy.

@@ -802,7 +802,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   {MONTHS[month]} {year} · Society Fund
                 </div>
                 <div style={{ marginBottom: 4 }}>
-                  <RupeeDisplay amount={overallBalance} color={overallBalance >= 0 ? "var(--text)" : "var(--ember)"} size={48} animate />
+                  <RupeeDisplay amount={overallBalance} color={overallBalance >= 0 ? "rgba(255,255,255,0.96)" : "var(--ember)"} size={48} animate />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
                   {overallBalance >= 0 ? "Society fund surplus" : "Fund in deficit"}
@@ -969,7 +969,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   {MONTHS[month]} {year} · Business Earnings
                 </div>
                 <div style={{ marginBottom: 4 }}>
-                  <RupeeDisplay amount={netEarnings} color={netEarnings >= 0 ? "var(--sky)" : "var(--ember)"} size={48} animate />
+                  <RupeeDisplay amount={netEarnings} color={netEarnings >= 0 ? "rgba(255,255,255,0.96)" : "var(--ember)"} size={48} animate />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
                   {netEarnings >= 0 ? `Net after expenses · ${profitMarginPct}% margin` : "Expenses ahead of collected work"}
@@ -1249,7 +1249,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                 {MONTHS[month]} {year} · Smart Dashboard
               </div>
               <div style={{ marginBottom: 4 }}>
-                <RupeeDisplay amount={Number(stats.profit || 0)} color={Number(stats.profit || 0) >= 0 ? "var(--jade)" : "var(--ember)"} size={48} animate />
+                <RupeeDisplay amount={Number(stats.profit || 0)} color={Number(stats.profit || 0) >= 0 ? "rgba(255,255,255,0.96)" : "var(--ember)"} size={48} animate />
               </div>
               <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
                 {Number(stats.profit || 0) >= 0 ? "Net business profit" : "Expenses ahead of revenue"}

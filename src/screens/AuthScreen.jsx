@@ -71,7 +71,7 @@ function StepIndicator({ current, total }) {
   );
 }
 
-export default function AuthScreen() {
+export default function AuthScreen({ onCancelSetup }) {
   const { signInWithGoogle, completeSetup, pendingSetup, logout } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -98,7 +98,7 @@ export default function AuthScreen() {
   const [birthYear, setBirthYear] = useState("");
   const birthYearOptions = useMemo(() => getBirthYearOptions(), []);
   const birthDayOptions = useMemo(() => getBirthDayOptions(birthMonth, birthYear), [birthMonth, birthYear]);
-  const [orgType, setOrgType] = useState(pendingSetup?.existingOrgType || ORG_TYPES.SMALL_BUSINESS);
+  const [orgType, setOrgType] = useState(pendingSetup?.existingOrgType || ORG_TYPES.APARTMENT);
   const [orgProfile, setOrgProfile] = useState({
     name: "",
     addressLine: "",
@@ -214,6 +214,10 @@ export default function AuthScreen() {
   async function handleExitSetup() {
     if (setupLoading) return;
     setSetupError("");
+    if (onCancelSetup) {
+      onCancelSetup();
+      return;
+    }
     await logout();
   }
 

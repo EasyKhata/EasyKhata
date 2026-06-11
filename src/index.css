@@ -2527,13 +2527,13 @@ textarea.input-field {
 
 .landing-hero {
   position: relative;
-  min-height: min(660px, calc(100dvh - 92px));
+  min-height: min(560px, calc(100dvh - 92px));
   display: grid;
   align-items: end;
   overflow: hidden;
   border-radius: 30px;
-  padding: clamp(24px, 5vw, 54px);
-  margin-bottom: 28px;
+  padding: clamp(22px, 4vw, 42px);
+  margin-bottom: 16px;
   color: #ffffff;
   background:
     linear-gradient(145deg, rgba(7, 17, 31, 0.96) 0%, rgba(11, 34, 47, 0.94) 52%, rgba(0, 111, 83, 0.92) 100%),
@@ -2574,17 +2574,17 @@ textarea.input-field {
 }
 
 .landing-hero h1 {
-  font-size: clamp(38px, 8vw, 74px);
+  font-size: clamp(38px, 7vw, 64px);
   line-height: 0.96;
   letter-spacing: 0;
-  margin: 0 0 20px;
+  margin: 0 0 16px;
   font-weight: 900;
   max-width: 760px;
 }
 
 .landing-hero p {
   max-width: 620px;
-  margin: 0 0 28px;
+  margin: 0 0 22px;
   color: rgba(255, 255, 255, 0.78);
   font-size: clamp(15px, 2.2vw, 19px);
   line-height: 1.62;
@@ -2910,24 +2910,40 @@ textarea.input-field {
   text-decoration: none;
 }
 
+.landing-compact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.landing-access-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.landing-compact-grid .landing-feature,
+.landing-compact-grid .landing-card {
+  min-height: 0;
+}
+
 @media (max-width: 740px) {
   .landing-main {
-    padding: 14px 12px 36px;
+    padding: 12px 12px 28px;
+    gap: 12px;
   }
 
   .landing-hero {
-    min-height: calc(100dvh - 86px);
+    min-height: auto;
     border-radius: 24px;
-    padding: 24px 18px;
+    padding: 18px 16px;
     align-items: end;
   }
 
   .landing-preview {
     right: 14px;
     top: 18px;
-    width: 178px;
-    min-width: 178px;
-    opacity: 0.5;
+    width: 156px;
+    min-width: 156px;
+    opacity: 0.42;
   }
 
   .landing-phone {
@@ -2960,11 +2976,11 @@ textarea.input-field {
   }
 
   .landing-hero-copy {
-    padding-top: 180px;
+    padding-top: 142px;
   }
 
   .landing-hero h1 {
-    font-size: clamp(35px, 11vw, 52px);
+    font-size: clamp(31px, 9vw, 42px);
   }
 
   .landing-hero-actions {
@@ -2977,7 +2993,254 @@ textarea.input-field {
     justify-content: center;
   }
 
-  .landing-final-cta .landing-primary-cta {
-    width: 100%;
+  .landing-compact-grid,
+  .landing-access-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .landing-feature,
+  .landing-card {
+    padding: 14px !important;
+  }
+
+  .landing-feature p,
+  .landing-card p {
+    margin-bottom: 0;
+  }
+}
+
+/* Inside-app premium pass. This keeps EasyKhata practical, but gives the
+   authenticated app the richer mobile-finance feel users expect from premium
+   Indian apps. */
+.app-shell {
+  background:
+    radial-gradient(520px 220px at 20% -8%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 64%),
+    radial-gradient(420px 180px at 92% 0%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 70%),
+    var(--bg) !important;
+}
+
+.menu-glass {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 54%, transparent) !important;
+  box-shadow: 0 10px 26px rgba(11, 24, 43, 0.06) !important;
+}
+
+.content-scroll {
+  scrollbar-color: color-mix(in srgb, var(--accent) 30%, var(--border-mid)) transparent;
+}
+
+.ledger-screen {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 10px 8px 96px;
+  gap: 14px;
+}
+
+.card-leather.hero-presence,
+.ledger-hero {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff !important;
+  background:
+    radial-gradient(260px 180px at 86% 4%, rgba(166, 247, 111, 0.24), transparent 70%),
+    linear-gradient(145deg, var(--premium-ink) 0%, #10263a 55%, #036a54 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 26px !important;
+  box-shadow: 0 24px 48px rgba(7, 17, 31, 0.22) !important;
+}
+
+.card-leather.hero-presence::before,
+.ledger-hero::before {
+  content: "";
+  display: block !important;
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.055) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: linear-gradient(120deg, #000 0%, transparent 78%);
+  pointer-events: none;
+}
+
+.card-leather.hero-presence .section-eyebrow,
+.card-leather.hero-presence .ledger-overline,
+.ledger-hero .section-eyebrow,
+.ledger-hero .ledger-overline {
+  color: rgba(255, 255, 255, 0.64) !important;
+}
+
+.card-leather.hero-presence [style*="var(--cream-3)"],
+.card-leather.hero-presence .ledger-hero-sub,
+.ledger-hero .ledger-hero-sub {
+  color: rgba(255, 255, 255, 0.68) !important;
+}
+
+.card-leather.hero-presence .progress-bar-track,
+.ledger-hero .progress-bar-track {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+.ledger-summary-grid {
+  gap: 10px;
+}
+
+.ledger-summary-card {
+  padding: 14px 13px !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, transparent), color-mix(in srgb, var(--surface-high) 82%, transparent)) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent) !important;
+  box-shadow: 0 10px 24px rgba(11, 24, 43, 0.06) !important;
+}
+
+.ledger-summary-label {
+  color: var(--text-dim);
+  letter-spacing: 0.55px;
+}
+
+.ledger-summary-value,
+.ledger-hero-value {
+  font-family: var(--font) !important;
+  letter-spacing: 0 !important;
+}
+
+.ledger-block {
+  gap: 10px;
+}
+
+.ledger-block-title {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+.ledger-block-caption {
+  color: var(--text-sec);
+  line-height: 1.45;
+}
+
+.ledger-feed-row,
+.card-row {
+  border-bottom-color: color-mix(in srgb, var(--border) 62%, transparent) !important;
+}
+
+.workflow-action-strip {
+  border-radius: 22px !important;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 11%, var(--surface)), color-mix(in srgb, var(--surface) 92%, transparent)) !important;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border)) !important;
+  box-shadow: 0 12px 28px rgba(11, 24, 43, 0.07) !important;
+}
+
+.workflow-action-pill {
+  border-radius: 14px !important;
+  box-shadow: 0 8px 18px rgba(11, 24, 43, 0.08) !important;
+}
+
+.workflow-setup-card {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, transparent), color-mix(in srgb, var(--surface-high) 88%, transparent)) !important;
+}
+
+.modal-surface {
+  border-radius: 26px 26px 0 0 !important;
+  box-shadow: 0 -24px 60px rgba(7, 17, 31, 0.28) !important;
+}
+
+.modal-header {
+  border-bottom-color: color-mix(in srgb, var(--border) 58%, transparent) !important;
+}
+
+.input-field {
+  min-height: 46px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.app-bottom-nav {
+  width: min(100% - 18px, 760px) !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 9px !important;
+  transform: translateX(-50%) !important;
+  border: 1px solid color-mix(in srgb, var(--border) 62%, transparent) !important;
+  border-radius: 24px !important;
+  padding: 7px 8px calc(env(safe-area-inset-bottom, 0px) + 7px) !important;
+}
+
+.app-bottom-nav-pill {
+  border-radius: 14px !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent) !important;
+}
+
+.app-bottom-nav-icon {
+  width: 25px !important;
+  height: 25px !important;
+}
+
+.app-bottom-nav-label {
+  font-size: 9px !important;
+}
+
+.app-quick-add-floating {
+  width: 58px !important;
+  height: 58px !important;
+  border-radius: 22px !important;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 118px) !important;
+  right: 20px !important;
+  background: linear-gradient(135deg, var(--premium-saffron), var(--premium-coral)) !important;
+  color: #1b1205 !important;
+  border: 1px solid rgba(255, 255, 255, 0.32) !important;
+  box-shadow: 0 18px 34px rgba(255, 122, 61, 0.32) !important;
+}
+
+.ek-chat-root {
+  border-radius: 0;
+}
+
+.ek-chat-composer {
+  box-shadow: 0 -10px 24px rgba(11, 24, 43, 0.06);
+}
+
+[data-theme="dark"] {
+  --text-sec: #c7cedb;
+  --text-dim: #96a0b2;
+}
+
+[data-theme="dark"] .ledger-block-caption,
+[data-theme="dark"] .ledger-summary-label,
+[data-theme="dark"] .ledger-summary-sub,
+[data-theme="dark"] .card-row [style*="var(--text-dim)"],
+[data-theme="dark"] .card-row [style*="var(--text-sec)"] {
+  color: #a7b0c0 !important;
+}
+
+[data-theme="dark"] .ek-chat-composer {
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.34);
+}
+
+@media (max-width: 740px) {
+  .ledger-screen {
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-bottom: 150px;
+  }
+
+  .card-leather.hero-presence,
+  .ledger-hero {
+    border-radius: 24px !important;
+  }
+
+  .app-bottom-nav {
+    width: calc(100% - 14px) !important;
+    bottom: 7px !important;
+  }
+
+  .app-quick-add-floating {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 124px) !important;
+    right: 18px !important;
+  }
+
+  .modal-surface {
+    border-radius: 24px 24px 0 0 !important;
   }
 }
