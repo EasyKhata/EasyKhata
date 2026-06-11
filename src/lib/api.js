@@ -23,13 +23,20 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// First GET attempt fails fast (10 s) — on a congested network a hung request
+// is better cut early so the retry (which keeps the full 20 s window for cold
+// starts) fires sooner. Writes always get the full window: cutting a write
+// short risks a duplicate when the server processed it but the response stalled.
+const FIRST_GET_TIMEOUT_MS = 10_000;
+
 async function fetchWithRetry(url, options, method, path) {
   const maxAttempts = RETRYABLE_METHODS.has(method) ? 3 : 1;
   let lastError;
   const startedAt = Date.now();
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const attemptTimeoutMs = (method === "GET" && attempt === 1) ? FIRST_GET_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), attemptTimeoutMs);
     try {
       return await fetch(url, { ...options, signal: controller.signal });
     } catch (err) {
@@ -291,8 +298,6 @@ export const supportApi = {
   reply: (ticketId, message) =>
     api.post(`/support-tickets/${ticketId}/reply`, { message })
 };
-
-// ── Society Portal ────────────────────────────────────────────────────────────
 
 // ── Discussion Messages ───────────────────────────────────────────────────────
 

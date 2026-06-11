@@ -135,6 +135,12 @@ export function AuthProvider({ children }) {
   function gateOnKhataProfile(firebaseUser, profile) {
     if (!profile) return false;
     const orgs = Array.isArray(profile.organizations) ? profile.organizations : [];
+
+    // Resident-only users have shared org memberships but no owned org — don't force the admin wizard.
+    const sharedOrgs = profile.sharedOrgs || {};
+    if (Object.keys(sharedOrgs).length > 0) return false;
+    try { if (localStorage.getItem("ek_portal_pref") === "resident") return false; } catch {}
+
     if (orgs.length === 0) {
       // No org at all — extremely unusual but recoverable via the wizard.
       setPendingSetup({
@@ -637,10 +643,33 @@ async function signInWithGoogle() {
   // orgProfile is optional only because pre-existing testers may already have an
   // org row and just need their phone collected. For brand-new accounts the wizard
   // should always pass it.
-  async function completeSetup({ phone, phoneCountryCode, dateOfBirth, ageGroup, organizationType, orgProfile }) {
+  async function completeSetup({ phone, phoneCountryCode, dateOfBirth, ageGroup, organizationType, orgProfile, residentPath = false }) {
     if (!pendingSetup?.firebaseUser) return { error: "Session expired. Please sign in again." };
     setupInProgressRef.current = true;
     try {
+      // Resident path — create a minimal profile with no org so the user can
+      // accept invitations and enter the app as a viewer.
+      if (residentPath) {
+        const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
+          name: pendingSetup.name || pendingSetup.firebaseUser.displayName || "",
+          email: pendingSetup.email || pendingSetup.firebaseUser.email || "",
+          organizationType: ORG_TYPES.SMALL_BUSINESS
+        });
+        if (profile?.blocked) {
+          await signOut(auth);
+          clearCurrentUser();
+          setPendingSetup(null);
+          return { error: "Your account has been blocked. Contact admin." };
+        }
+        try { localStorage.setItem("ek_portal_pref", "resident"); } catch {}
+        const sessionUser = buildSessionUser(pendingSetup.firebaseUser, profile || {});
+        setUser(sessionUser);
+        setCurrentUser(sessionUser.id);
+        setPendingSetup(null);
+        logEvent("resident_setup_completed");
+        return { success: true };
+      }
+
       const orgType = getOrgType(organizationType || ORG_TYPES.SMALL_BUSINESS);
       const profile = await ensureUserProfile(pendingSetup.firebaseUser, {
         name: pendingSetup.name,
@@ -724,6 +753,8 @@ async function signInWithGoogle() {
         logError("Setup onboardingSeenAt update failed", err);
       }
 
+      // User created an owned org — they're no longer resident-only.
+      try { localStorage.removeItem("ek_portal_pref"); } catch {}
       const sessionUser = buildSessionUser(pendingSetup.firebaseUser, profile);
       setUser(sessionUser);
       setCurrentUser(sessionUser.id);
@@ -832,7 +863,8 @@ async function signInWithGoogle() {
         logout,
         deleteAccount,
         setUser,
-        updateProfile
+        updateProfile,
+        refreshUserProfile
       }}
     >
       {children}

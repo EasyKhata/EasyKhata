@@ -1,6 +1,8 @@
 :root {
   --font: 'Plus Jakarta Sans', system-ui, sans-serif;
-  --serif: 'Playfair Display', Georgia, serif;
+  /* Serif retired (2026-06): money and dates render in the app sans. The token
+     stays as an alias so legacy inline styles keep working. */
+  --serif: 'Plus Jakarta Sans', system-ui, sans-serif;
 
   /* Spacing scale (8px base unit) */
   --space-1: 4px;
@@ -33,106 +35,106 @@
 }
 
 [data-theme="dark"] {
-  /* ── Surfaces — warm dark canvas ── */
-  --bg: #0C0908;
-  --surface: #131009;
-  --surface-high: #1B1510;
-  --surface-pop: #241C13;
-  --border: #2A1F16;
-  --border-mid: #3D3022;
+  /* ── Surfaces — near-black neutral canvas (CRED-style) ── */
+  --bg: #09090B;
+  --surface: #121214;
+  --surface-high: #18181B;
+  --surface-pop: #1F1F23;
+  --border: #232328;
+  --border-mid: #2E2E34;
 
-  /* ── Semantic colors ── */
+  /* ── Semantic colors — restrained, used only for meaning ── */
   --accent: #00C896;
-  --accent-deep: #002318;
-  --accent-text: #00e8ad;
-  --gold: #F0A500;
-  --gold-deep: #2A1C00;
-  --danger: #FF6052;
-  --danger-deep: #2E0D09;
-  --blue: #5B9EFF;
-  --blue-deep: #091626;
-  --purple: #AC7FFF;
-  --purple-deep: #180E2E;
+  --accent-deep: #04261D;
+  --accent-text: #2DD4A8;
+  --gold: #E8B54A;
+  --gold-deep: #261D08;
+  --danger: #F4604F;
+  --danger-deep: #2A100C;
+  --blue: #6AA6FF;
+  --blue-deep: #0C1626;
+  --purple: #A78BFA;
+  --purple-deep: #17112B;
 
-  /* ── Text — warm cream ── */
-  --text: #EEE4D8;
-  --text-sec: #A89882;
-  --text-dim: #5C4E42;
+  /* ── Text — cool neutral ── */
+  --text: #F2F2F4;
+  --text-sec: #9C9CA6;
+  --text-dim: #5C5C66;
   --white: #FFFFFF;
-  --input-bg: #1B1510;
-  --card-shadow: 0 16px 40px rgba(0,0,0,0.4);
+  --input-bg: #18181B;
+  --card-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 12px 32px rgba(0,0,0,0.45);
 
   /* ── New design system aliases ── */
-  --canvas: #0C0908;
-  --card: #1B1510;
-  --raised: #241C13;
-  --pop: #2D2318;
-  --line: #2A1F16;
-  --line-2: #3D3022;
-  --cream: #EEE4D8;
-  --cream-2: #A89882;
-  --cream-3: #5C4E42;
+  --canvas: #09090B;
+  --card: #121214;
+  --raised: #18181B;
+  --pop: #1F1F23;
+  --line: #232328;
+  --line-2: #2E2E34;
+  --cream: #F2F2F4;
+  --cream-2: #9C9CA6;
+  --cream-3: #5C5C66;
 
   /* ── Brand colors with deep variants ── */
   --jade: #00C896;
-  --jade-deep: #002318;
-  --saffron: #F0A500;
-  --saffron-hi: #FFD166;
-  --saffron-deep: #2A1C00;
-  --ember: #FF6052;
-  --ember-deep: #2E0D09;
-  --sky: #5B9EFF;
-  --sky-deep: #091626;
-  --orchid: #AC7FFF;
-  --orchid-deep: #180E2E;
+  --jade-deep: #04261D;
+  --saffron: #E8B54A;
+  --saffron-hi: #F5CD7A;
+  --saffron-deep: #261D08;
+  --ember: #F4604F;
+  --ember-deep: #2A100C;
+  --sky: #6AA6FF;
+  --sky-deep: #0C1626;
+  --orchid: #A78BFA;
+  --orchid-deep: #17112B;
 }
 
 [data-theme="light"] {
-  --bg: #eef2f8;
+  --bg: #F4F5F7;
   --surface: #ffffff;
-  --surface-high: #f4f7fd;
-  --surface-pop: #e8eefb;
-  --border: #d8e1ef;
-  --border-mid: #c5d0e3;
-  --accent: #1f9d55;
-  --accent-deep: #dff7ea;
-  --accent-text: #168b49;
-  --gold: #ad5f00;
-  --gold-deep: #fff2d6;
-  --danger: #d63939;
-  --danger-deep: #fde9e9;
-  --blue: #2c63d6;
-  --blue-deep: #e2ebff;
-  --purple: #7b4fd8;
-  --purple-deep: #eee8ff;
-  --text: #101827;
-  --text-sec: #4c5d76;
+  --surface-high: #F7F8FA;
+  --surface-pop: #EFF0F4;
+  --border: #E4E6EB;
+  --border-mid: #D2D5DC;
+  --accent: #0CA678;
+  --accent-deep: #E0F5EE;
+  --accent-text: #08855F;
+  --gold: #B07A1F;
+  --gold-deep: #F9F0DC;
+  --danger: #D6453A;
+  --danger-deep: #FBE9E7;
+  --blue: #3B6FE0;
+  --blue-deep: #E7EEFC;
+  --purple: #7C5CD6;
+  --purple-deep: #EFEAFB;
+  --text: #16161A;
+  --text-sec: #5A5B66;
 
   /* ── New design system aliases (light) ── */
-  --canvas: #eef2f8;
+  --canvas: #F4F5F7;
   --card: #ffffff;
-  --raised: #f4f7fd;
-  --pop: #e8eefb;
-  --line: #d8e1ef;
-  --line-2: #c5d0e3;
-  --cream: #101827;
-  --cream-2: #4c5d76;
-  --cream-3: #7f8ea5;
-  --jade: #1f9d55;
-  --jade-deep: #dff7ea;
-  --saffron: #ad5f00;
-  --saffron-hi: #c97a00;
-  --saffron-deep: #fff2d6;
-  --ember: #d63939;
-  --ember-deep: #fde9e9;
-  --sky: #2c63d6;
-  --sky-deep: #e2ebff;
-  --orchid: #7b4fd8;
-  --orchid-deep: #eee8ff;
-  --text-dim: #7f8ea5;
+  --raised: #F7F8FA;
+  --pop: #EFF0F4;
+  --line: #E4E6EB;
+  --line-2: #D2D5DC;
+  --cream: #16161A;
+  --cream-2: #5A5B66;
+  --cream-3: #8A8B96;
+  --jade: #0CA678;
+  --jade-deep: #E0F5EE;
+  --saffron: #B07A1F;
+  --saffron-hi: #C98F2E;
+  --saffron-deep: #F9F0DC;
+  --ember: #D6453A;
+  --ember-deep: #FBE9E7;
+  --sky: #3B6FE0;
+  --sky-deep: #E7EEFC;
+  --orchid: #7C5CD6;
+  --orchid-deep: #EFEAFB;
+  --text-dim: #8A8B96;
   --white: #FFFFFF;
-  --input-bg: #fafcff;
-  --card-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --input-bg: #FAFBFC;
+  --card-shadow: 0 1px 2px rgba(22, 22, 26, 0.05), 0 8px 24px rgba(22, 22, 26, 0.06);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -151,8 +153,9 @@ html, body {
 
 body {
   font-family: var(--font);
-  background: radial-gradient(1200px 500px at 10% -10%, color-mix(in srgb, var(--blue) 16%, transparent), transparent 60%),
-    radial-gradient(1200px 500px at 100% 0%, color-mix(in srgb, var(--purple) 14%, transparent), transparent 60%),
+  /* Flat canvas with a barely-there top sheen — premium apps don't decorate
+     the background, they let surfaces and type carry the design. */
+  background: radial-gradient(120% 50% at 50% 0%, color-mix(in srgb, var(--white) 2.5%, transparent), transparent 70%),
     var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -1579,16 +1582,16 @@ select.input-field {
   width: 48px;
   height: 48px;
   border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--saffron) 70%, rgba(255,255,255,0.32));
-  background: var(--saffron);
-  color: #0C0908;
+  border: 0;
+  background: var(--accent);
+  color: #06251C;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow:
-    0 14px 30px color-mix(in srgb, var(--saffron) 38%, transparent),
+    0 14px 30px color-mix(in srgb, var(--accent) 32%, transparent),
     0 7px 16px rgba(0,0,0,0.24),
-    inset 0 1px 0 rgba(255,255,255,0.34);
+    inset 0 1px 0 rgba(255,255,255,0.28);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
@@ -1596,9 +1599,9 @@ select.input-field {
 
 .app-quick-add-floating:active {
   transform: scale(0.94);
-  background: color-mix(in srgb, var(--saffron) 88%, #fff);
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
   box-shadow:
-    0 9px 20px color-mix(in srgb, var(--saffron) 30%, transparent),
+    0 9px 20px color-mix(in srgb, var(--accent) 26%, transparent),
     0 5px 12px rgba(0,0,0,0.2);
 }
 
@@ -2316,356 +2319,15 @@ a:focus:not(:focus-visible) { outline: none; }
   backdrop-filter: blur(20px);
 }
 
-/* Enterprise UI hardening
-   These overrides intentionally reduce the earlier prototype feel: fewer glows,
-   flatter surfaces, tighter radii, stronger information hierarchy, and quieter
-   navigation. */
+/* ─────────────────────────────────────────────────────────────────────────────
+ * EasyKhata — Premium finish (CRED-style dark luxury)
+ * Single finishing layer. The earlier "Enterprise UI hardening", "Mobile-first
+ * correction" and "Premium mobile-app polish" patches were removed; the palette
+ * is defined once in the theme blocks at the top of this file.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --font: Inter, "Segoe UI", Roboto, Arial, system-ui, sans-serif;
-  --serif: Inter, "Segoe UI", Roboto, Arial, system-ui, sans-serif;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-}
-
-[data-theme="light"] {
-  --bg: #f6f8fb;
-  --surface: #ffffff;
-  --surface-high: #f9fafb;
-  --surface-pop: #eef2f7;
-  --border: #d9e0ea;
-  --border-mid: #bac5d4;
-  --accent: #0f6b4f;
-  --accent-deep: #e1f3ec;
-  --accent-text: #0b5a43;
-  --gold: #9a6200;
-  --gold-deep: #fff4d8;
-  --danger: #b42318;
-  --danger-deep: #fde8e7;
-  --blue: #1d4ed8;
-  --blue-deep: #e7efff;
-  --purple: #5b43c8;
-  --purple-deep: #eeeaff;
-  --text: #111827;
-  --text-sec: #4b5563;
-  --text-dim: #7b8794;
-  --input-bg: #ffffff;
-  --card-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-}
-
-[data-theme="dark"] {
-  --bg: #0b1017;
-  --surface: #111827;
-  --surface-high: #161f2d;
-  --surface-pop: #1d2939;
-  --border: #263445;
-  --border-mid: #34465c;
-  --accent: #3dd19f;
-  --accent-deep: #102b24;
-  --accent-text: #7be3bf;
-  --gold: #d6a23a;
-  --gold-deep: #2d230d;
-  --danger: #ff6b5f;
-  --danger-deep: #351613;
-  --blue: #6ca8ff;
-  --blue-deep: #10213a;
-  --purple: #a58bff;
-  --purple-deep: #201a3a;
-  --text: #f3f6fb;
-  --text-sec: #aab4c3;
-  --text-dim: #748095;
-  --input-bg: #0f1722;
-  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-}
-
-body,
-[data-theme="dark"] body {
-  background: var(--bg);
-  letter-spacing: 0;
-}
-
-.app-shell {
-  background: var(--bg);
-}
-
-.auth-shell {
-  background: var(--bg);
-}
-
-.card,
-.card-leather,
-.ledger-feed-card,
-.ledger-summary-card,
-.workflow-setup-card,
-.workflow-record-card {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: var(--card-shadow) !important;
-  transform: none !important;
-}
-
-.card:hover,
-.card-leather:hover,
-.ledger-feed-card:hover,
-.ledger-summary-card.interactive:hover,
-.workflow-record-card:hover {
-  border-color: var(--border-mid) !important;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
-  transform: none !important;
-}
-
-.card-leather::before,
-.hero-presence::before,
-.hero-presence::after,
-.section-hero::before {
-  display: none !important;
-}
-
-.ledger-hero,
-[data-theme="light"] .ledger-hero {
-  background: var(--surface) !important;
-  background-image: none !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: var(--card-shadow) !important;
-}
-
-.ledger-hero::after {
-  display: none !important;
-}
-
-.ledger-hero-value {
-  font-family: var(--font) !important;
-  font-size: clamp(28px, 6vw, 36px) !important;
-  letter-spacing: 0 !important;
-}
-
-.section-hero {
-  background: var(--surface) !important;
-  border-bottom: 1px solid var(--border) !important;
-  padding: 18px !important;
-}
-
-.menu-glass {
-  background: var(--surface) !important;
-  border-bottom: 1px solid var(--border) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.modal-overlay {
-  background: rgba(11, 16, 23, 0.56);
-  backdrop-filter: none;
-}
-
-.modal-surface {
-  background: var(--surface) !important;
-  backdrop-filter: none !important;
-  border-left: 1px solid var(--border);
-  border-right: 1px solid var(--border);
-}
-
-.modal-header {
-  box-shadow: none;
-  background: var(--surface);
-}
-
-.input-field,
-select.input-field,
-textarea.input-field {
-  border-radius: 6px !important;
-  background-color: var(--input-bg) !important;
-  border-color: var(--border) !important;
-}
-
-.input-field:focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent) !important;
-}
-
-.btn-primary,
-.btn-secondary {
-  border-radius: 6px !important;
-  box-shadow: none !important;
-  letter-spacing: 0 !important;
-}
-
-.btn-primary {
-  background: var(--accent) !important;
-  color: #ffffff !important;
-  border: 1px solid color-mix(in srgb, var(--accent) 88%, #000) !important;
-}
-
-.btn-primary:hover,
-.btn-secondary:hover {
-  filter: none !important;
-  transform: none !important;
-}
-
-.btn-secondary {
-  background: var(--surface) !important;
-  border: 1px solid var(--border) !important;
-  color: var(--text) !important;
-}
-
-.section-label,
-.section-eyebrow,
-.ledger-overline {
-  letter-spacing: 0.7px !important;
-  color: var(--text-dim) !important;
-}
-
-.app-bottom-nav {
-  background: var(--surface) !important;
-  border-top: 1px solid var(--border) !important;
-  box-shadow: 0 -1px 2px rgba(15, 23, 42, 0.04) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  gap: 2px !important;
-}
-
-.app-bottom-nav-btn {
-  border-radius: 6px !important;
-  padding: 8px 4px 6px !important;
-}
-
-.app-bottom-nav-btn.active {
-  background: var(--surface-pop) !important;
-  border-color: var(--border) !important;
-}
-
-.app-bottom-nav-icon {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-
-.app-bottom-nav-btn.active .app-bottom-nav-icon {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-
-.app-quick-add-floating {
-  border-radius: 8px !important;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16) !important;
-}
-
-.pill,
-.auth-flow-chip {
-  border-radius: 6px !important;
-  letter-spacing: 0.5px !important;
-}
-
-.empty-state-orb {
-  border-radius: 8px !important;
-  background: var(--surface-pop) !important;
-}
-
-@media (min-width: 768px) {
-  .app-shell {
-    box-shadow: none !important;
-  }
-}
-
-/* Mobile-first correction: EasyKhata is a trusted phone app for Indian small
-   businesses, apartment owners, and residents. Keep it polished and calm, but
-   not like a corporate enterprise console. */
-:root {
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-}
-
-[data-theme="light"] {
-  --bg: #f4f7fb;
-  --surface: #ffffff;
-  --surface-high: #f8fafc;
-  --surface-pop: #eef5f2;
-  --border: #dfe7ef;
-  --border-mid: #cbd6e2;
-  --accent: #087a5b;
-  --accent-deep: #e1f6ee;
-  --accent-text: #056246;
-  --blue: #2563eb;
-  --blue-deep: #e8f0ff;
-  --purple: #7257d8;
-  --purple-deep: #f0ecff;
-  --text: #111827;
-  --text-sec: #526070;
-  --text-dim: #8893a2;
-  --card-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
-}
-
-[data-theme="dark"] {
-  --bg: #0f151d;
-  --surface: #151d28;
-  --surface-high: #1b2533;
-  --surface-pop: #223042;
-  --border: #2d3a4c;
-  --border-mid: #405169;
-  --accent: #4dd7aa;
-  --accent-deep: #123229;
-  --text: #f4f7fb;
-  --text-sec: #b4bfce;
-  --text-dim: #7e8aa0;
-  --card-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
-}
-
-body,
-[data-theme="dark"] body {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 260px),
-    var(--bg);
-}
-
-.card,
-.card-leather,
-.ledger-feed-card,
-.ledger-summary-card,
-.workflow-setup-card,
-.workflow-record-card,
-.ledger-hero,
-[data-theme="light"] .ledger-hero {
-  border-radius: 14px !important;
-  box-shadow: var(--card-shadow) !important;
-}
-
-.card:hover,
-.card-leather:hover,
-.ledger-feed-card:hover,
-.ledger-summary-card.interactive:hover,
-.workflow-record-card:hover {
-  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.09) !important;
-}
-
-.btn-primary,
-.btn-secondary,
-.input-field,
-select.input-field,
-textarea.input-field {
-  border-radius: 12px !important;
-}
-
-.app-bottom-nav-btn {
-  border-radius: 14px !important;
-}
-
-.app-bottom-nav-btn.active {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-high)) !important;
-}
-
-.app-quick-add-floating {
-  border-radius: 16px !important;
-}
-
-/* Premium mobile-app polish: richer first impression, still practical for
-   Indian apartment and small-business owners. */
-:root {
+  /* Landing-page accent tokens */
   --premium-ink: #07111f;
   --premium-ink-2: #102134;
   --premium-emerald: #00a876;
@@ -2674,52 +2336,19 @@ textarea.input-field {
   --premium-coral: #ff6b4a;
 }
 
-[data-theme="light"] {
-  --bg: #f7f9fc;
-  --surface: #ffffff;
-  --surface-high: #fbfcff;
-  --surface-pop: #eef8f3;
-  --border: #dde6ef;
-  --border-mid: #c2d1df;
-  --accent: #008763;
-  --accent-deep: #ddf8ec;
-  --accent-text: #04664d;
-  --gold: #b56d00;
-  --gold-deep: #fff2d4;
-  --blue: #1f6eea;
-  --blue-deep: #eaf2ff;
-  --purple: #7657d8;
-  --purple-deep: #f0ecff;
-  --text: #08111f;
-  --text-sec: #455468;
-  --text-dim: #8491a4;
-  --card-shadow: 0 12px 30px rgba(11, 24, 43, 0.08);
-}
-
-[data-theme="dark"] {
-  --bg: #08111f;
-  --surface: #111d2d;
-  --surface-high: #16263a;
-  --surface-pop: #1e3149;
-  --border: #2b4059;
-  --border-mid: #405b78;
-  --accent: #4de0ad;
-  --accent-deep: #10372d;
-  --accent-text: #89f0cd;
-  --text: #f7fbff;
-  --text-sec: #b8c4d4;
-  --text-dim: #8190a5;
-  --card-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
-}
-
+/* Flat, calm canvas — premium apps don't decorate the background. */
 body,
 [data-theme="dark"] body {
-  background:
-    radial-gradient(900px 420px at 20% -12%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 58%),
-    radial-gradient(800px 380px at 95% 2%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 62%),
-    var(--bg);
+  background: var(--bg);
 }
 
+.app-shell,
+.auth-shell {
+  background: var(--bg);
+}
+
+/* Cards: one consistent premium surface — generous radius, hairline border,
+   soft depth. The faint top sheen comes from --card-shadow in dark mode. */
 .card,
 .card-leather,
 .ledger-feed-card,
@@ -2728,41 +2357,132 @@ body,
 .workflow-record-card,
 .ledger-hero,
 [data-theme="light"] .ledger-hero {
+  background: var(--surface) !important;
+  background-image: none !important;
+  border: 1px solid var(--border) !important;
   border-radius: 18px !important;
-  border-color: color-mix(in srgb, var(--border) 82%, transparent) !important;
   box-shadow: var(--card-shadow) !important;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, var(--premium-emerald), #007f61) !important;
-  color: #ffffff !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  box-shadow: 0 12px 24px color-mix(in srgb, var(--accent) 24%, transparent) !important;
+.card:hover,
+.ledger-feed-card:hover,
+.ledger-summary-card.interactive:hover,
+.workflow-record-card.clickable:hover {
+  border-color: var(--border-mid) !important;
 }
 
-.btn-primary:hover {
-  transform: translateY(-1px) !important;
-  box-shadow: 0 16px 30px color-mix(in srgb, var(--accent) 30%, transparent) !important;
+.card-leather::before,
+.ledger-hero::after {
+  display: none !important;
 }
 
-.btn-primary:active {
-  transform: translateY(0) scale(0.99) !important;
+/* Money numbers: big, bold, tabular — the number IS the design. */
+.ledger-hero-value {
+  font-family: var(--font) !important;
+  font-size: clamp(34px, 8vw, 44px) !important;
+  font-weight: 800 !important;
+  letter-spacing: -1.2px !important;
+  font-variant-numeric: tabular-nums;
 }
 
-.menu-glass,
+.ledger-summary-value,
+.ledger-feed-amount,
+.workflow-record-amount {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+/* Headers and nav: glassy, quiet. */
+.menu-glass {
+  background: color-mix(in srgb, var(--bg) 82%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent) !important;
+}
+
 .app-bottom-nav {
-  background: color-mix(in srgb, var(--surface) 88%, transparent) !important;
-  backdrop-filter: blur(18px) !important;
-  -webkit-backdrop-filter: blur(18px) !important;
+  background: color-mix(in srgb, var(--bg) 84%, transparent) !important;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent) !important;
+  backdrop-filter: blur(20px) saturate(1.4) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(1.4) !important;
+  box-shadow: none !important;
 }
 
-.app-bottom-nav {
-  box-shadow: 0 -12px 34px rgba(11, 24, 43, 0.08) !important;
+/* Nav items: no boxed icons — icon + label change colour, with a soft tint
+   behind the active item only. */
+.app-bottom-nav-btn {
+  border-radius: 14px !important;
 }
 
 .app-bottom-nav-btn.active {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 13%, var(--surface)), color-mix(in srgb, var(--accent) 7%, var(--surface-high))) !important;
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--border)) !important;
+  background: color-mix(in srgb, currentColor 9%, transparent) !important;
+  border-color: transparent !important;
+}
+
+.app-bottom-nav-icon,
+.app-bottom-nav-btn.active .app-bottom-nav-icon {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Buttons: solid, confident, no gradient gimmicks. */
+.btn-primary {
+  background: var(--accent) !important;
+  color: #06251C !important;
+  border: 0 !important;
+  border-radius: 14px !important;
+  padding: 12px 18px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 25%, transparent) !important;
+}
+
+[data-theme="light"] .btn-primary {
+  color: #ffffff !important;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05) !important;
+  transform: translateY(-1px) !important;
+}
+
+.btn-primary:active {
+  transform: translateY(0) scale(0.98) !important;
+}
+
+.btn-secondary {
+  background: var(--surface-high) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  color: var(--text) !important;
+}
+
+.input-field,
+select.input-field,
+textarea.input-field {
+  border-radius: 14px !important;
+  background-color: var(--input-bg) !important;
+  border-color: var(--border) !important;
+}
+
+.input-field:focus {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+.app-quick-add-floating {
+  border-radius: 18px !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent) !important;
+}
+
+.modal-surface {
+  background: var(--surface) !important;
+  backdrop-filter: none !important;
+}
+
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
 }
 
 .landing-page {

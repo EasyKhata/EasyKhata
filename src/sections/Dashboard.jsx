@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { MessageCircle } from "lucide-react";
 import { useData } from "../context/DataContext";
 import { fmtMoney, Avatar, MONTHS, DashboardSkeleton, WorkflowActionStrip, WorkflowSetupCard } from "../components/UI";
 import { RupeeDisplay, HealthArc, Sparkline, ProgressLine, StatChip, TimelineEntry } from "../components/ui/reimagined";
@@ -9,17 +10,34 @@ import {
   getInvoiceStatusLabel,
   invoiceGrandTotal
 } from "../utils/analytics";
-import { orgsApi } from "../lib/api";
+import { orgsApi, messagesApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useConfirm } from "../context/DialogContext";
+import { showGlobalToast } from "../context/ToastContext";
 import { PLANS, canUseFeature, formatSubscriptionDate, getUserPlan, isReviewAccessEnabled } from "../utils/subscription";
 import OnboardingGuide from "../components/OnboardingGuide";
 import Collapsible from "../components/Collapsible";
 import { ORG_TYPES, getOrgConfig, getOrgType } from "../utils/orgTypes";
 import AdCarousel from "../components/AdCarousel";
 
-function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
+// Build a wa.me deep link with a pre-filled dues reminder. Indian 10-digit
+// numbers get the 91 country code; anything else passes through as digits.
+function buildWhatsAppReminderLink({ phone, ownerName, flatName, amount, monthLabel, societyName, monthsPending }) {
+  const digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  const target = digits.length === 10 ? `91${digits}` : digits;
+  const greeting = ownerName ? `Hi ${ownerName},` : "Hi,";
+  const amountText = amount ? `of Rs ${Number(amount).toLocaleString("en-IN")} ` : "";
+  const overdueText = monthsPending > 1 ? ` Dues are pending for ${monthsPending} months.` : "";
+  const message = `${greeting} a gentle reminder from ${societyName || "your society"} — maintenance ${amountText}for ${monthLabel} is pending for flat ${flatName}.${overdueText} Kindly pay at the earliest. Thank you!`;
+  return `https://wa.me/${target}?text=${encodeURIComponent(message)}`;
+}
+
+function CollectionStatusGrid({ flats, income, sym, month, year, onNav, societyName, isViewerMode, onMarkPaid, onPostSummary }) {
   const [expandedFlat, setExpandedFlat] = useState(null);
   const [showPaid, setShowPaid] = useState(false);
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [shareState, setShareState] = useState(""); // "" | "posting" | "copied"
 
   if (!flats.length) return null;
 
@@ -77,7 +95,7 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
   function FlatChip({ fd }) {
     const { flat, flatKey, isPaid, isChronic } = fd;
     const isExpanded = expandedFlat === flatKey;
-    const dotColor = isChronic ? "var(--danger)" : isPaid ? "var(--jade)" : "var(--ember)";
+    const dotColor = isChronic ? "var(--danger)" : isPaid ? "var(--jade)" : "var(--saffron)";
     return (
       <button
         type="button"
@@ -89,7 +107,7 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
           background: isExpanded ? "color-mix(in srgb, var(--accent) 8%, var(--bg))"
             : isPaid ? "color-mix(in srgb, var(--jade) 5%, var(--bg))"
             : isChronic ? "color-mix(in srgb, var(--danger) 6%, var(--bg))"
-            : "color-mix(in srgb, var(--ember) 5%, var(--bg))"
+            : "color-mix(in srgb, var(--saffron) 5%, var(--bg))"
         }}
       >
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
@@ -107,8 +125,8 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Collection Status · {MONTHS[month]}</div>
           <div style={{ fontSize: 11, marginTop: 3 }}>
             <span style={{ color: "var(--jade)", fontWeight: 700 }}>{paid.length} paid</span>
-            {(pending.length + chronic.length) > 0 && <span style={{ color: "var(--ember)", fontWeight: 700 }}> · {pending.length + chronic.length} pending</span>}
-            {chronic.length > 0 && <span style={{ color: "var(--danger)", fontWeight: 800 }}> · {chronic.length} chronic</span>}
+            {(pending.length + chronic.length) > 0 && <span style={{ color: "var(--saffron)", fontWeight: 700 }}> · {pending.length + chronic.length} pending</span>}
+            {chronic.length > 0 && <span style={{ color: "var(--danger)", fontWeight: 800 }}> · {chronic.length} long overdue</span>}
             {noAmount.length > 0 && <span style={{ color: "var(--text-dim)" }}> · {noAmount.length} no amount set</span>}
           </div>
         </div>
@@ -125,10 +143,10 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
         </div>
       )}
 
-      {/* Chronic — always visible */}
+      {/* Long-overdue — always visible */}
       {chronic.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Chronic</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Overdue 3+ months</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {chronic.map(fd => <FlatChip key={fd.flatKey} fd={fd} />)}
           </div>
@@ -138,7 +156,7 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
       {/* Pending — always visible */}
       {pending.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          {chronic.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--ember)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Pending</div>}
+          {chronic.length > 0 && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--saffron)", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Pending</div>}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {pending.map(fd => <FlatChip key={fd.flatKey} fd={fd} />)}
           </div>
@@ -161,41 +179,137 @@ function CollectionStatusGrid({ flats, income, sym, month, year, onNav }) {
       )}
 
       {/* 12-month history panel */}
-      {expandedData && (
-        <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--surface-high)", borderRadius: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{expandedData.flat.name}</div>
-              {expandedData.flat.ownerName && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{expandedData.flat.ownerName}</div>}
-              {expandedData.isChronic && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", marginTop: 3 }}>Chronic defaulter</div>}
-            </div>
-            {expandedData.flat.monthlyMaintenance && (
-              <div style={{ fontSize: 12, color: "var(--text-dim)", flexShrink: 0 }}>
-                {sym}{Number(expandedData.flat.monthlyMaintenance).toLocaleString("en-IN")}/mo
+      {expandedData && (() => {
+        const monthsPending = last12.filter(({ key }) => key <= mk && key >= startMonthKey && !incomeByMonth[key]?.has(expandedData.flatKey)).length;
+        const reminderPhone = expandedData.flat.phone || expandedData.flat.ownerPhone || expandedData.flat.tenantPhone || "";
+        const reminderLink = !expandedData.isPaid ? buildWhatsAppReminderLink({
+          phone: reminderPhone,
+          ownerName: expandedData.flat.ownerName || expandedData.flat.tenantName || "",
+          flatName: expandedData.flat.name || "",
+          amount: Number(expandedData.flat.monthlyMaintenance || 0),
+          monthLabel: `${MONTHS[month]} ${year}`,
+          societyName,
+          monthsPending
+        }) : "";
+        return (
+          <div style={{ marginTop: 12, padding: "12px 14px", background: "var(--surface-high)", borderRadius: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{expandedData.flat.name}</div>
+                {expandedData.flat.ownerName && <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{expandedData.flat.ownerName}</div>}
+                {expandedData.isChronic && <div style={{ fontSize: 10, fontWeight: 700, color: "var(--danger)", marginTop: 3 }}>Overdue for 3+ months</div>}
               </div>
+              {expandedData.flat.monthlyMaintenance && (
+                <div style={{ fontSize: 12, color: "var(--text-dim)", flexShrink: 0 }}>
+                  {sym}{Number(expandedData.flat.monthlyMaintenance).toLocaleString("en-IN")}/mo
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {last12.map(({ key, label }) => {
+                const isFuture = key > mk;
+                const isBeforeStart = key < startMonthKey;
+                const wasPaid = !isFuture && !isBeforeStart && incomeByMonth[key]?.has(expandedData.flatKey);
+                const dotBg = (isFuture || isBeforeStart) ? "var(--border)" : wasPaid ? "var(--jade)" : "var(--saffron)";
+                const dotOpacity = isFuture ? 0.25 : isBeforeStart ? 0.3 : 1;
+                return (
+                  <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: dotBg, opacity: dotOpacity }} />
+                    <span style={{ fontSize: 9, color: "var(--text-dim)", fontWeight: 600, opacity: isBeforeStart ? 0.4 : 1 }}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {/* The actions that actually collect money: record the payment in
+                one tap, or chase it on WhatsApp. Hidden for viewers and paid flats. */}
+            {!isViewerMode && !expandedData.isPaid && (
+              <>
+                <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+                  {onMarkPaid && Number(expandedData.flat.monthlyMaintenance || 0) > 0 && (
+                    <button
+                      type="button"
+                      disabled={markingPaid}
+                      onClick={async () => {
+                        setMarkingPaid(true);
+                        try { await onMarkPaid(expandedData); } finally { setMarkingPaid(false); }
+                      }}
+                      style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 14px", borderRadius: 12, background: "var(--accent)", color: "#06251C", fontSize: 13, fontWeight: 800, border: 0, cursor: markingPaid ? "wait" : "pointer", opacity: markingPaid ? 0.6 : 1 }}
+                    >
+                      {markingPaid ? "Recording..." : "Mark as Paid"}
+                    </button>
+                  )}
+                  {reminderLink && (
+                    <a
+                      href={reminderLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 14px", borderRadius: 12, background: "#25D366", color: "#06251C", fontSize: 13, fontWeight: 800, textDecoration: "none" }}
+                    >
+                      <MessageCircle size={15} strokeWidth={2.4} />
+                      Remind
+                    </a>
+                  )}
+                </div>
+                {!reminderLink && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)", textAlign: "center" }}>
+                    Add a phone number to this flat to send WhatsApp reminders.
+                  </div>
+                )}
+              </>
             )}
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {last12.map(({ key, label }) => {
-              const isFuture = key > mk;
-              const isBeforeStart = key < startMonthKey;
-              const wasPaid = !isFuture && !isBeforeStart && incomeByMonth[key]?.has(expandedData.flatKey);
-              const dotBg = (isFuture || isBeforeStart) ? "var(--border)" : wasPaid ? "var(--jade)" : "var(--ember)";
-              const dotOpacity = isFuture ? 0.25 : isBeforeStart ? 0.3 : 1;
-              return (
-                <div key={key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: dotBg, opacity: dotOpacity }} />
-                  <span style={{ fontSize: 9, color: isBeforeStart ? "var(--text-dim)" : "var(--text-dim)", fontWeight: 600, opacity: isBeforeStart ? 0.4 : 1 }}>{label}</span>
-                </div>
-              );
-            })}
+        );
+      })()}
+
+      {/* Share the month's dues summary — post to the in-app group chat (the
+          digital notice board) or copy for an external WhatsApp group. */}
+      {!isViewerMode && (pending.length + chronic.length) > 0 && (() => {
+        const totalTracked = paid.length + pending.length + chronic.length;
+        const summaryLines = [
+          `${societyName || "Society"} — ${MONTHS[month]} ${year} maintenance update`,
+          `Paid: ${paid.length}/${totalTracked} flats`
+        ];
+        if (pending.length) summaryLines.push(`Pending: ${pending.map(f => f.flat.name).join(", ")}`);
+        if (chronic.length) summaryLines.push(`Overdue 3+ months: ${chronic.map(f => f.flat.name).join(", ")}`);
+        summaryLines.push("Request all residents to clear dues at the earliest. Thank you!");
+        const summaryText = summaryLines.join("\n");
+        return (
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            {onPostSummary && (
+              <button
+                type="button"
+                disabled={shareState === "posting"}
+                onClick={async () => {
+                  setShareState("posting");
+                  try { await onPostSummary(summaryText); } finally { setShareState(""); }
+                }}
+                className="btn-secondary"
+                style={{ flex: 1, fontSize: 12, fontWeight: 700, opacity: shareState === "posting" ? 0.6 : 1 }}
+              >
+                {shareState === "posting" ? "Posting..." : "Post summary to chat"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(summaryText);
+                  setShareState("copied");
+                  setTimeout(() => setShareState(""), 2000);
+                } catch { /* clipboard unavailable — ignore */ }
+              }}
+              className="btn-secondary"
+              style={{ flex: 1, fontSize: 12, fontWeight: 700 }}
+            >
+              {shareState === "copied" ? "Copied ✓" : "Copy summary"}
+            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Legend */}
       <div style={{ display: "flex", gap: 14, marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border)" }}>
-        {[["var(--jade)", "Paid"], ["var(--ember)", "Pending"], ["var(--danger)", "Chronic (3+ mo)"]].map(([color, label]) => (
+        {[["var(--jade)", "Paid"], ["var(--saffron)", "Pending"], ["var(--danger)", "Overdue 3+ mo"]].map(([color, label]) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
             <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{label}</span>
@@ -306,6 +420,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
   const data = useData();
   const { activeSharedOrgKey, collectionFetched, isViewerMode } = data;
   const { user, updateProfile } = useAuth();
+  const confirm = useConfirm();
   const sym = data.currency?.symbol || "Rs";
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [viewMode, setViewMode] = useState(propViewMode || "month"); // "month" or "year"
@@ -533,9 +648,9 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
     <div
       onClick={onClick}
       className={`ledger-summary-card${onClick ? " interactive" : ""}`}
-      style={{ borderColor: `${color}18`,border: "2px solid var(--gold)", background: "color-mix(in srgb, var(--surface) 96%, transparent)" }}
+      style={{ background: "var(--surface)" }}
     >
-      <div className="ledger-summary-label" style={{ color }}>{label}</div>
+      <div className="ledger-summary-label">{label}</div>
       <div className="ledger-summary-value" style={{ color, fontSize: "clamp(17px, 4.4vw, 21px)" }}>{value}</div>
       {sub && <div className="ledger-summary-sub">{sub}</div>}
     </div>
@@ -618,6 +733,53 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
 
     const trendData = (stats.monthlyBreakdown || stats.cashFlow || []).map(item => item.income || 0).filter(v => v > 0);
 
+    // One-tap collection: record the maintenance entry straight from the
+    // dashboard (same payload shape the Dues screen creates).
+    const dashMk = `${year}-${String(month + 1).padStart(2, "0")}`;
+    const markFlatPaid = async (fd) => {
+      const amount = Number(fd?.flat?.monthlyMaintenance || 0);
+      if (!(amount > 0)) return;
+      const ok = await confirm(
+        `Record ${sym}${amount.toLocaleString("en-IN")} maintenance from ${fd.flat.name} for ${MONTHS[month]} ${year}?`,
+        { title: "Mark as Paid", confirmLabel: "Mark Paid" }
+      );
+      if (!ok) return;
+      await data.addIncome({
+        label: `Monthly Maintenance - ${fd.flat.name}`,
+        amount,
+        date: toLocalDateKey(),
+        month: dashMk,
+        note: "",
+        flatNumber: fd.flat.name,
+        collectionType: "Monthly Maintenance",
+        residentName: fd.flat.ownerName || "",
+        collectionMonth: dashMk
+      });
+      await data.refreshActiveOrgData?.({ collections: ["income"], includeOrgRecords: true });
+      showGlobalToast({ tone: "success", title: "Payment recorded", message: `${fd.flat.name} marked paid for ${MONTHS[month]}.` });
+    };
+
+    // Post the month's dues summary into the khata group chat — the digital
+    // notice board. Works for owners and shared-org admins.
+    const sharedInfo = activeSharedOrgKey ? (data.sharedOrgs || []).find(o => o.key === activeSharedOrgKey) : null;
+    const postDuesSummary = async (text) => {
+      try {
+        await messagesApi.send(sharedInfo?.ownerId || user?.id, sharedInfo?.orgId || data.activeOrgId, {
+          id: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `msg_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          senderId: user?.id,
+          senderName: user?.name || user?.email?.split("@")[0] || "Owner",
+          senderRole: sharedInfo ? (sharedInfo.role || "admin") : "owner",
+          sentAt: new Date().toISOString(),
+          messageType: "chat",
+          text
+        });
+        showGlobalToast({ tone: "success", title: "Posted to group chat", message: "The dues summary is now visible to everyone in this khata." });
+      } catch (err) {
+        logError("dues_summary_post_failed", err);
+        showGlobalToast({ tone: "danger", title: "Couldn't post summary", message: "Please try again in a moment." });
+      }
+    };
+
     return (
       <div className="ledger-screen">
         <div className="ledger-block">
@@ -630,7 +792,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             style={{
               margin: "0 0 14px",
               padding: "22px 22px 18px",
-              "--hero-glow": overallBalance >= 0 ? "var(--orchid)" : "var(--ember)",
+              "--hero-glow": overallBalance >= 0 ? "var(--accent)" : "var(--ember)",
               borderRadius: "var(--radius-lg, 18px)"
             }}
           >
@@ -640,14 +802,15 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
                   {MONTHS[month]} {year} · Society Fund
                 </div>
                 <div style={{ marginBottom: 4 }}>
-                  <RupeeDisplay amount={overallBalance} color={overallBalance >= 0 ? "var(--orchid)" : "var(--ember)"} size={48} animate />
+                  <RupeeDisplay amount={overallBalance} color={overallBalance >= 0 ? "var(--text)" : "var(--ember)"} size={48} animate />
                 </div>
                 <div style={{ fontSize: 12, color: "var(--cream-3)" }}>
                   {overallBalance >= 0 ? "Society fund surplus" : "Fund in deficit"}
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                <HealthArc pct={collectionRate} size={84} color={healthColor} />
+              {/* The HealthArc gauge duplicated the collection-rate progress
+                  line below it — one number, one representation. */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                 {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
               </div>
             </div>
@@ -669,14 +832,14 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <StatChip
               label={viewMode === "month" ? "Collected" : "Total Collected"}
               value={fmtMoney(stats.totalIncome, sym)}
-              color="var(--orchid)"
+              color="var(--accent)"
               sub={viewMode === "month" ? "This month" : `Avg ${fmtMoney(stats.avgMonthlyIncome || 0, sym)}/mo`}
               onClick={!isViewerMode ? () => onNav("income") : undefined}
             />
             <StatChip
               label={viewMode === "month" ? "Expenses" : "Total Expenses"}
               value={fmtMoney(stats.totalExpense, sym)}
-              color="var(--ember)"
+              color="var(--text)"
               sub={viewMode === "month" ? "Maintenance costs" : `Avg ${fmtMoney(stats.avgMonthlyExpense || 0, sym)}/mo`}
               onClick={!isViewerMode ? () => onNav("expenses") : undefined}
             />
@@ -691,6 +854,10 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               month={month}
               year={year}
               onNav={onNav}
+              societyName={data.account?.name || ""}
+              isViewerMode={isViewerMode}
+              onMarkPaid={!isViewerMode ? markFlatPaid : undefined}
+              onPostSummary={!isViewerMode ? postDuesSummary : undefined}
             />
           </div>
 
@@ -700,7 +867,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
               <div style={{ marginBottom: 10 }}>
                 <div className="section-eyebrow">Collection Trend</div>
               </div>
-              <Sparkline data={trendData} color="var(--orchid)" height={40} />
+              <Sparkline data={trendData} color="var(--accent)" height={40} />
             </div>
           )}
 
@@ -710,7 +877,7 @@ export default function Dashboard({ year, month, viewMode: propViewMode, onNav, 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div className="section-eyebrow">Recent Activity</div>
               {!isViewerMode && (
-                <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--orchid)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>
+                <button onClick={() => onNav("income")} style={{ fontSize: 11, color: "var(--accent)", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font)" }}>
                   All →
                 </button>
               )}

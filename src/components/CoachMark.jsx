@@ -23,7 +23,7 @@ export function useCoachMark(userId, key) {
   return { seen, dismiss };
 }
 
-export default function CoachMark({ anchorRef, label, sub, arrow = "down", color = "var(--saffron)", onDismiss }) {
+export default function CoachMark({ anchorRef, label, sub, arrow = "down", color = "var(--accent)", onDismiss }) {
   const [pos, setPos] = useState(null);
 
   useEffect(() => {

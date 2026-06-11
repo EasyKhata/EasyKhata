@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { getUserData, setUserData } from "../utils/storage";
+import { getUserData, setUserData, removeUserData } from "../utils/storage";
 import { canCreatePaidOrg, getMaxOrganizations, isFreeReadOnlyMode, isPaidActive, isSubscriptionActive } from "../utils/subscription";
 import { ORG_TYPES, getOrgType } from "../utils/orgTypes";
 import { buildLocationLabel, normalizeSupportedCountry, parseLocationFields } from "../utils/profile";
@@ -1037,7 +1037,55 @@ export function DataProvider({ children }) {
         collectionFetchedRef.current = freshFetched;
         setCollectionFetched(freshFetched);
 
-        // Read local cache — income/expenses/invoices come from here until lazily refreshed
+        // Cold-boot critical path used to be serial: list() first, then the
+        // active-org batch. The active org id is almost always known up front
+        // (user.activeOrgId), so fire the heavy batch concurrently with list()
+        // and only refetch in the rare case list() resolves to a different org.
+        //
+        // Inside the batch we pick the cheapest /full call we can. /full is the
+        // heaviest endpoint — two reductions:
+        //   1) Returning user with local cache → pass since=lastSyncedAt so the
+        //      server only ships records changed since then (~1 KB usually).
+        //   2) New device with no cache → ?meta=1 skips collections on this
+        //      call; each collection loads paginated in parallel instead.
+        const startActiveOrgBatch = (orgIdForBatch) => {
+          const localOrgForBatch = localData.orgs?.[orgIdForBatch] || {};
+          const hasLocal = Boolean(
+            localOrgForBatch && (
+              (Array.isArray(localOrgForBatch.income)    && localOrgForBatch.income.length)    ||
+              (Array.isArray(localOrgForBatch.expenses)  && localOrgForBatch.expenses.length)  ||
+              (Array.isArray(localOrgForBatch.invoices)  && localOrgForBatch.invoices.length)  ||
+              (Array.isArray(localOrgForBatch.customers) && localOrgForBatch.customers.length) ||
+              (localOrgForBatch.orgRecords && Object.keys(localOrgForBatch.orgRecords).length)
+            )
+          );
+          const cachedSyncedAt = getSyncedAt(user.id, orgIdForBatch);
+          const useIncremental = hasLocal && cachedSyncedAt;
+          const fullOpts = useIncremental ? { metaOnly: false } : { metaOnly: true };
+          const sinceParam = useIncremental ? cachedSyncedAt : null;
+          const errorHolder = { error: null };
+          const collectionFetches = useIncremental
+            ? [Promise.resolve(null), Promise.resolve(null), Promise.resolve(null)]
+            : [
+                orgsApi.getCollection(user.id, orgIdForBatch, "income").catch(() => null),
+                orgsApi.getCollection(user.id, orgIdForBatch, "expenses").catch(() => null),
+                orgsApi.getCollection(user.id, orgIdForBatch, "invoices").catch(() => null)
+              ];
+          return {
+            orgIdForBatch,
+            localOrgForBatch,
+            hasLocal,
+            errorHolder,
+            promise: Promise.all([
+              orgsApi.getFull(user.id, orgIdForBatch, sinceParam, fullOpts).catch(err => { errorHolder.error = err; return null; }),
+              orgsApi.getCollection(user.id, orgIdForBatch, "customers").catch(() => null),
+              orgsApi.getSummary(user.id, orgIdForBatch).catch(() => EMPTY_SUMMARY),
+              ...collectionFetches
+            ])
+          };
+        };
+
+        let activeBatch = startActiveOrgBatch(requestedActiveOrgId);
         let allOrgs = await orgsApi.list(user.id);
         let effectiveActiveOrgId = requestedActiveOrgId;
 
@@ -1073,45 +1121,17 @@ export function DataProvider({ children }) {
             resolvedActiveOrgId
           }));
         }
-        const localOrg = localData.orgs?.[resolvedActiveOrgId] || {};
-        const hasLocalActiveOrg = Boolean(
-          localOrg && (
-            (Array.isArray(localOrg.income)    && localOrg.income.length)    ||
-            (Array.isArray(localOrg.expenses)  && localOrg.expenses.length)  ||
-            (Array.isArray(localOrg.invoices)  && localOrg.invoices.length)  ||
-            (Array.isArray(localOrg.customers) && localOrg.customers.length) ||
-            (localOrg.orgRecords && Object.keys(localOrg.orgRecords).length)
-          )
-        );
+        // The optimistic batch was fired for the requested org id before list()
+        // resolved — only refetch when list() pointed somewhere else (deleted
+        // org, first login on a new device, account repair).
+        if (activeBatch.orgIdForBatch !== resolvedActiveOrgId) {
+          activeBatch = startActiveOrgBatch(resolvedActiveOrgId);
+        }
+        const localOrg = activeBatch.localOrgForBatch;
+        const hasLocalActiveOrg = activeBatch.hasLocal;
 
-        // Pick the cheapest /full call we can. /full is the heaviest endpoint — sending
-        // *every* income/expense/invoice/customer back to the client is what makes the
-        // bootstrap fragile on slow networks. Two reductions:
-        //   1) Returning user with local cache → pass since=lastSyncedAt so the server
-        //      only ships records changed since then. Usually 0 records, ~1 KB payload.
-        //   2) New device with no cache → use ?meta=1 to skip collections entirely on
-        //      this call, then load each collection paginated in parallel below.
-        // Either way we avoid the 100 KB+ monolithic JSON that kept timing out.
-        const cachedSyncedAt = getSyncedAt(user.id, resolvedActiveOrgId);
-        const useIncremental = hasLocalActiveOrg && cachedSyncedAt;
-        const fullOpts = useIncremental ? { metaOnly: false } : { metaOnly: true };
-        const sinceParam = useIncremental ? cachedSyncedAt : null;
-
-        let getFullError = null;
-        const collectionFetches = useIncremental
-          ? [Promise.resolve(null), Promise.resolve(null), Promise.resolve(null)]
-          : [
-              orgsApi.getCollection(user.id, resolvedActiveOrgId, "income").catch(() => null),
-              orgsApi.getCollection(user.id, resolvedActiveOrgId, "expenses").catch(() => null),
-              orgsApi.getCollection(user.id, resolvedActiveOrgId, "invoices").catch(() => null)
-            ];
-
-        const [activeOrgMeta, customersPage, summary, incomePage, expensesPage, invoicesPage] = await Promise.all([
-          orgsApi.getFull(user.id, resolvedActiveOrgId, sinceParam, fullOpts).catch(err => { getFullError = err; return null; }),
-          orgsApi.getCollection(user.id, resolvedActiveOrgId, "customers").catch(() => null),
-          orgsApi.getSummary(user.id, resolvedActiveOrgId).catch(() => EMPTY_SUMMARY),
-          ...collectionFetches
-        ]);
+        const [activeOrgMeta, customersPage, summary, incomePage, expensesPage, invoicesPage] = await activeBatch.promise;
+        const getFullError = activeBatch.errorHolder.error;
 
         // If /full failed and we have nothing cached for this org, propagate the error so
         // the outer catch can run its retry / offline-toast logic. Showing a half-empty
@@ -2015,73 +2035,130 @@ export function DataProvider({ children }) {
     if (!sharedInfo) return;
 
     const { ownerId, orgId } = sharedInfo;
-    setLoaded(false);
     setActiveSharedOrgRole(null);
     activeSharedOrgRef.current = { ...sharedInfo, isViewer: sharedInfo.role === "viewer" };
     setActiveSharedOrgKey(key);
 
+    // Builds and applies the shared-org state from a meta object + collection
+    // arrays — used identically for the cached copy and the fresh server copy.
+    const applySharedState = (orgMeta, { income, expenses, invoices, customers }) => {
+      const nextState = buildStateFromOrganizations({
+        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, { income, expenses, invoices, customers })) },
+        activeOrgId: orgId
+      });
+      dataRef.current = nextState;
+      setData(nextState);
+      const freshFetched = { income: true, expenses: true, invoices: true, customers: true };
+      collectionFetchedRef.current = freshFetched;
+      setCollectionFetched(freshFetched);
+    };
+
+    // Cache-first: residents on slow networks were staring at a spinner while
+    // the full org payload re-downloaded on every visit. Render the last-synced
+    // copy instantly, then refresh from the server in the background.
+    const cacheStorageKey = `sharedOrg:${ownerId}_${orgId}`;
+    let cached = null;
+    try { cached = getUserData(user.id, cacheStorageKey); } catch { cached = null; }
+    const hasCached = Boolean(cached?.orgMeta);
+
+    if (hasCached) {
+      const cachedRole = cached.role || sharedInfo.role || "viewer";
+      activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: cachedRole, isViewer: cachedRole === "viewer" };
+      setActiveSharedOrgRole(cachedRole);
+      applySharedState(cached.orgMeta, {
+        income: Array.isArray(cached.income) ? cached.income : [],
+        expenses: Array.isArray(cached.expenses) ? cached.expenses : [],
+        invoices: Array.isArray(cached.invoices) ? cached.invoices : [],
+        customers: Array.isArray(cached.customers) ? cached.customers : []
+      });
+      setLoaded(true);
+      setSyncStatus("syncing");
+    } else {
+      setLoaded(false);
+    }
+
     try {
       // Verify membership and load the shared org with its visible records.
-      const [memberships, orgMeta, customersResult] = await Promise.all([
-        orgsApi.getMemberships(user.id),
+      // Memberships failing to LOAD is a network problem, not a revocation —
+      // only an affirmative "you're not in the list" revokes access.
+      const [membershipsResult, orgMeta, customersResult] = await Promise.all([
+        orgsApi.getMemberships(user.id).catch(() => null),
         orgsApi.getFull(ownerId, orgId),
         orgsApi.getCollection(ownerId, orgId, "customers").catch(() => null)
       ]);
 
-      const membership = memberships.find(m => m.ownerId === ownerId && m.orgId === orgId);
-
-      if (!membership) {
-        // Removed — revoke access
-        activeSharedOrgRef.current = null;
-        setActiveSharedOrgKey(null);
-        setActiveSharedOrgRole(null);
-        setUser(prev => {
-          if (!prev) return prev;
-          const next = { ...(prev.sharedOrgs || {}) };
-          delete next[`${ownerId}_${orgId}`];
-          return { ...prev, sharedOrgs: next };
-        });
-        setSharedOrgsByKey(prev => {
-          const next = { ...(prev || {}) };
-          delete next[`${ownerId}_${orgId}`];
-          return next;
-        });
-        return;
+      if (Array.isArray(membershipsResult)) {
+        const membership = membershipsResult.find(m => m.ownerId === ownerId && m.orgId === orgId);
+        if (!membership) {
+          // Removed — revoke access and drop the stale cache.
+          activeSharedOrgRef.current = null;
+          setActiveSharedOrgKey(null);
+          setActiveSharedOrgRole(null);
+          try { removeUserData(user.id, cacheStorageKey); } catch { /* ignore */ }
+          setUser(prev => {
+            if (!prev) return prev;
+            const next = { ...(prev.sharedOrgs || {}) };
+            delete next[`${ownerId}_${orgId}`];
+            return { ...prev, sharedOrgs: next };
+          });
+          setSharedOrgsByKey(prev => {
+            const next = { ...(prev || {}) };
+            delete next[`${ownerId}_${orgId}`];
+            return next;
+          });
+          return;
+        }
+        sharedInfo.role = membership.role || sharedInfo.role;
       }
 
-      const effectiveRole = membership.role || sharedInfo.role || "viewer";
+      const effectiveRole = sharedInfo.role || "viewer";
       activeSharedOrgRef.current = { ...activeSharedOrgRef.current, role: effectiveRole, isViewer: effectiveRole === "viewer" };
       setActiveSharedOrgRole(effectiveRole);
 
       const customers = unwrapRecords(customersResult, "customers");
+      const income = pickApiRecords(orgMeta?.income ?? orgMeta?.collections?.income ?? orgMeta, [], "income");
+      const expenses = pickApiRecords(orgMeta?.expenses ?? orgMeta?.collections?.expenses ?? orgMeta, [], "expenses");
+      const invoices = pickApiRecords(orgMeta?.invoices ?? orgMeta?.collections?.invoices ?? orgMeta, [], "invoices");
 
-      const nextState = buildStateFromOrganizations({
-        orgs: { [orgId]: normalizeOrgData(fromApiOrg(orgMeta, {
-          income: pickApiRecords(orgMeta?.income ?? orgMeta?.collections?.income ?? orgMeta, [], "income"),
-          expenses: pickApiRecords(orgMeta?.expenses ?? orgMeta?.collections?.expenses ?? orgMeta, [], "expenses"),
-          invoices: pickApiRecords(orgMeta?.invoices ?? orgMeta?.collections?.invoices ?? orgMeta, [], "invoices"),
-          customers
-        })) },
-        activeOrgId: orgId
-      });
-
-      dataRef.current = nextState;
-      setData(nextState);
-
-      const freshFetched = { income: true, expenses: true, invoices: true, customers: true };
-      collectionFetchedRef.current = freshFetched;
-      setCollectionFetched(freshFetched);
+      applySharedState(orgMeta, { income, expenses, invoices, customers });
 
       if (!lastSyncedRef.current[orgId]) lastSyncedRef.current[orgId] = {};
       lastSyncedRef.current[orgId].customers = buildBaseline(customers);
-      lastSyncedRef.current[orgId].income = buildBaseline(pickApiRecords(orgMeta?.income ?? orgMeta?.collections?.income ?? orgMeta, [], "income"));
-      lastSyncedRef.current[orgId].expenses = buildBaseline(pickApiRecords(orgMeta?.expenses ?? orgMeta?.collections?.expenses ?? orgMeta, [], "expenses"));
-      lastSyncedRef.current[orgId].invoices = buildBaseline(pickApiRecords(orgMeta?.invoices ?? orgMeta?.collections?.invoices ?? orgMeta, [], "invoices"));
+      lastSyncedRef.current[orgId].income = buildBaseline(income);
+      lastSyncedRef.current[orgId].expenses = buildBaseline(expenses);
+      lastSyncedRef.current[orgId].invoices = buildBaseline(invoices);
+
+      // Persist for the next visit. Collections are stored separately so the
+      // meta copy doesn't double the payload; quota errors are non-fatal (the
+      // next visit just loads cold like before).
+      try {
+        const { income: _i, expenses: _e, invoices: _v, customers: _c, collections: _col, ...metaLite } = orgMeta || {};
+        setUserData(user.id, cacheStorageKey, {
+          orgMeta: metaLite,
+          income, expenses, invoices, customers,
+          role: effectiveRole,
+          cachedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        logError("sharedOrg cache write failed", err);
+      }
+      setSyncStatus("synced");
     } catch (err) {
       logError("switchToSharedOrg failed", err);
-      activeSharedOrgRef.current = null;
-      setActiveSharedOrgKey(null);
-      setActiveSharedOrgRole(null);
+      if (hasCached) {
+        // Keep the resident in the khata on the cached copy — a slow network
+        // shouldn't eject them from data they already had.
+        setSyncStatus("offline");
+        showGlobalToast({
+          tone: "warning",
+          title: "Connection slow",
+          message: "Showing the last saved copy of this khata. It will refresh automatically when the network recovers."
+        });
+      } else {
+        activeSharedOrgRef.current = null;
+        setActiveSharedOrgKey(null);
+        setActiveSharedOrgRole(null);
+      }
     } finally {
       setLoaded(true);
     }

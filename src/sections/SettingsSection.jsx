@@ -1,4 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BarChart3, Bell, Building2, Headphones, History, IndianRupee, Layers,
+  LogOut, Moon, Plus, Receipt, Sun, Upload, User, UserPlus, Users, FileText
+} from "lucide-react";
 import { useConfirm } from "../context/DialogContext";
 import { isNative } from "../utils/native";
 import { openExternal } from "../utils/openExternal";
@@ -314,7 +318,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     canManageRecord,
     isViewerMode
   } = useData();
-  useTheme();
+  const { theme, toggleTheme } = useTheme();
 
   const [screen, setScreen] = useState("main");
   const { seen: coachCustSeen, dismiss: dismissCustCoach } = useCoachMark(user?.id, "settings-customers");
@@ -1888,7 +1892,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
     return (
     <div onClick={disabled ? undefined : onClick} className="card-row" style={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.56 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        {icon ? <div style={{ width: 34, height: 34, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div> : null}
+        {icon ? <div style={{ width: 34, height: 34, borderRadius: 10, background: danger ? "var(--danger-deep)" : color || "var(--surface-high)", color: danger ? "var(--danger)" : "var(--text-sec)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div> : null}
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: danger ? "var(--danger)" : "var(--text)", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span>{resolvedLabel}</span>
@@ -1923,16 +1927,16 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <div className="ledger-block-caption">Manage your workspace, residents, reports, and records.</div>
             </div>
             <div className="card">
-              <MenuRow icon="B" label="Khata Profile" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
-              <MenuRow icon="K" label="Manage Khatas" sub={`${organizations.length} Khatas — owned and shared access`} onClick={() => setShowOrgSwitcher(true)} />
+              <MenuRow icon={<Building2 size={16} />} label="Khata Profile" sub={account?.name ? `${account.name} · ${orgConfig.typeLabel}` : `Set up your ${orgConfig.profileNameLabel.toLowerCase()}`} onClick={() => setScreen("account")} />
+              <MenuRow icon={<Layers size={16} />} label="Manage Khatas" sub={`${organizations.length} ${organizations.length === 1 ? "Khata" : "Khatas"} — owned and shared access`} onClick={() => setShowOrgSwitcher(true)} />
               {canCreateOrganization && (
-                <MenuRow icon="+" label="New Khata" sub="Create your one owned Small Business or Apartment khata" onClick={() => {
+                <MenuRow icon={<Plus size={16} />} label="New Khata" sub="Create your one owned Small Business or Apartment khata" onClick={() => {
                   setPendingNewOrgDraft(null);
                   setCreateOrgForm({ name: "", organizationType: ORG_TYPES.FREELANCER, addressLine: "", city: "", district: "", state: "", pincode: "", country: "India" });
                   setScreen("create-org");
                 }} />
               )}
-              <MenuRow icon="C" label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()} saved`} onClick={() => { setScreen("customers"); dismissCustCoach(); }} />
+              <MenuRow icon={<Users size={16} />} label={orgConfig.customerLabel} sub={`${customers.length} ${orgConfig.customerEntryLabel.toLowerCase()}${customers.length === 1 ? "" : "s"} saved`} onClick={() => { setScreen("customers"); dismissCustCoach(); }} />
               {customers.length === 0 && !coachCustSeen && !isViewerMode && (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px", background: "color-mix(in srgb, var(--saffron) 10%, var(--surface-high))", borderTop: "1px solid color-mix(in srgb, var(--saffron) 18%, var(--border))", boxSizing: "border-box" }}>
                   <span style={{ fontSize: 18 }}>👆</span>
@@ -1984,12 +1988,12 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 </div>
               )}
               {isFreelancerOrg && !isViewerMode && (
-                <MenuRow icon="↑" label="Import Data" sub="Import payments, spends, or invoices from a CSV file" onClick={() => setScreen("business-import")} />
+                <MenuRow icon={<Upload size={16} />} label="Import Data" sub="Import payments, spends, or invoices from a CSV file" onClick={() => setScreen("business-import")} />
               )}
-              <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
+              <MenuRow icon={<BarChart3 size={16} />} label="Reports" sub={generatingReport ? "Generating report..." : (isApartmentOrg ? "Download monthly or yearly society reports" : "Download monthly or financial year reports")} onClick={openReportPicker} />
               {isApartmentOrg && (
                 <MenuRow
-                  icon="B"
+                  icon={<FileText size={16} />}
                   label="Bills / Invoices"
                   sub="Open apartment receipts and bills"
                   onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "invoices" } }))}
@@ -1997,7 +2001,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
               )}
               {isApartmentOrg && !isViewerMode && (
                 <MenuRow
-                  icon="I"
+                  icon={<Upload size={16} />}
                   label="Import Apartment Data"
                   sub="Upload flats, collections, expenses, dues, and opening balances in one CSV"
                   onClick={() => setScreen("apartment-import")}
@@ -2022,8 +2026,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <div className="ledger-block-caption">Handle resident visibility, roles, and apartment audit history.</div>
               </div>
               <div className="card">
-                <MenuRow icon="T" label="Resident Members" sub="Invite residents and manage their roles" onClick={() => setScreen("org-members")} />
-                <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
+                <MenuRow icon={<UserPlus size={16} />} label="Resident Members" sub="Invite residents and manage their roles" onClick={() => setScreen("org-members")} />
+                <MenuRow icon={<History size={16} />} label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
               </div>
             </div>
           )}
@@ -2035,8 +2039,8 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 <div className="ledger-block-caption">Invite team members and manage who can view or edit this khata.</div>
               </div>
               <div className="card">
-                <MenuRow icon="T" label="Team Members" sub="Invite members and manage admin or viewer access" onClick={() => setScreen("org-members")} />
-                <MenuRow icon="A" label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
+                <MenuRow icon={<UserPlus size={16} />} label="Team Members" sub="Invite members and manage admin or viewer access" onClick={() => setScreen("org-members")} />
+                <MenuRow icon={<History size={16} />} label="Audit Log" sub="See who added or changed what and when" onClick={() => setScreen("audit-log")} />
               </div>
             </div>
           )}
@@ -2184,6 +2188,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             </div>
             {(
               <>
+                {/* "No active subscription" explainer is only relevant when the
+                    user actually has no access — showing it next to "Pro is
+                    active" was contradictory and alarming. */}
+                {(reviewAccessEnabled || (!isPaidActive(user) && user?.subscriptionStatus !== "trial")) && (
                   <div className="card" style={{ padding: 12, background: "var(--surface-high)", marginBottom: 12 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     <div>
@@ -2204,6 +2212,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     </div>
                   </div>
                 </div>
+                )}
                 {isPaidActive(user) && user?.subscriptionStatus === "active" ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "var(--surface-high)", borderRadius: 8, border: "1px solid var(--border)" }}>
                     <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
@@ -2232,7 +2241,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                     {reviewAccessEnabled ? "Manage Subscription Disabled During Review Mode" : "Manage Subscription"}
                   </button>
                 )}
-                {!reviewAccessEnabled && (
+                {!reviewAccessEnabled && !(isPaidActive(user) && user?.subscriptionStatus === "active") && (
                   <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 8, background: "var(--surface-high)", border: "1px solid var(--border)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-sec)", marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.4 }}>If your subscription expires</div>
                     <div style={{ fontSize: 12, color: "var(--text-sec)", lineHeight: 1.55 }}>
@@ -2244,7 +2253,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             )}
           </div>
           <div className="card" style={{ marginTop: 8 }}>
-            <MenuRow icon="H" label="Billing History" sub="View past subscription payments and download receipts" onClick={() => setScreen("billing-history")} />
+            <MenuRow icon={<Receipt size={16} />} label="Billing History" sub="View past subscription payments and download receipts" onClick={() => setScreen("billing-history")} />
           </div>
           </div>
         )}
@@ -2255,9 +2264,10 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="ledger-block-caption">Update your identity, currency, and reporting tools.</div>
           </div>
           <div className="card">
-            <MenuRow icon="P" label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name ? `${user.name} · sign-in details` : "Update your sign-in profile"} onClick={() => setScreen("profile")} />
-            <MenuRow icon="$" label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
-            {user?.role === "admin" && <MenuRow icon="R" label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
+            <MenuRow icon={<User size={16} />} label={user?.role === "admin" ? "Admin Account" : "Personal Profile"} sub={user?.name ? `${user.name} · sign-in details` : "Update your sign-in profile"} onClick={() => setScreen("profile")} />
+            <MenuRow icon={<IndianRupee size={16} />} label="Currency" sub={`${currency?.flag} ${currency?.code} - ${currency?.symbol}`} onClick={() => setShowCurrPicker(true)} />
+            <MenuRow icon={theme === "dark" ? <Moon size={16} /> : <Sun size={16} />} label="Appearance" sub={theme === "dark" ? "Dark theme · tap to switch to light" : "Light theme · tap to switch to dark"} onClick={toggleTheme} />
+            {user?.role === "admin" && <MenuRow icon={<BarChart3 size={16} />} label="Reports" sub={generatingReport ? "Generating admin report..." : "Choose a month and year for the admin report PDF"} onClick={openReportPicker} />}
             {user?.role !== "admin" && (
               <MenuRow
                 icon="X"
@@ -2287,7 +2297,7 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
             <div className="ledger-block-caption">Notifications and support all live here.</div>
           </div>
           <div className="card">
-            <MenuRow icon="N" label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
+            <MenuRow icon={<Bell size={16} />} label="Notifications" sub={notificationPrefs?.browserEnabled ? "Browser and in-app reminders enabled" : "Manage in-app reminders and browser alerts"} onClick={() => setScreen("notifications")} />
             {user?.role === "admin" ? (
               <MenuRow
                 icon="?"
@@ -2296,14 +2306,14 @@ export default function SettingsSection({ navigationTarget, sectionMode = "setti
                 onClick={() => window.dispatchEvent(new CustomEvent("ledger:navigate", { detail: { tab: "adminSupport" } }))}
               />
             ) : (
-              <MenuRow icon="?" label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
+              <MenuRow icon={<Headphones size={16} />} label="Customer Support" sub="Contact support, report bugs, or share feature requests" onClick={() => setScreen("support")} />
             )}
           </div>
         </div>
 
         <div className="ledger-block">
           <div className="card">
-            <MenuRow icon="O" label="Sign Out" danger onClick={async () => { if (await confirm("Are you sure you want to sign out?", { title: "Sign Out", confirmLabel: "Sign Out" })) logout(); }} />
+            <MenuRow icon={<LogOut size={16} />} label="Sign Out" danger onClick={async () => { if (await confirm("Are you sure you want to sign out?", { title: "Sign Out", confirmLabel: "Sign Out" })) logout(); }} />
           </div>
         </div>
         {showCurrPicker && <CurrencyPicker value={currency} onSelect={cur => { setCurrency(cur); setShowCurrPicker(false); }} onClose={() => setShowCurrPicker(false)} />}

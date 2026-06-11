@@ -598,33 +598,70 @@ function drawApartmentStatementTable(doc, y, title, rows, sym) {
   return y;
 }
 
+// Count whole months from startMk to endMk inclusive ("2026-01".."2026-06" = 6).
+function countMonthsInclusive(startMk, endMk) {
+  const [sy, sm] = String(startMk).split("-").map(Number);
+  const [ey, em] = String(endMk).split("-").map(Number);
+  if (!sy || !sm || !ey || !em) return 1;
+  return Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
+}
+
+// Dues are CUMULATIVE: a flat that skipped March still owes it in June's
+// report. For each flat we bill monthlyMaintenance for every month from the
+// society's first recorded collection (or the flat's creation, whichever is
+// later) through the report month, and subtract everything actually paid in
+// that window. The dashboard's Collection Status grid uses the same
+// society-start rule, so the report and the app always agree.
 function getApartmentFlatStatusRows(data, year, month) {
+  const reportMk = `${year}-${String(month + 1).padStart(2, "0")}`;
   const flats = (data?.customers || [])
     .filter(flat => String(flat?.name || "").trim())
     .map(flat => ({
       flatNumber: String(flat.name || "").trim(),
       ownerName: String(flat.ownerName || "").trim(),
-      expected: Number(flat.monthlyMaintenance || 0)
+      expected: Number(flat.monthlyMaintenance || 0),
+      createdMk: String(flat.createdAt || "").slice(0, 7) || ""
     }));
-  const collections = getApartmentCollectionEntries(data, year, month).filter(item => !isOpeningBalanceCollection(item) && isMonthlyMaintenanceCollection(item));
+
+  // All maintenance collections (any month), grouped per flat.
+  const byFlat = {};
+  const monthKeysSeen = [];
+  (data?.income || []).forEach(item => {
+    if (isOpeningBalanceCollection(item) || !isMonthlyMaintenanceCollection(item)) return;
+    const itemMk = String(item.collectionMonth || item.month || (item.date ? item.date.slice(0, 7) : "")).slice(0, 7);
+    const flatKey = String(item.flatNumber || "").trim();
+    if (!/^\d{4}-\d{2}$/.test(itemMk) || !flatKey) return;
+    monthKeysSeen.push(itemMk);
+    if (!byFlat[flatKey]) byFlat[flatKey] = [];
+    byFlat[flatKey].push({ mk: itemMk, amount: Number(item.amount || 0), date: item.date || `${itemMk}-01` });
+  });
+
+  // Months before the society's first recorded collection don't count as missed.
+  const societyStartMk = monthKeysSeen.sort()[0] || reportMk;
 
   return flats
     .map(flat => {
-      const matchingCollections = collections
-        .filter(item => String(item.flatNumber || "").trim() === flat.flatNumber);
-      const paidAmount = matchingCollections
-        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-      const lastCollectionDate = matchingCollections
-        .map(item => item.date || `${item.collectionMonth || item.month || ""}-01`)
+      // A flat added mid-year is only billed from the month it was added.
+      const flatStartMk = flat.createdMk && flat.createdMk > societyStartMk ? flat.createdMk : societyStartMk;
+      const startMk = flatStartMk > reportMk ? reportMk : flatStartMk;
+      const entries = (byFlat[flat.flatNumber] || []).filter(e => e.mk <= reportMk);
+      const paidTotal = entries.reduce((sum, e) => sum + e.amount, 0);
+      const paidThisMonth = entries.filter(e => e.mk === reportMk).reduce((sum, e) => sum + e.amount, 0);
+      const lastCollectionDate = entries
+        .map(e => e.date)
         .filter(Boolean)
         .sort((a, b) => String(b).localeCompare(String(a)))[0] || "";
-      const dueAmount = Math.max(0, flat.expected - paidAmount);
+      const monthsBilled = countMonthsInclusive(startMk, reportMk);
+      const expectedTotal = flat.expected * monthsBilled;
+      const dueAmount = flat.expected > 0 ? Math.max(0, expectedTotal - paidTotal) : 0;
+      const monthsDue = flat.expected > 0 ? Math.min(monthsBilled, Math.ceil(dueAmount / flat.expected)) : 0;
       return {
         ...flat,
-        paidAmount,
+        paidAmount: paidThisMonth,
         transactionDate: formatDateValue(lastCollectionDate),
         dueAmount,
-        status: dueAmount <= 0 ? "Paid" : paidAmount > 0 ? "Partial" : "Pending"
+        monthsDue,
+        status: dueAmount <= 0 ? "Paid" : monthsDue > 1 ? `Due ${monthsDue} mo` : paidThisMonth > 0 ? "Partial" : "Pending"
       };
     })
     .sort((a, b) => a.flatNumber.localeCompare(b.flatNumber));
@@ -639,12 +676,13 @@ function drawApartmentFlatStatusTable(doc, y, title, rows, sym) {
   y += 8;
 
   const columns = [
-    { key: "flatNumber", label: "Flat", width: 24, align: "left" },
-    { key: "ownerName", label: "Owner", width: 42, align: "left" },
-    { key: "transactionDate", label: "Txn Date", width: 20, align: "left" },
-    { key: "expected", label: "Expected", width: 26, align: "right" },
-    { key: "paidAmount", label: "Collected", width: 26, align: "right" },
-    { key: "dueAmount", label: "Due", width: 20, align: "right" },
+    { key: "flatNumber", label: "Flat", width: 22, align: "left" },
+    { key: "ownerName", label: "Owner", width: 38, align: "left" },
+    { key: "transactionDate", label: "Last Paid", width: 18, align: "left" },
+    { key: "expected", label: "Monthly", width: 24, align: "right" },
+    { key: "paidAmount", label: "Paid (Mo)", width: 24, align: "right" },
+    { key: "dueAmount", label: "Total Due", width: 24, align: "right" },
+    { key: "monthsDue", label: "Mo", width: 12, align: "right" },
     { key: "status", label: "Status", width: 20, align: "right" }
   ];
 
@@ -670,7 +708,7 @@ function drawApartmentFlatStatusTable(doc, y, title, rows, sym) {
   }
 
   rows.forEach((row, index) => {
-    const ownerLines = doc.splitTextToSize(safeText(row.ownerName || "--"), 38);
+    const ownerLines = doc.splitTextToSize(safeText(row.ownerName || "--"), 34);
     const rowHeight = Math.max(9, ownerLines.length * 4.4 + 1);
     y = ensureSpace(doc, y, rowHeight + 4);
     if (y === PAGE.top) {
@@ -687,20 +725,23 @@ function drawApartmentFlatStatusTable(doc, y, title, rows, sym) {
 
     let x = PAGE.left + 2;
     doc.text(safeText(row.flatNumber), x, y + 1);
-    x += 24;
+    x += 22;
     doc.text(ownerLines, x, y + 1);
-    x += 42;
+    x += 38;
     doc.text(safeText(row.transactionDate || "--"), x, y + 1);
-    x += 20;
-    doc.text(money(row.expected, sym), x + 24, y + 1, { align: "right" });
-    x += 26;
-    doc.text(money(row.paidAmount, sym), x + 24, y + 1, { align: "right" });
-    x += 26;
+    x += 18;
+    doc.text(money(row.expected, sym), x + 22, y + 1, { align: "right" });
+    x += 24;
+    doc.text(money(row.paidAmount, sym), x + 22, y + 1, { align: "right" });
+    x += 24;
     setRgbText(doc, row.dueAmount > 0 ? STATEMENT_THEME.debit : STATEMENT_THEME.credit);
-    doc.text(money(row.dueAmount, sym), x + 18, y + 1, { align: "right" });
-    x += 20;
+    doc.text(money(row.dueAmount, sym), x + 22, y + 1, { align: "right" });
+    x += 24;
+    setRgbText(doc, row.monthsDue > 1 ? STATEMENT_THEME.debit : STATEMENT_THEME.text);
+    doc.text(String(row.monthsDue || 0), x + 10, y + 1, { align: "right" });
+    x += 12;
     setRgbText(doc, row.status === "Paid" ? STATEMENT_THEME.credit : row.status === "Partial" ? STATEMENT_THEME.neutral : STATEMENT_THEME.debit);
-    doc.text(safeText(row.status), x + 14, y + 1, { align: "right" });
+    doc.text(safeText(row.status), x + 18, y + 1, { align: "right" });
     y += rowHeight + 4;
   });
 
@@ -836,16 +877,23 @@ async function downloadApartmentMonthlyStatementReport(data, year, month, sym) {
 
   y = ensureSpace(doc, y + 2, 30);
   y = sectionTitle(doc, y + 2, "Statement Snapshot");
+  const pendingFlatCount = flatStatusRows.filter(row => Number(row.dueAmount || 0) > 0).length;
   y = drawRows(doc, y, [
     { label: "Apartment Name", value: apartmentName },
     { label: "Statement Period", value: `${MONTHS[month]} ${year}` },
-    { label: "Pending Flats", value: String(stats.unpaidFlats?.length || 0) },
-    { label: "Collection Efficiency", value: `${Math.round(stats.collectionRate || 0)}%` },
-    { label: "Pending Dues", value: money(stats.pendingDuesAmount ?? totalDueAmount, sym) }
+    { label: "Flats With Dues", value: String(pendingFlatCount) },
+    { label: `Collection Efficiency (${MONTHS[month]})`, value: `${Math.round(stats.collectionRate || 0)}%` },
+    { label: "Total Pending Dues (all months)", value: money(totalDueAmount, sym) }
   ]);
 
   y = ensureSpace(doc, y + 2, 60);
-  y = drawApartmentFlatStatusTable(doc, y + 2, "Flat-wise Collection Details", flatStatusRows, sym);
+  y = drawApartmentFlatStatusTable(doc, y + 2, "Flat-wise Dues (incl. previous months)", flatStatusRows, sym);
+  y = ensureSpace(doc, y + 2, 10);
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(7.6);
+  setRgbText(doc, STATEMENT_THEME.neutral);
+  doc.text("Total Due includes unpaid maintenance carried over from previous months. Mo = number of months outstanding.", PAGE.left, y + 2);
+  y += 8;
   y = ensureSpace(doc, y + 2, 60);
   y = drawApartmentExpenseDetailTable(
     doc,

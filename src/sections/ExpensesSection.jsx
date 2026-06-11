@@ -18,7 +18,6 @@ import {
   SectionSkeleton,
   ProgressBar,
   UpgradeModal,
-  WorkflowActionStrip,
   WorkflowSetupCard,
   WorkflowRecordCard,
   PaginatedListControls
@@ -534,12 +533,6 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
     );
   };
 
-  const expensesSub = isApartmentOrg
-    ? "Track society bills, utilities, and repairs in one compact ledger."
-    : config.enableBudgets === false
-      ? "Track business costs in one place."
-      : `${budgetCards.filter(item => item.progress >= 100).length} budget${budgetCards.filter(item => item.progress >= 100).length === 1 ? "" : "s"} over limit this month.`;
-
   return (
     <div className="ledger-screen">
       {isViewerMode && (
@@ -549,18 +542,16 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
       )}
 
       <div className="ledger-block">
-        <WorkflowActionStrip
-          title={expensesSub}
-          actions={[]}
-        />
-        <div className="card" style={{ padding: "14px 16px", marginBottom: 18, borderLeft: "4px solid var(--danger)" }}>
+        {/* Spending is normal operations, not an alarm — the total renders in
+            neutral text. Red is reserved for overdue/danger states. */}
+        <div className="card" style={{ padding: "14px 16px", marginBottom: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--danger)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
                 Total {config.expensesLabel} · {MONTHS[month]} {year}
               </div>
             <div style={{ marginTop: 2 }}>
-              <RupeeDisplay amount={total} color="var(--danger)" size={40} animate />
+              <RupeeDisplay amount={total} color="var(--text)" size={40} animate />
             </div>
             </div>
             {headerDatePicker && <div className="ledger-card-month-picker">{headerDatePicker}</div>}
@@ -606,7 +597,7 @@ export default function ExpensesSection({ year, month, orgType, headerDatePicker
                   <Input placeholder={`Search ${config.expensesLabel.toLowerCase()}...`} value={searchQuery} onChange={event => setSearchQuery(event.target.value)} />
                 </Field>
                 <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                  {filteredExpenses.length} of {active.length} entry{active.length === 1 ? "" : "ies"} shown for {MONTHS[month]} {year}
+                  {filteredExpenses.length} of {active.length} {active.length === 1 ? "entry" : "entries"} shown for {MONTHS[month]} {year}
                 </div>
               </div>
             )}

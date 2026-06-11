@@ -14,12 +14,29 @@ export default function PendingInviteBanner() {
   const [processing, setProcessing] = useState({});
   const [inviteError, setInviteError] = useState({});
 
-  useEffect(() => {
+  function fetchInvites() {
     if (!user?.email) return;
     membersApi.getPending()
       .then(invites => setPendingInvites(Array.isArray(invites) ? invites : []))
-      .catch(() => {}); // Silently ignore — don't break the app if this fails
-  }, [user?.email]);
+      .catch(() => {});
+  }
+
+  // Initial fetch on mount / user change.
+  useEffect(() => { fetchInvites(); }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch when the user manually triggers a check from the header dropdown,
+  // or when the app returns to the foreground (covers invitations sent while
+  // the user was in a background tab or another app).
+  useEffect(() => {
+    function onCheckInvites() { fetchInvites(); }
+    function onVisibility() { if (document.visibilityState === "visible") fetchInvites(); }
+    window.addEventListener("ledger:check-invites", onCheckInvites);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("ledger:check-invites", onCheckInvites);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [user?.email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!pendingInvites.length) return null;
 
@@ -90,12 +107,11 @@ export default function PendingInviteBanner() {
         >
           <div style={{ flex: 1, minWidth: 180 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "var(--accent)" }}>
-              Org invite:{" "}
+              Resident Portal invite{" "}
             </span>
             <span style={{ fontSize: 13, color: "var(--text)" }}>
-              You've been invited to{" "}
-              <strong>{invite.orgName || "an organization"}</strong> as{" "}
-              <strong style={{ textTransform: "capitalize" }}>{invite.role}</strong>
+              — <strong>{invite.orgName || "a society"}</strong> added you as{" "}
+              <strong style={{ textTransform: "capitalize" }}>{invite.role === "viewer" ? "Resident" : invite.role}</strong>
             </span>
             {inviteError[invite.id] && (
               <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 2 }}>{inviteError[invite.id]}</div>

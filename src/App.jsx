@@ -28,6 +28,7 @@ if (isNative && isAndroid) {
 const AuthScreen = lazy(() => import("./screens/AuthScreen"));
 const MainApp = lazy(() => import("./screens/MainApp"));
 const LandingScreen = lazy(() => import("./screens/LandingScreen"));
+const PortalSelectionScreen = lazy(() => import("./screens/PortalSelectionScreen"));
 const AdsManager = lazy(() => import("./sections/AdsManager"));
 
 const AUTO_RETRY_SECONDS = 10;
@@ -98,10 +99,36 @@ function NoConnectionScreen({ offlineReason, onContinueOffline }) {
 function AppRouter() {
   const { user, loading, logout, pendingSetup } = useAuth();
   const [bypassOffline, setBypassOffline] = React.useState(false);
+  // Portal selection is shown once after each sign-in session.
+  // null = not yet chosen, 'admin' or 'resident' = chosen.
+  const [portalSession, setPortalSession] = React.useState(null);
   const isAdsManagerRoute = typeof window !== "undefined" && window.location.pathname.startsWith("/ads-manager");
   // Track at mount whether a user was previously signed in (before Firebase resolves).
   // This lets returning users skip the landing page and see the app skeleton instead.
   const wasSignedIn = useRef(!!getCurrentUser());
+
+  // Reset portal session whenever the signed-in identity changes so every new
+  // sign-in sees the portal selection screen.
+  const prevUserIdRef = useRef(null);
+  React.useEffect(() => {
+    const currentId = user?.id || (pendingSetup ? "__pending__" : null);
+    if (!currentId) {
+      prevUserIdRef.current = null;
+      setPortalSession(null);
+    } else if (currentId !== prevUserIdRef.current) {
+      prevUserIdRef.current = currentId;
+      setPortalSession(null);
+    }
+  }, [user?.id, pendingSetup]);
+
+  function handlePortalSelect(portal, data) {
+    if (data) {
+      try { sessionStorage.setItem("ek_portal_entry", JSON.stringify({ portal, ...data })); } catch {}
+    } else {
+      try { sessionStorage.removeItem("ek_portal_entry"); } catch {}
+    }
+    setPortalSession(portal);
+  }
 
   // Returning user: Firebase is still loading — show skeleton, not landing
   if (loading && wasSignedIn.current) {
@@ -127,25 +154,42 @@ function AppRouter() {
     );
   }
 
-  if (!user) {
-    // The sign-in wizard (phone / khata type / khata profile) is hosted by
-    // AuthScreen and is gated by `pendingSetup` from AuthContext. New users
-    // who just authenticated via Google but haven't filled out the wizard see
-    // it here. Returning users with a complete profile never hit this branch.
-    if (pendingSetup) {
-      return (
-        <Suspense fallback={<DashboardSkeleton />}>
-          <AuthScreen />
-        </Suspense>
-      );
-    }
-    // Otherwise show the marketing landing page. Sign-in is now triggered
-    // from CTAs ON the landing page itself — no intermediate empty AuthScreen
-    // step. Firebase auth resolution is a background task; while it runs we
-    // keep showing landing so the user can keep reading or click sign-in.
+  if (!user && !pendingSetup) {
     return (
       <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
         <LandingScreen />
+      </Suspense>
+    );
+  }
+
+  // Portal selection — shown to every user after each sign-in until they choose.
+  // Unified condition keeps the component mounted across the pendingSetup → user
+  // transition so internal state (e.g. invite-finder view) survives the handoff.
+  if (!portalSession) {
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <PortalSelectionScreen onSelectPortal={handlePortalSelect} />
+      </Suspense>
+    );
+  }
+
+  // New user picked Admin Portal — show the khata-creation wizard.
+  if (pendingSetup && portalSession === "admin") {
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <AuthScreen />
+      </Suspense>
+    );
+  }
+
+  // Still in pendingSetup but portal is 'resident' — PortalSelectionScreen
+  // handles the invite flow and will call completeSetup({ residentPath: true })
+  // then call onSelectPortal which clears pendingSetup and advances to MainApp.
+  // This branch is a safety net only.
+  if (pendingSetup) {
+    return (
+      <Suspense fallback={<DashboardSkeleton />}>
+        <PortalSelectionScreen onSelectPortal={handlePortalSelect} />
       </Suspense>
     );
   }

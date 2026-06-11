@@ -1,8 +1,8 @@
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Bell, Building2, FileText,
-  HeadphonesIcon, LayoutDashboard, LogOut, MessageSquare, Plus, Power, Settings,
+  Bell, Building2, ChevronDown, FileText,
+  HeadphonesIcon, LayoutDashboard, Mail, MessageSquare, Plus, Settings,
   TrendingDown, TrendingUp, User, Users
 } from "lucide-react";
 import { isNative } from "../utils/native";
@@ -47,17 +47,19 @@ const AdminAnnouncementsSection = lazy(() => import("../sections/AdminAnnounceme
 const DiscussionsSection = lazy(() => import("../sections/DiscussionsSection"));
 
 const now = new Date();
+// One active colour for the whole nav — per-tab colours made the app feel
+// chaotic. Jade is the single brand accent.
 const TAB_COLOR = {
   dashboard: "var(--accent)",
-  users: "var(--blue)",
-  org: "var(--blue)",
+  users: "var(--accent)",
+  org: "var(--accent)",
   income: "var(--accent)",
-  expenses: "var(--danger)",
-  invoices: "var(--blue)",
-  discussions: "var(--blue)",
-  settings: "var(--purple)",
-  adminDashboard: "var(--gold)",
-  adminSupport: "var(--blue)"
+  expenses: "var(--accent)",
+  invoices: "var(--accent)",
+  discussions: "var(--accent)",
+  settings: "var(--accent)",
+  adminDashboard: "var(--accent)",
+  adminSupport: "var(--accent)"
 };
 const TAB_ICONS = {
   dashboard: LayoutDashboard,
@@ -660,7 +662,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
               if (Number.isNaN(nextYear) || Number.isNaN(nextMonth) || nextMonth < 0 || nextMonth > 11) return;
               onChange(nextYear, nextMonth);
             }}
-            style={{ width: "100%", border: "none", background: "transparent", color: "var(--blue)", fontFamily: "var(--serif)", fontSize: compactPicker ? 12 : 13, lineHeight: 1.2, padding: 0 }}
+            style={{ width: "100%", border: "none", background: "transparent", color: "var(--text)", fontWeight: 700, fontSize: compactPicker ? 12 : 13, lineHeight: 1.2, padding: 0 }}
           />
         </div>
       ) : (
@@ -692,7 +694,7 @@ function HeaderDatePicker({ year, month, onChange, viewMode, onViewModeChange })
           <span style={{ fontSize: 8, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.55 }}>
             {viewMode === "month" ? "Month" : "Year"}
           </span>
-          <span style={{ fontFamily: "var(--serif)", fontSize: compactPicker ? 12 : 13, color: "var(--blue)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
+          <span style={{ fontWeight: 700, fontSize: compactPicker ? 12 : 13, color: "var(--text)", lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>
             {viewMode === "month" ? `${MONTHS[month].slice(0, 3)} ${year}` : year}
           </span>
         </button>
@@ -857,6 +859,24 @@ export default function MainApp() {
     customers = [],
     currency
   } = data;
+  // On first mount, honour the portal entry written by PortalSelectionScreen.
+  // If the user tapped a specific shared org, switch to it immediately.
+  const portalEntryConsumedRef = useRef(false);
+  useEffect(() => {
+    if (portalEntryConsumedRef.current) return;
+    portalEntryConsumedRef.current = true;
+    try {
+      const raw = sessionStorage.getItem("ek_portal_entry");
+      if (!raw) return;
+      sessionStorage.removeItem("ek_portal_entry");
+      const { portal, ownerId, orgId } = JSON.parse(raw);
+      if (portal === "resident" && ownerId && orgId) {
+        switchToSharedOrg(ownerId, orgId);
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const ownOrgNameRef = useRef(null);
   if (!activeSharedOrgKey && account?.name) ownOrgNameRef.current = account.name;
   const ownOrgName = ownOrgNameRef.current || account?.name || "My Organization";
@@ -1499,7 +1519,7 @@ export default function MainApp() {
         tabId === "expenses" ? "Expenses" :
         tabId === "invoices" && isFreelancerOrg ? "Invoices" :
         tabId === "discussions" ? "Chat" :
-        tabId === "org" ? "Setup" :
+        tabId === "org" ? "Manage" :
         tabId === "adminSupport" ? "Support" :
         tabId === "adminAnnounce" ? "Announce" :
         tabId === "users" ? "Users" :
@@ -1722,44 +1742,47 @@ export default function MainApp() {
             >
               <User size={isCompactMobile ? 14 : 16} strokeWidth={2.1} />
             </button>
-            <button
-              onClick={() => { handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
-              title="Go to dashboard"
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0 }}
-            >
-              <BrandMark size={isCompactMobile ? 22 : 26} />
-              <span style={{ fontSize: isCompactMobile ? 14 : 16, fontWeight: 800, color: "var(--text)", fontFamily: "var(--serif)", whiteSpace: "nowrap" }}>
-                {APP_NAME}
-              </span>
-            </button>
-
-            {/* Right: Khata switcher + Bell + Sign out */}
-            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8, flexShrink: 0 }}>
-              {/* Khata switcher — always shown for non-admin users */}
-              {!isAdmin && (
-                <div style={{ position: "relative" }} ref={orgSwitcherRef}>
-                  <button
-                    ref={orgSwitchBtnRef}
-                    onClick={() => { setShowOrgSwitcher(v => !v); dismissOrgCoach(); }}
-                    title="Switch Khata"
-                    style={{ height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 10 : 11, border: `1px solid color-mix(in srgb, var(--saffron) 40%, var(--border))`, background: activeSharedOrgKey ? "color-mix(in srgb, var(--saffron) 12%, var(--raised))" : "color-mix(in srgb, var(--saffron) 7%, var(--raised))", color: "var(--saffron)", cursor: "pointer", fontSize: isCompactMobile ? 9 : 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, padding: isCompactMobile ? "0 9px" : "0 12px", flexShrink: 0 }}
-                  >
-                    <span style={{ fontSize: 12 }}>⇄</span>
-                    <span>{isCompactMobile ? "Khatas" : "Switch Khata"}</span>
-                  </button>
-                  {showOrgSwitcher && (
-                    <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 200 : 230, boxShadow: "0 16px 40px rgba(0,0,0,0.35)", zIndex: 200, overflow: "hidden" }}>
-                      {headerOrgOptions.length > 0 ? (
+            {/* Center: active khata name doubles as the switcher trigger — the
+                premium pattern (Slack, banking apps). Admins see the app name
+                and tap-to-dashboard since they have no khatas to switch. */}
+            {isAdmin ? (
+              <button
+                onClick={() => { handleNavigate({ tab: "dashboard" }); setShowOrgSwitcher(false); }}
+                title="Go to dashboard"
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minWidth: 0, flex: 1, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                <BrandMark size={isCompactMobile ? 22 : 26} />
+                <span style={{ fontSize: isCompactMobile ? 14 : 16, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap" }}>
+                  {APP_NAME}
+                </span>
+              </button>
+            ) : (
+              <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }} ref={orgSwitcherRef}>
+                <button
+                  ref={orgSwitchBtnRef}
+                  onClick={() => { setShowOrgSwitcher(v => !v); dismissOrgCoach(); }}
+                  title="Switch Khata"
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, minWidth: 0, maxWidth: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 6px", borderRadius: 10 }}
+                >
+                  <BrandMark size={isCompactMobile ? 20 : 24} />
+                  <span style={{ fontSize: isCompactMobile ? 14 : 16, fontWeight: 800, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+                    {currentOrgLabel}
+                  </span>
+                  <ChevronDown size={isCompactMobile ? 13 : 15} strokeWidth={2.4} style={{ color: "var(--text-sec)", flexShrink: 0, transform: showOrgSwitcher ? "rotate(180deg)" : "none", transition: "transform 0.18s ease" }} />
+                </button>
+                {showOrgSwitcher && (
+                  <div style={{ position: "absolute", top: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--card)", border: "1px solid var(--line-2)", borderRadius: 14, minWidth: isCompactMobile ? 220 : 250, maxWidth: "min(92vw, 320px)", boxShadow: "0 16px 40px rgba(0,0,0,0.45)", zIndex: 200, overflow: "hidden" }}>
+                      {headerOrgOptions.length > 0 || true ? (
                         <>
                           {[
                             { label: "Admin Portal", caption: "Khatas you manage", options: headerOrgOptions.filter(org => org.isOwned) },
                             { label: "Member Portal", caption: "Shared with you", options: headerOrgOptions.filter(org => !org.isOwned) }
-                          ].filter(group => group.options.length > 0).map(group => (
+                          ].map(group => (
                             <React.Fragment key={group.label}>
                               <div style={{ padding: "9px 14px 5px", fontSize: 9, fontWeight: 800, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: 0.8, borderTop: group.label === "Member Portal" ? "1px solid var(--line)" : "none" }}>
                                 {group.label} <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>· {group.caption}</span>
                               </div>
-                              {group.options.map((org, index) => {
+                              {group.options.length > 0 ? group.options.map((org, index) => {
                                 const role = org.role || "viewer";
                                 const roleColor = org.isOwned ? "var(--jade)" : role === "admin" ? "var(--jade)" : "var(--sky)";
                                 const initials = (org.name || "K").split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "K";
@@ -1780,7 +1803,24 @@ export default function MainApp() {
                                     </button>
                                   </React.Fragment>
                                 );
-                              })}
+                              }) : group.label === "Member Portal" ? (
+                                // No accepted memberships — show a discoverable way to find pending invitations.
+                                <button
+                                  onClick={() => {
+                                    window.dispatchEvent(new CustomEvent("ledger:check-invites"));
+                                    setShowOrgSwitcher(false);
+                                  }}
+                                  style={{ width: "100%", padding: "11px 14px", textAlign: "left", background: "transparent", border: "none", color: "var(--text-sec)", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                                >
+                                  <span style={{ width: 28, height: 28, borderRadius: 8, background: "var(--surface-high)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                    <Mail size={13} color="var(--text-dim)" />
+                                  </span>
+                                  <span style={{ flex: 1 }}>
+                                    <span style={{ display: "block", color: "var(--text-sec)" }}>Find my invitation</span>
+                                    <span style={{ display: "block", fontSize: 10, color: "var(--text-dim)", fontWeight: 400 }}>Check for pending invites</span>
+                                  </span>
+                                </button>
+                              ) : null}
                             </React.Fragment>
                           ))}
                         </>
@@ -1790,14 +1830,17 @@ export default function MainApp() {
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
+            )}
 
+            {/* Right: reminders bell. Sign out lives in Settings now — a
+                destructive action doesn't belong in the app's prime header slot. */}
+            <div style={{ display: "flex", alignItems: "center", gap: isCompactMobile ? 6 : 8, flexShrink: 0 }}>
               <button
                 onClick={() => setShowReminders(true)}
                 title="Open reminders"
-                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: (inboxReminders.length || inboxAnnouncements.length) ? "var(--gold)" : "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--text-sec)", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
               >
                 <Bell size={isCompactMobile ? 13 : 14} strokeWidth={2} />
                 {(inboxReminders.length + inboxAnnouncements.length) > 0 && (
@@ -1805,14 +1848,6 @@ export default function MainApp() {
                     {inboxReminders.length + inboxAnnouncements.length}
                   </span>
                 )}
-              </button>
-
-              <button
-                onClick={async () => { if (await confirm("Are you sure you want to sign out?", { title: "Sign Out", confirmLabel: "Sign Out" })) logout(); }}
-                title="Sign out"
-                style={{ width: isCompactMobile ? 30 : 34, height: isCompactMobile ? 30 : 34, borderRadius: isCompactMobile ? 9 : 10, border: "1px solid var(--border)", background: "var(--surface-high)", color: "var(--danger)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-              >
-                <Power size={isCompactMobile ? 13 : 14} strokeWidth={2} />
               </button>
             </div>
 
